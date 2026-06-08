@@ -137,6 +137,50 @@ int main() {
 | `{{@last}}`                         | 最後の要素なら `true`                  |
 | `{{foo.bar.baz}}`                   | ネストパス                             |
 
+## フィルター
+
+`|` 記法で変数の出力前に文字列・数値の変換を適用できる。BC版とNTTP版の両方でサポート。
+
+### 文字列フィルター
+
+| フィルタ | 説明 | 構文例 |
+|----------|------|--------|
+| `upper` | ASCII小文字→大文字 | `{{name \| upper}}` |
+| `lower` | ASCII大文字→小文字 | `{{name \| lower}}` |
+| `capitalize` | 先頭の文字を大文字 | `{{name \| capitalize}}` |
+| `title` | 単語の先頭を大文字 | `{{name \| title}}` |
+| `trim` | 先頭末尾の空白除去 | `{{name \| trim}}` |
+| `ltrim` | 先頭の空白除去 | `{{name \| ltrim}}` |
+| `rtrim` | 末尾の空白除去 | `{{name \| rtrim}}` |
+| `left(n)` | n文字分の枠をとり左寄せ | `{{name \| left(10)}}` |
+| `right(n)` | n文字分の枠をとり右寄せ | `{{name \| right(10)}}` |
+| `center(n)` | n文字分の枠をとり中央寄せ | `{{name \| center(10)}}` |
+| `truncate(n)` | n文字以下ならそのまま、超えたら先頭n-3文字+"..." | `{{name \| truncate(8)}}` |
+| `substr(n)` | n文字目から末尾まで | `{{name \| substr(2)}}` |
+| `substr(n,m)` | n文字目からm文字分 | `{{name \| substr(1,3)}}` |
+
+### 整数フィルター
+
+| フィルタ | 説明 | 構文例 |
+|----------|------|--------|
+| `abs` | 絶対値 | `{{age \| abs}}` |
+| `neg` | 符号の逆転 | `{{age \| neg}}` |
+| `hex` | 16進数表記 | `{{age \| hex}}` |
+| `oct` | 8進数表記 | `{{age \| oct}}` |
+| `bin` | 2進数表記 | `{{age \| bin}}` |
+| `mod(n)` | nで割った余り | `{{age \| mod(5)}}` |
+| `numify` | 3桁ごとにカンマ区切り | `{{age \| numify}}` |
+
+### フィルターのチェーン
+
+複数のフィルターを組み合わせ可能。左から右に順に適用される。
+
+```cpp
+{{name | trim | upper}}        // "  hello  " → "HELLO"
+{{name | left(10) | upper}}    // "hi" → "HI       "
+{{age | abs | numify}}         // -1234567 → "1,234,567"
+```
+
 ## API リファレンス
 
 ### `injamm::fixed_string<N>`
@@ -182,6 +226,7 @@ auto r2 = bc.render(data2);
 | 4   | syntax_error   | 構文エラー                 |
 | 5   | type_mismatch  | 型不一致                   |
 | 6   | invalid_utf8   | 不正な UTF-8               |
+| 7   | unknown_filter | 不明なフィルタ             |
 
 ## 注意事項
 
