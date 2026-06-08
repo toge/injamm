@@ -92,7 +92,7 @@ consteval auto parse_fixed_impl() -> ct_parsed_template<Tmpl.size() + 1> {
  * @return expected<std::string> レンダリング結果、またはエラー（error_ctx）
  */
 template <fixed_string Tmpl, class T>
-inline expected<std::string> render(T const& value) {
+[[nodiscard]] inline expected<std::string> render(T const& value) {
   constexpr auto fp = detail::parse_fixed_impl<Tmpl>();
   std::string out;
   out.reserve(Tmpl.size() * 2);
@@ -133,7 +133,7 @@ public:
    * @param value コンテキスト値の const 参照
    * @return expected<std::string> レンダリング結果、またはエラー
    */
-  expected<std::string> render(T const& value) const {
+  [[nodiscard]] expected<std::string> render(T const& value) const {
     return detail::bc_execute(bc_, value);
   }
 };

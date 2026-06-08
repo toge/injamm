@@ -169,14 +169,14 @@ class bc_executor {
        */
       if (field_index != UINT32_MAX && field_index < sz) {
         auto visit_by_index = [&]<std::size_t... I>(std::index_sequence<I...>) -> std::expected<void, error_ctx> {
+          std::expected<void, error_ctx> visitor_result{};
           /** 単一インデックスを試行する内部ラムダ。見つかれば visitor を適用。 */
           auto try_index = [&]<std::size_t Idx>() -> bool {
             if (field_index == Idx) {
               if constexpr (std::same_as<visitor_t, void>) {
                 visitor(glz::get<Idx>(tied));
               } else {
-                auto r = visitor(glz::get<Idx>(tied));
-                if (!r) return true;
+                visitor_result = visitor(glz::get<Idx>(tied));
               }
               return true;
             }
@@ -185,7 +185,7 @@ class bc_executor {
           /** fold 式で全インデックスを試行（最初の一致で短絡） */
           bool found = (try_index.template operator()<I>() || ...);
           (void)found;
-          return std::expected<void, error_ctx>{};
+          return visitor_result;
         };
         return visit_by_index(std::make_index_sequence<sz>{});
       }
@@ -368,6 +368,10 @@ public:
       auto const& ref = bc_.var_refs[instr.operand2];
       auto body_end = instr.operand;
 
+      if (body_end <= pc + 1 || body_end > bc_.instructions.size()) {
+        return std::unexpected(error_ctx{.position = pc, .ec = error_code::syntax_error});
+      }
+
       auto r = for_each_field(value_, ref.key, ref.field_index,
           [&](auto const& field) -> std::expected<void, error_ctx> {
         using FT = std::remove_cvref_t<decltype(field)>;
@@ -424,6 +428,10 @@ public:
       auto const& ref = bc_.var_refs[instr.operand2];
       auto body_end = instr.operand;
 
+      if (body_end <= pc + 1 || body_end > bc_.instructions.size()) {
+        return std::unexpected(error_ctx{.position = pc, .ec = error_code::syntax_error});
+      }
+
       auto r = for_each_field(value_, ref.key, ref.field_index,
           [&](auto const& field) -> std::expected<void, error_ctx> {
         using FT = std::remove_cvref_t<decltype(field)>;
@@ -464,6 +472,9 @@ public:
       });
       if (empty) {
         auto body_end = instr.operand;
+        if (body_end <= pc + 1 || body_end > bc_.instructions.size()) {
+          return std::unexpected(error_ctx{.position = pc, .ec = error_code::syntax_error});
+        }
         auto r = execute_impl(pc + 1, body_end - 1);
         if (!r) return r;
         pc = body_end;
@@ -690,6 +701,7 @@ public:
         ls.index = loop_->index;
         ls.count = loop_->count;
         ls.key = loop_->key;
+        ls.in_loop = true;
       }
       if (!resolve_value(filtered_value_, var_ref.key, value_, loop_ ? &ls : nullptr)) {
         return std::unexpected(error_ctx{.ec = error_code::unknown_key});
@@ -1256,6 +1268,7 @@ public:
             ls.index = loop_->index;
             ls.count = loop_->count;
             ls.key = loop_->key;
+            ls.in_loop = true;
           }
           if (!resolve_value(filtered_value_, var_ref.key, value_, loop_ ? &ls : nullptr)) {
             return std::unexpected(error_ctx{.ec = error_code::unknown_key});

@@ -128,12 +128,13 @@ namespace injamm::detail {
  * @param body if ボディ文字列
  * @return {{else}} の開始位置、見つからない場合は std::string_view::npos
  * @details ネストされたセクション（{{#...}}）や if（{{#if...}}）内の else は
- *          深度カウントにより無視する。{{/if}} または {{/section}} で深度が
- *          減少する。深度 0 でのみ {{else}} をトップレベルと判定する。
+ *          深度カウントにより無視する。{{#if}} と {{#section}} は別カウンタで
+ *          管理し、depth 0 でのみ {{else}} をトップレベルと判定する。
  */
 [[nodiscard]] constexpr std::size_t find_toplevel_else(std::string_view body) noexcept {
   std::size_t pos = 0;
-  int depth = 0;
+  int if_depth = 0;
+  int section_depth = 0;
   while (pos < body.size()) {
     auto tag_pos = body.find("{{", pos);
     if (tag_pos == std::string_view::npos) {
@@ -145,14 +146,18 @@ namespace injamm::detail {
     }
     auto tag_inner = trim_sv(body.substr(tag_pos + 2, end - tag_pos - 2));
     if (tag_inner.starts_with("#if")) {
-      ++depth;
-    } else if (tag_inner.starts_with("#") && !tag_inner.starts_with("#if")) {
-      ++depth;
-    } else if (tag_inner.starts_with("/")) {
-      if (depth > 0) {
-        --depth;
+      ++if_depth;
+    } else if (tag_inner.starts_with("#")) {
+      ++section_depth;
+    } else if (tag_inner.starts_with("/if")) {
+      if (if_depth > 0) {
+        --if_depth;
       }
-    } else if (tag_inner == "else" && depth == 0) {
+    } else if (tag_inner.starts_with("/")) {
+      if (section_depth > 0) {
+        --section_depth;
+      }
+    } else if (tag_inner == "else" && if_depth == 0 && section_depth == 0) {
       return tag_pos;
     }
     pos = end + 2;

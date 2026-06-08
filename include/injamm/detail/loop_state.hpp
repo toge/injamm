@@ -7,11 +7,13 @@ namespace injamm::detail {
 /** @brief ループコンテキスト
  *
  *  セクション内のループ状態を保持し、@index / @first / @last の解決に使用する。
- *  count のデフォルトを 1 とすることで、トップレベルでは @last が false になるよう設計している。
+ *  in_loop フラグでループ内かどうかを区別し、トップレベルで @last が true になる
+ *  のを防ぐ。
  */
 struct loop_state {
   std::uint32_t index = 0;  /**< 現在のループインデックス（0始まり） */
-  std::uint32_t count = 1;  /**< ループ総数。デフォルト1によりトップレベルで @last を偽にする */
+  std::uint32_t count = 0;  /**< ループ総数 */
+  bool in_loop = false;     /**< ループ内かどうか */
   std::string_view key{};   /**< 現在の要素のキー名（@key 用、マップ反復時のみ設定） */
 
   /** @brief 最初の要素か判定する
@@ -21,12 +23,12 @@ struct loop_state {
 
   /** @brief 最後の要素か判定する
    *
-   *  count > 1 ガードによりトップレベルコンテキストを "last" と判定しない。
+   *  in_loop フラグによりトップレベルコンテキストを "last" と判定しない。
    *
    *  @return 最後の要素なら true
    */
   [[nodiscard]] constexpr bool is_last() const noexcept {
-    return count > 1 && index + 1 >= count;
+    return in_loop && count > 0 && index + 1 >= count;
   }
 };
 

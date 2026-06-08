@@ -4,6 +4,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <stdexcept>
 #include <string_view>
 #include <vector>
 
@@ -60,11 +61,12 @@ struct ct_parsed_template {
    * @param text リテラルテキスト（string_view）
    */
   constexpr void push_literal(std::string_view text) {
-    if (size < N) {
-      kinds[size] = ct_chunk_kind::literal;
-      texts[size] = text;
-      ++size;
+    if (size >= N) {
+      throw std::overflow_error("ct_parsed_template: chunk buffer overflow");
     }
+    kinds[size] = ct_chunk_kind::literal;
+    texts[size] = text;
+    ++size;
   }
 
   /**
@@ -76,14 +78,15 @@ struct ct_parsed_template {
    * @param int_filter_list 適用する整数フィルタのリスト
    */
   constexpr void push_placeholder(std::string_view key, bool raw, std::vector<string_filter_entry> filter_list = {}, std::vector<int_filter_entry> int_filter_list = {}) {
-    if (size < N) {
-      kinds[size] = ct_chunk_kind::placeholder;
-      texts[size] = key;
-      flags[size] = raw ? 1 : 0;
-      filters[size] = std::move(filter_list);
-      int_filters[size] = std::move(int_filter_list);
-      ++size;
+    if (size >= N) {
+      throw std::overflow_error("ct_parsed_template: chunk buffer overflow");
     }
+    kinds[size] = ct_chunk_kind::placeholder;
+    texts[size] = key;
+    flags[size] = raw ? 1 : 0;
+    filters[size] = std::move(filter_list);
+    int_filters[size] = std::move(int_filter_list);
+    ++size;
   }
 
   /**
@@ -94,13 +97,14 @@ struct ct_parsed_template {
    * @param body_end   本体部分の終了インデックス
    */
   constexpr void push_section(std::string_view key, std::size_t body_start, std::size_t body_end) {
-    if (size < N) {
-      kinds[size] = ct_chunk_kind::section;
-      texts[size] = key;
-      body_starts[size] = body_start;
-      body_ends[size] = body_end;
-      ++size;
+    if (size >= N) {
+      throw std::overflow_error("ct_parsed_template: chunk buffer overflow");
     }
+    kinds[size] = ct_chunk_kind::section;
+    texts[size] = key;
+    body_starts[size] = body_start;
+    body_ends[size] = body_end;
+    ++size;
   }
 
   /**
@@ -111,13 +115,14 @@ struct ct_parsed_template {
    * @param body_end   本体部分の終了インデックス
    */
   constexpr void push_inverted(std::string_view key, std::size_t body_start, std::size_t body_end) {
-    if (size < N) {
-      kinds[size] = ct_chunk_kind::inverted;
-      texts[size] = key;
-      body_starts[size] = body_start;
-      body_ends[size] = body_end;
-      ++size;
+    if (size >= N) {
+      throw std::overflow_error("ct_parsed_template: chunk buffer overflow");
     }
+    kinds[size] = ct_chunk_kind::inverted;
+    texts[size] = key;
+    body_starts[size] = body_start;
+    body_ends[size] = body_end;
+    ++size;
   }
 
   /**
@@ -126,11 +131,12 @@ struct ct_parsed_template {
    * @param var @変数の種別（index / first / last / root）
    */
   constexpr void push_at_var(ct_at_var_kind var) {
-    if (size < N) {
-      kinds[size] = ct_chunk_kind::at_var;
-      flags[size] = static_cast<std::uint8_t>(var);
-      ++size;
+    if (size >= N) {
+      throw std::overflow_error("ct_parsed_template: chunk buffer overflow");
     }
+    kinds[size] = ct_chunk_kind::at_var;
+    flags[size] = static_cast<std::uint8_t>(var);
+    ++size;
   }
 
   /**
@@ -143,14 +149,15 @@ struct ct_parsed_template {
    */
   constexpr void push_at_section(ct_at_var_kind var, std::size_t body_start, std::size_t body_end,
                                   bool inverted) {
-    if (size < N) {
-      kinds[size] = ct_chunk_kind::at_section;
-      flags[size] = static_cast<std::uint8_t>(var);
-      body_starts[size] = body_start;
-      body_ends[size] = body_end;
-      else_starts[size] = inverted ? 1 : 0; /**< else_starts を inverted フラグとして流用 */
-      ++size;
+    if (size >= N) {
+      throw std::overflow_error("ct_parsed_template: chunk buffer overflow");
     }
+    kinds[size] = ct_chunk_kind::at_section;
+    flags[size] = static_cast<std::uint8_t>(var);
+    body_starts[size] = body_start;
+    body_ends[size] = body_end;
+    else_starts[size] = inverted ? 1 : 0; /**< else_starts を inverted フラグとして流用 */
+    ++size;
   }
 
   /**
@@ -164,15 +171,16 @@ struct ct_parsed_template {
    */
   constexpr void push_if(std::string_view expr, std::size_t then_start, std::size_t then_end,
                           std::size_t else_start, std::size_t else_end) {
-    if (size < N) {
-      kinds[size] = ct_chunk_kind::if_else;
-      texts[size] = expr;
-      body_starts[size] = then_start;
-      body_ends[size] = then_end;
-      else_starts[size] = else_start;
-      else_ends[size] = else_end;
-      ++size;
+    if (size >= N) {
+      throw std::overflow_error("ct_parsed_template: chunk buffer overflow");
     }
+    kinds[size] = ct_chunk_kind::if_else;
+    texts[size] = expr;
+    body_starts[size] = then_start;
+    body_ends[size] = then_end;
+    else_starts[size] = else_start;
+    else_ends[size] = else_end;
+    ++size;
   }
 };
 

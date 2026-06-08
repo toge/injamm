@@ -30,7 +30,9 @@ template <class Buffer, class T>
 inline void serialize_value(Buffer& out, T value) {
   std::array<char, 32> buf{};
   auto [ptr, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), value);
-  out.append(std::string_view{buf.data(), static_cast<std::size_t>(ptr - buf.data())});
+  if (ec == std::errc{}) {
+    out.append(std::string_view{buf.data(), static_cast<std::size_t>(ptr - buf.data())});
+  }
 }
 
 /** @brief bool型をバッファに変換して追記する
@@ -80,7 +82,9 @@ template <class Buffer, class T>
 inline void serialize_value(Buffer& out, T value) {
   std::array<char, 64> buf{};
   auto [ptr, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), value);
-  out.append(std::string_view{buf.data(), static_cast<std::size_t>(ptr - buf.data())});
+  if (ec == std::errc{}) {
+    out.append(std::string_view{buf.data(), static_cast<std::size_t>(ptr - buf.data())});
+  }
 }
 
 } // namespace injamm::detail

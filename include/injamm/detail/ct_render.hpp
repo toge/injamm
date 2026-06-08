@@ -477,6 +477,7 @@ constexpr auto ct_render_section(Buffer& out, ct_parsed_template<N> const& chunk
         if constexpr (ct_is_vector_like<FT>) {
           loop_state ls;
           ls.count = static_cast<std::uint32_t>(field.size());
+          ls.in_loop = true;
           for (ls.index = 0; ls.index < static_cast<std::uint32_t>(field.size()); ++ls.index) {
             res = ct_render_chunks<Mode>(out, chunks, body_start, body_end, field[ls.index], root_value, &ls);
             if (!res) return;
@@ -572,6 +573,7 @@ constexpr auto ct_render_inverted(Buffer& out, ct_parsed_template<N> const& chun
                ls.count = sz;
                ls.index = J;
                ls.key = glz::reflect<FT>::keys[J];
+               ls.in_loop = true;
                res = ct_render_chunks<Mode>(out, chunks, body_start, body_end, glz::get<J>(tied), root_value, &ls);
              }()), ...);
            }(std::make_index_sequence<sz>{});

@@ -785,3 +785,48 @@ TEST_CASE("int_filter: numify negative", "[int_filter]") {
   REQUIRE(*result == "-9,876");
 }
 
+// ---- ネストしたセクション内 else のテスト ----
+
+TEST_CASE("if with nested section: else belongs to if", "[if][section]") {
+  BcUsersData data{{{"Alice", 30}, {"Bob", 25}}};
+  // {{#if users}} の else は、users が空のとき描画される
+  // {{#users}} 内の {{else}} は無視される
+  auto bc = injamm::bc_template<BcUsersData>(
+    "{{#if users}}"
+    "{{#users}}{{name}} {{/users}}"
+    "{{else}}"
+    "no users"
+    "{{/if}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "Alice Bob ");
+}
+
+TEST_CASE("if with nested section: else triggers on empty", "[if][section]") {
+  BcUsersData data{{}};
+  auto bc = injamm::bc_template<BcUsersData>(
+    "{{#if users}}"
+    "{{#users}}{{name}} {{/users}}"
+    "{{else}}"
+    "no users"
+    "{{/if}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "no users");
+}
+
+TEST_CASE("deeply nested: if inside section", "[if][section]") {
+  BcUsersData data{{{"Alice", 30}, {"Bob", 25}}};
+  auto bc = injamm::bc_template<BcUsersData>(
+    "{{#users}}"
+    "{{#if @first}}"
+    "First: {{name}}"
+    "{{else}}"
+    "Other: {{name}}"
+    "{{/if}}"
+    "{{/users}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "First: AliceOther: Bob");
+}
+

@@ -35,7 +35,6 @@ CMake オプション: `INJAMM_ENABLE_THREADED_DISPATCH`（デフォルト ON、
 - セクションの真偽: 非ゼロ数値、非空文字列、非ヌルポインタ = true。
 - `{{^section}}` = 逆セクション（偽/空のときに描画）。
 - テンプレートファイル: `include/injamm/injamm.hpp` が一次エントリポイント。`include/injamm/escape_hatch.hpp` が `bc_template`/`render` を公開。
-- `include/injamm/test_main.hpp` にスタンドアロンテストランナー（`INJAMM_TEST` マクロ）あり — 現在の Catch2 テストでは未使用。ヘッダオンリーテストモード用。
 
 ## 依存関係
 

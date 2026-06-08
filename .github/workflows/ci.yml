@@ -18,7 +18,9 @@ jobs:
         run: dnf install -y gcc-c++ cmake ninja-build git curl zip unzip tar
 
       - name: Check GCC version
-        run: g++ --version
+        run: |
+          g++ --version
+          g++ -dumpversion | grep -E "^(1[6-9]|[2-9][0-9])\." || { echo "ERROR: GCC 16+ required, found $(g++ -dumpversion)"; exit 1; }
 
       - name: Restore vcpkg cache
         uses: actions/cache@v4
