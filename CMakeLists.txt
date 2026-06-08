@@ -12,7 +12,6 @@ option(INJAMM_BUILD_EXAMPLES "Build examples" ON)
 
 # ---- 依存 ----
 find_package(glaze CONFIG REQUIRED)
-find_package(Catch2 CONFIG REQUIRED)
 
 # ---- ライブラリ定義 ----
 add_library(injamm INTERFACE)
@@ -25,7 +24,7 @@ target_include_directories(injamm INTERFACE
 target_link_libraries(injamm INTERFACE glaze::glaze)
 target_compile_features(injamm INTERFACE cxx_std_26)
 
-# GCC スレッデッドディスパッチ
+# 高速化のためのGCCスレッデッドディスパッチ
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
   if(INJAMM_ENABLE_THREADED_DISPATCH)
     target_compile_definitions(injamm INTERFACE INJAMM_THREADED_DISPATCH)
@@ -35,6 +34,8 @@ endif()
 
 # ---- テスト ----
 if(INJAMM_BUILD_TESTS)
+  find_package(Catch2 CONFIG REQUIRED)
+
   enable_testing()
   add_executable(injamm_tests
     tests/test_injamm.cpp
