@@ -61,7 +61,7 @@ class bc_compiler {
    * @param raw 生出力（エスケープなし）フラグ
    * @param filters 適用する文字列フィルタの列
    */
-  void emit_var(std::string_view key, bool raw, std::vector<string_filter_entry> filters = {}, std::vector<int_filter_entry> int_filters = {}) {
+  void emit_var(std::string_view key, bool raw, std::vector<string_filter_entry> filters = {}, std::vector<int_filter_entry> int_filters = {}, std::vector<float_filter_entry> float_filters = {}) {
     auto idx = bc_.add_var_ref(key);
     auto field_idx = resolve_field_index<T>(key);
     if (field_idx != UINT32_MAX) {
@@ -69,8 +69,9 @@ class bc_compiler {
     }
     bc_.var_refs[idx].filters = filters;
     bc_.var_refs[idx].int_filters = int_filters;
+    bc_.var_refs[idx].float_filters = float_filters;
     // フィルタの有無で分岐
-    if (filters.empty() && int_filters.empty()) {
+    if (filters.empty() && int_filters.empty() && float_filters.empty()) {
       // 既存の高速パス（変更なし）
       if (!bc_.instructions.empty()) {
         auto& last = bc_.instructions.back();
@@ -109,6 +110,11 @@ class bc_compiler {
           case int_filter::neg:    bc_.add_instruction(bc_opcode::filter_int_neg); break;
           case int_filter::mod:    bc_.add_instruction(bc_opcode::filter_int_mod, f.arg); break;
           case int_filter::numify: bc_.add_instruction(bc_opcode::filter_int_numify); break;
+        }
+      }
+      for (auto f : float_filters) {
+        switch (f.filter) {
+          case float_filter::precision: bc_.add_instruction(bc_opcode::filter_float_precision, f.arg); break;
         }
       }
       bc_.add_instruction(raw ? bc_opcode::emit_filtered_raw : bc_opcode::emit_filtered);
@@ -300,6 +306,7 @@ class bc_compiler {
         auto actual_key = parts[0];
         std::vector<string_filter_entry> filters;
         std::vector<int_filter_entry> int_filters;
+        std::vector<float_filter_entry> float_filters;
         for (std::size_t fi = 1; fi < parts.size(); ++fi) {
           auto sf = parse_string_filter(parts[fi]);
           if (sf) {
@@ -311,11 +318,16 @@ class bc_compiler {
             int_filters.push_back(*ifl);
             continue;
           }
+          auto ffl = parse_float_filter(parts[fi]);
+          if (ffl) {
+            float_filters.push_back(*ffl);
+            continue;
+          }
         }
         if (actual_key.starts_with("@root.")) {
           emit_root_field(actual_key, true);
         } else {
-          emit_var(actual_key, true, std::move(filters), std::move(int_filters));
+          emit_var(actual_key, true, std::move(filters), std::move(int_filters), std::move(float_filters));
         }
         pos_ = end + 3;
         continue;
@@ -398,6 +410,7 @@ class bc_compiler {
         auto key = parts[0];
         std::vector<string_filter_entry> filters;
         std::vector<int_filter_entry> int_filters;
+        std::vector<float_filter_entry> float_filters;
         for (std::size_t fi = 1; fi < parts.size(); ++fi) {
           auto sf = parse_string_filter(parts[fi]);
           if (sf) {
@@ -409,8 +422,13 @@ class bc_compiler {
             int_filters.push_back(*ifl);
             continue;
           }
+          auto ffl = parse_float_filter(parts[fi]);
+          if (ffl) {
+            float_filters.push_back(*ffl);
+            continue;
+          }
         }
-        emit_var(key, false, std::move(filters), std::move(int_filters));
+        emit_var(key, false, std::move(filters), std::move(int_filters), std::move(float_filters));
       }
     }
   }
@@ -506,6 +524,7 @@ class bc_compiler {
         auto key = parts[0];
         std::vector<string_filter_entry> filters;
         std::vector<int_filter_entry> int_filters;
+        std::vector<float_filter_entry> float_filters;
         for (std::size_t fi = 1; fi < parts.size(); ++fi) {
           auto sf = parse_string_filter(parts[fi]);
           if (sf) {
@@ -517,8 +536,13 @@ class bc_compiler {
             int_filters.push_back(*ifl);
             continue;
           }
+          auto ffl = parse_float_filter(parts[fi]);
+          if (ffl) {
+            float_filters.push_back(*ffl);
+            continue;
+          }
         }
-        emit_var(key, false, std::move(filters), std::move(int_filters));
+        emit_var(key, false, std::move(filters), std::move(int_filters), std::move(float_filters));
       }
     }
     return false;

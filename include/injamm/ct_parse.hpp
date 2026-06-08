@@ -37,9 +37,9 @@ struct ct_parse_context {
    * @param filter_list 適用するフィルタのリスト
    * @return 追加されたチャンクのインデックス
    */
-  constexpr std::size_t push_placeholder(std::string_view key, bool raw, std::vector<string_filter_entry> filter_list = {}, std::vector<int_filter_entry> int_filter_list = {}) {
+  constexpr std::size_t push_placeholder(std::string_view key, bool raw, std::vector<string_filter_entry> filter_list = {}, std::vector<int_filter_entry> int_filter_list = {}, std::vector<float_filter_entry> float_filter_list = {}) {
     auto idx = tmpl.size;
-    tmpl.push_placeholder(key, raw, std::move(filter_list), std::move(int_filter_list));
+    tmpl.push_placeholder(key, raw, std::move(filter_list), std::move(int_filter_list), std::move(float_filter_list));
     return idx;
   }
 
@@ -208,6 +208,7 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
       auto actual_key = parts[0];
       std::vector<string_filter_entry> filter_list;
       std::vector<int_filter_entry> int_filter_list;
+      std::vector<float_filter_entry> float_filter_list;
       for (std::size_t fi = 1; fi < parts.size(); ++fi) {
         auto sf = parse_string_filter(parts[fi]);
         if (sf) {
@@ -219,8 +220,13 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
           int_filter_list.push_back(*ifl);
           continue;
         }
+        auto ffl = parse_float_filter(parts[fi]);
+        if (ffl) {
+          float_filter_list.push_back(*ffl);
+          continue;
+        }
       }
-      ctx.push_placeholder(actual_key, true, std::move(filter_list), std::move(int_filter_list));
+      ctx.push_placeholder(actual_key, true, std::move(filter_list), std::move(int_filter_list), std::move(float_filter_list));
       pos = end + 3;
       continue;
     }
@@ -557,6 +563,7 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
       auto key = parts[0];
       std::vector<string_filter_entry> filter_list;
       std::vector<int_filter_entry> int_filter_list;
+      std::vector<float_filter_entry> float_filter_list;
       for (std::size_t fi = 1; fi < parts.size(); ++fi) {
         auto sf = parse_string_filter(parts[fi]);
         if (sf) {
@@ -568,8 +575,13 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
           int_filter_list.push_back(*ifl);
           continue;
         }
+        auto ffl = parse_float_filter(parts[fi]);
+        if (ffl) {
+          float_filter_list.push_back(*ffl);
+          continue;
+        }
       }
-      ctx.push_placeholder(key, false, std::move(filter_list), std::move(int_filter_list));
+      ctx.push_placeholder(key, false, std::move(filter_list), std::move(int_filter_list), std::move(float_filter_list));
     }
   }
 }

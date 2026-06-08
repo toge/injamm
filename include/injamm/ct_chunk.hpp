@@ -53,6 +53,7 @@ struct ct_parsed_template {
   std::array<std::uint8_t, N> flags{};           /**< @brief 汎用フラグ（raw / kind / inverted の兼用） */
   std::array<std::vector<string_filter_entry>, N> filters{}; /**< @brief 各プレースホルダに適用する文字列フィルタリスト */
   std::array<std::vector<int_filter_entry>, N> int_filters{}; /**< @brief 各プレースホルダに適用する整数フィルタリスト */
+  std::array<std::vector<float_filter_entry>, N> float_filters{}; /**< @brief 各プレースホルダに適用する実数フィルタリスト */
   std::size_t size = 0;                          /**< @brief 現在の有効チャンク数 */
 
   /**
@@ -77,7 +78,7 @@ struct ct_parsed_template {
    * @param filter_list 適用する文字列フィルタのリスト
    * @param int_filter_list 適用する整数フィルタのリスト
    */
-  constexpr void push_placeholder(std::string_view key, bool raw, std::vector<string_filter_entry> filter_list = {}, std::vector<int_filter_entry> int_filter_list = {}) {
+  constexpr void push_placeholder(std::string_view key, bool raw, std::vector<string_filter_entry> filter_list = {}, std::vector<int_filter_entry> int_filter_list = {}, std::vector<float_filter_entry> float_filter_list = {}) {
     if (size >= N) {
       throw std::overflow_error("ct_parsed_template: chunk buffer overflow");
     }
@@ -86,6 +87,7 @@ struct ct_parsed_template {
     flags[size] = raw ? 1 : 0;
     filters[size] = std::move(filter_list);
     int_filters[size] = std::move(int_filter_list);
+    float_filters[size] = std::move(float_filter_list);
     ++size;
   }
 

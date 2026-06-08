@@ -57,6 +57,7 @@ enum class bc_opcode : std::uint8_t {
   filter_int_neg,     /**< 整数符号逆転 */
   filter_int_mod,     /**< 整数余り（引数: 除数） */
   filter_int_numify,  /**< 整数3桁カンマ区切り */
+  filter_float_precision, /**< 実数小数点以下桁数（引数: 桁数） */
   halt                /**< プログラム終了 */
 };
 
@@ -113,6 +114,23 @@ struct int_filter_entry {
 };
 
 /**
+ * @brief 実数変換フィルタの種別
+ * @details プレースホルダに適用する実数変換の種類を定義する
+ */
+enum class float_filter : std::uint8_t {
+  precision   /**< 小数点以下桁数（引数: 桁数） */
+};
+
+/**
+ * @brief 実数フィルタエントリ（引数付き）
+ * @details フィルタの種別と、引数を必要とするフィルタの値を保持する
+ */
+struct float_filter_entry {
+  float_filter filter; /**< フィルタの種別 */
+  int arg = 0;         /**< 引数（precision の小数点以下桁数） */
+};
+
+/**
  * @brief 変数参照情報
  * @details テンプレート内の変数参照を表す。コンパイル時に glaze リフレクションで
  *          フィールドインデックスが解決可能な場合は field_index に値が設定される。
@@ -122,6 +140,7 @@ struct bc_var_ref {
   std::uint32_t field_index = UINT32_MAX;  /**< コンパイル時解決済みフィールドインデックス */
   std::vector<string_filter_entry> filters; /**< 文字列フィルタチェーン */
   std::vector<int_filter_entry> int_filters; /**< 整数フィルタチェーン */
+  std::vector<float_filter_entry> float_filters; /**< 実数フィルタチェーン */
 };
 
 /**

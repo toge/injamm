@@ -1,6 +1,6 @@
 #pragma once
 
-#include "../detail/types.hpp"
+#include "types.hpp"
 #include "ct_chunk.hpp"
 #include "escape.hpp"
 #include "loop_state.hpp"
@@ -193,8 +193,14 @@ constexpr void apply_int_filter(std::string& str, int_filter_entry entry) {
   switch (entry.filter) {
     case int_filter::abs: {
       try {
-        long long val = std::stoll(str);
-        str = std::to_string(std::abs(val));
+        // 小数点を含む場合は実数として扱う
+        if (str.find('.') != std::string::npos || str.find('e') != std::string::npos || str.find('E') != std::string::npos) {
+          double val = std::stod(str);
+          str = std::to_string(std::abs(val));
+        } else {
+          long long val = std::stoll(str);
+          str = std::to_string(std::abs(val));
+        }
       } catch (...) {
         // 変換失敗: そのまま
       }
@@ -241,8 +247,13 @@ constexpr void apply_int_filter(std::string& str, int_filter_entry entry) {
     }
     case int_filter::neg: {
       try {
-        long long val = std::stoll(str);
-        str = std::to_string(-val);
+        if (str.find('.') != std::string::npos || str.find('e') != std::string::npos || str.find('E') != std::string::npos) {
+          double val = std::stod(str);
+          str = std::to_string(-val);
+        } else {
+          long long val = std::stoll(str);
+          str = std::to_string(-val);
+        }
       } catch (...) {
         // 変換失敗: そのまま
       }
@@ -262,20 +273,82 @@ constexpr void apply_int_filter(std::string& str, int_filter_entry entry) {
     }
     case int_filter::numify: {
       try {
-        long long val = std::stoll(str);
-        bool negative = val < 0;
-        if (negative) val = -val;
-        std::string num = std::to_string(val);
-        std::string result;
-        int count = 0;
-        for (int i = num.size() - 1; i >= 0; --i) {
-          result = num[i] + result;
-          count++;
-          if (count % 3 == 0 && i > 0) {
-            result = ',' + result;
+        // 小数点を含む場合は実数としてカンマ区切りを適用
+        if (str.find('.') != std::string::npos || str.find('e') != std::string::npos || str.find('E') != std::string::npos) {
+          double val = std::stod(str);
+          bool negative = val < 0;
+          if (negative) val = -val;
+          auto int_part = static_cast<long long>(val);
+          std::string num = std::to_string(int_part);
+          std::string result;
+          int count = 0;
+          for (int i = num.size() - 1; i >= 0; --i) {
+            result = num[i] + result;
+            count++;
+            if (count % 3 == 0 && i > 0) {
+              result = ',' + result;
+            }
           }
+          // 小数部分を処理
+          auto frac = val - static_cast<double>(int_part);
+          if (frac != 0.0) {
+            auto dot_pos = str.find('.');
+            std::size_t prec = 6;
+            if (dot_pos != std::string::npos) {
+              prec = str.size() - dot_pos - 1;
+              if (prec > 6) prec = 6;
+              if (prec == 0) prec = 1;
+            }
+            std::ostringstream oss;
+            oss << std::fixed;
+            oss.precision(prec);
+            oss << frac;
+            auto frac_str = oss.str();
+            if (frac_str.size() > 2) {
+              frac_str = frac_str.substr(1);
+            }
+            result += frac_str;
+          }
+          str = negative ? "-" + result : result;
+        } else {
+          long long val = std::stoll(str);
+          bool negative = val < 0;
+          if (negative) val = -val;
+          std::string num = std::to_string(val);
+          std::string result;
+          int count = 0;
+          for (int i = num.size() - 1; i >= 0; --i) {
+            result = num[i] + result;
+            count++;
+            if (count % 3 == 0 && i > 0) {
+              result = ',' + result;
+            }
+          }
+          str = negative ? "-" + result : result;
         }
-        str = negative ? "-" + result : result;
+      } catch (...) {
+        // 変換失敗: そのまま
+      }
+      break;
+    }
+  }
+}
+
+/**
+ * @brief 実数フィルタを適用する
+ * @param str 対象の文字列
+ * @param entry 適用するフィルタの種別と引数
+ */
+constexpr void apply_float_filter(std::string& str, float_filter_entry entry) {
+  switch (entry.filter) {
+    case float_filter::precision: {
+      try {
+        double val = std::stod(str);
+        std::ostringstream oss;
+        oss << std::fixed;
+        oss.precision(entry.arg);
+        oss << val;
+        str = oss.str();
       } catch (...) {
         // 変換失敗: そのまま
       }
@@ -314,9 +387,10 @@ constexpr auto ct_render_placeholder(Buffer& out, ct_parsed_template<N> const& c
 
   auto const& filters = chunks.filters[i];
   auto const& int_filters = chunks.int_filters[i];
+  auto const& float_filters = chunks.float_filters[i];
 
   // フィルタが存在する場合
-  if (!filters.empty() || !int_filters.empty()) {
+  if (!filters.empty() || !int_filters.empty() || !float_filters.empty()) {
     std::string tmp;
     if (!resolve_value(tmp, key, value, loop)) {
       return std::unexpected(error_ctx{.ec = error_code::unknown_key});
@@ -328,6 +402,10 @@ constexpr auto ct_render_placeholder(Buffer& out, ct_parsed_template<N> const& c
     // 整数フィルタ適用
     for (auto f : int_filters) {
       apply_int_filter(tmp, f);
+    }
+    // 実数フィルタ適用
+    for (auto f : float_filters) {
+      apply_float_filter(tmp, f);
     }
     // 出力
     if constexpr (std::is_same_v<Mode, mustache_tag>) {

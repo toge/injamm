@@ -11,13 +11,13 @@
  *          SoA（Struct of Arrays）形式を採用しキャッシュ効率を向上している。
  */
 
-#include "injamm.hpp"
-#include "detail/ct_chunk.hpp"
-#include "detail/ct_parse.hpp"
-#include "detail/ct_render.hpp"
-#include "detail/bytecode.hpp"
-#include "detail/bytecode_compile.hpp"
-#include "detail/bytecode_exec.hpp"
+#include "types.hpp"
+#include "ct_chunk.hpp"
+#include "ct_parse.hpp"
+#include "ct_render.hpp"
+#include "bytecode.hpp"
+#include "bytecode_compile.hpp"
+#include "bytecode_exec.hpp"
 #include <array>
 
 namespace injamm {

@@ -34,7 +34,7 @@ CMake オプション: `INJAMM_ENABLE_THREADED_DISPATCH`（デフォルト ON、
 - `{{var}}` = HTML エスケープあり、`{{{var}}}` = 生出力（ステンシルモード）。
 - セクションの真偽: 非ゼロ数値、非空文字列、非ヌルポインタ = true。
 - `{{^section}}` = 逆セクション（偽/空のときに描画）。
-- テンプレートファイル: `include/injamm/injamm.hpp` が一次エントリポイント。`include/injamm/escape_hatch.hpp` が `bc_template`/`render` を公開。
+- テンプレートファイル: `include/injamm.hpp` が一次エントリポイント。`include/injamm/escape_hatch.hpp` が `bc_template`/`render` を公開。
 
 ## 依存関係
 

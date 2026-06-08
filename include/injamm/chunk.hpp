@@ -39,6 +39,7 @@ struct chunk_placeholder {
   bool raw = false; /**< @brief true の場合 HTML エスケープなし（{{{...}}} 記法） */
   std::vector<string_filter_entry> filters;  /**< @brief 適用する文字列フィルタの列 */
   std::vector<int_filter_entry> int_filters; /**< @brief 適用する整数フィルタの列 */
+  std::vector<float_filter_entry> float_filters; /**< @brief 適用する実数フィルタの列 */
 };
 
 /**

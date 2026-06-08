@@ -330,7 +330,8 @@ public:
       &&L_filter_int_neg,    // 41
       &&L_filter_int_mod,    // 42
       &&L_filter_int_numify, // 43
-      &&L_halt,              // 44
+      &&L_filter_float_precision, // 44
+      &&L_halt,              // 45
     };
 
 /** @brief 現在の命令のオペコードに対応するラベルにジャンプする */
@@ -872,8 +873,13 @@ public:
     /** @brief 整数絶対値変換 */
     L_filter_int_abs: {
       try {
-        long long val = std::stoll(filtered_value_);
-        filtered_value_ = std::to_string(std::abs(val));
+        if (filtered_value_.find('.') != std::string::npos || filtered_value_.find('e') != std::string::npos || filtered_value_.find('E') != std::string::npos) {
+          double val = std::stod(filtered_value_);
+          filtered_value_ = std::to_string(std::abs(val));
+        } else {
+          long long val = std::stoll(filtered_value_);
+          filtered_value_ = std::to_string(std::abs(val));
+        }
       } catch (...) {
         // 変換失敗: そのまま
       }
@@ -932,8 +938,13 @@ public:
     /** @brief 整数符号逆転 */
     L_filter_int_neg: {
       try {
-        long long val = std::stoll(filtered_value_);
-        filtered_value_ = std::to_string(-val);
+        if (filtered_value_.find('.') != std::string::npos || filtered_value_.find('e') != std::string::npos || filtered_value_.find('E') != std::string::npos) {
+          double val = std::stod(filtered_value_);
+          filtered_value_ = std::to_string(-val);
+        } else {
+          long long val = std::stoll(filtered_value_);
+          filtered_value_ = std::to_string(-val);
+        }
       } catch (...) {
         // 変換失敗: そのまま
       }
@@ -959,20 +970,73 @@ public:
     /** @brief 整数3桁カンマ区切り */
     L_filter_int_numify: {
       try {
-        long long val = std::stoll(filtered_value_);
-        bool negative = val < 0;
-        if (negative) val = -val;
-        std::string num = std::to_string(val);
-        std::string result;
-        int count = 0;
-        for (int i = num.size() - 1; i >= 0; --i) {
-          result = num[i] + result;
-          count++;
-          if (count % 3 == 0 && i > 0) {
-            result = ',' + result;
+        if (filtered_value_.find('.') != std::string::npos || filtered_value_.find('e') != std::string::npos || filtered_value_.find('E') != std::string::npos) {
+          double val = std::stod(filtered_value_);
+          bool negative = val < 0;
+          if (negative) val = -val;
+          auto int_part = static_cast<long long>(val);
+          std::string num = std::to_string(int_part);
+          std::string result;
+          int count = 0;
+          for (int i = num.size() - 1; i >= 0; --i) {
+            result = num[i] + result;
+            count++;
+            if (count % 3 == 0 && i > 0) {
+              result = ',' + result;
+            }
           }
+          auto frac = val - static_cast<double>(int_part);
+          if (frac != 0.0) {
+            auto dot_pos = filtered_value_.find('.');
+            std::size_t prec = 6;
+            if (dot_pos != std::string::npos) {
+              prec = filtered_value_.size() - dot_pos - 1;
+              if (prec > 6) prec = 6;
+              if (prec == 0) prec = 1;
+            }
+            std::ostringstream oss;
+            oss << std::fixed;
+            oss.precision(prec);
+            oss << frac;
+            auto frac_str = oss.str();
+            if (frac_str.size() > 2) {
+              frac_str = frac_str.substr(1);
+            }
+            result += frac_str;
+          }
+          filtered_value_ = negative ? "-" + result : result;
+        } else {
+          long long val = std::stoll(filtered_value_);
+          bool negative = val < 0;
+          if (negative) val = -val;
+          std::string num = std::to_string(val);
+          std::string result;
+          int count = 0;
+          for (int i = num.size() - 1; i >= 0; --i) {
+            result = num[i] + result;
+            count++;
+            if (count % 3 == 0 && i > 0) {
+              result = ',' + result;
+            }
+          }
+          filtered_value_ = negative ? "-" + result : result;
         }
-        filtered_value_ = negative ? "-" + result : result;
+      } catch (...) {
+        // 変換失敗: そのまま
+      }
+      ++pc;
+      DISPATCH();
+    }
+
+    /** @brief 実数小数点以下桁数（引数: 桁数） */
+    L_filter_float_precision: {
+      try {
+        double val = std::stod(filtered_value_);
+        std::ostringstream oss;
+        oss << std::fixed;
+        oss.precision(bc_.instructions[pc].operand);
+        oss << val;
+        filtered_value_ = oss.str();
       } catch (...) {
         // 変換失敗: そのまま
       }
@@ -1439,8 +1503,13 @@ public:
         /** @brief 整数絶対値変換 */
         case bc_opcode::filter_int_abs: {
           try {
-            long long val = std::stoll(filtered_value_);
-            filtered_value_ = std::to_string(std::abs(val));
+            if (filtered_value_.find('.') != std::string::npos || filtered_value_.find('e') != std::string::npos || filtered_value_.find('E') != std::string::npos) {
+              double val = std::stod(filtered_value_);
+              filtered_value_ = std::to_string(std::abs(val));
+            } else {
+              long long val = std::stoll(filtered_value_);
+              filtered_value_ = std::to_string(std::abs(val));
+            }
           } catch (...) {
             // 変換失敗: そのまま
           }
@@ -1499,8 +1568,13 @@ public:
         /** @brief 整数符号逆転 */
         case bc_opcode::filter_int_neg: {
           try {
-            long long val = std::stoll(filtered_value_);
-            filtered_value_ = std::to_string(-val);
+            if (filtered_value_.find('.') != std::string::npos || filtered_value_.find('e') != std::string::npos || filtered_value_.find('E') != std::string::npos) {
+              double val = std::stod(filtered_value_);
+              filtered_value_ = std::to_string(-val);
+            } else {
+              long long val = std::stoll(filtered_value_);
+              filtered_value_ = std::to_string(-val);
+            }
           } catch (...) {
             // 変換失敗: そのまま
           }
@@ -1526,20 +1600,73 @@ public:
         /** @brief 整数3桁カンマ区切り */
         case bc_opcode::filter_int_numify: {
           try {
-            long long val = std::stoll(filtered_value_);
-            bool negative = val < 0;
-            if (negative) val = -val;
-            std::string num = std::to_string(val);
-            std::string result;
-            int count = 0;
-            for (int i = num.size() - 1; i >= 0; --i) {
-              result = num[i] + result;
-              count++;
-              if (count % 3 == 0 && i > 0) {
-                result = ',' + result;
+            if (filtered_value_.find('.') != std::string::npos || filtered_value_.find('e') != std::string::npos || filtered_value_.find('E') != std::string::npos) {
+              double val = std::stod(filtered_value_);
+              bool negative = val < 0;
+              if (negative) val = -val;
+              auto int_part = static_cast<long long>(val);
+              std::string num = std::to_string(int_part);
+              std::string result;
+              int count = 0;
+              for (int i = num.size() - 1; i >= 0; --i) {
+                result = num[i] + result;
+                count++;
+                if (count % 3 == 0 && i > 0) {
+                  result = ',' + result;
+                }
               }
+              auto frac = val - static_cast<double>(int_part);
+              if (frac != 0.0) {
+                auto dot_pos = filtered_value_.find('.');
+                std::size_t prec = 6;
+                if (dot_pos != std::string::npos) {
+                  prec = filtered_value_.size() - dot_pos - 1;
+                  if (prec > 6) prec = 6;
+                  if (prec == 0) prec = 1;
+                }
+                std::ostringstream oss;
+                oss << std::fixed;
+                oss.precision(prec);
+                oss << frac;
+                auto frac_str = oss.str();
+                if (frac_str.size() > 2) {
+                  frac_str = frac_str.substr(1);
+                }
+                result += frac_str;
+              }
+              filtered_value_ = negative ? "-" + result : result;
+            } else {
+              long long val = std::stoll(filtered_value_);
+              bool negative = val < 0;
+              if (negative) val = -val;
+              std::string num = std::to_string(val);
+              std::string result;
+              int count = 0;
+              for (int i = num.size() - 1; i >= 0; --i) {
+                result = num[i] + result;
+                count++;
+                if (count % 3 == 0 && i > 0) {
+                  result = ',' + result;
+                }
+              }
+              filtered_value_ = negative ? "-" + result : result;
             }
-            filtered_value_ = negative ? "-" + result : result;
+          } catch (...) {
+            // 変換失敗: そのまま
+          }
+          ++pc;
+          break;
+        }
+
+        /** @brief 実数小数点以下桁数（引数: 桁数） */
+        case bc_opcode::filter_float_precision: {
+          try {
+            double val = std::stod(filtered_value_);
+            std::ostringstream oss;
+            oss << std::fixed;
+            oss.precision(instr.operand);
+            oss << val;
+            filtered_value_ = oss.str();
           } catch (...) {
             // 変換失敗: そのまま
           }

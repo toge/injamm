@@ -124,6 +124,25 @@ namespace injamm::detail {
 }
 
 /**
+ * @brief フィルタ名文字列を float_filter 列挙値に変換する
+ * @param name フィルタ名（"numify" / "precision" / "abs" / "neg"）
+ * @return 対応する float_filter 列挙値、未知の場合は std::nullopt
+ */
+[[nodiscard]] constexpr std::optional<float_filter_entry> parse_float_filter(std::string_view name) noexcept {
+  auto paren = name.find('(');
+  if (paren != std::string_view::npos && name.back() == ')') {
+    auto fname = name.substr(0, paren);
+    auto arg_str = name.substr(paren + 1, name.size() - paren - 2);
+    int arg = 0;
+    for (auto c : arg_str) {
+      if (c >= '0' && c <= '9') arg = arg * 10 + (c - '0');
+    }
+    if (fname == "precision") return float_filter_entry{float_filter::precision, arg};
+  }
+  return std::nullopt;
+}
+
+/**
  * @brief if ボディ内のトップレベル {{else}} の位置を検索する
  * @param body if ボディ文字列
  * @return {{else}} の開始位置、見つからない場合は std::string_view::npos
@@ -233,6 +252,7 @@ constexpr void parse_into(Container& result, std::string_view tmpl) {
       auto actual_key = parts[0];
       std::vector<string_filter_entry> filters;
       std::vector<int_filter_entry> int_filters;
+      std::vector<float_filter_entry> float_filters;
       bool error = false;
       for (std::size_t fi = 1; fi < parts.size(); ++fi) {
         auto sf = parse_string_filter(parts[fi]);
@@ -245,13 +265,18 @@ constexpr void parse_into(Container& result, std::string_view tmpl) {
           int_filters.push_back(*ifl);
           continue;
         }
+        auto ffl = parse_float_filter(parts[fi]);
+        if (ffl) {
+          float_filters.push_back(*ffl);
+          continue;
+        }
         result.push_back(chunk_literal{std::string{"ERROR_UNKNOWN_FILTER"}});
         pos = end + 3;
         error = true;
         break;
       }
       if (!error) {
-        result.push_back(chunk_placeholder{std::string{actual_key}, true, std::move(filters), std::move(int_filters)});
+        result.push_back(chunk_placeholder{std::string{actual_key}, true, std::move(filters), std::move(int_filters), std::move(float_filters)});
       }
       pos = end + 3;
       continue;
@@ -501,6 +526,7 @@ constexpr void parse_into(Container& result, std::string_view tmpl) {
     auto filter_key = parts[0];
     std::vector<string_filter_entry> filters;
     std::vector<int_filter_entry> int_filters;
+    std::vector<float_filter_entry> float_filters;
     for (std::size_t fi = 1; fi < parts.size(); ++fi) {
       auto sf = parse_string_filter(parts[fi]);
       if (sf) {
@@ -512,10 +538,15 @@ constexpr void parse_into(Container& result, std::string_view tmpl) {
         int_filters.push_back(*ifl);
         continue;
       }
+      auto ffl = parse_float_filter(parts[fi]);
+      if (ffl) {
+        float_filters.push_back(*ffl);
+        continue;
+      }
       result.push_back(chunk_literal{std::string{"ERROR_UNKNOWN_FILTER"}});
       return;
     }
-    result.push_back(chunk_placeholder{std::string{filter_key}, false, std::move(filters), std::move(int_filters)});
+    result.push_back(chunk_placeholder{std::string{filter_key}, false, std::move(filters), std::move(int_filters), std::move(float_filters)});
   }
 }
 

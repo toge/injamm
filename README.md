@@ -69,8 +69,7 @@ struct glz::meta<User> {
 `bc_template<T>` にテンプレート文字列を渡し、`.render(value)` でレンダリングする。セクション、if/else、@index/@first/@last、ネストパスのすべてに対応。
 
 ```cpp
-#include "injamm/injamm.hpp"
-#include "injamm/escape_hatch.hpp"
+#include "injamm.hpp"
 
 auto bc = injamm::bc_template<User>("{{name}} ({{age}})");
 auto r = bc.render(User{"Alice", 30});
@@ -90,8 +89,7 @@ auto r = injamm::render<kTmpl>(User{"Bob", 25});
 ### 完全な例
 
 ```cpp
-#include "injamm/injamm.hpp"
-#include "injamm/escape_hatch.hpp"
+#include "injamm.hpp"
 #include <glaze/glaze.hpp>
 #include <iostream>
 #include <vector>

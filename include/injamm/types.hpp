@@ -1,6 +1,7 @@
 #pragma once
 
 #include <cstddef>
+#include <expected>
 #include <ostream>
 #include <string_view>
 
@@ -44,5 +45,15 @@ struct mustache_tag {};
 
 inline constexpr stencil_tag stencil_v{};
 inline constexpr mustache_tag mustache_v{};
+
+/** @brief 結果型エイリアス
+ *
+ *  テンプレートレンダリングの戻り値型。
+ *  成功時は T、失敗時は error_ctx を保持する。
+ *
+ *  @tparam T 成功時の値の型
+ */
+template <class T>
+using expected = std::expected<T, error_ctx>;
 
 } // namespace injamm

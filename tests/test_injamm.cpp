@@ -1,7 +1,6 @@
-#include <catch2/catch_test_macros.hpp>
-#include "injamm/injamm.hpp"
-#include "injamm/escape_hatch.hpp"
+#include "injamm.hpp"
 #include <glaze/glaze.hpp>
+#include <catch2/catch_test_macros.hpp>
 #include <vector>
 
 // ---- テスト用データ型 ----
@@ -114,6 +113,20 @@ struct glz::meta<BcNested> {
 template <>
 struct glz::meta<BcOuter> {
   static constexpr auto value = glz::object("items", &BcOuter::items);
+};
+
+/**
+ * @brief 実数フィルタテスト用データ型
+ * @details double 型のフィールドを持ち、実数フィルタのテストに使用する。
+ */
+struct BcFloatData {
+  double value{}; /**< 実数値 */
+};
+
+/** @brief Glaze メタ情報: BcFloatData の JSON シリアライズ定義 */
+template <>
+struct glz::meta<BcFloatData> {
+  static constexpr auto value = glz::object("value", &BcFloatData::value);
 };
 
 // ---- テストケース ----
@@ -828,5 +841,111 @@ TEST_CASE("deeply nested: if inside section", "[if][section]") {
   auto result = bc.render(data);
   REQUIRE(result);
   REQUIRE(*result == "First: AliceOther: Bob");
+}
+
+// ---- 実数フィルタテスト ----
+
+TEST_CASE("float_filter: abs positive", "[float_filter]") {
+  BcFloatData data{3.14};
+  auto bc = injamm::bc_template<BcFloatData>("{{value | abs}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "3.14");
+}
+
+TEST_CASE("float_filter: abs negative", "[float_filter]") {
+  BcFloatData data{-3.14};
+  auto bc = injamm::bc_template<BcFloatData>("{{value | abs}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "3.14");
+}
+
+TEST_CASE("float_filter: neg positive", "[float_filter]") {
+  BcFloatData data{3.14};
+  auto bc = injamm::bc_template<BcFloatData>("{{value | neg}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "-3.14");
+}
+
+TEST_CASE("float_filter: neg negative", "[float_filter]") {
+  BcFloatData data{-3.14};
+  auto bc = injamm::bc_template<BcFloatData>("{{value | neg}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "3.14");
+}
+
+TEST_CASE("float_filter: precision", "[float_filter]") {
+  BcFloatData data{3.14159265};
+  auto bc = injamm::bc_template<BcFloatData>("{{value | precision(2)}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "3.14");
+}
+
+TEST_CASE("float_filter: precision zero", "[float_filter]") {
+  BcFloatData data{3.14159265};
+  auto bc = injamm::bc_template<BcFloatData>("{{value | precision(0)}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "3");
+}
+
+TEST_CASE("float_filter: precision four", "[float_filter]") {
+  BcFloatData data{3.14159265};
+  auto bc = injamm::bc_template<BcFloatData>("{{value | precision(4)}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "3.1416");
+}
+
+TEST_CASE("float_filter: numify integer", "[float_filter]") {
+  BcFloatData data{1234567.0};
+  auto bc = injamm::bc_template<BcFloatData>("{{value | numify}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "1,234,567");
+}
+
+TEST_CASE("float_filter: numify fractional", "[float_filter]") {
+  BcFloatData data{1234567.89};
+  auto bc = injamm::bc_template<BcFloatData>("{{value | numify}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "1,234,567.89");
+}
+
+TEST_CASE("float_filter: numify negative", "[float_filter]") {
+  BcFloatData data{-9876.54};
+  auto bc = injamm::bc_template<BcFloatData>("{{value | numify}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "-9,876.54");
+}
+
+TEST_CASE("float_filter: numify small", "[float_filter]") {
+  BcFloatData data{123.45};
+  auto bc = injamm::bc_template<BcFloatData>("{{value | numify}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "123.45");
+}
+
+TEST_CASE("float_filter: chaining", "[float_filter]") {
+  BcFloatData data{-1234.5678};
+  auto bc = injamm::bc_template<BcFloatData>("{{value | abs | precision(2)}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "1234.57");
+}
+
+TEST_CASE("float_filter: abs zero", "[float_filter]") {
+  BcFloatData data{0.0};
+  auto bc = injamm::bc_template<BcFloatData>("{{value | abs}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "0");
 }
 

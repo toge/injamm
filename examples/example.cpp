@@ -1,5 +1,4 @@
-#include "injamm/injamm.hpp"
-#include "injamm/escape_hatch.hpp"
+#include "injamm.hpp"
 #include <glaze/glaze.hpp>
 #include <iostream>
 #include <vector>
