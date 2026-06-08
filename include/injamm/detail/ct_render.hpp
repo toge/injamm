@@ -6,8 +6,11 @@
 #include "loop_state.hpp"
 #include "resolve.hpp"
 #include "serialize_value.hpp"
+#include <cmath>
 #include <expected>
 #include <glaze/glaze.hpp>
+#include <sstream>
+#include <string>
 #include <string_view>
 
 namespace injamm::detail {
@@ -66,6 +69,222 @@ constexpr void ct_render_literal(Buffer& out, ct_parsed_template<N> const& chunk
 }
 
 /**
+ * @brief 文字列フィルタを適用する
+ * @param str 対象の文字列
+ * @param filter 適用するフィルタの種別
+ */
+constexpr void apply_string_filter(std::string& str, string_filter_entry entry) {
+  switch (entry.filter) {
+    case string_filter::upper:
+      for (auto& c : str) {
+        if (c >= 'a' && c <= 'z') c -= 32;
+      }
+      break;
+    case string_filter::lower:
+      for (auto& c : str) {
+        if (c >= 'A' && c <= 'Z') c += 32;
+      }
+      break;
+    case string_filter::capitalize:
+      if (!str.empty() && str[0] >= 'a' && str[0] <= 'z') {
+        str[0] -= 32;
+      }
+      break;
+    case string_filter::title: {
+      bool new_word = true;
+      for (auto& c : str) {
+        if (c == ' ' || c == '\t') {
+          new_word = true;
+        } else if (new_word && c >= 'a' && c <= 'z') {
+          c -= 32;
+          new_word = false;
+        } else {
+          new_word = false;
+        }
+      }
+      break;
+    }
+    case string_filter::trim: {
+      auto start = str.find_first_not_of(" \t");
+      if (start == std::string::npos) {
+        str.clear();
+      } else {
+        auto end = str.find_last_not_of(" \t");
+        str = str.substr(start, end - start + 1);
+      }
+      break;
+    }
+    case string_filter::ltrim: {
+      auto start = str.find_first_not_of(" \t");
+      if (start == std::string::npos) {
+        str.clear();
+      } else {
+        str = str.substr(start);
+      }
+      break;
+    }
+    case string_filter::rtrim: {
+      auto end = str.find_last_not_of(" \t");
+      if (end == std::string::npos) {
+        str.clear();
+      } else {
+        str = str.substr(0, end + 1);
+      }
+      break;
+    }
+    case string_filter::left: {
+      auto width = entry.arg1;
+      if (str.size() < static_cast<std::size_t>(width)) {
+        auto pad = width - str.size();
+        str = std::string(pad, ' ') + str;
+      }
+      break;
+    }
+    case string_filter::right: {
+      auto width = entry.arg1;
+      if (str.size() < static_cast<std::size_t>(width)) {
+        auto pad = width - str.size();
+        str = str + std::string(pad, ' ');
+      }
+      break;
+    }
+    case string_filter::center: {
+      auto width = entry.arg1;
+      if (str.size() < static_cast<std::size_t>(width)) {
+        auto pad = width - str.size();
+        auto left_pad = pad / 2;
+        auto right_pad = pad - left_pad;
+        str = std::string(left_pad, ' ') + str + std::string(right_pad, ' ');
+      }
+      break;
+    }
+    case string_filter::truncate: {
+      auto max_len = entry.arg1;
+      if (str.size() > static_cast<std::size_t>(max_len) && max_len >= 3) {
+        str = str.substr(0, max_len - 3) + "...";
+      } else if (str.size() > static_cast<std::size_t>(max_len)) {
+        str = str.substr(0, max_len);
+      }
+      break;
+    }
+    case string_filter::substr: {
+      auto start = entry.arg1;
+      auto length = entry.arg2;
+      if (start >= 0 && static_cast<std::size_t>(start) < str.size()) {
+        if (length > 0) {
+          str = str.substr(start, length);
+        } else {
+          str = str.substr(start);
+        }
+      } else {
+        str.clear();
+      }
+      break;
+    }
+  }
+}
+
+/**
+ * @brief 整数フィルタを適用する
+ * @param str 対象の文字列
+ * @param entry 適用するフィルタの種別と引数
+ */
+constexpr void apply_int_filter(std::string& str, int_filter_entry entry) {
+  switch (entry.filter) {
+    case int_filter::abs: {
+      try {
+        long long val = std::stoll(str);
+        str = std::to_string(std::abs(val));
+      } catch (...) {
+        // 変換失敗: そのまま
+      }
+      break;
+    }
+    case int_filter::hex: {
+      try {
+        long long val = std::stoll(str);
+        std::ostringstream oss;
+        oss << std::hex << val;
+        str = oss.str();
+      } catch (...) {
+        // 変換失敗: そのまま
+      }
+      break;
+    }
+    case int_filter::oct: {
+      try {
+        long long val = std::stoll(str);
+        std::ostringstream oss;
+        oss << std::oct << val;
+        str = oss.str();
+      } catch (...) {
+        // 変換失敗: そのまま
+      }
+      break;
+    }
+    case int_filter::bin: {
+      try {
+        long long val = std::stoll(str);
+        str = "";
+        if (val == 0) {
+          str = "0";
+        } else {
+          while (val > 0) {
+            str = (val % 2 == 0 ? "0" : "1") + str;
+            val /= 2;
+          }
+        }
+      } catch (...) {
+        // 変換失敗: そのまま
+      }
+      break;
+    }
+    case int_filter::neg: {
+      try {
+        long long val = std::stoll(str);
+        str = std::to_string(-val);
+      } catch (...) {
+        // 変換失敗: そのまま
+      }
+      break;
+    }
+    case int_filter::mod: {
+      try {
+        long long val = std::stoll(str);
+        auto divisor = entry.arg;
+        if (divisor != 0) {
+          str = std::to_string(val % divisor);
+        }
+      } catch (...) {
+        // 変換失敗: そのまま
+      }
+      break;
+    }
+    case int_filter::numify: {
+      try {
+        long long val = std::stoll(str);
+        bool negative = val < 0;
+        if (negative) val = -val;
+        std::string num = std::to_string(val);
+        std::string result;
+        int count = 0;
+        for (int i = num.size() - 1; i >= 0; --i) {
+          result = num[i] + result;
+          count++;
+          if (count % 3 == 0 && i > 0) {
+            result = ',' + result;
+          }
+        }
+        str = negative ? "-" + result : result;
+      } catch (...) {
+        // 変換失敗: そのまま
+      }
+      break;
+    }
+  }
+}
+
+/**
  * @brief プレースホルダ（{{var}} / {{{var}}}）をレンダリングする
  * @details キーの種類に応じて以下の分岐を行う:
  *          - `@root.field`: ルートオブジェクトのフィールドを解決
@@ -92,6 +311,36 @@ constexpr auto ct_render_placeholder(Buffer& out, ct_parsed_template<N> const& c
     -> std::expected<void, error_ctx> {
   auto const key = chunks.texts[i];
   bool raw = chunks.flags[i] != 0;
+
+  auto const& filters = chunks.filters[i];
+  auto const& int_filters = chunks.int_filters[i];
+
+  // フィルタが存在する場合
+  if (!filters.empty() || !int_filters.empty()) {
+    std::string tmp;
+    if (!resolve_value(tmp, key, value, loop)) {
+      return std::unexpected(error_ctx{.ec = error_code::unknown_key});
+    }
+    // 文字列フィルタ適用
+    for (auto f : filters) {
+      apply_string_filter(tmp, f);
+    }
+    // 整数フィルタ適用
+    for (auto f : int_filters) {
+      apply_int_filter(tmp, f);
+    }
+    // 出力
+    if constexpr (std::is_same_v<Mode, mustache_tag>) {
+      if (!raw) {
+        html_escape_into(out, std::string_view{tmp});
+      } else {
+        out.append(tmp);
+      }
+    } else {
+      out.append(tmp);
+    }
+    return {};
+  }
 
   /**
    * @brief `@root.field` 形式の処理

@@ -34,11 +34,12 @@ struct ct_parse_context {
    * @brief プレースホルダチャンクを追加する
    * @param key 変数キー（例: "name"）
    * @param raw 生出力モード（{{{var}}} の場合に true）
+   * @param filter_list 適用するフィルタのリスト
    * @return 追加されたチャンクのインデックス
    */
-  constexpr std::size_t push_placeholder(std::string_view key, bool raw) {
+  constexpr std::size_t push_placeholder(std::string_view key, bool raw, std::vector<string_filter_entry> filter_list = {}, std::vector<int_filter_entry> int_filter_list = {}) {
     auto idx = tmpl.size;
-    tmpl.push_placeholder(key, raw);
+    tmpl.push_placeholder(key, raw, std::move(filter_list), std::move(int_filter_list));
     return idx;
   }
 
@@ -202,8 +203,24 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
         continue;
       }
       /** @brief {{{ と }}} の間をキーとして raw プレースホルダを追加 */
-      auto key = trim_sv(tmpl.substr(tag_start + 3, end - tag_start - 3));
-      ctx.push_placeholder(key, true);
+      auto raw_key = trim_sv(tmpl.substr(tag_start + 3, end - tag_start - 3));
+      auto parts = split_by_pipe(raw_key);
+      auto actual_key = parts[0];
+      std::vector<string_filter_entry> filter_list;
+      std::vector<int_filter_entry> int_filter_list;
+      for (std::size_t fi = 1; fi < parts.size(); ++fi) {
+        auto sf = parse_string_filter(parts[fi]);
+        if (sf) {
+          filter_list.push_back(*sf);
+          continue;
+        }
+        auto ifl = parse_int_filter(parts[fi]);
+        if (ifl) {
+          int_filter_list.push_back(*ifl);
+          continue;
+        }
+      }
+      ctx.push_placeholder(actual_key, true, std::move(filter_list), std::move(int_filter_list));
       pos = end + 3;
       continue;
     }
@@ -535,7 +552,25 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
     }
 
     // -- 通常のプレースホルダ --
-    ctx.push_placeholder(inner, false);
+    {
+      auto parts = split_by_pipe(inner);
+      auto key = parts[0];
+      std::vector<string_filter_entry> filter_list;
+      std::vector<int_filter_entry> int_filter_list;
+      for (std::size_t fi = 1; fi < parts.size(); ++fi) {
+        auto sf = parse_string_filter(parts[fi]);
+        if (sf) {
+          filter_list.push_back(*sf);
+          continue;
+        }
+        auto ifl = parse_int_filter(parts[fi]);
+        if (ifl) {
+          int_filter_list.push_back(*ifl);
+          continue;
+        }
+      }
+      ctx.push_placeholder(key, false, std::move(filter_list), std::move(int_filter_list));
+    }
   }
 }
 

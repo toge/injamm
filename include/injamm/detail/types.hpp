@@ -18,6 +18,7 @@ enum class error_code : int {
   syntax_error = 4,     /**< 構文エラー */
   type_mismatch = 5,    /**< 型不一致 */
   invalid_utf8 = 6,     /**< 不正な UTF-8 */
+  unknown_filter = 7,   /**< 不明なフィルタ名 */
 };
 
 /** @brief error_code をストリームに出力するためのオーバーロード */

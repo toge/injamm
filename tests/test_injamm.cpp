@@ -553,3 +553,235 @@ TEST_CASE("bc_struct_iteration_nested", "[injamm]") {
   REQUIRE(*r == "kk");
 }
 
+// ---- フィルタテスト ----
+
+TEST_CASE("filter: upper", "[filter]") {
+  BcUser data{"hello world", 30};
+  auto bc = injamm::bc_template<BcUser>("{{name | upper}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "HELLO WORLD");
+}
+
+TEST_CASE("filter: lower", "[filter]") {
+  BcUser data{"HELLO WORLD", 30};
+  auto bc = injamm::bc_template<BcUser>("{{name | lower}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "hello world");
+}
+
+TEST_CASE("filter: capitalize", "[filter]") {
+  BcUser data{"hello world", 30};
+  auto bc = injamm::bc_template<BcUser>("{{name | capitalize}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "Hello world");
+}
+
+TEST_CASE("filter: title", "[filter]") {
+  BcUser data{"hello world", 30};
+  auto bc = injamm::bc_template<BcUser>("{{name | title}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "Hello World");
+}
+
+TEST_CASE("filter: trim", "[filter]") {
+  BcUser data{"  hello  ", 30};
+  auto bc = injamm::bc_template<BcUser>("{{name | trim}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "hello");
+}
+
+TEST_CASE("filter: ltrim", "[filter]") {
+  BcUser data{"  hello  ", 30};
+  auto bc = injamm::bc_template<BcUser>("{{name | ltrim}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "hello  ");
+}
+
+TEST_CASE("filter: rtrim", "[filter]") {
+  BcUser data{"  hello  ", 30};
+  auto bc = injamm::bc_template<BcUser>("{{name | rtrim}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "  hello");
+}
+
+TEST_CASE("filter: chaining", "[filter]") {
+  BcUser data{"  hello  ", 30};
+  auto bc = injamm::bc_template<BcUser>("{{name | trim | upper}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "HELLO");
+}
+
+TEST_CASE("filter: raw output", "[filter]") {
+  BcUser data{"  <script>  ", 30};
+  auto bc = injamm::bc_template<BcUser>("{{{name | trim}}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "<script>");
+}
+
+// ---- 整数フィルタテスト ----
+
+TEST_CASE("int_filter: abs positive", "[int_filter]") {
+  BcIfData data{"test", 42};
+  auto bc = injamm::bc_template<BcIfData>("{{age | abs}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "42");
+}
+
+TEST_CASE("int_filter: abs negative", "[int_filter]") {
+  BcIfData data{"test", -42};
+  auto bc = injamm::bc_template<BcIfData>("{{age | abs}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "42");
+}
+
+TEST_CASE("int_filter: hex", "[int_filter]") {
+  BcIfData data{"test", 255};
+  auto bc = injamm::bc_template<BcIfData>("{{age | hex}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "ff");
+}
+
+TEST_CASE("int_filter: oct", "[int_filter]") {
+  BcIfData data{"test", 64};
+  auto bc = injamm::bc_template<BcIfData>("{{age | oct}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "100");
+}
+
+TEST_CASE("int_filter: bin", "[int_filter]") {
+  BcIfData data{"test", 10};
+  auto bc = injamm::bc_template<BcIfData>("{{age | bin}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "1010");
+}
+
+TEST_CASE("int_filter: bin zero", "[int_filter]") {
+  BcIfData data{"test", 0};
+  auto bc = injamm::bc_template<BcIfData>("{{age | bin}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "0");
+}
+
+// ---- 引数付き文字列フィルタテスト ----
+
+TEST_CASE("filter: left", "[filter]") {
+  BcUser data{"hi", 30};
+  auto bc = injamm::bc_template<BcUser>("{{name | left(5)}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "   hi");
+}
+
+TEST_CASE("filter: right", "[filter]") {
+  BcUser data{"hi", 30};
+  auto bc = injamm::bc_template<BcUser>("{{name | right(5)}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "hi   ");
+}
+
+TEST_CASE("filter: center", "[filter]") {
+  BcUser data{"hi", 30};
+  auto bc = injamm::bc_template<BcUser>("{{name | center(6)}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "  hi  ");
+}
+
+TEST_CASE("filter: truncate short", "[filter]") {
+  BcUser data{"hello", 30};
+  auto bc = injamm::bc_template<BcUser>("{{name | truncate(10)}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "hello");
+}
+
+TEST_CASE("filter: truncate long", "[filter]") {
+  BcUser data{"hello world", 30};
+  auto bc = injamm::bc_template<BcUser>("{{name | truncate(8)}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "hello...");
+}
+
+TEST_CASE("filter: substr one arg", "[filter]") {
+  BcUser data{"hello", 30};
+  auto bc = injamm::bc_template<BcUser>("{{name | substr(2)}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "llo");
+}
+
+TEST_CASE("filter: substr two args", "[filter]") {
+  BcUser data{"hello", 30};
+  auto bc = injamm::bc_template<BcUser>("{{name | substr(1,3)}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "ell");
+}
+
+// ---- 新しい整数フィルタテスト ----
+
+TEST_CASE("int_filter: neg positive", "[int_filter]") {
+  BcIfData data{"test", 42};
+  auto bc = injamm::bc_template<BcIfData>("{{age | neg}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "-42");
+}
+
+TEST_CASE("int_filter: neg negative", "[int_filter]") {
+  BcIfData data{"test", -10};
+  auto bc = injamm::bc_template<BcIfData>("{{age | neg}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "10");
+}
+
+TEST_CASE("int_filter: mod", "[int_filter]") {
+  BcIfData data{"test", 17};
+  auto bc = injamm::bc_template<BcIfData>("{{age | mod(5)}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "2");
+}
+
+TEST_CASE("int_filter: numify", "[int_filter]") {
+  BcIfData data{"test", 1234567};
+  auto bc = injamm::bc_template<BcIfData>("{{age | numify}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "1,234,567");
+}
+
+TEST_CASE("int_filter: numify small", "[int_filter]") {
+  BcIfData data{"test", 123};
+  auto bc = injamm::bc_template<BcIfData>("{{age | numify}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "123");
+}
+
+TEST_CASE("int_filter: numify negative", "[int_filter]") {
+  BcIfData data{"test", -9876};
+  auto bc = injamm::bc_template<BcIfData>("{{age | numify}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "-9,876");
+}
+

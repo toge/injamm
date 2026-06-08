@@ -1,5 +1,6 @@
 #pragma once
 
+#include "bytecode.hpp"
 #include <string>
 #include <variant>
 #include <vector>
@@ -36,6 +37,8 @@ struct chunk_literal {
 struct chunk_placeholder {
   std::string key;
   bool raw = false; /**< @brief true の場合 HTML エスケープなし（{{{...}}} 記法） */
+  std::vector<string_filter_entry> filters;  /**< @brief 適用する文字列フィルタの列 */
+  std::vector<int_filter_entry> int_filters; /**< @brief 適用する整数フィルタの列 */
 };
 
 /**

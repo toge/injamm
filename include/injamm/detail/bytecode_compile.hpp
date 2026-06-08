@@ -56,24 +56,63 @@ class bc_compiler {
    * @brief 変数参照命令を発行する
    * @details 直前が emit_literal の場合は融合命令 emit_litvar / emit_litvar_raw に置き換える。
    *          これにより実行時の命令デコード回数が削減される。
+   *          フィルタが指定されている場合は resolve_filtered → filter_* → emit_filtered パスを使用する。
    * @param key 変数名
    * @param raw 生出力（エスケープなし）フラグ
+   * @param filters 適用する文字列フィルタの列
    */
-  void emit_var(std::string_view key, bool raw) {
+  void emit_var(std::string_view key, bool raw, std::vector<string_filter_entry> filters = {}, std::vector<int_filter_entry> int_filters = {}) {
     auto idx = bc_.add_var_ref(key);
     auto field_idx = resolve_field_index<T>(key);
     if (field_idx != UINT32_MAX) {
       bc_.set_field_index(idx, field_idx);
     }
-    if (!bc_.instructions.empty()) {
-      auto& last = bc_.instructions.back();
-      if (last.op == bc_opcode::emit_literal) {
-        last.op = raw ? bc_opcode::emit_litvar_raw : bc_opcode::emit_litvar;
-        last.operand2 = idx;
-        return;
+    bc_.var_refs[idx].filters = filters;
+    bc_.var_refs[idx].int_filters = int_filters;
+    // フィルタの有無で分岐
+    if (filters.empty() && int_filters.empty()) {
+      // 既存の高速パス（変更なし）
+      if (!bc_.instructions.empty()) {
+        auto& last = bc_.instructions.back();
+        if (last.op == bc_opcode::emit_literal) {
+          last.op = raw ? bc_opcode::emit_litvar_raw : bc_opcode::emit_litvar;
+          last.operand2 = idx;
+          return;
+        }
       }
+      bc_.add_instruction(raw ? bc_opcode::emit_var_raw : bc_opcode::emit_var, idx);
+    } else {
+      // フィルタ専用パス
+      bc_.add_instruction(bc_opcode::resolve_filtered, 0, idx);
+      for (auto f : filters) {
+        switch (f.filter) {
+          case string_filter::upper:      bc_.add_instruction(bc_opcode::filter_upper); break;
+          case string_filter::lower:      bc_.add_instruction(bc_opcode::filter_lower); break;
+          case string_filter::capitalize: bc_.add_instruction(bc_opcode::filter_capitalize); break;
+          case string_filter::title:      bc_.add_instruction(bc_opcode::filter_title); break;
+          case string_filter::trim:       bc_.add_instruction(bc_opcode::filter_trim); break;
+          case string_filter::ltrim:      bc_.add_instruction(bc_opcode::filter_ltrim); break;
+          case string_filter::rtrim:      bc_.add_instruction(bc_opcode::filter_rtrim); break;
+          case string_filter::left:       bc_.add_instruction(bc_opcode::filter_left, f.arg1); break;
+          case string_filter::right:      bc_.add_instruction(bc_opcode::filter_right, f.arg1); break;
+          case string_filter::center:     bc_.add_instruction(bc_opcode::filter_center, f.arg1); break;
+          case string_filter::truncate:   bc_.add_instruction(bc_opcode::filter_truncate, f.arg1); break;
+          case string_filter::substr:     bc_.add_instruction(bc_opcode::filter_substr, f.arg1, f.arg2); break;
+        }
+      }
+      for (auto f : int_filters) {
+        switch (f.filter) {
+          case int_filter::abs:    bc_.add_instruction(bc_opcode::filter_int_abs); break;
+          case int_filter::hex:    bc_.add_instruction(bc_opcode::filter_int_hex); break;
+          case int_filter::oct:    bc_.add_instruction(bc_opcode::filter_int_oct); break;
+          case int_filter::bin:    bc_.add_instruction(bc_opcode::filter_int_bin); break;
+          case int_filter::neg:    bc_.add_instruction(bc_opcode::filter_int_neg); break;
+          case int_filter::mod:    bc_.add_instruction(bc_opcode::filter_int_mod, f.arg); break;
+          case int_filter::numify: bc_.add_instruction(bc_opcode::filter_int_numify); break;
+        }
+      }
+      bc_.add_instruction(raw ? bc_opcode::emit_filtered_raw : bc_opcode::emit_filtered);
     }
-    bc_.add_instruction(raw ? bc_opcode::emit_var_raw : bc_opcode::emit_var, idx);
   }
 
   /**
@@ -257,10 +296,26 @@ class bc_compiler {
           continue;
         }
         auto key = trim_sv(tmpl_.substr(tag_start + 3, end - tag_start - 3));
-        if (key.starts_with("@root.")) {
-          emit_root_field(key, true);
+        auto parts = split_by_pipe(key);
+        auto actual_key = parts[0];
+        std::vector<string_filter_entry> filters;
+        std::vector<int_filter_entry> int_filters;
+        for (std::size_t fi = 1; fi < parts.size(); ++fi) {
+          auto sf = parse_string_filter(parts[fi]);
+          if (sf) {
+            filters.push_back(*sf);
+            continue;
+          }
+          auto ifl = parse_int_filter(parts[fi]);
+          if (ifl) {
+            int_filters.push_back(*ifl);
+            continue;
+          }
+        }
+        if (actual_key.starts_with("@root.")) {
+          emit_root_field(actual_key, true);
         } else {
-          emit_var(key, true);
+          emit_var(actual_key, true, std::move(filters), std::move(int_filters));
         }
         pos_ = end + 3;
         continue;
@@ -337,8 +392,26 @@ class bc_compiler {
         continue;
       }
 
-      /** @brief {{var}} 通常変数 */
-      emit_var(inner, false);
+      /** @brief {{var}} 通常変数（フィルタ対応） */
+      {
+        auto parts = split_by_pipe(inner);
+        auto key = parts[0];
+        std::vector<string_filter_entry> filters;
+        std::vector<int_filter_entry> int_filters;
+        for (std::size_t fi = 1; fi < parts.size(); ++fi) {
+          auto sf = parse_string_filter(parts[fi]);
+          if (sf) {
+            filters.push_back(*sf);
+            continue;
+          }
+          auto ifl = parse_int_filter(parts[fi]);
+          if (ifl) {
+            int_filters.push_back(*ifl);
+            continue;
+          }
+        }
+        emit_var(key, false, std::move(filters), std::move(int_filters));
+      }
     }
   }
 
@@ -427,8 +500,26 @@ class bc_compiler {
         continue;
       }
 
-      /** @brief {{var}} 通常変数 */
-      emit_var(inner, false);
+      /** @brief {{var}} 通常変数（フィルタ対応） */
+      {
+        auto parts = split_by_pipe(inner);
+        auto key = parts[0];
+        std::vector<string_filter_entry> filters;
+        std::vector<int_filter_entry> int_filters;
+        for (std::size_t fi = 1; fi < parts.size(); ++fi) {
+          auto sf = parse_string_filter(parts[fi]);
+          if (sf) {
+            filters.push_back(*sf);
+            continue;
+          }
+          auto ifl = parse_int_filter(parts[fi]);
+          if (ifl) {
+            int_filters.push_back(*ifl);
+            continue;
+          }
+        }
+        emit_var(key, false, std::move(filters), std::move(int_filters));
+      }
     }
     return false;
   }

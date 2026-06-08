@@ -5,6 +5,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <string_view>
+#include <vector>
 
 namespace injamm::detail {
 
@@ -49,6 +50,8 @@ struct ct_parsed_template {
   std::array<std::size_t, N> else_starts{};      /**< @brief else 節の開始インデックス（if_else 用） */
   std::array<std::size_t, N> else_ends{};        /**< @brief else 節の終了インデックス（if_else 用） */
   std::array<std::uint8_t, N> flags{};           /**< @brief 汎用フラグ（raw / kind / inverted の兼用） */
+  std::array<std::vector<string_filter_entry>, N> filters{}; /**< @brief 各プレースホルダに適用する文字列フィルタリスト */
+  std::array<std::vector<int_filter_entry>, N> int_filters{}; /**< @brief 各プレースホルダに適用する整数フィルタリスト */
   std::size_t size = 0;                          /**< @brief 現在の有効チャンク数 */
 
   /**
@@ -69,12 +72,16 @@ struct ct_parsed_template {
    *
    * @param key 変数キー
    * @param raw true の場合は HTML エスケープなし（{{{...}}}）
+   * @param filter_list 適用する文字列フィルタのリスト
+   * @param int_filter_list 適用する整数フィルタのリスト
    */
-  constexpr void push_placeholder(std::string_view key, bool raw) {
+  constexpr void push_placeholder(std::string_view key, bool raw, std::vector<string_filter_entry> filter_list = {}, std::vector<int_filter_entry> int_filter_list = {}) {
     if (size < N) {
       kinds[size] = ct_chunk_kind::placeholder;
       texts[size] = key;
       flags[size] = raw ? 1 : 0;
+      filters[size] = std::move(filter_list);
+      int_filters[size] = std::move(int_filter_list);
       ++size;
     }
   }

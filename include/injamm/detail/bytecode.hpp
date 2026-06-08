@@ -35,7 +35,81 @@ enum class bc_opcode : std::uint8_t {
   emit_at_root_field_raw, /**< @root.field ルートフィールド解決（生出力） */
   emit_at_key,        /**< @key 出力（ループ内の現在要素キー名 / インデックス文字列） */
   emit_this,          /**< 現在のコンテキスト自体のシリアライズ */
+  resolve_filtered,   /**< フィルタ付き変数解決: 値を一時バッファに解決 */
+  filter_upper,       /**< ASCII大文字変換 */
+  filter_lower,       /**< ASCII小文字変換 */
+  filter_capitalize,  /**< 先頭の文字を大文字にする */
+  filter_title,       /**< 単語の先頭を大文字にする */
+  filter_trim,        /**< 先頭末尾の空白除去 */
+  filter_ltrim,       /**< 先頭の空白除去 */
+  filter_rtrim,       /**< 末尾の空白除去 */
+  filter_left,        /**< 左寄せ（引数: 幅） */
+  filter_right,       /**< 右寄せ（引数: 幅） */
+  filter_center,      /**< 中央寄せ（引数: 幅） */
+  filter_truncate,    /**< 文字列切り詰め（引数: 最大文字数） */
+  filter_substr,      /**< 部分文字列（引数1: 開始位置, 引数2: 文字数） */
+  emit_filtered,      /**< フィルタ後の文字列出力（エスケープあり） */
+  emit_filtered_raw,  /**< フィルタ後の文字列出力（生出力） */
+  filter_int_abs,     /**< 整数絶対値変換 */
+  filter_int_hex,     /**< 整数16進数変換 */
+  filter_int_oct,     /**< 整数8進数変換 */
+  filter_int_bin,     /**< 整数2進数変換 */
+  filter_int_neg,     /**< 整数符号逆転 */
+  filter_int_mod,     /**< 整数余り（引数: 除数） */
+  filter_int_numify,  /**< 整数3桁カンマ区切り */
   halt                /**< プログラム終了 */
+};
+
+/**
+ * @brief 文字列フィルタの種別
+ * @details プレースホルダに適用する文字列変換の種類を定義する
+ */
+enum class string_filter : std::uint8_t {
+  upper,       /**< ASCII小文字→大文字変換 */
+  lower,       /**< ASCII大文字→小文字変換 */
+  capitalize,  /**< 先頭の文字を大文字にする */
+  title,       /**< 単語の先頭を大文字にする */
+  trim,        /**< 先頭末尾の空白除去 */
+  ltrim,       /**< 先頭の空白除去 */
+  rtrim,       /**< 末尾の空白除去 */
+  left,        /**< 左寄せ（引数: 幅） */
+  right,       /**< 右寄せ（引数: 幅） */
+  center,      /**< 中央寄せ（引数: 幅） */
+  truncate,    /**< 文字列切り詰め（引数: 最大文字数） */
+  substr       /**< 部分文字列（引数1: 開始位置, 引数2: 文字数） */
+};
+
+/**
+ * @brief 文字列フィルタエントリ（引数付き）
+ * @details フィルタの種別と、引数を必要とするフィルタの幅/最大文字数を保持する
+ */
+struct string_filter_entry {
+  string_filter filter; /**< フィルタの種別 */
+  int arg1 = 0;         /**< 第1引数（left/right/center/truncate/substr の幅/開始位置） */
+  int arg2 = 0;         /**< 第2引数（substr の文字数） */
+};
+
+/**
+ * @brief 整数変換フィルタの種別
+ * @details プレースホルダに適用する整数変換の種類を定義する
+ */
+enum class int_filter : std::uint8_t {
+  abs,     /**< 絶対値 */
+  hex,     /**< 16進数表記 */
+  oct,     /**< 8進数表記 */
+  bin,     /**< 2進数表記 */
+  neg,     /**< 符号の逆転 */
+  mod,     /**< 余り（引数: 除数） */
+  numify   /**< 3桁ごとにカンマ区切り */
+};
+
+/**
+ * @brief 整数フィルタエントリ（引数付き）
+ * @details フィルタの種別と、引数を必要とするフィルタの値を保持する
+ */
+struct int_filter_entry {
+  int_filter filter; /**< フィルタの種別 */
+  int arg = 0;       /**< 引数（mod の除数） */
 };
 
 /**
@@ -45,7 +119,9 @@ enum class bc_opcode : std::uint8_t {
  */
 struct bc_var_ref {
   std::string_view key;                    /**< 変数名 */
-  std::uint32_t field_index = UINT32_MAX;  /**< コンパイル時解決済みフィールドインデックス（未解決時はUINT32_MAX） */
+  std::uint32_t field_index = UINT32_MAX;  /**< コンパイル時解決済みフィールドインデックス */
+  std::vector<string_filter_entry> filters; /**< 文字列フィルタチェーン */
+  std::vector<int_filter_entry> int_filters; /**< 整数フィルタチェーン */
 };
 
 /**
@@ -98,7 +174,7 @@ struct bytecode {
    */
   std::uint32_t add_var_ref(std::string_view key) {
     auto idx = static_cast<std::uint32_t>(var_refs.size());
-    var_refs.push_back({key, UINT32_MAX});
+    var_refs.push_back({key, UINT32_MAX, {}});
     return idx;
   }
 

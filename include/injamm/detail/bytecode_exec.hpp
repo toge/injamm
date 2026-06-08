@@ -3,8 +3,11 @@
 #include "bytecode.hpp"
 #include "escape.hpp"
 #include "serialize_value.hpp"
+#include "resolve.hpp"
 #include "../injamm.hpp"
+#include <cmath>
 #include <expected>
+#include <sstream>
 #include <string>
 
 namespace injamm::detail {
@@ -41,6 +44,7 @@ class bc_executor {
   RootT const& root_value_;
   bc_loop_state const* loop_ = nullptr;
   std::string& out_;
+  std::string filtered_value_;  // フィルタ処理用の一時バッファ
 
   /**
    * @brief ネストされたドット区切りパスを再帰的に解決し visitor を呼び出す
@@ -304,7 +308,29 @@ public:
       &&L_emit_at_root_field_raw, // 19
       &&L_emit_at_key,       // 20
       &&L_emit_this,         // 21
-      &&L_halt,              // 22
+      &&L_resolve_filtered,  // 22
+      &&L_filter_upper,      // 23
+      &&L_filter_lower,      // 24
+      &&L_filter_capitalize, // 25
+      &&L_filter_title,      // 26
+      &&L_filter_trim,       // 27
+      &&L_filter_ltrim,      // 28
+      &&L_filter_rtrim,      // 29
+      &&L_filter_left,       // 30
+      &&L_filter_right,      // 31
+      &&L_filter_center,     // 32
+      &&L_filter_truncate,   // 33
+      &&L_filter_substr,     // 34
+      &&L_emit_filtered,     // 35
+      &&L_emit_filtered_raw, // 36
+      &&L_filter_int_abs,    // 37
+      &&L_filter_int_hex,    // 38
+      &&L_filter_int_oct,    // 39
+      &&L_filter_int_bin,    // 40
+      &&L_filter_int_neg,    // 41
+      &&L_filter_int_mod,    // 42
+      &&L_filter_int_numify, // 43
+      &&L_halt,              // 44
     };
 
 /** @brief 現在の命令のオペコードに対応するラベルにジャンプする */
@@ -654,6 +680,294 @@ public:
       DISPATCH();
     }
 
+    /** @brief フィルタ付き変数解決 */
+    L_resolve_filtered: {
+      auto const& instr = bc_.instructions[pc];
+      auto const& var_ref = bc_.var_refs[instr.operand2];
+      filtered_value_.clear();
+      loop_state ls{};
+      if (loop_) {
+        ls.index = loop_->index;
+        ls.count = loop_->count;
+        ls.key = loop_->key;
+      }
+      if (!resolve_value(filtered_value_, var_ref.key, value_, loop_ ? &ls : nullptr)) {
+        return std::unexpected(error_ctx{.ec = error_code::unknown_key});
+      }
+      ++pc;
+      DISPATCH();
+    }
+
+    /** @brief ASCII大文字変換 */
+    L_filter_upper: {
+      for (auto& c : filtered_value_) {
+        if (c >= 'a' && c <= 'z') c -= 32;
+      }
+      ++pc;
+      DISPATCH();
+    }
+
+    /** @brief ASCII小文字変換 */
+    L_filter_lower: {
+      for (auto& c : filtered_value_) {
+        if (c >= 'A' && c <= 'Z') c += 32;
+      }
+      ++pc;
+      DISPATCH();
+    }
+
+    /** @brief 先頭の文字を大文字にする */
+    L_filter_capitalize: {
+      if (!filtered_value_.empty() && filtered_value_[0] >= 'a' && filtered_value_[0] <= 'z') {
+        filtered_value_[0] -= 32;
+      }
+      ++pc;
+      DISPATCH();
+    }
+
+    /** @brief 単語の先頭を大文字にする */
+    L_filter_title: {
+      bool new_word = true;
+      for (auto& c : filtered_value_) {
+        if (c == ' ' || c == '\t') {
+          new_word = true;
+        } else if (new_word && c >= 'a' && c <= 'z') {
+          c -= 32;
+          new_word = false;
+        } else {
+          new_word = false;
+        }
+      }
+      ++pc;
+      DISPATCH();
+    }
+
+    /** @brief 先頭末尾の空白除去 */
+    L_filter_trim: {
+      auto start = filtered_value_.find_first_not_of(" \t");
+      if (start == std::string::npos) {
+        filtered_value_.clear();
+      } else {
+        auto end = filtered_value_.find_last_not_of(" \t");
+        filtered_value_ = filtered_value_.substr(start, end - start + 1);
+      }
+      ++pc;
+      DISPATCH();
+    }
+
+    /** @brief 先頭の空白除去 */
+    L_filter_ltrim: {
+      auto start = filtered_value_.find_first_not_of(" \t");
+      if (start == std::string::npos) {
+        filtered_value_.clear();
+      } else {
+        filtered_value_ = filtered_value_.substr(start);
+      }
+      ++pc;
+      DISPATCH();
+    }
+
+    /** @brief 末尾の空白除去 */
+    L_filter_rtrim: {
+      auto end = filtered_value_.find_last_not_of(" \t");
+      if (end == std::string::npos) {
+        filtered_value_.clear();
+      } else {
+        filtered_value_ = filtered_value_.substr(0, end + 1);
+      }
+      ++pc;
+      DISPATCH();
+    }
+
+    /** @brief 左寄せ（引数: 幅） */
+    L_filter_left: {
+      auto width = bc_.instructions[pc].operand;
+      if (filtered_value_.size() < static_cast<std::size_t>(width)) {
+        auto pad = width - filtered_value_.size();
+        filtered_value_ = std::string(pad, ' ') + filtered_value_;
+      }
+      ++pc;
+      DISPATCH();
+    }
+
+    /** @brief 右寄せ（引数: 幅） */
+    L_filter_right: {
+      auto width = bc_.instructions[pc].operand;
+      if (filtered_value_.size() < static_cast<std::size_t>(width)) {
+        auto pad = width - filtered_value_.size();
+        filtered_value_ = filtered_value_ + std::string(pad, ' ');
+      }
+      ++pc;
+      DISPATCH();
+    }
+
+    /** @brief 中央寄せ（引数: 幅） */
+    L_filter_center: {
+      auto width = bc_.instructions[pc].operand;
+      if (filtered_value_.size() < static_cast<std::size_t>(width)) {
+        auto pad = width - filtered_value_.size();
+        auto left_pad = pad / 2;
+        auto right_pad = pad - left_pad;
+        filtered_value_ = std::string(left_pad, ' ') + filtered_value_ + std::string(right_pad, ' ');
+      }
+      ++pc;
+      DISPATCH();
+    }
+
+    /** @brief 文字列切り詰め（引数: 最大文字数） */
+    L_filter_truncate: {
+      auto max_len = bc_.instructions[pc].operand;
+      if (filtered_value_.size() > static_cast<std::size_t>(max_len) && max_len >= 3) {
+        filtered_value_ = filtered_value_.substr(0, max_len - 3) + "...";
+      } else if (filtered_value_.size() > static_cast<std::size_t>(max_len)) {
+        filtered_value_ = filtered_value_.substr(0, max_len);
+      }
+      ++pc;
+      DISPATCH();
+    }
+
+    /** @brief 部分文字列（引数1: 開始位置, 引数2: 文字数） */
+    L_filter_substr: {
+      auto start = bc_.instructions[pc].operand;
+      auto length = bc_.instructions[pc].operand2;
+      if (start >= 0 && static_cast<std::size_t>(start) < filtered_value_.size()) {
+        if (length > 0) {
+          filtered_value_ = filtered_value_.substr(start, length);
+        } else {
+          filtered_value_ = filtered_value_.substr(start);
+        }
+      } else {
+        filtered_value_.clear();
+      }
+      ++pc;
+      DISPATCH();
+    }
+
+    /** @brief フィルタ後の文字列出力（エスケープあり） */
+    L_emit_filtered: {
+      html_escape_into(out_, std::string_view{filtered_value_});
+      ++pc;
+      DISPATCH();
+    }
+
+    /** @brief フィルタ後の文字列出力（生出力） */
+    L_emit_filtered_raw: {
+      out_.append(filtered_value_);
+      ++pc;
+      DISPATCH();
+    }
+
+    /** @brief 整数絶対値変換 */
+    L_filter_int_abs: {
+      try {
+        long long val = std::stoll(filtered_value_);
+        filtered_value_ = std::to_string(std::abs(val));
+      } catch (...) {
+        // 変換失敗: そのまま
+      }
+      ++pc;
+      DISPATCH();
+    }
+
+    /** @brief 整数16進数変換 */
+    L_filter_int_hex: {
+      try {
+        long long val = std::stoll(filtered_value_);
+        std::ostringstream oss;
+        oss << std::hex << val;
+        filtered_value_ = oss.str();
+      } catch (...) {
+        // 変換失敗: そのまま
+      }
+      ++pc;
+      DISPATCH();
+    }
+
+    /** @brief 整数8進数変換 */
+    L_filter_int_oct: {
+      try {
+        long long val = std::stoll(filtered_value_);
+        std::ostringstream oss;
+        oss << std::oct << val;
+        filtered_value_ = oss.str();
+      } catch (...) {
+        // 変換失敗: そのまま
+      }
+      ++pc;
+      DISPATCH();
+    }
+
+    /** @brief 整数2進数変換 */
+    L_filter_int_bin: {
+      try {
+        long long val = std::stoll(filtered_value_);
+        filtered_value_ = "";
+        if (val == 0) {
+          filtered_value_ = "0";
+        } else {
+          while (val > 0) {
+            filtered_value_ = (val % 2 == 0 ? "0" : "1") + filtered_value_;
+            val /= 2;
+          }
+        }
+      } catch (...) {
+        // 変換失敗: そのまま
+      }
+      ++pc;
+      DISPATCH();
+    }
+
+    /** @brief 整数符号逆転 */
+    L_filter_int_neg: {
+      try {
+        long long val = std::stoll(filtered_value_);
+        filtered_value_ = std::to_string(-val);
+      } catch (...) {
+        // 変換失敗: そのまま
+      }
+      ++pc;
+      DISPATCH();
+    }
+
+    /** @brief 整数余り（引数: 除数） */
+    L_filter_int_mod: {
+      try {
+        long long val = std::stoll(filtered_value_);
+        auto divisor = bc_.instructions[pc].operand;
+        if (divisor != 0) {
+          filtered_value_ = std::to_string(val % divisor);
+        }
+      } catch (...) {
+        // 変換失敗: そのまま
+      }
+      ++pc;
+      DISPATCH();
+    }
+
+    /** @brief 整数3桁カンマ区切り */
+    L_filter_int_numify: {
+      try {
+        long long val = std::stoll(filtered_value_);
+        bool negative = val < 0;
+        if (negative) val = -val;
+        std::string num = std::to_string(val);
+        std::string result;
+        int count = 0;
+        for (int i = num.size() - 1; i >= 0; --i) {
+          result = num[i] + result;
+          count++;
+          if (count % 3 == 0 && i > 0) {
+            result = ',' + result;
+          }
+        }
+        filtered_value_ = negative ? "-" + result : result;
+      } catch (...) {
+        // 変換失敗: そのまま
+      }
+      ++pc;
+      DISPATCH();
+    }
+
     /** @brief プログラム終端 */
     L_halt: {
       return {};
@@ -928,6 +1242,293 @@ public:
         case bc_opcode::emit_this: {
           if constexpr (serializable_v<T>) {
             serialize_value(out_, value_);
+          }
+          ++pc;
+          break;
+        }
+
+        /** @brief フィルタ付き変数解決 */
+        case bc_opcode::resolve_filtered: {
+          auto const& var_ref = bc_.var_refs[instr.operand2];
+          filtered_value_.clear();
+          loop_state ls{};
+          if (loop_) {
+            ls.index = loop_->index;
+            ls.count = loop_->count;
+            ls.key = loop_->key;
+          }
+          if (!resolve_value(filtered_value_, var_ref.key, value_, loop_ ? &ls : nullptr)) {
+            return std::unexpected(error_ctx{.ec = error_code::unknown_key});
+          }
+          ++pc;
+          break;
+        }
+
+        /** @brief ASCII大文字変換 */
+        case bc_opcode::filter_upper: {
+          for (auto& c : filtered_value_) {
+            if (c >= 'a' && c <= 'z') c -= 32;
+          }
+          ++pc;
+          break;
+        }
+
+        /** @brief ASCII小文字変換 */
+        case bc_opcode::filter_lower: {
+          for (auto& c : filtered_value_) {
+            if (c >= 'A' && c <= 'Z') c += 32;
+          }
+          ++pc;
+          break;
+        }
+
+        /** @brief 先頭の文字を大文字にする */
+        case bc_opcode::filter_capitalize: {
+          if (!filtered_value_.empty() && filtered_value_[0] >= 'a' && filtered_value_[0] <= 'z') {
+            filtered_value_[0] -= 32;
+          }
+          ++pc;
+          break;
+        }
+
+        /** @brief 単語の先頭を大文字にする */
+        case bc_opcode::filter_title: {
+          bool new_word = true;
+          for (auto& c : filtered_value_) {
+            if (c == ' ' || c == '\t') {
+              new_word = true;
+            } else if (new_word && c >= 'a' && c <= 'z') {
+              c -= 32;
+              new_word = false;
+            } else {
+              new_word = false;
+            }
+          }
+          ++pc;
+          break;
+        }
+
+        /** @brief 先頭末尾の空白除去 */
+        case bc_opcode::filter_trim: {
+          auto start = filtered_value_.find_first_not_of(" \t");
+          if (start == std::string::npos) {
+            filtered_value_.clear();
+          } else {
+            auto end = filtered_value_.find_last_not_of(" \t");
+            filtered_value_ = filtered_value_.substr(start, end - start + 1);
+          }
+          ++pc;
+          break;
+        }
+
+        /** @brief 先頭の空白除去 */
+        case bc_opcode::filter_ltrim: {
+          auto start = filtered_value_.find_first_not_of(" \t");
+          if (start == std::string::npos) {
+            filtered_value_.clear();
+          } else {
+            filtered_value_ = filtered_value_.substr(start);
+          }
+          ++pc;
+          break;
+        }
+
+        /** @brief 末尾の空白除去 */
+        case bc_opcode::filter_rtrim: {
+          auto end = filtered_value_.find_last_not_of(" \t");
+          if (end == std::string::npos) {
+            filtered_value_.clear();
+          } else {
+            filtered_value_ = filtered_value_.substr(0, end + 1);
+          }
+          ++pc;
+          break;
+        }
+
+        /** @brief 左寄せ（引数: 幅） */
+        case bc_opcode::filter_left: {
+          auto width = instr.operand;
+          if (filtered_value_.size() < static_cast<std::size_t>(width)) {
+            auto pad = width - filtered_value_.size();
+            filtered_value_ = std::string(pad, ' ') + filtered_value_;
+          }
+          ++pc;
+          break;
+        }
+
+        /** @brief 右寄せ（引数: 幅） */
+        case bc_opcode::filter_right: {
+          auto width = instr.operand;
+          if (filtered_value_.size() < static_cast<std::size_t>(width)) {
+            auto pad = width - filtered_value_.size();
+            filtered_value_ = filtered_value_ + std::string(pad, ' ');
+          }
+          ++pc;
+          break;
+        }
+
+        /** @brief 中央寄せ（引数: 幅） */
+        case bc_opcode::filter_center: {
+          auto width = instr.operand;
+          if (filtered_value_.size() < static_cast<std::size_t>(width)) {
+            auto pad = width - filtered_value_.size();
+            auto left_pad = pad / 2;
+            auto right_pad = pad - left_pad;
+            filtered_value_ = std::string(left_pad, ' ') + filtered_value_ + std::string(right_pad, ' ');
+          }
+          ++pc;
+          break;
+        }
+
+        /** @brief 文字列切り詰め（引数: 最大文字数） */
+        case bc_opcode::filter_truncate: {
+          auto max_len = instr.operand;
+          if (filtered_value_.size() > static_cast<std::size_t>(max_len) && max_len >= 3) {
+            filtered_value_ = filtered_value_.substr(0, max_len - 3) + "...";
+          } else if (filtered_value_.size() > static_cast<std::size_t>(max_len)) {
+            filtered_value_ = filtered_value_.substr(0, max_len);
+          }
+          ++pc;
+          break;
+        }
+
+        /** @brief 部分文字列（引数1: 開始位置, 引数2: 文字数） */
+        case bc_opcode::filter_substr: {
+          auto start = instr.operand;
+          auto length = instr.operand2;
+          if (start >= 0 && static_cast<std::size_t>(start) < filtered_value_.size()) {
+            if (length > 0) {
+              filtered_value_ = filtered_value_.substr(start, length);
+            } else {
+              filtered_value_ = filtered_value_.substr(start);
+            }
+          } else {
+            filtered_value_.clear();
+          }
+          ++pc;
+          break;
+        }
+
+        /** @brief フィルタ後の文字列出力（エスケープあり） */
+        case bc_opcode::emit_filtered: {
+          html_escape_into(out_, std::string_view{filtered_value_});
+          ++pc;
+          break;
+        }
+
+        /** @brief フィルタ後の文字列出力（生出力） */
+        case bc_opcode::emit_filtered_raw: {
+          out_.append(filtered_value_);
+          ++pc;
+          break;
+        }
+
+        /** @brief 整数絶対値変換 */
+        case bc_opcode::filter_int_abs: {
+          try {
+            long long val = std::stoll(filtered_value_);
+            filtered_value_ = std::to_string(std::abs(val));
+          } catch (...) {
+            // 変換失敗: そのまま
+          }
+          ++pc;
+          break;
+        }
+
+        /** @brief 整数16進数変換 */
+        case bc_opcode::filter_int_hex: {
+          try {
+            long long val = std::stoll(filtered_value_);
+            std::ostringstream oss;
+            oss << std::hex << val;
+            filtered_value_ = oss.str();
+          } catch (...) {
+            // 変換失敗: そのまま
+          }
+          ++pc;
+          break;
+        }
+
+        /** @brief 整数8進数変換 */
+        case bc_opcode::filter_int_oct: {
+          try {
+            long long val = std::stoll(filtered_value_);
+            std::ostringstream oss;
+            oss << std::oct << val;
+            filtered_value_ = oss.str();
+          } catch (...) {
+            // 変換失敗: そのまま
+          }
+          ++pc;
+          break;
+        }
+
+        /** @brief 整数2進数変換 */
+        case bc_opcode::filter_int_bin: {
+          try {
+            long long val = std::stoll(filtered_value_);
+            filtered_value_ = "";
+            if (val == 0) {
+              filtered_value_ = "0";
+            } else {
+              while (val > 0) {
+                filtered_value_ = (val % 2 == 0 ? "0" : "1") + filtered_value_;
+                val /= 2;
+              }
+            }
+          } catch (...) {
+            // 変換失敗: そのまま
+          }
+          ++pc;
+          break;
+        }
+
+        /** @brief 整数符号逆転 */
+        case bc_opcode::filter_int_neg: {
+          try {
+            long long val = std::stoll(filtered_value_);
+            filtered_value_ = std::to_string(-val);
+          } catch (...) {
+            // 変換失敗: そのまま
+          }
+          ++pc;
+          break;
+        }
+
+        /** @brief 整数余り（引数: 除数） */
+        case bc_opcode::filter_int_mod: {
+          try {
+            long long val = std::stoll(filtered_value_);
+            auto divisor = instr.operand;
+            if (divisor != 0) {
+              filtered_value_ = std::to_string(val % divisor);
+            }
+          } catch (...) {
+            // 変換失敗: そのまま
+          }
+          ++pc;
+          break;
+        }
+
+        /** @brief 整数3桁カンマ区切り */
+        case bc_opcode::filter_int_numify: {
+          try {
+            long long val = std::stoll(filtered_value_);
+            bool negative = val < 0;
+            if (negative) val = -val;
+            std::string num = std::to_string(val);
+            std::string result;
+            int count = 0;
+            for (int i = num.size() - 1; i >= 0; --i) {
+              result = num[i] + result;
+              count++;
+              if (count % 3 == 0 && i > 0) {
+                result = ',' + result;
+              }
+            }
+            filtered_value_ = negative ? "-" + result : result;
+          } catch (...) {
+            // 変換失敗: そのまま
           }
           ++pc;
           break;
