@@ -1,0 +1,26 @@
+build/
+build_static/
+vcpkg_installed/
+vcpkg-manifest-install.log
+
+# CMake
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+CTestTestfile.cmake
+Makefile
+Testing/
+*.cmake
+!cmake/*.cmake.in
+
+# Editor / IDE
+.cache/
+.clangd/
+compile_commands.json
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db

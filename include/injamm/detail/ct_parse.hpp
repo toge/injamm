@@ -1,0 +1,535 @@
+#pragma once
+
+#include "ct_chunk.hpp"
+#include "parse.hpp"
+#include <cstddef>
+#include <string_view>
+
+namespace injamm::detail {
+
+/**
+ * @brief コンパイル時パーサーのコンテキスト（SoA 形式）
+ * @details テンプレートのパース中に、チャンクの種類・テキスト・フラグ・本体範囲などを
+ *          ct_parsed_template に逐次追加するための補助構造体。
+ *          SoA（Structure of Arrays）形式で各チャンク情報を保持する。
+ * @tparam MaxChunks 保持可能な最大チャンク数
+ */
+template <std::size_t MaxChunks>
+struct ct_parse_context {
+  /** @brief パース結果を格納するテンプレート */
+  ct_parsed_template<MaxChunks> tmpl{};
+
+  /**
+   * @brief リテラルチャンクを追加する
+   * @param text リテラル文字列
+   * @return 追加されたチャンクのインデックス
+   */
+  constexpr std::size_t push_literal(std::string_view text) {
+    auto idx = tmpl.size;
+    tmpl.push_literal(text);
+    return idx;
+  }
+
+  /**
+   * @brief プレースホルダチャンクを追加する
+   * @param key 変数キー（例: "name"）
+   * @param raw 生出力モード（{{{var}}} の場合に true）
+   * @return 追加されたチャンクのインデックス
+   */
+  constexpr std::size_t push_placeholder(std::string_view key, bool raw) {
+    auto idx = tmpl.size;
+    tmpl.push_placeholder(key, raw);
+    return idx;
+  }
+
+  /**
+   * @brief セクションチャンクを追加する
+   * @param key        セクションキー
+   * @param body_start 本体の開始チャンクインデックス
+   * @param body_end   本体の終了チャンクインデックス
+   * @return 追加されたチャンクのインデックス
+   */
+  constexpr std::size_t push_section(std::string_view key, std::size_t body_start, std::size_t body_end) {
+    auto idx = tmpl.size;
+    tmpl.push_section(key, body_start, body_end);
+    return idx;
+  }
+
+  /**
+   * @brief 逆セクションチャンクを追加する
+   * @param key        セクションキー
+   * @param body_start 本体の開始チャンクインデックス
+   * @param body_end   本体の終了チャンクインデックス
+   * @return 追加されたチャンクのインデックス
+   */
+  constexpr std::size_t push_inverted(std::string_view key, std::size_t body_start, std::size_t body_end) {
+    auto idx = tmpl.size;
+    tmpl.push_inverted(key, body_start, body_end);
+    return idx;
+  }
+
+  /**
+   * @brief @var チャンクを追加する
+   * @param var @index / @first / @last / @root の種別
+   * @return 追加されたチャンクのインデックス
+   */
+  constexpr std::size_t push_at_var(ct_at_var_kind var) {
+    auto idx = tmpl.size;
+    tmpl.push_at_var(var);
+    return idx;
+  }
+
+  /**
+   * @brief @var セクションチャンクを追加する
+   * @param var         @index / @first / @last / @root の種別
+   * @param body_start 本体の開始チャンクインデックス
+   * @param body_end   本体の終了チャンクインデックス
+   * @param inverted   逆セクションの場合に true
+   * @return 追加されたチャンクのインデックス
+   */
+  constexpr std::size_t push_at_section(ct_at_var_kind var, std::size_t body_start, std::size_t body_end,
+                                         bool inverted) {
+    auto idx = tmpl.size;
+    tmpl.push_at_section(var, body_start, body_end, inverted);
+    return idx;
+  }
+
+  /**
+   * @brief if/else チャンクを追加する
+   * @param expr        条件式
+   * @param then_start  then 節の開始チャンクインデックス
+   * @param then_end    then 節の終了チャンクインデックス
+   * @param else_start  else 節の開始チャンクインデックス
+   * @param else_end    else 節の終了チャンクインデックス
+   * @return 追加されたチャンクのインデックス
+   */
+  constexpr std::size_t push_if(std::string_view expr, std::size_t then_start, std::size_t then_end,
+                                 std::size_t else_start, std::size_t else_end) {
+    auto idx = tmpl.size;
+    tmpl.push_if(expr, then_start, then_end, else_start, else_end);
+    return idx;
+  }
+
+  /**
+   * @brief 既存の if チャンクの本体範囲を後から更新する
+   * @param idx         更新対象のチャンクインデックス
+   * @param then_start  then 節の開始チャンクインデックス
+   * @param then_end    then 節の終了チャンクインデックス
+   * @param else_start  else 節の開始チャンクインデックス
+   * @param else_end    else 節の終了チャンクインデックス
+   */
+  constexpr void update_if(std::size_t idx, std::size_t then_start, std::size_t then_end,
+                            std::size_t else_start, std::size_t else_end) {
+    tmpl.body_starts[idx] = then_start;
+    tmpl.body_ends[idx] = then_end;
+    tmpl.else_starts[idx] = else_start;
+    tmpl.else_ends[idx] = else_end;
+  }
+
+  /**
+   * @brief 既存のセクションチャンクの本体範囲を後から更新する
+   * @param idx         更新対象のチャンクインデックス
+   * @param body_start  本体の開始チャンクインデックス
+   * @param body_end    本体の終了チャンクインデックス
+   */
+  constexpr void update_section(std::size_t idx, std::size_t body_start, std::size_t body_end) {
+    tmpl.body_starts[idx] = body_start;
+    tmpl.body_ends[idx] = body_end;
+  }
+
+  /**
+   * @brief 既存の @var セクションチャンクの本体範囲を後から更新する
+   * @param idx         更新対象のチャンクインデックス
+   * @param body_start  本体の開始チャンクインデックス
+   * @param body_end    本体の終了チャンクインデックス
+   */
+  constexpr void update_at_section(std::size_t idx, std::size_t body_start, std::size_t body_end) {
+    tmpl.body_starts[idx] = body_start;
+    tmpl.body_ends[idx] = body_end;
+  }
+};
+
+/**
+ * @brief テンプレート文字列をコンパイル時にパースし、SoA 形式のチャンク列に出力する
+ * @details 入力テンプレート内の `{{...}}` タグを検出しながら順次パースし、
+ *          ct_parse_context を介してチャンクを追加していく。
+ *          対応タグ:
+ *          - `{{var}}` / `{{{var}}}`: プレースホルダ
+ *          - `{{#section}}...{{/section}}`: セクション
+ *          - `{{^section}}...{{/section}}`: 逆セクション
+ *          - `{{#if X}}...{{else}}...{{/if}}`: 条件分岐
+ *          - `{{#@var}}...{{/@var}}`: @var セクション
+ *          - `{{^@var}}...{{/@var}}`: @var 逆セクション
+ *          - `{{@index}}` / `{{@first}}` / `{{@last}}` / `{{@root}}`: @var
+ * @tparam MaxChunks 保持可能な最大チャンク数
+ * @param[out] ctx  パース結果を書き込むコンテキスト
+ * @param[in]  tmpl 入力テンプレート文字列
+ */
+template <std::size_t MaxChunks>
+constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view tmpl) {
+  /** @brief 現在のパース位置（バイトオフセット） */
+  std::size_t pos = 0;
+
+  // -- メインループ: テンプレート全体を走査しながらタグを解析する --
+  while (pos < tmpl.size()) {
+    /** @brief 次の `{{` 開始位置を検索 */
+    auto tag_start = tmpl.find("{{", pos);
+
+    /** @brief `{{` が見つからない場合は、残り全体をリテラルとして追加して終了 */
+    if (tag_start == std::string_view::npos) {
+      ctx.push_literal(tmpl.substr(pos));
+      break;
+    }
+
+    /** @brief `{{` より前にリテラル文字列があれば追加 */
+    if (tag_start > pos) {
+      ctx.push_literal(tmpl.substr(pos, tag_start - pos));
+    }
+
+    // -- {{{ raw プレースホルダの処理 --
+    /**
+     * @brief 3連続の `{{{` は raw 出力（HTML エスケープなし）のプレースホルダ
+     * @details `{{{var}}}` のように記述すると、値が HTML エスケープされずにそのまま出力される。
+     *          ステンシルモード用。
+     */
+    if (tag_start + 2 < tmpl.size() && tmpl[tag_start + 2] == '{') {
+      /** @brief `}}}` 終了タグを検索 */
+      auto end = tmpl.find("}}}", tag_start + 3);
+      if (end == std::string_view::npos) {
+        /* 閉じタグがない場合は `{` をリテラルとして扱い 1 バイト進める */
+        ctx.push_literal(tmpl.substr(tag_start, 1));
+        pos = tag_start + 1;
+        continue;
+      }
+      /** @brief {{{ と }}} の間をキーとして raw プレースホルダを追加 */
+      auto key = trim_sv(tmpl.substr(tag_start + 3, end - tag_start - 3));
+      ctx.push_placeholder(key, true);
+      pos = end + 3;
+      continue;
+    }
+
+    // -- `}}` 終了タグの検索 --
+    /** @brief 対応する `}}` の位置 */
+    auto tag_end = tmpl.find("}}", tag_start + 2);
+    if (tag_end == std::string_view::npos) {
+      /* 閉じタグがない場合は `{` をリテラルとして扱い 1 バイト進める */
+      ctx.push_literal(tmpl.substr(tag_start, 1));
+      pos = tag_start + 1;
+      continue;
+    }
+
+    /** @brief `{{` と `}}` の間の内容（前後の空白除去済み） */
+    auto inner = trim_sv(tmpl.substr(tag_start + 2, tag_end - tag_start - 2));
+    pos = tag_end + 2;
+
+    /** @brief 空タグはスキップ */
+    if (inner.empty()) {
+      continue;
+    }
+
+    /**
+     * @brief `/` で始まるタグ（閉じタグ）はスキップ
+     * @details 閉じタグは上位の再帰呼び出しですでに処理済みであるため、
+     *          ここでは無視する。
+     */
+    if (inner.starts_with("/")) {
+      continue;
+    }
+
+    // -- `#` で始まるタグ: セクションまたは if --
+    if (inner.starts_with("#")) {
+      /** @brief `#` 以降のキー部分 */
+      auto key = trim_sv(inner.substr(1));
+
+      // -- {{#if X}} の処理 --
+      /**
+       * @brief if 条件分岐タグの解析
+       * @details `{{#if X}}...{{else}}...{{/if}}` の形式を解析する。
+       *          条件式 X が真と評価される場合は then 節、偽の場合は else 節が描画される。
+       *          else 節は省略可能。
+       */
+      if (key.starts_with("if") && (key.size() == 2 || key[2] == ' ')) {
+        /** @brief if の条件式（"if X" から "if" を取り除いた部分） */
+        auto expr = key.size() > 2 ? trim_sv(key.substr(3)) : std::string_view{};
+
+        /** @brief ネスト対応のための深さカウンタ */
+        int depth = 1;
+        std::size_t search_pos = pos;
+        std::size_t close_pos = std::string_view::npos;
+
+        /**
+         * @brief {{/if}} までの間でネストした {{#if}} を考慮して閉じ位置を決定
+         * @details depth が 0 になるまで閉じタグを検索し続ける。
+         *          開きタグに出会うたびに depth を増やし、閉じタグに出会うたびに減らす。
+         */
+        while (search_pos < tmpl.size()) {
+          auto next_open = tmpl.find("{{#if", search_pos);
+          auto next_close = tmpl.find("{{/if}}", search_pos);
+          if (next_close == std::string_view::npos) {
+            break;
+          }
+          if (next_open != std::string_view::npos && next_open < next_close) {
+            ++depth;
+            search_pos = next_open + 5;
+          } else {
+            --depth;
+            if (depth == 0) {
+              close_pos = next_close;
+              break;
+            }
+            search_pos = next_close + 7;
+          }
+        }
+
+        /** @brief if 本体の生文字列 */
+        std::string_view body;
+        if (close_pos != std::string_view::npos) {
+          body = tmpl.substr(pos, close_pos - pos);
+          pos = close_pos + 7;
+        } else {
+          body = tmpl.substr(pos);
+          pos = tmpl.size();
+        }
+
+        /**
+         * @brief トップレベルの {{else}} を検出して then / else に分割
+         * @details find_toplevel_else はネストを考慮して、最上位の else のみを検出する。
+         */
+        auto else_pos = find_toplevel_else(body);
+        std::string_view then_body, else_body;
+        if (else_pos != std::string_view::npos) {
+          then_body = body.substr(0, else_pos);
+          auto else_tag_end = body.find("}}", else_pos + 2);
+          else_body = (else_tag_end != std::string_view::npos) ? body.substr(else_tag_end + 2) : std::string_view{};
+        } else {
+          then_body = body;
+          else_body = {};
+        }
+
+        /** @brief if チャンクを仮追加（範囲は後で更新） */
+        auto chunk_idx = ctx.push_if(expr, 0, 0, 0, 0);
+
+        /** @brief then 節を再帰パース */
+        auto then_start = ctx.tmpl.size;
+        ct_parse_into(ctx, then_body);
+        auto then_end = ctx.tmpl.size;
+
+        /** @brief else 節を再帰パース */
+        auto else_start = ctx.tmpl.size;
+        ct_parse_into(ctx, else_body);
+        auto else_end = ctx.tmpl.size;
+
+        /** @brief 仮追加したチャンクの範囲を更新 */
+        ctx.update_if(chunk_idx, then_start, then_end, else_start, else_end);
+        continue;
+      }
+
+      // -- {{#@var}} セクションの処理 --
+      /**
+       * @brief @var 条件セクションの解析
+       * @details `{{#@first}}...{{/@first}}` のように記述し、
+       *          ループの先頭要素などの条件に応じて本体が描画される。
+       */
+      if (key.starts_with("@")) {
+        /** @brief @index / @first / @last / @root の種別を判定 */
+        auto k = parse_at_kind(key);
+        ct_at_var_kind var_kind;
+        switch (k) {
+          case chunk_at_var::kind::index: var_kind = ct_at_var_kind::index; break;
+          case chunk_at_var::kind::first: var_kind = ct_at_var_kind::first; break;
+          case chunk_at_var::kind::last: var_kind = ct_at_var_kind::last; break;
+          case chunk_at_var::kind::root: var_kind = ct_at_var_kind::root; break;
+        }
+        /** @brief 対応する閉じタグ文字列（例: "{{/@index}}"） */
+        auto close_tag_str = std::string{"{{/"} + std::string{key} + "}}";
+        auto body_start = pos;
+        auto close_pos = tmpl.find(close_tag_str, pos);
+        if (close_pos != std::string_view::npos) {
+          auto body = tmpl.substr(body_start, close_pos - body_start);
+          pos = close_pos + close_tag_str.size();
+
+          /** @brief @var セクションチャンクを追加し、本体を再帰パース */
+          auto chunk_idx = ctx.push_at_section(var_kind, 0, 0, false);
+          auto body_start_idx = ctx.tmpl.size;
+          ct_parse_into(ctx, body);
+          auto body_end_idx = ctx.tmpl.size;
+
+          ctx.update_at_section(chunk_idx, body_start_idx, body_end_idx);
+        }
+        continue;
+      }
+
+      // -- {{#key}} 通常セクションの処理 --
+      /**
+       * @brief 通常セクションの解析
+       * @details `{{#key}}...{{/key}}` の形式を解析する。
+       *          同一キーでのネストを考慮して depth カウントを行う。
+       *          セクション本体は再帰的にパースされる。
+       */
+      {
+        /** @brief 閉じタグと同一キーの開きタグの文字列を構築 */
+        auto close_tag_str = std::string{"{{/"} + std::string{key} + "}}";
+        auto open_tag_str = std::string{"{{#"} + std::string{key} + "}}";
+        auto body_start_pos = pos;
+
+        /** @brief ネストした同一キーのセクションを考慮して深さをカウント */
+        int depth2 = 1;
+        std::size_t search = pos;
+        std::size_t close_pos = std::string_view::npos;
+
+        while (search < tmpl.size()) {
+          auto next_open = tmpl.find(open_tag_str, search);
+          auto next_close = tmpl.find(close_tag_str, search);
+          if (next_close == std::string_view::npos) {
+            break;
+          }
+          if (next_open != std::string_view::npos && next_open < next_close) {
+            ++depth2;
+            search = next_open + open_tag_str.size();
+          } else {
+            --depth2;
+            if (depth2 == 0) {
+              close_pos = next_close;
+              break;
+            }
+            search = next_close + close_tag_str.size();
+          }
+        }
+
+        /** @brief セクション本体の生文字列 */
+        std::string_view body;
+        if (close_pos != std::string_view::npos) {
+          body = tmpl.substr(body_start_pos, close_pos - body_start_pos);
+          pos = close_pos + close_tag_str.size();
+        } else {
+          body = tmpl.substr(body_start_pos);
+          pos = tmpl.size();
+        }
+
+        /** @brief セクションチャンクを追加し、本体を再帰パース */
+        auto chunk_idx = ctx.push_section(key, 0, 0);
+        auto body_start_idx = ctx.tmpl.size;
+        ct_parse_into(ctx, body);
+        auto body_end_idx = ctx.tmpl.size;
+
+        ctx.update_section(chunk_idx, body_start_idx, body_end_idx);
+      }
+      continue;
+    }
+
+    // -- `^` で始まるタグ: 逆セクション --
+    if (inner.starts_with("^")) {
+      /** @brief `^` 以降のキー部分 */
+      auto key = trim_sv(inner.substr(1));
+
+      // -- {{^@var}} 逆セクションの処理 --
+      /**
+       * @brief @var 逆セクションの解析
+       * @details `{{^@first}}...{{/@first}}` のように記述し、
+       *          条件が偽の場合に本体が描画される（{{#@var}} の逆）。
+       */
+      if (key.starts_with("@")) {
+        auto k = parse_at_kind(key);
+        ct_at_var_kind var_kind;
+        switch (k) {
+          case chunk_at_var::kind::index: var_kind = ct_at_var_kind::index; break;
+          case chunk_at_var::kind::first: var_kind = ct_at_var_kind::first; break;
+          case chunk_at_var::kind::last: var_kind = ct_at_var_kind::last; break;
+          case chunk_at_var::kind::root: var_kind = ct_at_var_kind::root; break;
+        }
+        auto close_tag_str = std::string{"{{/"} + std::string{key} + "}}";
+        auto body_start_pos = pos;
+        auto close_pos = tmpl.find(close_tag_str, pos);
+        if (close_pos != std::string_view::npos) {
+          auto body = tmpl.substr(body_start_pos, close_pos - body_start_pos);
+          pos = close_pos + close_tag_str.size();
+
+          auto chunk_idx = ctx.push_at_section(var_kind, 0, 0, true);
+          auto body_start_idx = ctx.tmpl.size;
+          ct_parse_into(ctx, body);
+          auto body_end_idx = ctx.tmpl.size;
+
+          ctx.update_at_section(chunk_idx, body_start_idx, body_end_idx);
+        }
+        continue;
+      }
+
+      // -- {{^key}} 通常の逆セクションの処理 --
+      /**
+       * @brief 通常の逆セクションの解析
+       * @details `{{^key}}...{{/key}}` の形式を解析する。
+       *          キーに対応する値が偽（空配列・false・0）の場合に本体が描画される。
+       *          ネスト対応のため depth カウントを行う。
+       */
+      {
+        auto close_tag_str = std::string{"{{/"} + std::string{key} + "}}";
+        auto open_tag_str = std::string{"{{^"} + std::string{key} + "}}";
+        auto body_start_pos = pos;
+
+        int depth2 = 1;
+        std::size_t search = pos;
+        std::size_t close_pos = std::string_view::npos;
+
+        while (search < tmpl.size()) {
+          auto next_open = tmpl.find(open_tag_str, search);
+          auto next_close = tmpl.find(close_tag_str, search);
+          if (next_close == std::string_view::npos) {
+            break;
+          }
+          if (next_open != std::string_view::npos && next_open < next_close) {
+            ++depth2;
+            search = next_open + open_tag_str.size();
+          } else {
+            --depth2;
+            if (depth2 == 0) {
+              close_pos = next_close;
+              break;
+            }
+            search = next_close + close_tag_str.size();
+          }
+        }
+
+        std::string_view body;
+        if (close_pos != std::string_view::npos) {
+          body = tmpl.substr(body_start_pos, close_pos - body_start_pos);
+          pos = close_pos + close_tag_str.size();
+        } else {
+          body = tmpl.substr(body_start_pos);
+          pos = tmpl.size();
+        }
+
+        auto chunk_idx = ctx.push_inverted(key, 0, 0);
+        auto body_start_idx = ctx.tmpl.size;
+        ct_parse_into(ctx, body);
+        auto body_end_idx = ctx.tmpl.size;
+
+        ctx.update_section(chunk_idx, body_start_idx, body_end_idx);
+      }
+      continue;
+    }
+
+    // -- @var（単体）の処理 --
+    /**
+     * @brief @var タグの解析
+     * @details `{{@index}}` / `{{@first}}` / `{{@last}}` / `{{@root}}` の形式を解析する。
+     *          セクションではなく単一の値としてレンダリングされる。
+     */
+    if (inner.starts_with("@")) {
+      auto k = parse_at_kind(inner);
+      ct_at_var_kind var;
+      switch (k) {
+        case chunk_at_var::kind::index: var = ct_at_var_kind::index; break;
+        case chunk_at_var::kind::first: var = ct_at_var_kind::first; break;
+        case chunk_at_var::kind::last: var = ct_at_var_kind::last; break;
+        case chunk_at_var::kind::root: var = ct_at_var_kind::root; break;
+      }
+      ctx.push_at_var(var);
+      continue;
+    }
+
+    // -- 通常のプレースホルダ --
+    ctx.push_placeholder(inner, false);
+  }
+}
+
+} // namespace injamm::detail

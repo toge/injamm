@@ -1,0 +1,465 @@
+#include <catch2/catch_test_macros.hpp>
+#include "injamm/injamm.hpp"
+#include "injamm/escape_hatch.hpp"
+#include <glaze/glaze.hpp>
+#include <vector>
+
+// ---- テスト用データ型 ----
+
+/**
+ * @brief セクションテスト用のユーザーデータ型
+ * @details 名前と年齢を持つ単純なユーザー構造体。BcUsersData の配列要素として使用する。
+ */
+struct BcUser {
+  std::string name; /**< ユーザー名 */
+  int age{};        /**< 年齢 */
+};
+
+/**
+ * @brief ユーザーリストを保持するセクションテスト用データ型
+ * @details BcUser の配列を保持し、セクション描画のテストに使用する。
+ */
+struct BcUsersData {
+  std::vector<BcUser> users; /**< ユーザーの配列 */
+};
+
+/** @brief Glaze メタ情報: BcUser の JSON シリアライズ定義 */
+template <>
+struct glz::meta<BcUser> {
+  static constexpr auto value = glz::object("name", &BcUser::name, "age", &BcUser::age);
+};
+
+/** @brief Glaze メタ情報: BcUsersData の JSON シリアライズ定義 */
+template <>
+struct glz::meta<BcUsersData> {
+  static constexpr auto value = glz::object("users", &BcUsersData::users);
+};
+
+/**
+ * @brief 真偽値セクションテスト用データ型
+ * @details 単一の bool フラグを持ち、セクションの真偽判定をテストする。
+ */
+struct BcBoolData {
+  bool flag{}; /**< 真偽値フラグ */
+};
+
+/** @brief Glaze メタ情報: BcBoolData の JSON シリアライズ定義 */
+template <>
+struct glz::meta<BcBoolData> {
+  static constexpr auto value = glz::object("flag", &BcBoolData::flag);
+};
+
+/**
+ * @brief ネストセクションテスト用の内部データ型
+ * @details BcOuter の配列要素として使用される。
+ */
+struct BcNested {
+  std::string inner; /**< 内部文字列 */
+};
+
+/**
+ * @brief ネストセクションテスト用の外部データ型
+ * @details BcNested の配列を保持し、入れ子になったセクション描画をテストする。
+ */
+struct BcOuter {
+  std::vector<BcNested> items; /**< ネストされた要素の配列 */
+};
+
+/** @brief Glaze メタ情報: BcNested の JSON シリアライズ定義 */
+template <>
+struct glz::meta<BcNested> {
+  static constexpr auto value = glz::object("inner", &BcNested::inner);
+};
+
+/** @brief Glaze メタ情報: BcOuter の JSON シリアライズ定義 */
+template <>
+struct glz::meta<BcOuter> {
+  static constexpr auto value = glz::object("items", &BcOuter::items);
+};
+
+// ---- テストケース ----
+
+/**
+ * @brief リテラル文字列のみのテンプレート描画テスト
+ * @details 変数やセクションを含まないベタ文字列がそのまま出力されることを確認する。
+ */
+TEST_CASE("bc_literal", "[injamm]") {
+  auto bc = injamm::bc_template<BcBoolData>("hello world");
+  auto r = bc.render(BcBoolData{true});
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "hello world");
+}
+
+/**
+ * @brief 文字列変数の描画テスト
+ * @details {{name}} がデータの name フィールドで置換されることを確認する。
+ */
+TEST_CASE("bc_var_string", "[injamm]") {
+  BcUser data{"alice", 30};
+  auto bc = injamm::bc_template<BcUser>("{{name}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "alice");
+}
+
+/**
+ * @brief 整数変数の描画テスト
+ * @details {{age}} がデータの age フィールドの文字列表現で置換されることを確認する。
+ */
+TEST_CASE("bc_var_int", "[injamm]") {
+  BcUser data{"alice", 30};
+  auto bc = injamm::bc_template<BcUser>("{{age}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "30");
+}
+
+/**
+ * @brief セクション描画の基本テスト
+ * @details {{#users}}...{{/users}} で各要素に対して内容が繰り返し描画されることを確認する。
+ */
+TEST_CASE("bc_section", "[injamm]") {
+  BcUsersData data;
+  data.users.push_back(BcUser{"alice", 30});
+  data.users.push_back(BcUser{"bob", 25});
+  auto bc = injamm::bc_template<BcUsersData>("{{#users}}{{name}}-{{age}}/{{/users}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "alice-30/bob-25/");
+}
+
+/**
+ * @brief 空セクションの描画テスト
+ * @details 配列が空の場合、セクション内の内容は描画されず、
+ *          セクション直後の "none" のみが出力されることを確認する。
+ */
+TEST_CASE("bc_section_empty", "[injamm]") {
+  BcUsersData data;
+  auto bc = injamm::bc_template<BcUsersData>("{{#users}}{{name}}{{/users}}none");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "none");
+}
+
+/**
+ * @brief 真偽値セクション（true）の描画テスト
+ * @details フラグが true の場合、セクション内容が描画されることを確認する。
+ */
+TEST_CASE("bc_section_bool_true", "[injamm]") {
+  BcBoolData data{true};
+  auto bc = injamm::bc_template<BcBoolData>("{{#flag}}yes{{/flag}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "yes");
+}
+
+/**
+ * @brief 真偽値セクション（false）の描画テスト
+ * @details フラグが false の場合、セクション内容が出力されないことを確認する。
+ */
+TEST_CASE("bc_section_bool_false", "[injamm]") {
+  BcBoolData data{false};
+  auto bc = injamm::bc_template<BcBoolData>("{{#flag}}yes{{/flag}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "");
+}
+
+/**
+ * @brief 逆セクション（true）の描画テスト
+ * @details {{^flag}} はフラグが true の場合に内容を出力しないことを確認する。
+ */
+TEST_CASE("bc_inverted_true", "[injamm]") {
+  BcBoolData data{true};
+  auto bc = injamm::bc_template<BcBoolData>("{{^flag}}no{{/flag}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "");
+}
+
+/**
+ * @brief 逆セクション（false）の描画テスト
+ * @details {{^flag}} はフラグが false の場合に内容を出力することを確認する。
+ */
+TEST_CASE("bc_inverted_false", "[injamm]") {
+  BcBoolData data{false};
+  auto bc = injamm::bc_template<BcBoolData>("{{^flag}}no{{/flag}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "no");
+}
+
+/**
+ * @brief @index 特殊変数のテスト
+ * @details セクション内で {{@index}} が 0 から始まる連番を出力することを確認する。
+ */
+TEST_CASE("bc_at_index", "[injamm]") {
+  BcUsersData data;
+  data.users.push_back(BcUser{"a", 1});
+  data.users.push_back(BcUser{"b", 2});
+  data.users.push_back(BcUser{"c", 3});
+  auto bc = injamm::bc_template<BcUsersData>("{{#users}}{{@index}}{{/users}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "012");
+}
+
+/**
+ * @brief @first 特殊変数のテスト
+ * @details セクション内で {{@first}} が先頭要素のみ "true"、
+ *          それ以外は "false" を出力することを確認する。
+ */
+TEST_CASE("bc_at_first", "[injamm]") {
+  BcUsersData data;
+  data.users.push_back(BcUser{"a", 1});
+  data.users.push_back(BcUser{"b", 2});
+  auto bc = injamm::bc_template<BcUsersData>("{{#users}}{{@first}}{{/users}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "truefalse");
+}
+
+/**
+ * @brief @last 特殊変数のテスト
+ * @details セクション内で {{@last}} が末尾要素のみ "true"、
+ *          それ以外は "false" を出力することを確認する。
+ */
+TEST_CASE("bc_at_last", "[injamm]") {
+  BcUsersData data;
+  data.users.push_back(BcUser{"a", 1});
+  data.users.push_back(BcUser{"b", 2});
+  auto bc = injamm::bc_template<BcUsersData>("{{#users}}{{@last}}{{/users}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "falsetrue");
+}
+
+/**
+ * @brief ネストセクションの描画テスト
+ * @details オブジェクトの配列内のフィールドにアクセスするネスト構造が正しく描画されることを確認する。
+ */
+TEST_CASE("bc_nested_section", "[injamm]") {
+  BcOuter data;
+  data.items.push_back(BcNested{"x"});
+  data.items.push_back(BcNested{"y"});
+  auto bc = injamm::bc_template<BcOuter>("{{#items}}{{inner}}{{/items}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "xy");
+}
+
+/**
+ * @brief 生出力（{{{...}}}）のテスト
+ * @details トリプルマスタッシュ {{{name}}} は HTML エスケープを行わず、
+ *          生の文字列をそのまま出力することを確認する。
+ */
+TEST_CASE("bc_raw_output", "[injamm]") {
+  BcUser data{"<b>alice</b>", 30};
+  auto bc = injamm::bc_template<BcUser>("{{{name}}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "<b>alice</b>");
+}
+
+/**
+ * @brief HTML エスケープ出力のテスト
+ * @details ダブルマスタッシュ {{name}} は HTML 特殊文字をエスケープして出力することを確認する。
+ */
+TEST_CASE("bc_escaped_output", "[injamm]") {
+  BcUser data{"<b>alice</b>", 30};
+  auto bc = injamm::bc_template<BcUser>("{{name}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "&lt;b&gt;alice&lt;/b&gt;");
+}
+
+/**
+ * @brief 複数変数の描画テスト
+ * @details テンプレート内に複数の変数がある場合、それぞれ正しく置換されることを確認する。
+ */
+TEST_CASE("bc_multiple_vars", "[injamm]") {
+  BcUser data{"alice", 30};
+  auto bc = injamm::bc_template<BcUser>("{{name}}:{{age}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "alice:30");
+}
+
+/**
+ * @brief 複合テンプレートの描画テスト
+ * @details セクション内で if/else と @last を組み合わせた複雑なテンプレートが
+ *          正しく描画されることを確認する。
+ *          @note 期待される出力: "users: alice (30), bob (25)."
+ */
+TEST_CASE("bc_complex_template", "[injamm]") {
+  BcUsersData data;
+  data.users.push_back(BcUser{"alice", 30});
+  data.users.push_back(BcUser{"bob", 25});
+  auto bc = injamm::bc_template<BcUsersData>(
+    "users: {{#users}}{{name}} ({{age}}){{#if @last}}.{{else}}, {{/if}}{{/users}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "users: alice (30), bob (25).");
+}
+
+// ---- ネストパステスト ----
+
+/**
+ * @brief 住所データ型（ネストパス用）
+ * @details ネストされたドット区切りパスアクセスのテストに使用する。
+ */
+struct BcAddress {
+  std::string city;    /**< 市区町村 */
+  std::string country; /**< 国 */
+};
+
+/**
+ * @brief 創業者データ型（ネストパス用）
+ * @details 名前と住所（BcAddress）を持つ。BcCompany のネストフィールドとして使用する。
+ */
+struct BcFounder {
+  std::string name;    /**< 創業者名 */
+  BcAddress address;   /**< 住所 */
+};
+
+/**
+ * @brief 会社データ型（ネストパス用）
+ * @details 会社名と創業者情報を持ち、ドット区切りパスアクセスのトップレベルデータとして使用する。
+ */
+struct BcCompany {
+  std::string name;      /**< 会社名 */
+  BcFounder founder;     /**< 創業者情報 */
+};
+
+/** @brief Glaze メタ情報: BcAddress の JSON シリアライズ定義 */
+template <>
+struct glz::meta<BcAddress> {
+  static constexpr auto value = glz::object("city", &BcAddress::city, "country", &BcAddress::country);
+};
+
+/** @brief Glaze メタ情報: BcFounder の JSON シリアライズ定義 */
+template <>
+struct glz::meta<BcFounder> {
+  static constexpr auto value = glz::object("name", &BcFounder::name, "address", &BcFounder::address);
+};
+
+/** @brief Glaze メタ情報: BcCompany の JSON シリアライズ定義 */
+template <>
+struct glz::meta<BcCompany> {
+  static constexpr auto value = glz::object("name", &BcCompany::name, "founder", &BcCompany::founder);
+};
+
+/**
+ * @brief 単純なネストパスアクセスのテスト
+ * @details {{founder.name}} がドット区切りパスを正しく解決し、創業者名を出力することを確認する。
+ */
+TEST_CASE("bc_nested_path_simple", "[injamm]") {
+  auto bc = injamm::bc_template<BcCompany>("{{founder.name}}");
+  BcCompany data{.name = "Acme", .founder = BcFounder{.name = "John", .address = {"NYC", "USA"}}};
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "John");
+}
+
+/**
+ * @brief 深いネストパスアクセスのテスト
+ * @details {{founder.address.city}} が 2 階層のドット区切りパスを正しく解決し、
+ *          市区町村名を出力することを確認する。
+ */
+TEST_CASE("bc_nested_path_deep", "[injamm]") {
+  auto bc = injamm::bc_template<BcCompany>("{{founder.address.city}}");
+  BcCompany data{.name = "Acme", .founder = BcFounder{.name = "John", .address = {"NYC", "USA"}}};
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "NYC");
+}
+
+// ---- if/else テスト ----
+
+/**
+ * @brief if/else テスト用データ型
+ * @details 名前と年齢を持ち、age フィールドの Truthy/Falsy 判定で if ブロックの制御を行う。
+ */
+struct BcIfData {
+  std::string name; /**< 名前 */
+  int age{};        /**< 年齢（0 は Falsy として扱う） */
+};
+
+/** @brief Glaze メタ情報: BcIfData の JSON シリアライズ定義 */
+template <>
+struct glz::meta<BcIfData> {
+  static constexpr auto value = glz::object("name", &BcIfData::name, "age", &BcIfData::age);
+};
+
+/**
+ * @brief if 文（真）の描画テスト
+ * @details {{#if age}} が非ゼロ値に対して内容を出力することを確認する。
+ */
+TEST_CASE("bc_if_bool_true", "[injamm]") {
+  auto bc = injamm::bc_template<BcIfData>("{{#if age}}adult{{/if}}");
+  BcIfData data{"alice", 20};
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "adult");
+}
+
+/**
+ * @brief if 文（偽）の描画テスト
+ * @details {{#if age}} がゼロ値に対して内容を出力しないことを確認する。
+ */
+TEST_CASE("bc_if_bool_false", "[injamm]") {
+  auto bc = injamm::bc_template<BcIfData>("{{#if age}}adult{{/if}}");
+  BcIfData data{"alice", 0};
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "");
+}
+
+/**
+ * @brief if/else 文（真）の描画テスト
+ * @details {{#if age}}...{{else}}...{{/if}} で真の場合に if 節が出力されることを確認する。
+ */
+TEST_CASE("bc_if_else_true", "[injamm]") {
+  auto bc = injamm::bc_template<BcIfData>("{{#if age}}A{{else}}B{{/if}}");
+  BcIfData data{"alice", 20};
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "A");
+}
+
+/**
+ * @brief if/else 文（偽）の描画テスト
+ * @details {{#if age}}...{{else}}...{{/if}} で偽の場合に else 節が出力されることを確認する。
+ */
+TEST_CASE("bc_if_else_false", "[injamm]") {
+  auto bc = injamm::bc_template<BcIfData>("{{#if age}}A{{else}}B{{/if}}");
+  BcIfData data{"alice", 0};
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "B");
+}
+
+/**
+ * @brief if 文と @last の組み合わせテスト
+ * @details セクション内で {{@last}} を if 条件に使用し、末尾要素のみドットを追記する動作を確認する。
+ */
+TEST_CASE("bc_if_with_at_last", "[injamm]") {
+  auto bc = injamm::bc_template<BcUsersData>("{{#users}}{{name}}{{#if @last}}.{{/if}}{{/users}}");
+  BcUsersData data{.users = {{"a", 1}, {"b", 2}}};
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "ab.");
+}
+
+/**
+ * @brief if/else とセクションの組み合わせテスト
+ * @details セクション内で @last による if/else 分岐を行い、
+ *          カンマ区切りと末尾のピリオドが正しく出力されることを確認する。
+ */
+TEST_CASE("bc_if_else_with_section", "[injamm]") {
+  auto bc = injamm::bc_template<BcUsersData>("{{#users}}{{name}}{{#if @last}}.{{else}},{{/if}}{{/users}}");
+  BcUsersData data{.users = {{"a", 1}, {"b", 2}, {"c", 3}}};
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "a,b,c.");
+}

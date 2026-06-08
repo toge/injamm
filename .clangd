@@ -1,0 +1,28 @@
+# https://clangd.llvm.org/config.html#showaka
+Diagnostics:
+  ClangTidy:
+    Add:
+      - modernize-*
+      - bugprone-*
+      - performance-*
+    CheckOptions:
+      readability-identifier-naming.VariableCase: CamelCase
+  MissingIncludes: Strict
+  UnusedIncludes: Strict
+InlayHints:
+  BlockEnd: true
+  Designators: true
+  Enabled: true
+  ParameterNames: true
+  DeducedTypes: true
+  DefaultArguments: true
+  TypeNameLimit: 24
+CompileFlags:
+  Add: [-std=c++23]
+Style:
+  QuotedHeaders: ["build/.*", ".*", "include/.*", "src/.*"]
+Completion:
+  AllScopes: true
+  ArgumentLists: OpenDelimiter
+  HeaderInsertion: IWYU
+  CodePatterns: All
