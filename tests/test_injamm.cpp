@@ -5,6 +5,45 @@
 #include <vector>
 
 // ---- テスト用データ型 ----
+// (existing types: BcUser, BcUsersData, BcBoolData, BcNested, BcOuter, BcAddress, BcFounder, BcCompany, BcIfData)
+
+struct BcRootData {
+  std::string app_name{"injamm"};
+  struct Inner {
+    std::string version{"1.0"};
+  } info{.version = "1.0"};
+};
+
+template <>
+struct glz::meta<BcRootData> {
+  static constexpr auto value = glz::object("app_name", &BcRootData::app_name, "info", &BcRootData::info);
+};
+
+template <>
+struct glz::meta<BcRootData::Inner> {
+  static constexpr auto value = glz::object("version", &BcRootData::Inner::version);
+};
+
+struct BcMapData {
+  std::string host{"localhost"};
+  int port{8080};
+};
+
+template <>
+struct glz::meta<BcMapData> {
+  static constexpr auto value = glz::object("host", &BcMapData::host, "port", &BcMapData::port);
+};
+
+struct BcMapWrapper {
+  BcMapData config;
+};
+
+template <>
+struct glz::meta<BcMapWrapper> {
+  static constexpr auto value = glz::object("config", &BcMapWrapper::config);
+};
+
+// (Rest of existing types...)
 
 /**
  * @brief セクションテスト用のユーザーデータ型
@@ -463,3 +502,54 @@ TEST_CASE("bc_if_else_with_section", "[injamm]") {
   REQUIRE(r.has_value());
   REQUIRE(*r == "a,b,c.");
 }
+
+TEST_CASE("bc_at_root", "[injamm]") {
+  BcRootData data;
+  auto bc = injamm::bc_template<BcRootData>("app: {{@root}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "app: ");
+}
+
+TEST_CASE("bc_at_root_field_simple", "[injamm]") {
+  BcRootData data;
+  auto bc = injamm::bc_template<BcRootData>("{{@root.app_name}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "injamm");
+}
+
+TEST_CASE("bc_at_root_field_nested", "[injamm]") {
+  BcRootData data;
+  auto bc = injamm::bc_template<BcRootData>("{{@root.info.version}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "1.0");
+}
+
+TEST_CASE("bc_at_key_array", "[injamm]") {
+  BcUsersData data;
+  data.users.push_back(BcUser{"a", 1});
+  data.users.push_back(BcUser{"b", 2});
+  auto bc = injamm::bc_template<BcUsersData>("{{#users}}{{@key}}:{{name}},{{/users}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "0:a,1:b,");
+}
+
+TEST_CASE("bc_at_key_struct", "[injamm]") {
+  BcMapWrapper data;
+  auto bc = injamm::bc_template<BcMapWrapper>("{{#config}}{{@key}}={{this}};{{/config}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "host=localhost;port=8080;");
+}
+
+TEST_CASE("bc_struct_iteration_nested", "[injamm]") {
+  BcMapWrapper data;
+  auto bc = injamm::bc_template<BcMapWrapper>("{{#config}}{{#if @key}}k{{/if}}{{/config}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "kk");
+}
+

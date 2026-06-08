@@ -20,6 +20,8 @@ struct bc_loop_state {
   /**< 現在のループインデックス（0始まり） */
   std::uint32_t count = 0;
   /**< ループ内の総要素数 */
+  std::string_view key{};
+  /**< 現在の要素のキー名（@key 用、マップ反復時のみ設定） */
   bc_loop_state const* parent = nullptr;
   /**< 親ループ状態へのポインタ。ネスト時のみ使用 */
 };
@@ -297,7 +299,12 @@ public:
       &&L_emit_at_inverted,  // 14
       &&L_emit_litvar,       // 15
       &&L_emit_litvar_raw,   // 16
-      &&L_halt,              // 17
+      &&L_emit_at_root,      // 17
+      &&L_emit_at_root_field,    // 18
+      &&L_emit_at_root_field_raw, // 19
+      &&L_emit_at_key,       // 20
+      &&L_emit_this,         // 21
+      &&L_halt,              // 22
     };
 
 /** @brief 現在の命令のオペコードに対応するラベルにジャンプする */
@@ -349,15 +356,33 @@ public:
             auto r2 = child_exec.execute_impl(pc + 1, body_end - 1);
             if (!r2) return r2;
           }
-        } else if constexpr (std::same_as<FT, bool>) {
-          /** bool の場合: 真ならボディを一度描画 */
-          if (field) {
-            auto r2 = execute_impl(pc + 1, body_end - 1);
-            if (!r2) return r2;
-          }
-        }
-        return {};
-      });
+         } else if constexpr (std::same_as<FT, bool>) {
+           /** bool の場合: 真ならボディを一度描画 */
+           if (field) {
+             auto r2 = execute_impl(pc + 1, body_end - 1);
+             if (!r2) return r2;
+           }
+         } else if constexpr (ct_glz_reflectable<FT>) {
+           /** 構造体の場合: 全フィールドを反復 */
+           constexpr auto sz = glz::reflect<FT>::size;
+           auto tied = glz::to_tie(field);
+           std::expected<void, error_ctx> res{};
+           [&]<std::size_t... I>(std::index_sequence<I...>) {
+             (([&] {
+               if (!res) return;
+               bc_loop_state ls;
+               ls.count = sz;
+               ls.index = I;
+               ls.key = glz::reflect<FT>::keys[I];
+               using elem_t = std::remove_cvref_t<decltype(glz::get<I>(tied))>;
+               bc_executor<elem_t, RootT> child_exec(bc_, glz::get<I>(tied), root_value_, &ls, out_);
+               res = child_exec.execute_impl(pc + 1, body_end - 1);
+             }()), ...);
+           }(std::make_index_sequence<sz>{});
+           return res;
+         }
+         return {};
+       });
       if (!r) return r;
       pc = body_end;
       DISPATCH();
@@ -477,6 +502,9 @@ public:
           } else if (ref.key == "@index") {
             /** @index は 0 以外で真（0 は偽扱い） */
             cond = (loop_->index != 0);
+          } else if (ref.key == "@key") {
+            /** @key は空でなければ真 */
+            cond = !loop_->key.empty();
           }
         }
       } else {
@@ -577,6 +605,55 @@ public:
       DISPATCH();
     }
 
+    /** @brief @root: ルートコンテキスト全体をシリアライズして出力する */
+    L_emit_at_root: {
+      if constexpr (serializable_v<RootT>) {
+        serialize_value(out_, root_value_);
+      }
+      ++pc;
+      DISPATCH();
+    }
+
+    /** @brief @root.field: ルートコンテキストのフィールドを解決して出力する */
+    L_emit_at_root_field:
+    L_emit_at_root_field_raw: {
+      auto const& ref = bc_.var_refs[bc_.instructions[pc].operand];
+      bool raw = (bc_.instructions[pc].op == bc_opcode::emit_at_root_field_raw);
+      auto r = for_each_field(root_value_, ref.key, ref.field_index, [&](auto const& field) {
+        emit_var_value(field, raw);
+      });
+      if (!r) return r;
+      ++pc;
+      DISPATCH();
+    }
+
+    /** @brief @key: ループ内の現在要素キー名を出力する */
+    L_emit_at_key: {
+      if (loop_) {
+        if (!loop_->key.empty()) {
+          out_.append(loop_->key);
+        } else {
+          /** キーが空の場合（配列反復など）はインデックスを文字列として出力 */
+          std::array<char, 16> buf;
+          auto [ptr, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), loop_->index);
+          if (ec == std::errc{}) {
+            out_.append(buf.data(), ptr);
+          }
+        }
+      }
+      ++pc;
+      DISPATCH();
+    }
+
+    /** @brief {{this}}: 現在のコンテキスト自体を出力する */
+    L_emit_this: {
+      if constexpr (serializable_v<T>) {
+        serialize_value(out_, value_);
+      }
+      ++pc;
+      DISPATCH();
+    }
+
     /** @brief プログラム終端 */
     L_halt: {
       return {};
@@ -631,18 +708,35 @@ public:
                 auto r2 = child_exec.execute_impl(pc + 1, body_end - 1);
                 if (!r2) return r2;
               }
-            } else if constexpr (std::same_as<FT, bool>) {
-              if (field) {
-                auto r2 = execute_impl(pc + 1, body_end - 1);
-                if (!r2) return r2;
-              }
-            }
-            return {};
-          });
-          if (!r) return r;
-          pc = body_end;
-          break;
-        }
+             } else if constexpr (std::same_as<FT, bool>) {
+               if (field) {
+                 auto r2 = execute_impl(pc + 1, body_end - 1);
+                 if (!r2) return r2;
+               }
+             } else if constexpr (ct_glz_reflectable<FT>) {
+               constexpr auto sz = glz::reflect<FT>::size;
+               auto tied = glz::to_tie(field);
+               std::expected<void, error_ctx> res{};
+               [&]<std::size_t... I>(std::index_sequence<I...>) {
+                 (([&] {
+                   if (!res) return;
+                   bc_loop_state ls;
+                   ls.count = sz;
+                   ls.index = I;
+                   ls.key = glz::reflect<FT>::keys[I];
+                   using elem_t = std::remove_cvref_t<decltype(glz::get<I>(tied))>;
+                   bc_executor<elem_t, RootT> child_exec(bc_, glz::get<I>(tied), root_value_, &ls, out_);
+                   res = child_exec.execute_impl(pc + 1, body_end - 1);
+                 }()), ...);
+               }(std::make_index_sequence<sz>{});
+               return res;
+             }
+             return {};
+           });
+           if (!r) return r;
+           pc = body_end;
+           break;
+         }
 
         /** @brief 実行終端 */
         case bc_opcode::emit_end: {
@@ -788,6 +882,53 @@ public:
             emit_var_value(field, instr.op == bc_opcode::emit_litvar_raw);
           });
           if (!r) return r;
+          ++pc;
+          break;
+        }
+
+        /** @brief @root: ルートコンテキスト全体をシリアライズして出力する */
+        case bc_opcode::emit_at_root: {
+          if constexpr (serializable_v<RootT>) {
+            serialize_value(out_, root_value_);
+          }
+          ++pc;
+          break;
+        }
+
+        /** @brief @root.field: ルートコンテキストのフィールドを解決して出力する */
+        case bc_opcode::emit_at_root_field:
+        case bc_opcode::emit_at_root_field_raw: {
+          auto const& ref = bc_.var_refs[instr.operand];
+          auto r = for_each_field(root_value_, ref.key, ref.field_index, [&](auto const& field) {
+            emit_var_value(field, instr.op == bc_opcode::emit_at_root_field_raw);
+          });
+          if (!r) return r;
+          ++pc;
+          break;
+        }
+
+        /** @brief @key: ループ内の現在要素キー名を出力する */
+        case bc_opcode::emit_at_key: {
+          if (loop_) {
+            if (!loop_->key.empty()) {
+              out_.append(loop_->key);
+            } else {
+              std::array<char, 16> buf;
+              auto [ptr, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), loop_->index);
+              if (ec == std::errc{}) {
+                out_.append(buf.data(), ptr);
+              }
+            }
+          }
+          ++pc;
+          break;
+        }
+
+        /** @brief {{this}}: 現在のコンテキスト自体を出力する */
+        case bc_opcode::emit_this: {
+          if constexpr (serializable_v<T>) {
+            serialize_value(out_, value_);
+          }
           ++pc;
           break;
         }

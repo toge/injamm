@@ -30,6 +30,11 @@ enum class bc_opcode : std::uint8_t {
   emit_at_inverted,   /**< ^@first/^@last/^@index 反転セクション */
   emit_litvar,        /**< 融合命令: リテラル + 変数（エスケープあり） */
   emit_litvar_raw,    /**< 融合命令: リテラル + 変数（生出力） */
+  emit_at_root,       /**< @root 出力（ルートコンテキストのシリアライズ） */
+  emit_at_root_field,     /**< @root.field ルートフィールド解決（エスケープあり） */
+  emit_at_root_field_raw, /**< @root.field ルートフィールド解決（生出力） */
+  emit_at_key,        /**< @key 出力（ループ内の現在要素キー名 / インデックス文字列） */
+  emit_this,          /**< 現在のコンテキスト自体のシリアライズ */
   halt                /**< プログラム終了 */
 };
 

@@ -40,6 +40,9 @@ namespace injamm::detail {
   if (key == "@index") {
     return chunk_at_var::kind::index;
   }
+  if (key == "@key") {
+    return chunk_at_var::kind::key;
+  }
   return chunk_at_var::kind::root;
 }
 
@@ -356,7 +359,13 @@ constexpr void parse_into(Container& result, std::string_view tmpl) {
       continue;
     }
 
-    /** @ で始まる @vars（@index / @first / @last） */
+    /** @root.field はプレースホルダとして扱う（パス情報を保持） */
+    if (inner.starts_with("@root.")) {
+      result.push_back(chunk_placeholder{std::string{inner}, false});
+      continue;
+    }
+
+    /** @ で始まる @vars（@index / @first / @last / @root） */
     if (inner.starts_with("@")) {
       result.push_back(chunk_at_var{parse_at_kind(inner)});
       continue;

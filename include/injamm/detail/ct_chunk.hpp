@@ -29,7 +29,7 @@ enum class ct_chunk_kind : std::uint8_t {
  *
  * @details ct_parsed_template::flags フィールドに uint8_t として格納される。
  */
-enum class ct_at_var_kind : std::uint8_t { index, first, last, root };
+enum class ct_at_var_kind : std::uint8_t { index, first, last, root, key };
 
 /**
  * @brief SoA（Struct of Arrays）形式のコンパイル時パース結果

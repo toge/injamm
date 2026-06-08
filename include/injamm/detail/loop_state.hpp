@@ -12,6 +12,7 @@ namespace injamm::detail {
 struct loop_state {
   std::uint32_t index = 0;  /**< 現在のループインデックス（0始まり） */
   std::uint32_t count = 1;  /**< ループ総数。デフォルト1によりトップレベルで @last を偽にする */
+  std::string_view key{};   /**< 現在の要素のキー名（@key 用、マップ反復時のみ設定） */
 
   /** @brief 最初の要素か判定する
    *  @return 最初の要素なら true

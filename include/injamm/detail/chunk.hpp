@@ -68,7 +68,7 @@ struct chunk_inverted {
  *          @root はコンテキストルートへの参照として機能する。
  */
 struct chunk_at_var {
-  enum class kind { index, first, last, root };
+  enum class kind { index, first, last, root, key };
   kind var;
 };
 

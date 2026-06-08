@@ -55,6 +55,12 @@ inline bool resolve_value(Buffer& out, std::string_view key, T const& value, loo
       serialize_value(out, loop->is_last());
       return true;
     }
+    if (key == "@key") {
+      if (!loop->key.empty()) {
+        serialize_value(out, loop->key);
+      }
+      return true;
+    }
     return false;
   }
 
@@ -147,6 +153,9 @@ inline bool evaluate_if_expr(std::string_view expr, T const& value, loop_state c
     }
     if (expr == "@index") {
       return loop->index > 0;
+    }
+    if (expr == "@key") {
+      return !loop->key.empty();
     }
     return false;
   }

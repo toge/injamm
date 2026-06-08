@@ -508,6 +508,12 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
       continue;
     }
 
+    // -- @root.field（パス情報を保持するためプレースホルダとして扱う） --
+    if (inner.starts_with("@root.")) {
+      ctx.push_placeholder(inner, false);
+      continue;
+    }
+
     // -- @var（単体）の処理 --
     /**
      * @brief @var タグの解析
@@ -522,6 +528,7 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
         case chunk_at_var::kind::first: var = ct_at_var_kind::first; break;
         case chunk_at_var::kind::last: var = ct_at_var_kind::last; break;
         case chunk_at_var::kind::root: var = ct_at_var_kind::root; break;
+        case chunk_at_var::kind::key: var = ct_at_var_kind::key; break;
       }
       ctx.push_at_var(var);
       continue;

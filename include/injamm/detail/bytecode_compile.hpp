@@ -77,8 +77,25 @@ class bc_compiler {
   }
 
   /**
-   * @brief @index/@first/@last 参照命令を発行する
-   * @param key @index / @first / @last のいずれか
+   * @brief @root.field 参照命令を発行する
+   * @param key @root.xxx 形式のキー全体
+   * @param raw 生出力フラグ
+   * @details プレフィックス @root. を除去し、残りのパスを var_ref として登録して
+   *          emit_at_root_field 命令を発行する。
+   */
+  void emit_root_field(std::string_view key, bool raw) {
+    auto rest = key.substr(6);
+    auto idx = bc_.add_var_ref(rest);
+    auto field_idx = resolve_field_index<T>(rest);
+    if (field_idx != UINT32_MAX) {
+      bc_.set_field_index(idx, field_idx);
+    }
+    bc_.add_instruction(raw ? bc_opcode::emit_at_root_field_raw : bc_opcode::emit_at_root_field, idx);
+  }
+
+  /**
+   * @brief @index/@first/@last/@root/@key 参照命令を発行する
+   * @param key @index / @first / @last / @root のいずれか
    */
   void emit_at_var(std::string_view key) {
     auto k = parse_at_kind(key);
@@ -91,6 +108,12 @@ class bc_compiler {
         break;
       case chunk_at_var::kind::last:
         bc_.add_instruction(bc_opcode::emit_at_last);
+        break;
+      case chunk_at_var::kind::root:
+        bc_.add_instruction(bc_opcode::emit_at_root);
+        break;
+      case chunk_at_var::kind::key:
+        bc_.add_instruction(bc_opcode::emit_at_key);
         break;
       default:
         break;
@@ -234,7 +257,11 @@ class bc_compiler {
           continue;
         }
         auto key = trim_sv(tmpl_.substr(tag_start + 3, end - tag_start - 3));
-        emit_var(key, true);
+        if (key.starts_with("@root.")) {
+          emit_root_field(key, true);
+        } else {
+          emit_var(key, true);
+        }
         pos_ = end + 3;
         continue;
       }
@@ -292,7 +319,19 @@ class bc_compiler {
         continue;
       }
 
-      /** @brief {{@index}} / {{@first}} / {{@last}} */
+      /** @brief {{@root.field}} — ルートコンテキストフィールド参照 */
+      if (inner.starts_with("@root.")) {
+        emit_root_field(inner, false);
+        continue;
+      }
+
+      /** @brief {{this}} — 現在のコンテキスト自体の参照 */
+      if (inner == "this") {
+        bc_.add_instruction(bc_opcode::emit_this);
+        continue;
+      }
+
+      /** @brief {{@index}} / {{@first}} / {{@last}} / {{@root}} */
       if (inner.starts_with("@")) {
         emit_at_var(inner);
         continue;
@@ -370,7 +409,19 @@ class bc_compiler {
         continue;
       }
 
-      /** @brief {{@index}} / {{@first}} / {{@last}} */
+      /** @brief {{@root.field}} — ルートコンテキストフィールド参照 */
+      if (inner.starts_with("@root.")) {
+        emit_root_field(inner, false);
+        continue;
+      }
+
+      /** @brief {{this}} — 現在のコンテキスト自体の参照 */
+      if (inner == "this") {
+        bc_.add_instruction(bc_opcode::emit_this);
+        continue;
+      }
+
+      /** @brief {{@index}} / {{@first}} / {{@last}} / {{@root}} */
       if (inner.starts_with("@")) {
         emit_at_var(inner);
         continue;

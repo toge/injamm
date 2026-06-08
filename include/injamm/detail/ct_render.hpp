@@ -307,15 +307,30 @@ constexpr auto ct_render_inverted(Buffer& out, ct_parsed_template<N> const& chun
           if (field.empty()) {
             res = ct_render_chunks<Mode>(out, chunks, body_start, body_end, value, root_value, parent_loop);
           }
-        } else if constexpr (std::same_as<FT, bool>) {
-          /** @brief false の場合のみ本体を描画 */
-          if (!field) {
-            res = ct_render_chunks<Mode>(out, chunks, body_start, body_end, value, root_value, parent_loop);
-          }
-        } else {
-          res = std::unexpected(error_ctx{.ec = error_code::type_mismatch});
-        }
-      }()), ...);
+         } else if constexpr (std::same_as<FT, bool>) {
+           /** bool 型の場合: 条件分岐 */
+           if (field) {
+             res = ct_render_chunks<Mode>(out, chunks, body_start, body_end, value, root_value, parent_loop);
+           }
+         } else if constexpr (ct_glz_reflectable<FT>) {
+           /** 構造体の場合: 全フィールドを反復 */
+           constexpr auto sz = glz::reflect<FT>::size;
+           auto tied = glz::to_tie(field);
+           [&]<std::size_t... J>(std::index_sequence<J...>) {
+             (([&] {
+               if (!res) return;
+               loop_state ls;
+               ls.count = sz;
+               ls.index = J;
+               ls.key = glz::reflect<FT>::keys[J];
+               res = ct_render_chunks<Mode>(out, chunks, body_start, body_end, glz::get<J>(tied), root_value, &ls);
+             }()), ...);
+           }(std::make_index_sequence<sz>{});
+         } else {
+           res = std::unexpected(error_ctx{.ec = error_code::type_mismatch});
+         }
+       }()), ...);
+
     }(std::make_index_sequence<sz>{});
 
     if (!found) {
@@ -366,6 +381,12 @@ constexpr auto ct_render_at_var(Buffer& out, ct_parsed_template<N> const& chunks
         serialize_value(out, root_value);
       } else {
         return std::unexpected(error_ctx{.ec = error_code::type_mismatch});
+      }
+      break;
+    case ct_at_var_kind::key:
+      if (!loop) return {};
+      if (!loop->key.empty()) {
+        serialize_value(out, loop->key);
       }
       break;
   }
