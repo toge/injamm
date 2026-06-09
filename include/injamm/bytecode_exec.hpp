@@ -398,12 +398,17 @@ public:
           ls.count = static_cast<std::uint32_t>(field.size());
 
           for (ls.index = 0; ls.index < static_cast<std::uint32_t>(field.size()); ++ls.index) {
+            ls.continue_flag = false;
             bc_executor<elem_t, RootT> child_exec(bc_, field[ls.index], root_value_, &ls, out_);
             auto r2 = child_exec.execute_impl(pc + 1, body_end - 1);
             if (!r2) return r2;
+            if (ls.continue_flag) {
+              ls.continue_flag = false;
+              continue;
+            }
             if (ls.break_flag) break;
-          }
-         } else if constexpr (std::same_as<FT, bool>) {
+           }
+          } else if constexpr (std::same_as<FT, bool>) {
            /** bool の場合: 真ならボディを一度描画 */
            if (field) {
              auto r2 = execute_impl(pc + 1, body_end - 1);
@@ -1236,9 +1241,14 @@ public:
               ls.count = static_cast<std::uint32_t>(field.size());
 
               for (ls.index = 0; ls.index < static_cast<std::uint32_t>(field.size()); ++ls.index) {
+                ls.continue_flag = false;
                 bc_executor<elem_t, RootT> child_exec(bc_, field[ls.index], root_value_, &ls, out_);
                 auto r2 = child_exec.execute_impl(pc + 1, body_end - 1);
                 if (!r2) return r2;
+                if (ls.continue_flag) {
+                  ls.continue_flag = false;
+                  continue;
+                }
                 if (ls.break_flag) break;
               }
              } else if constexpr (std::same_as<FT, bool>) {
