@@ -15,6 +15,8 @@ struct loop_state {
   std::uint32_t count = 0;  /**< ループ総数 */
   bool in_loop = false;     /**< ループ内かどうか */
   std::string_view key{};   /**< 現在の要素のキー名（@key 用、マップ反復時のみ設定） */
+  mutable bool break_flag = false;    /**< break 要求フラグ（子 executor からセット） */
+  mutable bool continue_flag = false; /**< continue 要求フラグ（子 executor からセット） */
 
   /** @brief 最初の要素か判定する
    *  @return 最初の要素なら true

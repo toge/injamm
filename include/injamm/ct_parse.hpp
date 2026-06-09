@@ -161,6 +161,20 @@ struct ct_parse_context {
     tmpl.body_starts[idx] = body_start;
     tmpl.body_ends[idx] = body_end;
   }
+
+  /**
+   * @brief break チャンクを追加する
+   */
+  constexpr void push_break() {
+    tmpl.push_break();
+  }
+
+  /**
+   * @brief continue チャンクを追加する
+   */
+  constexpr void push_continue() {
+    tmpl.push_continue();
+  }
 };
 
 /**
@@ -276,6 +290,16 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
     if (inner.starts_with("#")) {
       /** @brief `#` 以降のキー部分 */
       auto key = trim_sv(inner.substr(1));
+
+      if (key == "break") {
+        ctx.push_break();
+        continue;
+      }
+
+      if (key == "continue") {
+        ctx.push_continue();
+        continue;
+      }
 
       // -- {{#if X}} の処理 --
       /**

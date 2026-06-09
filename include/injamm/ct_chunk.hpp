@@ -25,7 +25,9 @@ enum class ct_chunk_kind : std::uint8_t {
   inverted,     /**< 逆セクション */
   at_var,       /**< @変数 */
   at_section,   /**< @変数セクション */
-  if_else       /**< if/else */
+  if_else,      /**< if/else */
+  ct_break,     /**< break */
+  ct_continue   /**< continue */
 };
 
 /**
@@ -225,6 +227,28 @@ struct ct_parsed_template {
     for (std::size_t j = 0; j < n; ++j)
       float_filters[size][j] = float_filter_list[j];
     float_filter_count[size] = static_cast<std::uint8_t>(n);
+    ++size;
+  }
+
+  /**
+   * @brief break チャンクを追加する
+   */
+  constexpr void push_break() {
+    if (size >= N) {
+      throw std::overflow_error("ct_parsed_template: chunk buffer overflow");
+    }
+    kinds[size] = ct_chunk_kind::ct_break;
+    ++size;
+  }
+
+  /**
+   * @brief continue チャンクを追加する
+   */
+  constexpr void push_continue() {
+    if (size >= N) {
+      throw std::overflow_error("ct_parsed_template: chunk buffer overflow");
+    }
+    kinds[size] = ct_chunk_kind::ct_continue;
     ++size;
   }
 };

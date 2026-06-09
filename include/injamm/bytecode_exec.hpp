@@ -28,6 +28,10 @@ struct bc_loop_state {
   /**< 現在の要素のキー名（@key 用、マップ反復時のみ設定） */
   bc_loop_state const* parent = nullptr;
   /**< 親ループ状態へのポインタ。ネスト時のみ使用 */
+  mutable bool break_flag = false;
+  /**< break 要求フラグ（子 executor からセット） */
+  mutable bool continue_flag = false;
+  /**< continue 要求フラグ（子 executor からセット） */
 };
 
 /**
@@ -339,7 +343,9 @@ public:
       &&L_filter_int_eq,     // 45
       &&L_filter_float_precision, // 46
       &&L_emit_if_filtered,  // 47
-      &&L_halt,              // 48
+      &&L_emit_break,        // 48
+      &&L_emit_continue,     // 49
+      &&L_halt,              // 50
     };
 
 /** @brief 現在の命令のオペコードに対応するラベルにジャンプする */
@@ -394,6 +400,7 @@ public:
             bc_executor<elem_t, RootT> child_exec(bc_, field[ls.index], root_value_, &ls, out_);
             auto r2 = child_exec.execute_impl(pc + 1, body_end - 1);
             if (!r2) return r2;
+            if (ls.break_flag) break;
           }
          } else if constexpr (std::same_as<FT, bool>) {
            /** bool の場合: 真ならボディを一度描画 */
@@ -1141,6 +1148,22 @@ public:
       DISPATCH();
     }
 
+    /** @brief ループ脱出: break_flag をセットして子 executor を終了 */
+    L_emit_break: {
+      if (loop_) {
+        loop_->break_flag = true;
+      }
+      return {};
+    }
+
+    /** @brief 次のイテレーションへスキップ: continue_flag をセットして子 executor を終了 */
+    L_emit_continue: {
+      if (loop_) {
+        loop_->continue_flag = true;
+      }
+      return {};
+    }
+
     /** @brief プログラム終端 */
     L_halt: {
       return {};
@@ -1194,6 +1217,7 @@ public:
                 bc_executor<elem_t, RootT> child_exec(bc_, field[ls.index], root_value_, &ls, out_);
                 auto r2 = child_exec.execute_impl(pc + 1, body_end - 1);
                 if (!r2) return r2;
+                if (ls.break_flag) break;
               }
              } else if constexpr (std::same_as<FT, bool>) {
                 if (field) {
@@ -1868,6 +1892,22 @@ public:
             ++pc;
           }
           break;
+        }
+
+        /** @brief ループ脱出: break_flag をセットして子 executor を終了 */
+        case bc_opcode::emit_break: {
+          if (loop_) {
+            loop_->break_flag = true;
+          }
+          return {};
+        }
+
+        /** @brief 次のイテレーションへスキップ: continue_flag をセットして子 executor を終了 */
+        case bc_opcode::emit_continue: {
+          if (loop_) {
+            loop_->continue_flag = true;
+          }
+          return {};
         }
 
         /** @brief プログラム終端 */

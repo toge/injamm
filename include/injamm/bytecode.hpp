@@ -61,6 +61,8 @@ enum class bc_opcode : std::uint8_t {
   filter_int_eq,               /**< 等価判定: 引数と比較し "true"/"false" を出力 */
   filter_float_precision,     /**< 実数小数点以下桁数（引数: 桁数） */
   emit_if_filtered,           /**< フィルタ適用済み値での if 分岐 */
+  emit_break,         /**< ループ脱出 */
+  emit_continue,      /**< 次のイテレーションへスキップ */
   halt                /**< プログラム終了 */
 };
 

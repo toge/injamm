@@ -446,6 +446,16 @@ class bc_compiler {
       if (inner.starts_with("#")) {
         auto key = trim_sv(inner.substr(1));
 
+        if (key == "break") {
+          bc_.add_instruction(bc_opcode::emit_break);
+          continue;
+        }
+
+        if (key == "continue") {
+          bc_.add_instruction(bc_opcode::emit_continue);
+          continue;
+        }
+
         if (key.starts_with("if") && (key.size() == 2 || key[2] == ' ')) {
           auto expr = key.size() > 2 ? trim_sv(key.substr(3)) : std::string_view{};
           compile_if(expr);
@@ -566,6 +576,14 @@ class bc_compiler {
       /** @brief 入れ子の {{#if}} / {{#section}} */
       if (inner.starts_with("#")) {
         auto key = trim_sv(inner.substr(1));
+        if (key == "break") {
+          bc_.add_instruction(bc_opcode::emit_break);
+          continue;
+        }
+        if (key == "continue") {
+          bc_.add_instruction(bc_opcode::emit_continue);
+          continue;
+        }
         if (key.starts_with("if") && (key.size() == 2 || key[2] == ' ')) {
           auto expr = key.size() > 2 ? trim_sv(key.substr(3)) : std::string_view{};
           compile_if(expr);

@@ -1183,3 +1183,61 @@ TEST_CASE("bc_optional_var_empty", "[optional]") {
   REQUIRE(*r == "");
 }
 
+// ---- break/continue テスト ----
+
+TEST_CASE("bc_break_basic", "[break]") {
+  BcUsersData data{.users = {{"Alice", 30}, {"Bob", 25}, {"Charlie", 35}, {"Dave", 40}}};
+  auto bc = injamm::engine<BcUsersData>("{{#users}}{{name}}:{{#break}}|{{/users}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "Alice:");
+}
+
+TEST_CASE("bc_continue_basic", "[continue]") {
+  BcUsersData data{.users = {{"Alice", 30}, {"Bob", 25}, {"Charlie", 35}, {"Dave", 40}}};
+  auto bc = injamm::engine<BcUsersData>("{{#users}}{{#continue}}{{name}}|{{/users}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "");
+}
+
+TEST_CASE("bc_continue_skip_second", "[continue]") {
+  BcUsersData data{.users = {{"Alice", 30}, {"Bob", 25}, {"Charlie", 35}}};
+  auto bc = injamm::engine<BcUsersData>("{{#users}}{{#if @first}}skip{{/if}}{{#if @last}}last{{/if}}{{name}}|{{/users}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "skipAlice|Bob|lastCharlie|");
+}
+
+TEST_CASE("bc_break_with_if", "[break]") {
+  BcUsersData data{.users = {{"Alice", 30}, {"Bob", 25}, {"Charlie", 35}, {"Dave", 40}}};
+  auto bc = injamm::engine<BcUsersData>("{{#users}}{{#if @last}}{{#break}}{{/if}}{{name}}|{{/users}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "Alice|Bob|Charlie|");
+}
+
+TEST_CASE("bc_continue_with_if", "[continue]") {
+  BcUsersData data{.users = {{"Alice", 30}, {"Bob", 25}, {"Charlie", 35}, {"Dave", 40}}};
+  auto bc = injamm::engine<BcUsersData>("{{#users}}{{#if @first}}{{#continue}}{{/if}}{{name}}|{{/users}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "Bob|Charlie|Dave|");
+}
+
+TEST_CASE("bc_break_nested_section", "[break]") {
+  BcUsersData data{.users = {{"Alice", 30}, {"Bob", 25}, {"Charlie", 35}}};
+  auto bc = injamm::engine<BcUsersData>("{{#users}}[{{#users}}{{#break}}{{name}}|{{/users}}]{{/users}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "[][][]");
+}
+
+TEST_CASE("bc_continue_nested_section", "[continue]") {
+  BcUsersData data{.users = {{"Alice", 30}, {"Bob", 25}, {"Charlie", 35}}};
+  auto bc = injamm::engine<BcUsersData>("{{#users}}[{{#users}}{{#continue}}x{{name}}|{{/users}}]{{/users}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "[][][]");
+}
+

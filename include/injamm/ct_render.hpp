@@ -609,6 +609,7 @@ constexpr auto ct_render_section(Buffer& out, ct_parsed_template<N> const& chunk
           for (ls.index = 0; ls.index < static_cast<std::uint32_t>(field.size()); ++ls.index) {
             res = ct_render_chunks<Mode>(out, chunks, body_start, body_end, field[ls.index], root_value, &ls);
             if (!res) return;
+            if (ls.break_flag) break;
           }
         /**
          * @brief bool 型の場合: 条件分岐
@@ -986,6 +987,18 @@ constexpr auto ct_render_chunks(Buffer& out, ct_parsed_template<N> const& chunks
         auto r = ct_render_if<Mode>(out, chunks, i, value, root_value, loop);
         if (!r) return r;
         break;
+      }
+      case ct_chunk_kind::ct_break: {
+        if (loop) {
+          loop->break_flag = true;
+        }
+        return {};
+      }
+      case ct_chunk_kind::ct_continue: {
+        if (loop) {
+          loop->continue_flag = true;
+        }
+        return {};
       }
     }
   }
