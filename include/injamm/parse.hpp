@@ -2,6 +2,7 @@
 
 #include "bytecode.hpp"
 #include "chunk.hpp"
+#include "types.hpp"
 #include <optional>
 #include <string>
 #include <string_view>
@@ -211,7 +212,7 @@ namespace injamm::detail {
  * @param tmpl テンプレート文字列
  * @return チャンクのベクター
  */
-[[nodiscard]] constexpr auto parse(std::string_view tmpl) -> std::vector<chunk>;
+[[nodiscard]] constexpr auto parse(std::string_view tmpl) -> expected<std::vector<chunk>>;
 
 /**
  * @brief コンテナにチャンクを出力するパーサー（内部実装）
@@ -223,7 +224,7 @@ namespace injamm::detail {
  *          constexpr 対応。文字列のコピーを避けるため string_view で処理する。
  */
 template <class Container>
-constexpr void parse_into(Container& result, std::string_view tmpl) {
+constexpr bool parse_into(Container& result, std::string_view tmpl) {
   std::size_t pos = 0;
 
   while (pos < tmpl.size()) {
@@ -255,7 +256,6 @@ constexpr void parse_into(Container& result, std::string_view tmpl) {
       std::vector<string_filter_entry> filters;
       std::vector<int_filter_entry> int_filters;
       std::vector<float_filter_entry> float_filters;
-      bool error = false;
       for (std::size_t fi = 1; fi < parts.size(); ++fi) {
         auto sf = parse_string_filter(parts[fi]);
         if (sf) {
@@ -272,14 +272,9 @@ constexpr void parse_into(Container& result, std::string_view tmpl) {
           float_filters.push_back(*ffl);
           continue;
         }
-        result.push_back(chunk_literal{std::string{"ERROR_UNKNOWN_FILTER"}});
-        pos = end + 3;
-        error = true;
-        break;
+        return true;
       }
-      if (!error) {
-        result.push_back(chunk_placeholder{std::string{actual_key}, true, std::move(filters), std::move(int_filters), std::move(float_filters)});
-      }
+      result.push_back(chunk_placeholder{std::string{actual_key}, true, std::move(filters), std::move(int_filters), std::move(float_filters)});
       pos = end + 3;
       continue;
     }
@@ -324,7 +319,6 @@ constexpr void parse_into(Container& result, std::string_view tmpl) {
         std::vector<string_filter_entry> if_filters;
         std::vector<int_filter_entry> if_int_filters;
         std::vector<float_filter_entry> if_float_filters;
-        bool filter_error = false;
         for (std::size_t fi = 1; fi < parts.size(); ++fi) {
           auto sf = parse_string_filter(parts[fi]);
           if (sf) {
@@ -341,33 +335,7 @@ constexpr void parse_into(Container& result, std::string_view tmpl) {
             if_float_filters.push_back(*ffl);
             continue;
           }
-          result.push_back(chunk_literal{std::string{"ERROR_UNKNOWN_FILTER"}});
-          filter_error = true;
-          break;
-        }
-
-        if (filter_error) {
-          // 閉じタグを探してスキップする
-          int depth = 1;
-          std::size_t search_pos = pos;
-          while (search_pos < tmpl.size()) {
-            auto next_open = tmpl.find("{{#if", search_pos);
-            auto next_close = tmpl.find("{{/if}}", search_pos);
-            if (next_close == std::string_view::npos) break;
-            if (next_open != std::string_view::npos && next_open < next_close) {
-              ++depth;
-              search_pos = next_open + 5;
-            } else {
-              --depth;
-              if (depth == 0) {
-                pos = next_close + 7;
-                break;
-              }
-              search_pos = next_close + 7;
-            }
-          }
-          if (depth != 0) pos = tmpl.size();
-          continue;
+          return true;
         }
 
         /**
@@ -425,8 +393,16 @@ constexpr void parse_into(Container& result, std::string_view tmpl) {
         ci.filters = std::move(if_filters);
         ci.int_filters = std::move(if_int_filters);
         ci.float_filters = std::move(if_float_filters);
-        ci.then_branch = wrap_body_chunks(parse(then_body));
-        ci.else_branch = wrap_body_chunks(parse(else_body));
+        {
+          auto parsed = parse(then_body);
+          if (!parsed) return true;
+          ci.then_branch = wrap_body_chunks(std::move(*parsed));
+        }
+        {
+          auto parsed = parse(else_body);
+          if (!parsed) return true;
+          ci.else_branch = wrap_body_chunks(std::move(*parsed));
+        }
         result.push_back(std::move(ci));
         continue;
       }
@@ -442,7 +418,11 @@ constexpr void parse_into(Container& result, std::string_view tmpl) {
           pos = close_pos + close_tag_str.size();
           chunk_at_section cas;
           cas.var = var_kind;
-          cas.body = wrap_body_chunks(parse(body));
+          {
+            auto parsed = parse(body);
+            if (!parsed) return true;
+            cas.body = wrap_body_chunks(std::move(*parsed));
+          }
           cas.inverted = false;
           result.push_back(std::move(cas));
         }
@@ -482,18 +462,26 @@ constexpr void parse_into(Container& result, std::string_view tmpl) {
         if (close_pos != std::string_view::npos) {
           auto body = tmpl.substr(body_start, close_pos - body_start);
           pos = close_pos + close_tag_str.size();
-          chunk_section cs;
-          cs.key = std::string{key};
-          cs.body = wrap_body_chunks(parse(body));
-          result.push_back(std::move(cs));
+          {
+            auto parsed = parse(body);
+            if (!parsed) return true;
+            chunk_section cs;
+            cs.key = std::string{key};
+            cs.body = wrap_body_chunks(std::move(*parsed));
+            result.push_back(std::move(cs));
+          }
         } else {
           /** 閉じタグなし: ファイル末尾までをボディとする */
           auto body = tmpl.substr(body_start);
           pos = tmpl.size();
-          chunk_section cs;
-          cs.key = std::string{key};
-          cs.body = wrap_body_chunks(parse(body));
-          result.push_back(std::move(cs));
+          {
+            auto parsed = parse(body);
+            if (!parsed) return true;
+            chunk_section cs;
+            cs.key = std::string{key};
+            cs.body = wrap_body_chunks(std::move(*parsed));
+            result.push_back(std::move(cs));
+          }
         }
       }
       continue;
@@ -514,7 +502,11 @@ constexpr void parse_into(Container& result, std::string_view tmpl) {
           pos = close_pos + close_tag_str.size();
           chunk_at_section cas;
           cas.var = var_kind;
-          cas.body = wrap_body_chunks(parse(body));
+          {
+            auto parsed = parse(body);
+            if (!parsed) return true;
+            cas.body = wrap_body_chunks(std::move(*parsed));
+          }
           cas.inverted = true;
           result.push_back(std::move(cas));
         }
@@ -558,10 +550,14 @@ constexpr void parse_into(Container& result, std::string_view tmpl) {
           body = tmpl.substr(body_start);
           pos = tmpl.size();
         }
-        chunk_inverted ci;
-        ci.key = std::string{key};
-        ci.body = wrap_body_chunks(parse(body));
-        result.push_back(std::move(ci));
+        {
+          auto parsed = parse(body);
+          if (!parsed) return true;
+          chunk_inverted ci;
+          ci.key = std::string{key};
+          ci.body = wrap_body_chunks(std::move(*parsed));
+          result.push_back(std::move(ci));
+        }
       }
       continue;
     }
@@ -600,23 +596,25 @@ constexpr void parse_into(Container& result, std::string_view tmpl) {
         float_filters.push_back(*ffl);
         continue;
       }
-      result.push_back(chunk_literal{std::string{"ERROR_UNKNOWN_FILTER"}});
-      return;
+      return true;
     }
     result.push_back(chunk_placeholder{std::string{filter_key}, false, std::move(filters), std::move(int_filters), std::move(float_filters)});
   }
+  return false;
 }
 
 /**
  * @brief テンプレート文字列をチャンク列にパースする
  * @param tmpl テンプレート文字列
- * @return チャンクのベクター
- * @details parse_into を呼び出し、結果を std::vector<chunk> で返す。
- *          各チャンクはレンダリング時にバイトコードまたは直接実行される。
+ * @return 正常時はチャンクのベクター、エラー時は error_ctx
+ * @details parse_into を呼び出し、結果を expected で返す。
+ *          未知のフィルタ名は error_code::unknown_filter として報告される。
  */
-[[nodiscard]] constexpr auto parse(std::string_view tmpl) -> std::vector<chunk> {
+[[nodiscard]] constexpr auto parse(std::string_view tmpl) -> expected<std::vector<chunk>> {
   std::vector<chunk> result;
-  parse_into(result, tmpl);
+  if (parse_into(result, tmpl)) {
+    return std::unexpected(error_ctx{0, error_code::unknown_filter, "unknown filter in placeholder"});
+  }
   return result;
 }
 
