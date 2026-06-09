@@ -2,6 +2,7 @@
 #include <glaze/glaze.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <climits>
+#include <map>
 #include <optional>
 #include <vector>
 
@@ -762,4 +763,101 @@ TEST_CASE("ct_unknown_key", "[injamm][ct]") {
   auto r = injamm::render<tmpl>(CtBoolData{true});
   REQUIRE(!r.has_value());
   REQUIRE(r.error().ec == injamm::error_code::unknown_key);
+}
+
+// ---- std::map テスト用データ型 ----
+
+struct CtMapIntData {
+  std::map<std::string, int> values;
+};
+
+template <>
+struct glz::meta<CtMapIntData> {
+  static constexpr auto value = glz::object("values", &CtMapIntData::values);
+};
+
+struct CtMapStrData {
+  std::map<std::string, std::string> labels;
+};
+
+template <>
+struct glz::meta<CtMapStrData> {
+  static constexpr auto value = glz::object("labels", &CtMapStrData::labels);
+};
+
+struct CtMapItem {
+  std::string name;
+  int score{};
+};
+
+template <>
+struct glz::meta<CtMapItem> {
+  static constexpr auto value = glz::object("name", &CtMapItem::name, "score", &CtMapItem::score);
+};
+
+struct CtMapStructData {
+  std::map<std::string, CtMapItem> items;
+};
+
+template <>
+struct glz::meta<CtMapStructData> {
+  static constexpr auto value = glz::object("items", &CtMapStructData::items);
+};
+
+// ---- std::map CT レンダリング テスト ----
+
+TEST_CASE("ct_map_section_basic", "[injamm][ct][map]") {
+  auto constexpr tmpl = injamm::fixed_string("{{#values}}{{@key}}={{this}} {{/values}}");
+  CtMapIntData data{{ {"a", 1}, {"b", 2}, {"c", 3} }};
+  auto r = injamm::render<tmpl>(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "a=1 b=2 c=3 ");
+}
+
+TEST_CASE("ct_map_section_string_values", "[injamm][ct][map]") {
+  auto constexpr tmpl = injamm::fixed_string("{{#labels}}{{@key}}:{{this}} {{/labels}}");
+  CtMapStrData data{{ {"color", "red"}, {"size", "large"} }};
+  auto r = injamm::render<tmpl>(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "color:red size:large ");
+}
+
+TEST_CASE("ct_map_section_struct_values", "[injamm][ct][map]") {
+  auto constexpr tmpl = injamm::fixed_string("{{#items}}{{@key}}:{{name}}={{score}} {{/items}}");
+  CtMapStructData data{{ {"alice", {.name = "Alice", .score = 100}}, {"bob", {.name = "Bob", .score = 85}} }};
+  auto r = injamm::render<tmpl>(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "alice:Alice=100 bob:Bob=85 ");
+}
+
+TEST_CASE("ct_map_section_empty", "[injamm][ct][map]") {
+  auto constexpr tmpl = injamm::fixed_string("before{{#values}}NEVER{{/values}}after");
+  CtMapIntData data;
+  auto r = injamm::render<tmpl>(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "beforeafter");
+}
+
+TEST_CASE("ct_map_inverted_empty", "[injamm][ct][map]") {
+  auto constexpr tmpl = injamm::fixed_string("{{^values}}empty{{/values}}");
+  CtMapIntData data;
+  auto r = injamm::render<tmpl>(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "empty");
+}
+
+TEST_CASE("ct_map_inverted_nonempty", "[injamm][ct][map]") {
+  auto constexpr tmpl = injamm::fixed_string("{{^values}}empty{{/values}}");
+  CtMapIntData data{{ {"x", 1} }};
+  auto r = injamm::render<tmpl>(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "");
+}
+
+TEST_CASE("ct_map_single_entry", "[injamm][ct][map]") {
+  auto constexpr tmpl = injamm::fixed_string("{{#values}}{{@key}}={{this}}{{/values}}");
+  CtMapIntData data{{ {"only", 99} }};
+  auto r = injamm::render<tmpl>(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "only=99");
 }

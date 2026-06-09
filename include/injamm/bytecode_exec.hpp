@@ -415,15 +415,28 @@ public:
              auto r2 = execute_impl(pc + 1, body_end - 1);
              if (!r2) return r2;
            }
-         } else if constexpr (is_std_optional_v<FT>) {
-           /** optional の場合: 値を持てば内部値をコンテキストとしてボディを一度描画 */
-           if (field.has_value()) {
-             using inner_t = typename FT::value_type;
-             bc_executor<inner_t, RootT> child_exec(bc_, *field, root_value_, nullptr, out_);
-             auto r2 = child_exec.execute_impl(pc + 1, body_end - 1);
-             if (!r2) return r2;
-           }
-         } else if constexpr (ct_glz_reflectable<FT>) {
+          } else if constexpr (is_std_optional_v<FT>) {
+            /** optional の場合: 値を持てば内部値をコンテキストとしてボディを一度描画 */
+            if (field.has_value()) {
+              using inner_t = typename FT::value_type;
+              bc_executor<inner_t, RootT> child_exec(bc_, *field, root_value_, nullptr, out_);
+              auto r2 = child_exec.execute_impl(pc + 1, body_end - 1);
+              if (!r2) return r2;
+            }
+          } else if constexpr (ct_is_map_like<FT>) {
+            /** map の場合: キーを @key として各要素をループ */
+            bc_loop_state ls;
+            ls.count = static_cast<std::uint32_t>(field.size());
+            for (auto const& [k, v] : field) {
+              ls.key = std::string_view{k};
+              using val_t = std::remove_cvref_t<decltype(v)>;
+              bc_executor<val_t, RootT> child_exec(bc_, v, root_value_, &ls, out_);
+              auto r2 = child_exec.execute_impl(pc + 1, body_end - 1);
+              if (!r2) return r2;
+              if (ls.break_flag) break;
+              ++ls.index;
+            }
+          } else if constexpr (ct_glz_reflectable<FT>) {
            /** 構造体の場合: 全フィールドを反復 */
            constexpr auto sz = glz::reflect<FT>::size;
            auto tied = glz::to_tie(field);
@@ -501,6 +514,8 @@ public:
           empty = !field;
         } else if constexpr (is_std_optional_v<FT>) {
           empty = !field.has_value();
+        } else if constexpr (ct_is_map_like<FT>) {
+          empty = field.empty();
         }
       });
       if (empty) {
@@ -589,6 +604,8 @@ public:
             cond = (field != 0);
           } else if constexpr (is_std_optional_v<FT>) {
             cond = field.has_value();
+          } else if constexpr (ct_is_map_like<FT>) {
+            cond = !field.empty();
           }
         });
       }
@@ -739,6 +756,8 @@ public:
     L_emit_this: {
       if constexpr (serializable_v<T>) {
         serialize_value(out_, value_);
+      } else if constexpr (ct_glz_reflectable<T>) {
+        (void)glz::write_json(value_, out_);
       }
       ++pc;
       DISPATCH();
@@ -1058,6 +1077,19 @@ public:
                   auto r2 = child_exec.execute_impl(pc + 1, body_end - 1);
                   if (!r2) return r2;
                 }
+              } else if constexpr (ct_is_map_like<FT>) {
+                /** map の場合: キーを @key として各要素をループ */
+                bc_loop_state ls;
+                ls.count = static_cast<std::uint32_t>(field.size());
+                for (auto const& [k, v] : field) {
+                  ls.key = std::string_view{k};
+                  using val_t = std::remove_cvref_t<decltype(v)>;
+                  bc_executor<val_t, RootT> child_exec(bc_, v, root_value_, &ls, out_);
+                  auto r2 = child_exec.execute_impl(pc + 1, body_end - 1);
+                  if (!r2) return r2;
+                  if (ls.break_flag) break;
+                  ++ls.index;
+                }
               } else if constexpr (ct_glz_reflectable<FT>) {
                constexpr auto sz = glz::reflect<FT>::size;
                auto tied = glz::to_tie(field);
@@ -1100,6 +1132,8 @@ public:
               empty = !field;
             } else if constexpr (is_std_optional_v<FT>) {
               empty = !field.has_value();
+            } else if constexpr (ct_is_map_like<FT>) {
+              empty = field.empty();
             }
           });
           if (empty) {
@@ -1222,6 +1256,8 @@ public:
                 cond = (field != 0);
               } else if constexpr (is_std_optional_v<FT>) {
                 cond = field.has_value();
+              } else if constexpr (ct_is_map_like<FT>) {
+                cond = !field.empty();
               }
             });
           }
@@ -1301,6 +1337,8 @@ public:
         case bc_opcode::emit_this: {
           if constexpr (serializable_v<T>) {
             serialize_value(out_, value_);
+          } else if constexpr (ct_glz_reflectable<T>) {
+            (void)glz::write_json(value_, out_);
           }
           ++pc;
           break;

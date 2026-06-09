@@ -12,12 +12,13 @@ namespace injamm::detail {
  * @brief glaze リフレクション可能な型を判定するコンセプト
  * @tparam T 判定対象の型
  * @details glz::reflect<T>::size が有効な式であればリフレクション可能とみなす。
+ *          map-like 型は glz::to_tie が使えないため除外する。
  *          glz::meta 特殊化を持つすべての型が該当する。
  */
 template <class T>
 concept glz_reflectable = requires {
   glz::reflect<T>::size;
-};
+} && !is_std_map_like_v<T>;
 
 /**
  * @brief glaze リフレクションを用いてコンテキストからフィールドを検索し出力バッファに書き込む

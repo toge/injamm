@@ -3,9 +3,11 @@
 #include <array>
 #include <charconv>
 #include <concepts>
+#include <map>
 #include <optional>
 #include <string>
 #include <string_view>
+#include <unordered_map>
 
 namespace injamm::detail {
 
@@ -25,6 +27,16 @@ inline constexpr bool is_std_optional_v = false;
 
 template <class T>
 inline constexpr bool is_std_optional_v<std::optional<T>> = true;
+
+/** @brief std::map / std::unordered_map かどうかを判定する型特性 */
+template <class T>
+inline constexpr bool is_std_map_like_v = false;
+
+template <class K, class V, class Comp, class Alloc>
+inline constexpr bool is_std_map_like_v<std::map<K, V, Comp, Alloc>> = true;
+
+template <class K, class V, class Hash, class Eq, class Alloc>
+inline constexpr bool is_std_map_like_v<std::unordered_map<K, V, Hash, Eq, Alloc>> = true;
 
 /** @brief 整数型（bool除く）をバッファに変換して追記する
  *

@@ -2,7 +2,9 @@
 #include <glaze/glaze.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <climits>
+#include <map>
 #include <optional>
+#include <unordered_map>
 #include <vector>
 
 // ---- テスト用データ型 ----
@@ -1401,5 +1403,178 @@ TEST_CASE("disassemble_empty_template", "[disassemble]") {
   REQUIRE(asm_str.contains("--- instructions ---"));
   REQUIRE(asm_str.contains("halt"));
   REQUIRE(asm_str.contains("\"plain text only\""));
+}
+
+// ---- std::map テスト用データ型 ----
+
+struct BcMapIntData {
+  std::map<std::string, int> values;
+};
+
+template <>
+struct glz::meta<BcMapIntData> {
+  static constexpr auto value = glz::object("values", &BcMapIntData::values);
+};
+
+struct BcMapStrData {
+  std::map<std::string, std::string> labels;
+};
+
+template <>
+struct glz::meta<BcMapStrData> {
+  static constexpr auto value = glz::object("labels", &BcMapStrData::labels);
+};
+
+struct BcMapItem {
+  std::string name;
+  int score{};
+};
+
+template <>
+struct glz::meta<BcMapItem> {
+  static constexpr auto value = glz::object("name", &BcMapItem::name, "score", &BcMapItem::score);
+};
+
+struct BcMapStructData {
+  std::map<std::string, BcMapItem> items;
+};
+
+template <>
+struct glz::meta<BcMapStructData> {
+  static constexpr auto value = glz::object("items", &BcMapStructData::items);
+};
+
+struct BcMapUmapData {
+  std::unordered_map<std::string, int> counts;
+};
+
+template <>
+struct glz::meta<BcMapUmapData> {
+  static constexpr auto value = glz::object("counts", &BcMapUmapData::counts);
+};
+
+struct BcMapMixedData {
+  std::string prefix;
+  std::map<std::string, int> values;
+};
+
+template <>
+struct glz::meta<BcMapMixedData> {
+  static constexpr auto value = glz::object("prefix", &BcMapMixedData::prefix, "values", &BcMapMixedData::values);
+};
+
+// ---- std::map セクション反復テスト ----
+
+TEST_CASE("bc_map_section_basic", "[injamm][bc][map]") {
+  auto bc = injamm::engine<BcMapIntData>("{{#values}}{{@key}}={{this}} {{/values}}");
+  BcMapIntData data{{ {"a", 1}, {"b", 2}, {"c", 3} }};
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "a=1 b=2 c=3 ");
+}
+
+TEST_CASE("bc_map_section_string_values", "[injamm][bc][map]") {
+  auto bc = injamm::engine<BcMapStrData>("{{#labels}}{{@key}}:{{this}} {{/labels}}");
+  BcMapStrData data{{ {"color", "red"}, {"size", "large"} }};
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "color:red size:large ");
+}
+
+TEST_CASE("bc_map_section_struct_values", "[injamm][bc][map]") {
+  auto bc = injamm::engine<BcMapStructData>("{{#items}}{{@key}}:{{name}}={{score}} {{/items}}");
+  BcMapStructData data{{ {"alice", {.name = "Alice", .score = 100}}, {"bob", {.name = "Bob", .score = 85}} }};
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "alice:Alice=100 bob:Bob=85 ");
+}
+
+TEST_CASE("bc_map_section_empty", "[injamm][bc][map]") {
+  auto bc = injamm::engine<BcMapIntData>("before{{#values}}NEVER{{/values}}after");
+  BcMapIntData data;
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "beforeafter");
+}
+
+TEST_CASE("bc_map_inverted_empty", "[injamm][bc][map]") {
+  auto bc = injamm::engine<BcMapIntData>("{{^values}}empty{{/values}}");
+  BcMapIntData data;
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "empty");
+}
+
+TEST_CASE("bc_map_inverted_nonempty", "[injamm][bc][map]") {
+  auto bc = injamm::engine<BcMapIntData>("{{^values}}empty{{/values}}");
+  BcMapIntData data{{ {"x", 1} }};
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "");
+}
+
+TEST_CASE("bc_map_if_true", "[injamm][bc][map]") {
+  auto bc = injamm::engine<BcMapIntData>("{{#values}}has values{{/values}}");
+  BcMapIntData data{{ {"x", 1} }};
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "has values");
+}
+
+TEST_CASE("bc_map_if_false", "[injamm][bc][map]") {
+  auto bc = injamm::engine<BcMapIntData>("{{#values}}NEVER{{/values}}");
+  BcMapIntData data;
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "");
+}
+
+TEST_CASE("bc_map_unordered", "[injamm][bc][map]") {
+  auto bc = injamm::engine<BcMapUmapData>("{{#counts}}{{@key}}={{this}} {{/counts}}");
+  BcMapUmapData data{{ {"x", 10}, {"y", 20} }};
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  // unordered_map の順序は保証されないが、キーと値のペアは含まれる
+  REQUIRE(r->contains("x=10"));
+  REQUIRE(r->contains("y=20"));
+}
+
+TEST_CASE("bc_map_with_prefix", "[injamm][bc][map]") {
+  auto bc = injamm::engine<BcMapMixedData>("{{prefix}}: {{#values}}{{@key}}={{this}} {{/values}}");
+  BcMapMixedData data{.prefix = "data", .values = {{"k", 42}}};
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "data: k=42 ");
+}
+
+TEST_CASE("bc_map_disassemble", "[injamm][bc][map]") {
+  auto bc = injamm::engine<BcMapIntData>("{{#values}}{{@key}}={{this}}{{/values}}");
+  auto asm_str = bc.disassemble();
+  REQUIRE(asm_str.contains("emit_section"));
+  REQUIRE(asm_str.contains("emit_at_key"));
+  REQUIRE(asm_str.contains("emit_this"));
+  REQUIRE(asm_str.contains("emit_end"));
+}
+
+TEST_CASE("bc_map_single_entry", "[injamm][bc][map]") {
+  auto bc = injamm::engine<BcMapIntData>("{{#values}}{{@key}}={{this}}{{/values}}");
+  BcMapIntData data{{ {"only", 99} }};
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "only=99");
+}
+
+TEST_CASE("bc_map_many_entries", "[injamm][bc][map]") {
+  auto bc = injamm::engine<BcMapIntData>("{{#values}}{{@key}}={{this}} {{/values}}");
+  BcMapIntData data;
+  for (int i = 0; i < 10; ++i) {
+    data.values[std::string(1, 'a' + i)] = i;
+  }
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  for (int i = 0; i < 10; ++i) {
+    std::string key(1, 'a' + i);
+    REQUIRE(r->contains(key + "=" + std::to_string(i)));
+  }
 }
 

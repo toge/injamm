@@ -39,15 +39,32 @@ concept ct_is_vector_like =
     };
 
 /**
+ * @brief map-like コンテナを判定するコンセプト
+ * @details `std::map` / `std::unordered_map` 等の連想コンテナを判定する。
+ *          `ct_is_vector_like` と排他であり、セクション反復で map 反復に使用される。
+ * @tparam T 判定対象の型
+ */
+template <class T>
+concept ct_is_map_like = requires {
+  typename T::key_type;
+  typename T::mapped_type;
+  typename T::value_type;
+  { std::declval<T const&>().size() } -> std::convertible_to<std::size_t>;
+  { std::declval<T const&>().begin() };
+  { std::declval<T const&>().end() };
+};
+
+/**
  * @brief glz::meta によるリフレクションが可能な型を判定するコンセプト
  * @details `glz::reflect<T>::size` がコンパイル時に評価できる場合に true となる。
+ *          map-like 型は glz::to_tie が使えないため除外する。
  *          セクションやプレースホルダのフィールド解決に使用される。
  * @tparam T 判定対象の型
  */
 template <class T>
 concept ct_glz_reflectable = requires {
   glz::reflect<T>::size;
-};
+} && !is_std_map_like_v<T>;
 
 /**
  * @brief 型 T のフィールド名からインデックスを事前解決する
@@ -408,6 +425,22 @@ constexpr auto ct_render_section(Buffer& out, ct_parsed_template<N> const& chunk
         if (field.has_value()) {
           res = ct_render_chunks<Mode>(out, chunks, body_start, body_end, *field, root_value, parent_loop);
         }
+      } else if constexpr (ct_is_map_like<FT>) {
+        /** map の場合: キーを @key として各要素をループ */
+        loop_state ls;
+        ls.count = static_cast<std::uint32_t>(field.size());
+        ls.in_loop = true;
+        for (auto const& [k, v] : field) {
+          ls.key = std::string_view{k};
+          res = ct_render_chunks<Mode>(out, chunks, body_start, body_end, v, root_value, &ls);
+          if (!res) return;
+          if (ls.continue_flag) {
+            ls.continue_flag = false;
+            continue;
+          }
+          if (ls.break_flag) break;
+          ++ls.index;
+        }
       } else if constexpr (ct_glz_reflectable<FT>) {
         constexpr auto sz2 = glz::reflect<FT>::size;
         auto tied2 = glz::to_tie(field);
@@ -516,6 +549,10 @@ constexpr auto ct_render_inverted(Buffer& out, ct_parsed_template<N> const& chun
         }
       } else if constexpr (is_std_optional_v<FT>) {
         if (!field.has_value()) {
+          res = ct_render_chunks<Mode>(out, chunks, body_start, body_end, value, root_value, parent_loop);
+        }
+      } else if constexpr (ct_is_map_like<FT>) {
+        if (field.empty()) {
           res = ct_render_chunks<Mode>(out, chunks, body_start, body_end, value, root_value, parent_loop);
         }
       } else if constexpr (ct_glz_reflectable<FT>) {
