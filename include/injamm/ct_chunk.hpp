@@ -4,11 +4,13 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <span>
 #include <stdexcept>
 #include <string_view>
-#include <vector>
 
 namespace injamm::detail {
+
+constexpr std::size_t max_filters_per_chunk = 4;
 
 /**
  * @brief コンパイル時チャンク種別
@@ -51,9 +53,12 @@ struct ct_parsed_template {
   std::array<std::size_t, N> else_starts{};      /**< @brief else 節の開始インデックス（if_else 用） */
   std::array<std::size_t, N> else_ends{};        /**< @brief else 節の終了インデックス（if_else 用） */
   std::array<std::uint8_t, N> flags{};           /**< @brief 汎用フラグ（raw / kind / inverted の兼用） */
-  std::array<std::vector<string_filter_entry>, N> filters{}; /**< @brief 各プレースホルダに適用する文字列フィルタリスト */
-  std::array<std::vector<int_filter_entry>, N> int_filters{}; /**< @brief 各プレースホルダに適用する整数フィルタリスト */
-  std::array<std::vector<float_filter_entry>, N> float_filters{}; /**< @brief 各プレースホルダに適用する実数フィルタリスト */
+  std::array<std::array<string_filter_entry, max_filters_per_chunk>, N> filters{}; /**< @brief 各プレースホルダに適用する文字列フィルタ配列 */
+  std::array<std::array<int_filter_entry, max_filters_per_chunk>, N> int_filters{}; /**< @brief 各プレースホルダに適用する整数フィルタ配列 */
+  std::array<std::array<float_filter_entry, max_filters_per_chunk>, N> float_filters{}; /**< @brief 各プレースホルダに適用する実数フィルタ配列 */
+  std::array<std::uint8_t, N> filter_count{};      /**< @brief 文字列フィルタの有効数 */
+  std::array<std::uint8_t, N> int_filter_count{};   /**< @brief 整数フィルタの有効数 */
+  std::array<std::uint8_t, N> float_filter_count{}; /**< @brief 実数フィルタの有効数 */
   std::size_t size = 0;                          /**< @brief 現在の有効チャンク数 */
 
   /**
@@ -78,16 +83,32 @@ struct ct_parsed_template {
    * @param filter_list 適用する文字列フィルタのリスト
    * @param int_filter_list 適用する整数フィルタのリスト
    */
-  constexpr void push_placeholder(std::string_view key, bool raw, std::vector<string_filter_entry> filter_list = {}, std::vector<int_filter_entry> int_filter_list = {}, std::vector<float_filter_entry> float_filter_list = {}) {
+  constexpr void
+  push_placeholder(std::string_view key, bool raw,
+                   std::span<string_filter_entry const> filter_list = {},
+                   std::span<int_filter_entry const> int_filter_list = {},
+                   std::span<float_filter_entry const> float_filter_list = {}) {
     if (size >= N) {
       throw std::overflow_error("ct_parsed_template: chunk buffer overflow");
     }
     kinds[size] = ct_chunk_kind::placeholder;
     texts[size] = key;
     flags[size] = raw ? 1 : 0;
-    filters[size] = std::move(filter_list);
-    int_filters[size] = std::move(int_filter_list);
-    float_filters[size] = std::move(float_filter_list);
+    auto n = filter_list.size();
+    if (n > max_filters_per_chunk) n = max_filters_per_chunk;
+    for (std::size_t j = 0; j < n; ++j)
+      filters[size][j] = filter_list[j];
+    filter_count[size] = static_cast<std::uint8_t>(n);
+    n = int_filter_list.size();
+    if (n > max_filters_per_chunk) n = max_filters_per_chunk;
+    for (std::size_t j = 0; j < n; ++j)
+      int_filters[size][j] = int_filter_list[j];
+    int_filter_count[size] = static_cast<std::uint8_t>(n);
+    n = float_filter_list.size();
+    if (n > max_filters_per_chunk) n = max_filters_per_chunk;
+    for (std::size_t j = 0; j < n; ++j)
+      float_filters[size][j] = float_filter_list[j];
+    float_filter_count[size] = static_cast<std::uint8_t>(n);
     ++size;
   }
 
@@ -174,11 +195,12 @@ struct ct_parsed_template {
    * @param int_filter_list 整数フィルタのリスト
    * @param float_filter_list 実数フィルタのリスト
    */
-  constexpr void push_if(std::string_view expr, std::size_t then_start, std::size_t then_end,
-                          std::size_t else_start, std::size_t else_end,
-                          std::vector<string_filter_entry> filter_list = {},
-                          std::vector<int_filter_entry> int_filter_list = {},
-                          std::vector<float_filter_entry> float_filter_list = {}) {
+  constexpr void
+  push_if(std::string_view expr, std::size_t then_start, std::size_t then_end,
+          std::size_t else_start, std::size_t else_end,
+          std::span<string_filter_entry const> filter_list = {},
+          std::span<int_filter_entry const> int_filter_list = {},
+          std::span<float_filter_entry const> float_filter_list = {}) {
     if (size >= N) {
       throw std::overflow_error("ct_parsed_template: chunk buffer overflow");
     }
@@ -188,9 +210,21 @@ struct ct_parsed_template {
     body_ends[size] = then_end;
     else_starts[size] = else_start;
     else_ends[size] = else_end;
-    filters[size] = std::move(filter_list);
-    int_filters[size] = std::move(int_filter_list);
-    float_filters[size] = std::move(float_filter_list);
+    auto n = filter_list.size();
+    if (n > max_filters_per_chunk) n = max_filters_per_chunk;
+    for (std::size_t j = 0; j < n; ++j)
+      filters[size][j] = filter_list[j];
+    filter_count[size] = static_cast<std::uint8_t>(n);
+    n = int_filter_list.size();
+    if (n > max_filters_per_chunk) n = max_filters_per_chunk;
+    for (std::size_t j = 0; j < n; ++j)
+      int_filters[size][j] = int_filter_list[j];
+    int_filter_count[size] = static_cast<std::uint8_t>(n);
+    n = float_filter_list.size();
+    if (n > max_filters_per_chunk) n = max_filters_per_chunk;
+    for (std::size_t j = 0; j < n; ++j)
+      float_filters[size][j] = float_filter_list[j];
+    float_filter_count[size] = static_cast<std::uint8_t>(n);
     ++size;
   }
 };

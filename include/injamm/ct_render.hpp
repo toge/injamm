@@ -414,27 +414,31 @@ constexpr auto ct_render_placeholder(Buffer& out, ct_parsed_template<N> const& c
   auto const key = chunks.texts[i];
   bool raw = chunks.flags[i] != 0;
 
-  auto const& filters = chunks.filters[i];
-  auto const& int_filters = chunks.int_filters[i];
-  auto const& float_filters = chunks.float_filters[i];
+  auto fcnt = chunks.filter_count[i];
+  auto ifcnt = chunks.int_filter_count[i];
+  auto ffcnt = chunks.float_filter_count[i];
 
   // フィルタが存在する場合
-  if (!filters.empty() || !int_filters.empty() || !float_filters.empty()) {
+  if (fcnt > 0 || ifcnt > 0 || ffcnt > 0) {
+    auto const& filters = chunks.filters[i];
+    auto const& int_filters = chunks.int_filters[i];
+    auto const& float_filters = chunks.float_filters[i];
+
     std::string tmp;
     if (!resolve_value(tmp, key, value, loop)) {
       return std::unexpected(error_ctx{.ec = error_code::unknown_key});
     }
     // 文字列フィルタ適用
-    for (auto f : filters) {
-      apply_string_filter(tmp, f);
+    for (std::size_t j = 0; j < fcnt; ++j) {
+      apply_string_filter(tmp, filters[j]);
     }
     // 整数フィルタ適用
-    for (auto f : int_filters) {
-      apply_int_filter(tmp, f);
+    for (std::size_t j = 0; j < ifcnt; ++j) {
+      apply_int_filter(tmp, int_filters[j]);
     }
     // 実数フィルタ適用
-    for (auto f : float_filters) {
-      apply_float_filter(tmp, f);
+    for (std::size_t j = 0; j < ffcnt; ++j) {
+      apply_float_filter(tmp, float_filters[j]);
     }
     // 出力
     if constexpr (std::is_same_v<Mode, mustache_tag>) {
@@ -836,22 +840,26 @@ constexpr auto ct_render_if(Buffer& out, ct_parsed_template<N> const& chunks, st
   bool cond = false;
   auto const expr = chunks.texts[i];
 
-  auto const& filters = chunks.filters[i];
-  auto const& int_filters = chunks.int_filters[i];
-  auto const& float_filters = chunks.float_filters[i];
+  auto fcnt = chunks.filter_count[i];
+  auto ifcnt = chunks.int_filter_count[i];
+  auto ffcnt = chunks.float_filter_count[i];
 
   /** フィルタがある場合は先に値を解決してフィルタを適用する */
-  if (!filters.empty() || !int_filters.empty() || !float_filters.empty()) {
+  if (fcnt > 0 || ifcnt > 0 || ffcnt > 0) {
+    auto const& filters = chunks.filters[i];
+    auto const& int_filters = chunks.int_filters[i];
+    auto const& float_filters = chunks.float_filters[i];
+
     std::string tmp;
     if (resolve_value(tmp, expr, value, loop)) {
-      for (auto f : filters) {
-        apply_string_filter(tmp, f);
+      for (std::size_t j = 0; j < fcnt; ++j) {
+        apply_string_filter(tmp, filters[j]);
       }
-      for (auto f : int_filters) {
-        apply_int_filter(tmp, f);
+      for (std::size_t j = 0; j < ifcnt; ++j) {
+        apply_int_filter(tmp, int_filters[j]);
       }
-      for (auto f : float_filters) {
-        apply_float_filter(tmp, f);
+      for (std::size_t j = 0; j < ffcnt; ++j) {
+        apply_float_filter(tmp, float_filters[j]);
       }
       cond = !tmp.empty() && tmp != "false" && tmp != "0";
     }

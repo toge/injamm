@@ -3,6 +3,7 @@
 #include "ct_chunk.hpp"
 #include "parse.hpp"
 #include <cstddef>
+#include <span>
 #include <string_view>
 
 namespace injamm::detail {
@@ -37,9 +38,13 @@ struct ct_parse_context {
    * @param filter_list 適用するフィルタのリスト
    * @return 追加されたチャンクのインデックス
    */
-  constexpr std::size_t push_placeholder(std::string_view key, bool raw, std::vector<string_filter_entry> filter_list = {}, std::vector<int_filter_entry> int_filter_list = {}, std::vector<float_filter_entry> float_filter_list = {}) {
+  constexpr std::size_t
+  push_placeholder(std::string_view key, bool raw,
+                   std::span<string_filter_entry const> filter_list = {},
+                   std::span<int_filter_entry const> int_filter_list = {},
+                   std::span<float_filter_entry const> float_filter_list = {}) {
     auto idx = tmpl.size;
-    tmpl.push_placeholder(key, raw, std::move(filter_list), std::move(int_filter_list), std::move(float_filter_list));
+    tmpl.push_placeholder(key, raw, filter_list, int_filter_list, float_filter_list);
     return idx;
   }
 
@@ -107,14 +112,15 @@ struct ct_parse_context {
    * @param float_filter_list 実数フィルタのリスト
    * @return 追加されたチャンクのインデックス
    */
-  constexpr std::size_t push_if(std::string_view expr, std::size_t then_start, std::size_t then_end,
-                                 std::size_t else_start, std::size_t else_end,
-                                 std::vector<string_filter_entry> filter_list = {},
-                                 std::vector<int_filter_entry> int_filter_list = {},
-                                 std::vector<float_filter_entry> float_filter_list = {}) {
+  constexpr std::size_t
+  push_if(std::string_view expr, std::size_t then_start, std::size_t then_end,
+          std::size_t else_start, std::size_t else_end,
+          std::span<string_filter_entry const> filter_list = {},
+          std::span<int_filter_entry const> int_filter_list = {},
+          std::span<float_filter_entry const> float_filter_list = {}) {
     auto idx = tmpl.size;
     tmpl.push_if(expr, then_start, then_end, else_start, else_end,
-                 std::move(filter_list), std::move(int_filter_list), std::move(float_filter_list));
+                 filter_list, int_filter_list, float_filter_list);
     return idx;
   }
 
@@ -233,7 +239,7 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
           continue;
         }
       }
-      ctx.push_placeholder(actual_key, true, std::move(filter_list), std::move(int_filter_list), std::move(float_filter_list));
+      ctx.push_placeholder(actual_key, true, filter_list, int_filter_list, float_filter_list);
       pos = end + 3;
       continue;
     }
@@ -362,7 +368,7 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
 
         /** @brief if チャンクを仮追加（範囲は後で更新） */
         auto chunk_idx = ctx.push_if(expr, 0, 0, 0, 0,
-                                         std::move(if_filters), std::move(if_int_filters), std::move(if_float_filters));
+                                         if_filters, if_int_filters, if_float_filters);
 
         /** @brief then 節を再帰パース */
         auto then_start = ctx.tmpl.size;
@@ -613,7 +619,7 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
           continue;
         }
       }
-      ctx.push_placeholder(key, false, std::move(filter_list), std::move(int_filter_list), std::move(float_filter_list));
+      ctx.push_placeholder(key, false, filter_list, int_filter_list, float_filter_list);
     }
   }
 }
