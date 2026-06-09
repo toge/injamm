@@ -146,8 +146,10 @@ constexpr void apply_int_filter(std::string& str, int_filter_entry entry) {
         long long val{};
         if (auto [p, ec] = std::from_chars(data, data + size, val); ec == std::errc()) {
           std::array<char, 32> buf;
-          if (auto [tp, tec] = std::to_chars(buf.data(), buf.data() + buf.size(), val < 0 ? -val : val); tec == std::errc()) {
-            str.assign(buf.data(), tp - buf.data());
+          if (auto [tp, tec] = std::to_chars(buf.data(), buf.data() + buf.size(), val); tec == std::errc()) {
+            std::string_view sv(buf.data(), tp - buf.data());
+            if (!sv.empty() && sv[0] == '-') sv.remove_prefix(1);
+            str.assign(sv);
           }
         }
       }
@@ -197,8 +199,14 @@ constexpr void apply_int_filter(std::string& str, int_filter_entry entry) {
         long long val{};
         if (auto [p, ec] = std::from_chars(data, data + size, val); ec == std::errc()) {
           std::array<char, 32> buf;
-          if (auto [tp, tec] = std::to_chars(buf.data(), buf.data() + buf.size(), -val); tec == std::errc()) {
-            str.assign(buf.data(), tp - buf.data());
+          if (auto [tp, tec] = std::to_chars(buf.data(), buf.data() + buf.size(), val); tec == std::errc()) {
+            std::string_view sv(buf.data(), tp - buf.data());
+            if (!sv.empty() && sv[0] == '-') {
+              sv.remove_prefix(1);
+              str.assign(sv);
+            } else {
+              str = std::string("-") + std::string(sv);
+            }
           }
         }
       }
@@ -261,9 +269,9 @@ constexpr void apply_int_filter(std::string& str, int_filter_entry entry) {
       } else {
         long long val{};
         if (auto [p, ec] = std::from_chars(data, data + size, val); ec == std::errc()) {
-          bool negative = val < 0;
-          if (negative) val = -val;
           std::string num = std::to_string(val);
+          bool negative = !num.empty() && num[0] == '-';
+          if (negative) num.erase(0, 1);
           std::string result;
           int count = 0;
           for (int i = num.size() - 1; i >= 0; --i) {
@@ -333,15 +341,17 @@ constexpr void apply_int_filter(std::string& str, int_filter_entry entry) {
       long long val{};
       if (auto [p, ec] = std::from_chars(str.data(), str.data() + str.size(), val); ec == std::errc()) {
         auto width = entry.arg;
-        auto abs_val = val < 0 ? -val : val;
-        auto digits = static_cast<int>(std::to_string(abs_val).size());
-        auto total = val < 0 ? digits + 1 : digits;
+        auto s = std::to_string(val);
+        bool negative = !s.empty() && s[0] == '-';
+        if (negative) s.erase(0, 1);
+        auto digits = static_cast<int>(s.size());
+        auto total = negative ? digits + 1 : digits;
         if (total < width) {
           auto padding = width - total;
-          if (val < 0) {
-            str = "-" + std::string(padding, '0') + str.substr(1);
+          if (negative) {
+            str = "-" + std::string(padding, '0') + s;
           } else {
-            str = std::string(padding, '0') + str;
+            str = std::string(padding, '0') + s;
           }
         }
       }

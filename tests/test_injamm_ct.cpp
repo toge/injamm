@@ -1,6 +1,7 @@
 #include "injamm.hpp"
 #include <glaze/glaze.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <climits>
 #include <optional>
 #include <vector>
 
@@ -108,6 +109,15 @@ struct CtFloatData {
 template <>
 struct glz::meta<CtFloatData> {
   static constexpr auto value = glz::object("value", &CtFloatData::value);
+};
+
+struct CtLlData {
+  long long val{};
+};
+
+template <>
+struct glz::meta<CtLlData> {
+  static constexpr auto value = glz::object("val", &CtLlData::val);
 };
 
 struct CtRootData {
@@ -627,6 +637,36 @@ TEST_CASE("ct_int_filter_zerofill_zero", "[injamm][ct]") {
   auto r = injamm::render<tmpl>(CtIfData{"t", 0});
   REQUIRE(r.has_value());
   REQUIRE(*r == "0000");
+}
+
+// ---- LLONG_MIN UB 回避テスト ----
+
+TEST_CASE("ct_int_filter_abs LLONG_MIN", "[injamm][ct]") {
+  auto constexpr tmpl = injamm::fixed_string("{{val | abs}}");
+  auto r = injamm::render<tmpl>(CtLlData{LLONG_MIN});
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "9223372036854775808");
+}
+
+TEST_CASE("ct_int_filter_neg LLONG_MIN", "[injamm][ct]") {
+  auto constexpr tmpl = injamm::fixed_string("{{val | neg}}");
+  auto r = injamm::render<tmpl>(CtLlData{LLONG_MIN});
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "9223372036854775808");
+}
+
+TEST_CASE("ct_int_filter_numify LLONG_MIN", "[injamm][ct]") {
+  auto constexpr tmpl = injamm::fixed_string("{{val | numify}}");
+  auto r = injamm::render<tmpl>(CtLlData{LLONG_MIN});
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "-9,223,372,036,854,775,808");
+}
+
+TEST_CASE("ct_int_filter_zerofill LLONG_MIN", "[injamm][ct]") {
+  auto constexpr tmpl = injamm::fixed_string("{{val | zerofill(25)}}");
+  auto r = injamm::render<tmpl>(CtLlData{LLONG_MIN});
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "-000009223372036854775808");
 }
 
 // ---- 実数フィルタ ----

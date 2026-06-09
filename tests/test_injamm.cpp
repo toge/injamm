@@ -1,6 +1,7 @@
 #include "injamm.hpp"
 #include <glaze/glaze.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <climits>
 #include <optional>
 #include <vector>
 
@@ -41,6 +42,15 @@ struct BcMapWrapper {
 template <>
 struct glz::meta<BcMapWrapper> {
   static constexpr auto value = glz::object("config", &BcMapWrapper::config);
+};
+
+struct BcLlData {
+  long long val{};
+};
+
+template <>
+struct glz::meta<BcLlData> {
+  static constexpr auto value = glz::object("val", &BcLlData::val);
 };
 
 // (Rest of existing types...)
@@ -906,6 +916,40 @@ TEST_CASE("int_filter: zerofill zero", "[int_filter]") {
   auto result = bc.render(data);
   REQUIRE(result);
   REQUIRE(*result == "0000");
+}
+
+// ---- LLONG_MIN UB 回避テスト ----
+
+TEST_CASE("int_filter: abs LLONG_MIN", "[int_filter]") {
+  BcLlData data{LLONG_MIN};
+  auto bc = injamm::engine<BcLlData>("{{val | abs}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "9223372036854775808");
+}
+
+TEST_CASE("int_filter: neg LLONG_MIN", "[int_filter]") {
+  BcLlData data{LLONG_MIN};
+  auto bc = injamm::engine<BcLlData>("{{val | neg}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "9223372036854775808");
+}
+
+TEST_CASE("int_filter: numify LLONG_MIN", "[int_filter]") {
+  BcLlData data{LLONG_MIN};
+  auto bc = injamm::engine<BcLlData>("{{val | numify}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "-9,223,372,036,854,775,808");
+}
+
+TEST_CASE("int_filter: zerofill LLONG_MIN", "[int_filter]") {
+  BcLlData data{LLONG_MIN};
+  auto bc = injamm::engine<BcLlData>("{{val | zerofill(25)}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "-000009223372036854775808");
 }
 
 // ---- if フィルタテスト ----
