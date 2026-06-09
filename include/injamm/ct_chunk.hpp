@@ -61,6 +61,7 @@ struct ct_parsed_template {
   std::array<std::uint8_t, N> filter_count{};      /**< @brief 文字列フィルタの有効数 */
   std::array<std::uint8_t, N> int_filter_count{};   /**< @brief 整数フィルタの有効数 */
   std::array<std::uint8_t, N> float_filter_count{}; /**< @brief 実数フィルタの有効数 */
+  std::array<int, N> field_indices{};               /**< @brief 事前解決されたフィールドインデックス（-1 = 未解決、resolve_field_indices で fill(-1)） */
   std::size_t size = 0;                          /**< @brief 現在の有効チャンク数 */
 
   /**

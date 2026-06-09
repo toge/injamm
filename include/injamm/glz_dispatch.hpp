@@ -36,20 +36,13 @@ concept glz_reflectable = requires {
 template <class Buffer, class T>
 inline bool write_value(Buffer& out, std::string_view key, T const& value, loop_state const* /*loop*/) {
   if constexpr (glz_reflectable<T>) {
-    /** @brief リフレクションで取得したフィールド数 */
     constexpr auto count = static_cast<std::size_t>(glz::reflect<T>::size);
     bool found = false;
-    /** @brief 全フィールドをタプルとして取得 */
     auto tied = glz::to_tie(value);
-    /** @brief フィールドを線形探索し、キーが一致したらシリアライズ */
     [&]<std::size_t... I>(std::index_sequence<I...>) {
       (([&] {
-        if (found) {
-          return;
-        }
-        if (std::string_view{glz::reflect<T>::keys[I]} != key) {
-          return;
-        }
+        if (found) return;
+        if (std::string_view{glz::reflect<T>::keys[I]} != key) return;
         auto const& field = glz::get<I>(tied);
         using FieldType = std::remove_cvref_t<decltype(field)>;
         if constexpr (serializable_v<FieldType>) {

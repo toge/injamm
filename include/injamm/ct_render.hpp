@@ -49,6 +49,101 @@ concept ct_glz_reflectable = requires {
 };
 
 /**
+ * @brief 型 T のフィールド名からインデックスを事前解決する
+ * @details チャンク配列内のプレースホルダ / セクション / if のキーを
+ *          glz::reflect<T>::keys[] と照合し、一致する field_indices を書き込む。
+ *          ドットパスや @ プレフィックスは -1（未解決）のままにする。
+ */
+template <class T, std::size_t N>
+constexpr ct_parsed_template<N> resolve_field_indices(ct_parsed_template<N> tmpl) {
+  tmpl.field_indices.fill(-1);
+  if constexpr (glz_reflectable<T>) {
+    constexpr auto count = glz::reflect<T>::size;
+    for (std::size_t i = 0; i < tmpl.size; ++i) {
+      auto& idx = tmpl.field_indices[i];
+      auto kind = tmpl.kinds[i];
+      if (kind != ct_chunk_kind::placeholder && kind != ct_chunk_kind::section &&
+          kind != ct_chunk_kind::inverted && kind != ct_chunk_kind::if_else) {
+        continue;
+      }
+      auto key = tmpl.texts[i];
+      if (key.empty() || key[0] == '@' || key.find('.') != std::string_view::npos) {
+        continue;
+      }
+      // 線形探索でフィールド名を照合
+      [&]<std::size_t... I>(std::index_sequence<I...>) {
+        ((std::string_view{glz::reflect<T>::keys[I]} == key && (idx = static_cast<int>(I), true)) || ...);
+      }(std::make_index_sequence<count>{});
+    }
+  }
+  return tmpl;
+}
+
+/**
+ * @brief 事前解決された field_index を使って O(1) でフィールドにアクセスする
+ * @details field_index >= 0 の場合、if-else チェーンでコンパイル時インデックスに変換し
+ *          glz::get<I>() で直接アクセスする。見つからなければ visitor は呼ばれず false を返す。
+ */
+template <class T, class F>
+constexpr bool with_field_index(T const& value, int field_index, F&& visitor) {
+  if constexpr (glz_reflectable<T>) {
+    constexpr auto sz = static_cast<std::size_t>(glz::reflect<T>::size);
+    if (field_index >= 0 && static_cast<std::size_t>(field_index) < sz) {
+      auto tied = glz::to_tie(value);
+      bool found = false;
+      [&]<std::size_t... I>(std::index_sequence<I...>) {
+        ((field_index == static_cast<int>(I) && (found = true, visitor(glz::get<I>(tied)), true)) || ...);
+      }(std::make_index_sequence<sz>{});
+      return found;
+    }
+  }
+  return false;
+}
+
+/**
+ * @brief フィールド値をシリアライズし、必要に応じて HTML エスケープする
+ * @details mustache_tag + !raw の場合のみエスケープ適用。stencil_tag または raw の場合は生出力。
+ *          std::optional は serialize_value のオーバーロードが再帰処理する。
+ */
+template <class Mode, class Buffer, class FT>
+constexpr void serialize_escaped(Buffer& out, FT const& field, bool raw) {
+  if constexpr (serializable_v<FT> || is_std_optional_v<FT>) {
+    if constexpr (std::is_same_v<Mode, mustache_tag>) {
+      if (!raw) {
+        std::string tmp;
+        serialize_value(tmp, field);
+        html_escape_into(out, tmp);
+        return;
+      }
+    }
+    serialize_value(out, field);
+  }
+}
+
+/**
+ * @brief 事前解決インデックスを使って O(1) でフィールドをシリアライズする
+ * @details ct_render_placeholder の高速パス。フラットキー（@なし、ドットなし）専用。
+ */
+template <class Mode, class Buffer, class T, std::size_t N>
+constexpr bool
+ct_render_placeholder_indexed(Buffer& out, ct_parsed_template<N> const& chunks,
+                               std::size_t i, T const& value, bool raw) {
+  auto fi = chunks.field_indices[i];
+  if (fi < 0) return false;
+  if constexpr (glz_reflectable<T>) {
+    constexpr auto sz = static_cast<std::size_t>(glz::reflect<T>::size);
+    if (static_cast<std::size_t>(fi) >= sz) return false;
+    auto tied = glz::to_tie(value);
+    bool ok = false;
+    [&]<std::size_t... I>(std::index_sequence<I...>) {
+      ((fi == static_cast<int>(I) && (ok = true, serialize_escaped<Mode>(out, glz::get<I>(tied), raw), true)) || ...);
+    }(std::make_index_sequence<sz>{});
+    return ok;
+  }
+  return false;
+}
+
+/**
  * @brief ct_render_chunks の前方宣言
  * @details 相互再帰が必要なため、各レンダリング関数よりも先に宣言する。
  */
@@ -431,6 +526,32 @@ constexpr auto ct_render_placeholder(Buffer& out, ct_parsed_template<N> const& c
   auto const key = chunks.texts[i];
   bool raw = chunks.flags[i] != 0;
 
+  // {{this}}: 現在のコンテキスト自体をシリアライズ
+  if (key == "this") {
+    if constexpr (serializable_v<T>) {
+      if constexpr (std::is_same_v<Mode, mustache_tag>) {
+        if (!raw) {
+          std::string tmp;
+          serialize_value(tmp, value);
+          html_escape_into(out, tmp);
+          return {};
+        }
+      }
+      serialize_value(out, value);
+    } else if constexpr (ct_glz_reflectable<T>) {
+      std::string tmp;
+      glz::write_json(value, tmp);
+      if constexpr (std::is_same_v<Mode, mustache_tag>) {
+        if (!raw) {
+          html_escape_into(out, tmp);
+          return {};
+        }
+      }
+      out.append(tmp);
+    }
+    return {};
+  }
+
   auto fcnt = chunks.filter_count[i];
   auto ifcnt = chunks.int_filter_count[i];
   auto ffcnt = chunks.float_filter_count[i];
@@ -533,10 +654,14 @@ constexpr auto ct_render_placeholder(Buffer& out, ct_parsed_template<N> const& c
 
   /**
    * @brief 通常のフィールド解決
-   * @details mustache モードでは HTML エスケープを適用して出力する。
-   *          stencil モード（raw）ではそのまま出力する。
-   *          キーが未知の場合は unknown_key エラーを返す。
+   * @details フラットキー（ドットなし、@なし）は事前解決済みインデックスで O(1) アクセス。
+   *          それ以外は resolve_value にフォールバックする。
    */
+  if (key.find('.') == std::string_view::npos && (key.empty() || key[0] != '@')) {
+    if (ct_render_placeholder_indexed<Mode>(out, chunks, i, value, raw)) {
+      return {};
+    }
+  }
   if constexpr (std::is_same_v<Mode, mustache_tag>) {
     if (!raw) {
       std::string tmp;
@@ -586,49 +711,80 @@ constexpr auto ct_render_section(Buffer& out, ct_parsed_template<N> const& chunk
     std::expected<void, error_ctx> res{};
     auto tied = glz::to_tie(value);
     /**
-     * @brief リフレクションで全フィールドを走査し、キーに一致するフィールドを処理する
-     * @details 展開されたインデックスシーケンスで各フィールドを順次比較。
-     *          found フラグで最初に一致したフィールドのみを処理する（ショートサーキット）。
+     * @brief フィールド検索と処理を行う内部ラムダ
+     * @details 一致したフィールドの型に応じて vector-like（ループ）/ bool（条件分岐）/ optional を処理。
      */
-    [&]<std::size_t... I>(std::index_sequence<I...>) {
-      (([&] {
-        if (found) return;
-        if (std::string_view{glz::reflect<T>::keys[I]} != key) return;
-        found = true;
-        auto const& field = glz::get<I>(tied);
-        using FT = std::remove_cvref_t<decltype(field)>;
-        /**
-         * @brief vector-like 型の場合: ループ
-         * @details 各要素に対して本体チャンクを再帰的にレンダリングする。
-         *          loop_state に件数と現在のインデックスを設定して渡す。
-         */
-        if constexpr (ct_is_vector_like<FT>) {
-          loop_state ls;
-          ls.count = static_cast<std::uint32_t>(field.size());
-          ls.in_loop = true;
-          for (ls.index = 0; ls.index < static_cast<std::uint32_t>(field.size()); ++ls.index) {
-            res = ct_render_chunks<Mode>(out, chunks, body_start, body_end, field[ls.index], root_value, &ls);
-            if (!res) return;
-            if (ls.break_flag) break;
+    auto handle_field = [&](auto const& field) {
+      using FT = std::remove_cvref_t<decltype(field)>;
+      found = true;
+      if constexpr (ct_is_vector_like<FT>) {
+        loop_state ls;
+        ls.count = static_cast<std::uint32_t>(field.size());
+        ls.in_loop = true;
+        for (ls.index = 0; ls.index < static_cast<std::uint32_t>(field.size()); ++ls.index) {
+          res = ct_render_chunks<Mode>(out, chunks, body_start, body_end, field[ls.index], root_value, &ls);
+          if (!res) return;
+          if (ls.continue_flag) {
+            ls.continue_flag = false;
+            continue;
           }
-        /**
-         * @brief bool 型の場合: 条件分岐
-         * @details true の場合のみ本体を 1 回描画する。
-         *          現在のコンテキスト value をそのまま渡す（ループは発生しない）。
-         */
-        } else if constexpr (std::same_as<FT, bool>) {
-          if (field) {
-            res = ct_render_chunks<Mode>(out, chunks, body_start, body_end, value, root_value, parent_loop);
-          }
-        } else if constexpr (is_std_optional_v<FT>) {
-          if (field.has_value()) {
-            res = ct_render_chunks<Mode>(out, chunks, body_start, body_end, *field, root_value, parent_loop);
-          }
-        } else {
-          res = std::unexpected(error_ctx{.ec = error_code::type_mismatch});
+          if (ls.break_flag) break;
         }
-      }()), ...);
-    }(std::make_index_sequence<sz>{});
+      } else if constexpr (std::same_as<FT, bool>) {
+        if (field) {
+          res = ct_render_chunks<Mode>(out, chunks, body_start, body_end, value, root_value, parent_loop);
+        }
+      } else if constexpr (is_std_optional_v<FT>) {
+        if (field.has_value()) {
+          res = ct_render_chunks<Mode>(out, chunks, body_start, body_end, *field, root_value, parent_loop);
+        }
+      } else if constexpr (ct_glz_reflectable<FT>) {
+        constexpr auto sz2 = glz::reflect<FT>::size;
+        auto tied2 = glz::to_tie(field);
+        [&]<std::size_t... J>(std::index_sequence<J...>) {
+          (([&] {
+            if (!res) return;
+            loop_state ls;
+            ls.count = sz2;
+            ls.index = J;
+            ls.key = glz::reflect<FT>::keys[J];
+            ls.in_loop = true;
+            res = ct_render_chunks<Mode>(out, chunks, body_start, body_end, glz::get<J>(tied2), root_value, &ls);
+          }()), ...);
+        }(std::make_index_sequence<sz2>{});
+      } else {
+        res = std::unexpected(error_ctx{.ec = error_code::type_mismatch});
+      }
+    };
+
+    /**
+     * @brief 事前解決インデックスによる O(1) アクセス
+     */
+    {
+      auto fi = chunks.field_indices[i];
+      if (fi >= 0 && static_cast<std::size_t>(fi) < sz) {
+        [&]<std::size_t... I>(std::index_sequence<I...>) {
+          (([&] {
+            if (found) return;
+            if (fi != static_cast<int>(I)) return;
+            handle_field(glz::get<I>(tied));
+          }()), ...);
+        }(std::make_index_sequence<sz>{});
+      }
+    }
+
+    /**
+     * @brief フォールバック: 線形探索（キー名照合）
+     */
+    if (!found) {
+      [&]<std::size_t... I>(std::index_sequence<I...>) {
+        (([&] {
+          if (found) return;
+          if (std::string_view{glz::reflect<T>::keys[I]} != key) return;
+          handle_field(glz::get<I>(tied));
+        }()), ...);
+      }(std::make_index_sequence<sz>{});
+    }
 
     if (!found) {
       return std::unexpected(error_ctx{.ec = error_code::unknown_key});
@@ -673,53 +829,72 @@ constexpr auto ct_render_inverted(Buffer& out, ct_parsed_template<N> const& chun
     std::expected<void, error_ctx> res{};
     auto tied = glz::to_tie(value);
     /**
-     * @brief リフレクションで全フィールドを走査し、キーに一致するフィールドを処理する
-     * @details ct_render_section と同様のパターンだが、条件が反転している:
-     *          - vector-like が空 → 本体描画
-     *          - bool が false → 本体描画
+     * @brief 逆セクション用フィールド処理ラムダ
+     * @details vector-like（空 → 描画）/ bool（false → 描画）/ optional（空 → 描画）
+     *          / 構造体（全フィールド反復）を処理。
      */
-    [&]<std::size_t... I>(std::index_sequence<I...>) {
-      (([&] {
-        if (found) return;
-        if (std::string_view{glz::reflect<T>::keys[I]} != key) return;
-        found = true;
-        auto const& field = glz::get<I>(tied);
-        using FT = std::remove_cvref_t<decltype(field)>;
-        if constexpr (ct_is_vector_like<FT>) {
-          /** @brief 空配列の場合のみ本体を描画 */
-          if (field.empty()) {
-            res = ct_render_chunks<Mode>(out, chunks, body_start, body_end, value, root_value, parent_loop);
-          }
-         } else if constexpr (std::same_as<FT, bool>) {
-           /** bool 型の場合: 条件分岐 */
-           if (field) {
-             res = ct_render_chunks<Mode>(out, chunks, body_start, body_end, value, root_value, parent_loop);
-           }
-         } else if constexpr (is_std_optional_v<FT>) {
-           if (!field.has_value()) {
-             res = ct_render_chunks<Mode>(out, chunks, body_start, body_end, value, root_value, parent_loop);
-           }
-         } else if constexpr (ct_glz_reflectable<FT>) {
-           /** 構造体の場合: 全フィールドを反復 */
-           constexpr auto sz = glz::reflect<FT>::size;
-           auto tied = glz::to_tie(field);
-           [&]<std::size_t... J>(std::index_sequence<J...>) {
-             (([&] {
-               if (!res) return;
-               loop_state ls;
-               ls.count = sz;
-               ls.index = J;
-               ls.key = glz::reflect<FT>::keys[J];
-               ls.in_loop = true;
-               res = ct_render_chunks<Mode>(out, chunks, body_start, body_end, glz::get<J>(tied), root_value, &ls);
-             }()), ...);
-           }(std::make_index_sequence<sz>{});
-         } else {
-           res = std::unexpected(error_ctx{.ec = error_code::type_mismatch});
-         }
-       }()), ...);
+    auto handle_inverted = [&](auto const& field) {
+      using FT = std::remove_cvref_t<decltype(field)>;
+      found = true;
+      if constexpr (ct_is_vector_like<FT>) {
+        if (field.empty()) {
+          res = ct_render_chunks<Mode>(out, chunks, body_start, body_end, value, root_value, parent_loop);
+        }
+      } else if constexpr (std::same_as<FT, bool>) {
+        if (!field) {
+          res = ct_render_chunks<Mode>(out, chunks, body_start, body_end, value, root_value, parent_loop);
+        }
+      } else if constexpr (is_std_optional_v<FT>) {
+        if (!field.has_value()) {
+          res = ct_render_chunks<Mode>(out, chunks, body_start, body_end, value, root_value, parent_loop);
+        }
+      } else if constexpr (ct_glz_reflectable<FT>) {
+        constexpr auto sz2 = glz::reflect<FT>::size;
+        auto tied2 = glz::to_tie(field);
+        [&]<std::size_t... J>(std::index_sequence<J...>) {
+          (([&] {
+            if (!res) return;
+            loop_state ls;
+            ls.count = sz2;
+            ls.index = J;
+            ls.key = glz::reflect<FT>::keys[J];
+            ls.in_loop = true;
+            res = ct_render_chunks<Mode>(out, chunks, body_start, body_end, glz::get<J>(tied2), root_value, &ls);
+          }()), ...);
+        }(std::make_index_sequence<sz2>{});
+      } else {
+        res = std::unexpected(error_ctx{.ec = error_code::type_mismatch});
+      }
+    };
 
-    }(std::make_index_sequence<sz>{});
+    /**
+     * @brief 事前解決インデックスによる O(1) アクセス
+     */
+    {
+      auto fi = chunks.field_indices[i];
+      if (fi >= 0 && static_cast<std::size_t>(fi) < sz) {
+        [&]<std::size_t... I>(std::index_sequence<I...>) {
+          (([&] {
+            if (found) return;
+            if (fi != static_cast<int>(I)) return;
+            handle_inverted(glz::get<I>(tied));
+          }()), ...);
+        }(std::make_index_sequence<sz>{});
+      }
+    }
+
+    /**
+     * @brief フォールバック: 線形探索（キー名照合）
+     */
+    if (!found) {
+      [&]<std::size_t... I>(std::index_sequence<I...>) {
+        (([&] {
+          if (found) return;
+          if (std::string_view{glz::reflect<T>::keys[I]} != key) return;
+          handle_inverted(glz::get<I>(tied));
+        }()), ...);
+      }(std::make_index_sequence<sz>{});
+    }
 
     if (!found) {
       return std::unexpected(error_ctx{.ec = error_code::unknown_key});
@@ -775,6 +950,8 @@ constexpr auto ct_render_at_var(Buffer& out, ct_parsed_template<N> const& chunks
       if (!loop) return {};
       if (!loop->key.empty()) {
         serialize_value(out, loop->key);
+      } else {
+        serialize_value(out, loop->index);
       }
       break;
   }
@@ -841,6 +1018,49 @@ constexpr auto ct_render_at_section(Buffer& out, ct_parsed_template<N> const& ch
 }
 
 /**
+ * @brief if 条件式を型ベースで評価するヘルパー
+ * @details フィルタなし・@変数なしの通常条件式を Glaze リフレクションの型に応じて評価する。
+ *          vector → empty チェック、bool → 真偽値、数値 → 0 チェック、
+ *          optional → has_value チェック、文字列 → resolve_value 経由。
+ */
+template <class T>
+constexpr bool evaluate_if_expr_impl(std::string_view expr, T const& value) {
+  if constexpr (ct_glz_reflectable<T>) {
+    bool cond = false;
+    constexpr auto count = static_cast<std::size_t>(glz::reflect<T>::size);
+    auto tied = glz::to_tie(value);
+    [&]<std::size_t... I>(std::index_sequence<I...>) {
+      (([&] {
+        if (cond) return;
+        if (std::string_view{glz::reflect<T>::keys[I]} != expr) return;
+        auto const& field = glz::get<I>(tied);
+        using FT = std::remove_cvref_t<decltype(field)>;
+        if constexpr (ct_is_vector_like<FT>) {
+          cond = !field.empty();
+        } else if constexpr (std::same_as<FT, bool>) {
+          cond = field;
+        } else if constexpr (std::is_arithmetic_v<FT>) {
+          cond = (field != 0);
+        } else if constexpr (is_std_optional_v<FT>) {
+          cond = field.has_value();
+        } else if constexpr (serializable_v<FT>) {
+          std::string tmp;
+          serialize_value(tmp, field);
+          cond = !tmp.empty() && tmp != "false" && tmp != "0";
+        }
+      }()), ...);
+    }(std::make_index_sequence<count>{});
+    return cond;
+  } else {
+    std::string tmp;
+    if (resolve_value(tmp, expr, value, nullptr)) {
+      return !tmp.empty() && tmp != "false" && tmp != "0";
+    }
+    return false;
+  }
+}
+
+/**
  * @brief if/else 条件分岐（{{#if X}}...{{else}}...{{/if}}）をレンダリングする
  * @details 条件式 X が真の場合に then 節、偽の場合に else 節を描画する。
  *          else 節が存在しない場合は本体のみとなる。
@@ -901,15 +1121,7 @@ constexpr auto ct_render_if(Buffer& out, ct_parsed_template<N> const& chunks, st
       else if (expr == "@index") cond = loop->index > 0;
     }
   } else {
-    /**
-     * @brief 通常の文字列条件式の解決
-     * @details resolve_value で値を文字列として取得し、
-     *          空文字・"false"・"0" 以外を真と判断する。
-     */
-    std::string tmp;
-    if (resolve_value(tmp, expr, value, loop)) {
-      cond = !tmp.empty() && tmp != "false" && tmp != "0";
-    }
+    cond = evaluate_if_expr_impl<T>(expr, value);
   }
 
   auto then_start = chunks.body_starts[i];
@@ -954,6 +1166,7 @@ constexpr auto ct_render_chunks(Buffer& out, ct_parsed_template<N> const& chunks
                                  std::size_t end, T const& value, RootT const& root_value,
                                  loop_state const* loop) -> std::expected<void, error_ctx> {
   for (std::size_t i = start; i < end; ++i) {
+    if (loop && loop->continue_flag) return {};
     switch (chunks.kinds[i]) {
       case ct_chunk_kind::literal:
         ct_render_literal(out, chunks, i);
@@ -966,11 +1179,13 @@ constexpr auto ct_render_chunks(Buffer& out, ct_parsed_template<N> const& chunks
       case ct_chunk_kind::section: {
         auto r = ct_render_section<Mode>(out, chunks, i, value, root_value, loop);
         if (!r) return r;
+        i = chunks.body_ends[i] - 1; // skip body chunks (already rendered recursively)
         break;
       }
       case ct_chunk_kind::inverted: {
         auto r = ct_render_inverted<Mode>(out, chunks, i, value, root_value, loop);
         if (!r) return r;
+        i = chunks.body_ends[i] - 1;
         break;
       }
       case ct_chunk_kind::at_var: {
@@ -981,11 +1196,14 @@ constexpr auto ct_render_chunks(Buffer& out, ct_parsed_template<N> const& chunks
       case ct_chunk_kind::at_section: {
         auto r = ct_render_at_section<Mode>(out, chunks, i, value, root_value, loop);
         if (!r) return r;
+        i = chunks.body_ends[i] - 1;
         break;
       }
       case ct_chunk_kind::if_else: {
         auto r = ct_render_if<Mode>(out, chunks, i, value, root_value, loop);
         if (!r) return r;
+        auto skip_to = chunks.else_ends[i] > chunks.body_ends[i] ? chunks.else_ends[i] : chunks.body_ends[i];
+        i = skip_to - 1;
         break;
       }
       case ct_chunk_kind::ct_break: {

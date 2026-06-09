@@ -84,7 +84,7 @@ consteval auto parse_fixed_impl() -> ct_parsed_template<Tmpl.size() + 1> {
  * @details テンプレート引数 Tmpl で渡された文字列をコンパイル時にパースし、
  *          実行時には変数値の埋め込みのみを行う。
  *          {{var}} は HTML エスケープ付き、{{{var}}} は生出力。
- *          セクション / if は非対応（engine を使用すること）。
+ *          セクション / if / @変数 / フィルター / break-continue に対応。
  *
  * @tparam Tmpl コンパイル時テンプレート文字列（fixed_string リテラル）
  * @tparam T    コンテキスト値の型（glz::meta<T> 要特殊化）
@@ -93,10 +93,10 @@ consteval auto parse_fixed_impl() -> ct_parsed_template<Tmpl.size() + 1> {
  */
 template <fixed_string Tmpl, class T>
 [[nodiscard]] inline expected<std::string> render(T const& value) {
-  constexpr auto fp = detail::parse_fixed_impl<Tmpl>();
+  constexpr auto fp = detail::resolve_field_indices<T>(detail::parse_fixed_impl<Tmpl>());
   std::string out;
   out.reserve(Tmpl.size() * 2);
-  auto r = detail::ct_render_chunks<stencil_tag>(out, fp, 0, fp.size, value, value, nullptr);
+  auto r = detail::ct_render_chunks<mustache_tag>(out, fp, 0, fp.size, value, value, nullptr);
   if (!r) {
     return std::unexpected(r.error());
   }
