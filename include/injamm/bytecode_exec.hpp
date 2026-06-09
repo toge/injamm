@@ -928,7 +928,10 @@ public:
       if (filtered_value_.find('.') != std::string::npos || filtered_value_.find('e') != std::string::npos || filtered_value_.find('E') != std::string::npos) {
         double val{};
         if (auto [p, ec] = std::from_chars(data, data + size, val); ec == std::errc()) {
-          filtered_value_ = std::to_string(std::abs(val));
+          std::array<char, 64> buf;
+          if (auto [tp, tec] = std::to_chars(buf.data(), buf.data() + buf.size(), std::abs(val)); tec == std::errc()) {
+            filtered_value_.assign(buf.data(), tp - buf.data());
+          }
         }
       } else {
         long long val{};
@@ -983,7 +986,10 @@ public:
       if (filtered_value_.find('.') != std::string::npos || filtered_value_.find('e') != std::string::npos || filtered_value_.find('E') != std::string::npos) {
         double val{};
         if (auto [p, ec] = std::from_chars(data, data + size, val); ec == std::errc()) {
-          filtered_value_ = std::to_string(-val);
+          std::array<char, 64> buf;
+          if (auto [tp, tec] = std::to_chars(buf.data(), buf.data() + buf.size(), -val); tec == std::errc()) {
+            filtered_value_.assign(buf.data(), tp - buf.data());
+          }
         }
       } else {
         long long val{};
@@ -1695,7 +1701,10 @@ public:
           if (filtered_value_.find('.') != std::string::npos || filtered_value_.find('e') != std::string::npos || filtered_value_.find('E') != std::string::npos) {
             double val{};
             if (auto [p, ec] = std::from_chars(data, data + size, val); ec == std::errc()) {
-              filtered_value_ = std::to_string(std::abs(val));
+              std::array<char, 64> buf;
+              if (auto [tp, tec] = std::to_chars(buf.data(), buf.data() + buf.size(), std::abs(val)); tec == std::errc()) {
+                filtered_value_.assign(buf.data(), tp - buf.data());
+              }
             }
           } else {
             long long val{};
@@ -1756,7 +1765,10 @@ public:
           if (filtered_value_.find('.') != std::string::npos || filtered_value_.find('e') != std::string::npos || filtered_value_.find('E') != std::string::npos) {
             double val{};
             if (auto [p, ec] = std::from_chars(data, data + size, val); ec == std::errc()) {
-              filtered_value_ = std::to_string(-val);
+              std::array<char, 64> buf;
+              if (auto [tp, tec] = std::to_chars(buf.data(), buf.data() + buf.size(), -val); tec == std::errc()) {
+                filtered_value_.assign(buf.data(), tp - buf.data());
+              }
             }
           } else {
             long long val{};
