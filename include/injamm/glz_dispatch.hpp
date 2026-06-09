@@ -55,6 +55,11 @@ inline bool write_value(Buffer& out, std::string_view key, T const& value, loop_
         if constexpr (serializable_v<FieldType>) {
           serialize_value(out, field);
           found = true;
+        } else if constexpr (is_std_optional_v<FieldType>) {
+          if (field.has_value()) {
+            serialize_value(out, *field);
+          }
+          found = true;
         }
       }()),
           ...);

@@ -1,6 +1,7 @@
 #include "injamm.hpp"
 #include <glaze/glaze.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <optional>
 #include <vector>
 
 // ---- テスト用データ型 ----
@@ -499,6 +500,17 @@ struct BcIfData {
 template <>
 struct glz::meta<BcIfData> {
   static constexpr auto value = glz::object("name", &BcIfData::name, "age", &BcIfData::age);
+};
+
+/** @brief std::optional の Boolean 扱いをテストするためのデータ型 */
+struct BcOptionalData {
+  std::optional<std::string> opt_str;
+};
+
+/** @brief Glaze メタ情報: BcOptionalData */
+template <>
+struct glz::meta<BcOptionalData> {
+  static constexpr auto value = glz::object("opt_str", &BcOptionalData::opt_str);
 };
 
 /**
@@ -1087,5 +1099,87 @@ TEST_CASE("float_filter: abs zero", "[float_filter]") {
   auto result = bc.render(data);
   REQUIRE(result);
   REQUIRE(*result == "0");
+}
+
+// ---- std::optional の Boolean 扱い ----
+
+TEST_CASE("bc_optional_section_present", "[optional]") {
+  BcOptionalData data{std::optional<std::string>{"hello"}};
+  auto bc = injamm::engine<BcOptionalData>("{{#opt_str}}yes{{/opt_str}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "yes");
+}
+
+TEST_CASE("bc_optional_section_empty", "[optional]") {
+  BcOptionalData data{std::nullopt};
+  auto bc = injamm::engine<BcOptionalData>("{{#opt_str}}yes{{/opt_str}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "");
+}
+
+TEST_CASE("bc_optional_if_present", "[optional]") {
+  BcOptionalData data{std::optional<std::string>{"hello"}};
+  auto bc = injamm::engine<BcOptionalData>("{{#if opt_str}}yes{{/if}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "yes");
+}
+
+TEST_CASE("bc_optional_if_empty", "[optional]") {
+  BcOptionalData data{std::nullopt};
+  auto bc = injamm::engine<BcOptionalData>("{{#if opt_str}}yes{{/if}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "");
+}
+
+TEST_CASE("bc_optional_if_else_present", "[optional]") {
+  BcOptionalData data{std::optional<std::string>{"hello"}};
+  auto bc = injamm::engine<BcOptionalData>("{{#if opt_str}}yes{{else}}no{{/if}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "yes");
+}
+
+TEST_CASE("bc_optional_if_else_empty", "[optional]") {
+  BcOptionalData data{std::nullopt};
+  auto bc = injamm::engine<BcOptionalData>("{{#if opt_str}}yes{{else}}no{{/if}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "no");
+}
+
+TEST_CASE("bc_optional_inverted_present", "[optional]") {
+  BcOptionalData data{std::optional<std::string>{"hello"}};
+  auto bc = injamm::engine<BcOptionalData>("{{^opt_str}}no{{/opt_str}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "");
+}
+
+TEST_CASE("bc_optional_inverted_empty", "[optional]") {
+  BcOptionalData data{std::nullopt};
+  auto bc = injamm::engine<BcOptionalData>("{{^opt_str}}no{{/opt_str}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "no");
+}
+
+TEST_CASE("bc_optional_var_present", "[optional]") {
+  BcOptionalData data{std::optional<std::string>{"hello"}};
+  auto bc = injamm::engine<BcOptionalData>("{{opt_str}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "hello");
+}
+
+TEST_CASE("bc_optional_var_empty", "[optional]") {
+  BcOptionalData data{std::nullopt};
+  auto bc = injamm::engine<BcOptionalData>("{{opt_str}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "");
 }
 

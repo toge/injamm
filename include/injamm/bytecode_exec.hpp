@@ -249,6 +249,10 @@ class bc_executor {
       if (ec == std::errc{}) {
         out_.append(buf.data(), ptr);
       }
+    } else if constexpr (is_std_optional_v<FT>) {
+      if (field.has_value()) {
+        emit_var_value(*field, raw);
+      }
     }
   }
 
@@ -397,6 +401,14 @@ public:
              auto r2 = execute_impl(pc + 1, body_end - 1);
              if (!r2) return r2;
            }
+         } else if constexpr (is_std_optional_v<FT>) {
+           /** optional の場合: 値を持てば内部値をコンテキストとしてボディを一度描画 */
+           if (field.has_value()) {
+             using inner_t = typename FT::value_type;
+             bc_executor<inner_t, RootT> child_exec(bc_, *field, root_value_, nullptr, out_);
+             auto r2 = child_exec.execute_impl(pc + 1, body_end - 1);
+             if (!r2) return r2;
+           }
          } else if constexpr (ct_glz_reflectable<FT>) {
            /** 構造体の場合: 全フィールドを反復 */
            constexpr auto sz = glz::reflect<FT>::size;
@@ -473,6 +485,8 @@ public:
           empty = field.empty();
         } else if constexpr (std::same_as<FT, bool>) {
           empty = !field;
+        } else if constexpr (is_std_optional_v<FT>) {
+          empty = !field.has_value();
         }
       });
       if (empty) {
@@ -559,6 +573,8 @@ public:
             cond = !field.empty();
           } else if constexpr (std::is_arithmetic_v<FT>) {
             cond = (field != 0);
+          } else if constexpr (is_std_optional_v<FT>) {
+            cond = field.has_value();
           }
         });
       }
@@ -1180,11 +1196,18 @@ public:
                 if (!r2) return r2;
               }
              } else if constexpr (std::same_as<FT, bool>) {
-               if (field) {
-                 auto r2 = execute_impl(pc + 1, body_end - 1);
-                 if (!r2) return r2;
-               }
-             } else if constexpr (ct_glz_reflectable<FT>) {
+                if (field) {
+                  auto r2 = execute_impl(pc + 1, body_end - 1);
+                  if (!r2) return r2;
+                }
+              } else if constexpr (is_std_optional_v<FT>) {
+                if (field.has_value()) {
+                  using inner_t = typename FT::value_type;
+                  bc_executor<inner_t, RootT> child_exec(bc_, *field, root_value_, nullptr, out_);
+                  auto r2 = child_exec.execute_impl(pc + 1, body_end - 1);
+                  if (!r2) return r2;
+                }
+              } else if constexpr (ct_glz_reflectable<FT>) {
                constexpr auto sz = glz::reflect<FT>::size;
                auto tied = glz::to_tie(field);
                std::expected<void, error_ctx> res{};
@@ -1224,6 +1247,8 @@ public:
               empty = field.empty();
             } else if constexpr (std::same_as<FT, bool>) {
               empty = !field;
+            } else if constexpr (is_std_optional_v<FT>) {
+              empty = !field.has_value();
             }
           });
           if (empty) {
@@ -1344,6 +1369,8 @@ public:
                 cond = !field.empty();
               } else if constexpr (std::is_arithmetic_v<FT>) {
                 cond = (field != 0);
+              } else if constexpr (is_std_optional_v<FT>) {
+                cond = field.has_value();
               }
             });
           }

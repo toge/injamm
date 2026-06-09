@@ -10,6 +10,7 @@
 #include <charconv>
 #include <cmath>
 #include <expected>
+#include <optional>
 #include <glaze/glaze.hpp>
 #include <string>
 #include <string_view>
@@ -618,6 +619,10 @@ constexpr auto ct_render_section(Buffer& out, ct_parsed_template<N> const& chunk
           if (field) {
             res = ct_render_chunks<Mode>(out, chunks, body_start, body_end, value, root_value, parent_loop);
           }
+        } else if constexpr (is_std_optional_v<FT>) {
+          if (field.has_value()) {
+            res = ct_render_chunks<Mode>(out, chunks, body_start, body_end, *field, root_value, parent_loop);
+          }
         } else {
           res = std::unexpected(error_ctx{.ec = error_code::type_mismatch});
         }
@@ -687,6 +692,10 @@ constexpr auto ct_render_inverted(Buffer& out, ct_parsed_template<N> const& chun
          } else if constexpr (std::same_as<FT, bool>) {
            /** bool 型の場合: 条件分岐 */
            if (field) {
+             res = ct_render_chunks<Mode>(out, chunks, body_start, body_end, value, root_value, parent_loop);
+           }
+         } else if constexpr (is_std_optional_v<FT>) {
+           if (!field.has_value()) {
              res = ct_render_chunks<Mode>(out, chunks, body_start, body_end, value, root_value, parent_loop);
            }
          } else if constexpr (ct_glz_reflectable<FT>) {

@@ -3,6 +3,7 @@
 #include <array>
 #include <charconv>
 #include <concepts>
+#include <optional>
 #include <string>
 #include <string_view>
 
@@ -17,6 +18,13 @@ template <class T>
 inline constexpr bool serializable_v =
     std::integral<T> || std::floating_point<T> ||
     std::same_as<T, std::string> || std::same_as<T, std::string_view>;
+
+/** @brief std::optional かどうかを判定する型特性 */
+template <class T>
+inline constexpr bool is_std_optional_v = false;
+
+template <class T>
+inline constexpr bool is_std_optional_v<std::optional<T>> = true;
 
 /** @brief 整数型（bool除く）をバッファに変換して追記する
  *
@@ -66,6 +74,22 @@ inline void serialize_value(Buffer& out, std::string_view s) {
 template <class Buffer>
 inline void serialize_value(Buffer& out, std::string const& s) {
   out.append(std::string_view{s});
+}
+
+/** @brief std::optional 型をバッファに変換して追記する
+ *
+ *  値を持つ場合は内部値をシリアライズし、空の場合は何も出力しない。
+ *
+ *  @tparam Buffer 出力バッファ型
+ *  @tparam T optional の内部型
+ *  @param[in,out] out 出力先バッファ
+ *  @param[in] opt optional 値
+ */
+template <class Buffer, class T>
+inline void serialize_value(Buffer& out, std::optional<T> const& opt) {
+  if (opt.has_value()) {
+    serialize_value(out, *opt);
+  }
 }
 
 /** @brief 浮動小数点型をバッファに変換して追記する
