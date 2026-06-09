@@ -5,9 +5,10 @@
 #include "serialize_value.hpp"
 #include "resolve.hpp"
 #include "../injamm.hpp"
+#include <array>
+#include <charconv>
 #include <cmath>
 #include <expected>
-#include <sstream>
 #include <string>
 
 namespace injamm::detail {
@@ -875,16 +876,18 @@ public:
 
     /** @brief 整数絶対値変換 */
     L_filter_int_abs: {
-      try {
-        if (filtered_value_.find('.') != std::string::npos || filtered_value_.find('e') != std::string::npos || filtered_value_.find('E') != std::string::npos) {
-          double val = std::stod(filtered_value_);
-          filtered_value_ = std::to_string(std::abs(val));
-        } else {
-          long long val = std::stoll(filtered_value_);
+      auto data = filtered_value_.data();
+      auto size = filtered_value_.size();
+      if (filtered_value_.find('.') != std::string::npos || filtered_value_.find('e') != std::string::npos || filtered_value_.find('E') != std::string::npos) {
+        double val{};
+        if (auto [p, ec] = std::from_chars(data, data + size, val); ec == std::errc()) {
           filtered_value_ = std::to_string(std::abs(val));
         }
-      } catch (...) {
-        // 変換失敗: そのまま
+      } else {
+        long long val{};
+        if (auto [p, ec] = std::from_chars(data, data + size, val); ec == std::errc()) {
+          filtered_value_ = std::to_string(std::abs(val));
+        }
       }
       ++pc;
       DISPATCH();
@@ -892,13 +895,11 @@ public:
 
     /** @brief 整数16進数変換 */
     L_filter_int_hex: {
-      try {
-        long long val = std::stoll(filtered_value_);
-        std::ostringstream oss;
-        oss << std::hex << val;
-        filtered_value_ = oss.str();
-      } catch (...) {
-        // 変換失敗: そのまま
+      long long val{};
+      if (auto [p, ec] = std::from_chars(filtered_value_.data(), filtered_value_.data() + filtered_value_.size(), val); ec == std::errc()) {
+        std::array<char, 32> buf;
+        auto [ptr, ec2] = std::to_chars(buf.data(), buf.data() + buf.size(), val, 16);
+        filtered_value_.assign(buf.data(), ptr - buf.data());
       }
       ++pc;
       DISPATCH();
@@ -906,13 +907,11 @@ public:
 
     /** @brief 整数8進数変換 */
     L_filter_int_oct: {
-      try {
-        long long val = std::stoll(filtered_value_);
-        std::ostringstream oss;
-        oss << std::oct << val;
-        filtered_value_ = oss.str();
-      } catch (...) {
-        // 変換失敗: そのまま
+      long long val{};
+      if (auto [p, ec] = std::from_chars(filtered_value_.data(), filtered_value_.data() + filtered_value_.size(), val); ec == std::errc()) {
+        std::array<char, 32> buf;
+        auto [ptr, ec2] = std::to_chars(buf.data(), buf.data() + buf.size(), val, 8);
+        filtered_value_.assign(buf.data(), ptr - buf.data());
       }
       ++pc;
       DISPATCH();
@@ -920,19 +919,11 @@ public:
 
     /** @brief 整数2進数変換 */
     L_filter_int_bin: {
-      try {
-        long long val = std::stoll(filtered_value_);
-        filtered_value_ = "";
-        if (val == 0) {
-          filtered_value_ = "0";
-        } else {
-          while (val > 0) {
-            filtered_value_ = (val % 2 == 0 ? "0" : "1") + filtered_value_;
-            val /= 2;
-          }
-        }
-      } catch (...) {
-        // 変換失敗: そのまま
+      long long val{};
+      if (auto [p, ec] = std::from_chars(filtered_value_.data(), filtered_value_.data() + filtered_value_.size(), val); ec == std::errc()) {
+        std::array<char, 32> buf;
+        auto [ptr, ec2] = std::to_chars(buf.data(), buf.data() + buf.size(), val, 2);
+        filtered_value_.assign(buf.data(), ptr - buf.data());
       }
       ++pc;
       DISPATCH();
@@ -940,16 +931,18 @@ public:
 
     /** @brief 整数符号逆転 */
     L_filter_int_neg: {
-      try {
-        if (filtered_value_.find('.') != std::string::npos || filtered_value_.find('e') != std::string::npos || filtered_value_.find('E') != std::string::npos) {
-          double val = std::stod(filtered_value_);
-          filtered_value_ = std::to_string(-val);
-        } else {
-          long long val = std::stoll(filtered_value_);
+      auto data = filtered_value_.data();
+      auto size = filtered_value_.size();
+      if (filtered_value_.find('.') != std::string::npos || filtered_value_.find('e') != std::string::npos || filtered_value_.find('E') != std::string::npos) {
+        double val{};
+        if (auto [p, ec] = std::from_chars(data, data + size, val); ec == std::errc()) {
           filtered_value_ = std::to_string(-val);
         }
-      } catch (...) {
-        // 変換失敗: そのまま
+      } else {
+        long long val{};
+        if (auto [p, ec] = std::from_chars(data, data + size, val); ec == std::errc()) {
+          filtered_value_ = std::to_string(-val);
+        }
       }
       ++pc;
       DISPATCH();
@@ -957,14 +950,12 @@ public:
 
     /** @brief 整数余り（引数: 除数） */
     L_filter_int_mod: {
-      try {
-        long long val = std::stoll(filtered_value_);
+      long long val{};
+      if (auto [p, ec] = std::from_chars(filtered_value_.data(), filtered_value_.data() + filtered_value_.size(), val); ec == std::errc()) {
         auto divisor = bc_.instructions[pc].operand;
         if (divisor != 0) {
           filtered_value_ = std::to_string(val % divisor);
         }
-      } catch (...) {
-        // 変換失敗: そのまま
       }
       ++pc;
       DISPATCH();
@@ -972,9 +963,11 @@ public:
 
     /** @brief 整数3桁カンマ区切り */
     L_filter_int_numify: {
-      try {
-        if (filtered_value_.find('.') != std::string::npos || filtered_value_.find('e') != std::string::npos || filtered_value_.find('E') != std::string::npos) {
-          double val = std::stod(filtered_value_);
+      auto data = filtered_value_.data();
+      auto size = filtered_value_.size();
+      if (filtered_value_.find('.') != std::string::npos || filtered_value_.find('e') != std::string::npos || filtered_value_.find('E') != std::string::npos) {
+        double val{};
+        if (auto [p, ec] = std::from_chars(data, data + size, val); ec == std::errc()) {
           bool negative = val < 0;
           if (negative) val = -val;
           auto int_part = static_cast<long long>(val);
@@ -997,19 +990,21 @@ public:
               if (prec > 6) prec = 6;
               if (prec == 0) prec = 1;
             }
-            std::ostringstream oss;
-            oss << std::fixed;
-            oss.precision(prec);
-            oss << frac;
-            auto frac_str = oss.str();
-            if (frac_str.size() > 2) {
-              frac_str = frac_str.substr(1);
+            std::array<char, 64> buf;
+            auto [ptr, ec2] = std::to_chars(buf.data(), buf.data() + buf.size(), frac, std::chars_format::fixed, static_cast<int>(prec));
+            if (ec2 == std::errc()) {
+              auto frac_str = std::string_view(buf.data(), ptr - buf.data());
+              if (frac_str.size() > 2) {
+                frac_str = frac_str.substr(1);
+              }
+              result += frac_str;
             }
-            result += frac_str;
           }
           filtered_value_ = negative ? "-" + result : result;
-        } else {
-          long long val = std::stoll(filtered_value_);
+        }
+      } else {
+        long long val{};
+        if (auto [p, ec] = std::from_chars(data, data + size, val); ec == std::errc()) {
           bool negative = val < 0;
           if (negative) val = -val;
           std::string num = std::to_string(val);
@@ -1024,8 +1019,6 @@ public:
           }
           filtered_value_ = negative ? "-" + result : result;
         }
-      } catch (...) {
-        // 変換失敗: そのまま
       }
       ++pc;
       DISPATCH();
@@ -1033,15 +1026,13 @@ public:
 
     /** @brief 実数小数点以下桁数（引数: 桁数） */
     L_filter_float_precision: {
-      try {
-        double val = std::stod(filtered_value_);
-        std::ostringstream oss;
-        oss << std::fixed;
-        oss.precision(bc_.instructions[pc].operand);
-        oss << val;
-        filtered_value_ = oss.str();
-      } catch (...) {
-        // 変換失敗: そのまま
+      double val{};
+      if (auto [p, ec] = std::from_chars(filtered_value_.data(), filtered_value_.data() + filtered_value_.size(), val); ec == std::errc()) {
+        std::array<char, 64> buf;
+        auto [ptr, ec2] = std::to_chars(buf.data(), buf.data() + buf.size(), val, std::chars_format::fixed, static_cast<int>(bc_.instructions[pc].operand));
+        if (ec2 == std::errc()) {
+          filtered_value_.assign(buf.data(), ptr - buf.data());
+        }
       }
       ++pc;
       DISPATCH();
@@ -1049,16 +1040,27 @@ public:
 
     /** @brief 負数判定: "true"/"false" を出力 */
     L_filter_int_is_neg: {
-      try {
-        if (filtered_value_.find('.') != std::string::npos || filtered_value_.find('e') != std::string::npos || filtered_value_.find('E') != std::string::npos) {
-          double val = std::stod(filtered_value_);
+      auto data = filtered_value_.data();
+      auto size = filtered_value_.size();
+      if (filtered_value_.find('.') != std::string::npos || filtered_value_.find('e') != std::string::npos || filtered_value_.find('E') != std::string::npos) {
+        double val{};
+        if (auto [p, ec] = std::from_chars(data, data + size, val); ec == std::errc()) {
           filtered_value_ = val < 0 ? "true" : "false";
         } else {
-          long long val = std::stoll(filtered_value_);
-          filtered_value_ = val < 0 ? "true" : "false";
+          long long val2{};
+          if (auto [p2, ec2] = std::from_chars(data, data + size, val2); ec2 == std::errc()) {
+            filtered_value_ = val2 < 0 ? "true" : "false";
+          } else {
+            filtered_value_ = "false";
+          }
         }
-      } catch (...) {
-        filtered_value_ = "false";
+      } else {
+        long long val{};
+        if (auto [p, ec] = std::from_chars(data, data + size, val); ec == std::errc()) {
+          filtered_value_ = val < 0 ? "true" : "false";
+        } else {
+          filtered_value_ = "false";
+        }
       }
       ++pc;
       DISPATCH();
@@ -1066,17 +1068,28 @@ public:
 
     /** @brief 等価判定: 値と引数が等しければ "true"、そうでなければ "false" を出力 */
     L_filter_int_eq: {
-      try {
-        auto target = bc_.instructions[pc].operand;
-        if (filtered_value_.find('.') != std::string::npos || filtered_value_.find('e') != std::string::npos || filtered_value_.find('E') != std::string::npos) {
-          double val = std::stod(filtered_value_);
+      auto target = bc_.instructions[pc].operand;
+      auto data = filtered_value_.data();
+      auto size = filtered_value_.size();
+      if (filtered_value_.find('.') != std::string::npos || filtered_value_.find('e') != std::string::npos || filtered_value_.find('E') != std::string::npos) {
+        double val{};
+        if (auto [p, ec] = std::from_chars(data, data + size, val); ec == std::errc()) {
           filtered_value_ = (static_cast<long long>(val) == target) ? "true" : "false";
         } else {
-          long long val = std::stoll(filtered_value_);
-          filtered_value_ = (val == target) ? "true" : "false";
+          long long val2{};
+          if (auto [p2, ec2] = std::from_chars(data, data + size, val2); ec2 == std::errc()) {
+            filtered_value_ = (val2 == target) ? "true" : "false";
+          } else {
+            filtered_value_ = "false";
+          }
         }
-      } catch (...) {
-        filtered_value_ = "false";
+      } else {
+        long long val{};
+        if (auto [p, ec] = std::from_chars(data, data + size, val); ec == std::errc()) {
+          filtered_value_ = (val == target) ? "true" : "false";
+        } else {
+          filtered_value_ = "false";
+        }
       }
       ++pc;
       DISPATCH();
@@ -1552,16 +1565,18 @@ public:
 
         /** @brief 整数絶対値変換 */
         case bc_opcode::filter_int_abs: {
-          try {
-            if (filtered_value_.find('.') != std::string::npos || filtered_value_.find('e') != std::string::npos || filtered_value_.find('E') != std::string::npos) {
-              double val = std::stod(filtered_value_);
-              filtered_value_ = std::to_string(std::abs(val));
-            } else {
-              long long val = std::stoll(filtered_value_);
+          auto data = filtered_value_.data();
+          auto size = filtered_value_.size();
+          if (filtered_value_.find('.') != std::string::npos || filtered_value_.find('e') != std::string::npos || filtered_value_.find('E') != std::string::npos) {
+            double val{};
+            if (auto [p, ec] = std::from_chars(data, data + size, val); ec == std::errc()) {
               filtered_value_ = std::to_string(std::abs(val));
             }
-          } catch (...) {
-            // 変換失敗: そのまま
+          } else {
+            long long val{};
+            if (auto [p, ec] = std::from_chars(data, data + size, val); ec == std::errc()) {
+              filtered_value_ = std::to_string(std::abs(val));
+            }
           }
           ++pc;
           break;
@@ -1569,13 +1584,11 @@ public:
 
         /** @brief 整数16進数変換 */
         case bc_opcode::filter_int_hex: {
-          try {
-            long long val = std::stoll(filtered_value_);
-            std::ostringstream oss;
-            oss << std::hex << val;
-            filtered_value_ = oss.str();
-          } catch (...) {
-            // 変換失敗: そのまま
+          long long val{};
+          if (auto [p, ec] = std::from_chars(filtered_value_.data(), filtered_value_.data() + filtered_value_.size(), val); ec == std::errc()) {
+            std::array<char, 32> buf;
+            auto [ptr, ec2] = std::to_chars(buf.data(), buf.data() + buf.size(), val, 16);
+            filtered_value_.assign(buf.data(), ptr - buf.data());
           }
           ++pc;
           break;
@@ -1583,13 +1596,11 @@ public:
 
         /** @brief 整数8進数変換 */
         case bc_opcode::filter_int_oct: {
-          try {
-            long long val = std::stoll(filtered_value_);
-            std::ostringstream oss;
-            oss << std::oct << val;
-            filtered_value_ = oss.str();
-          } catch (...) {
-            // 変換失敗: そのまま
+          long long val{};
+          if (auto [p, ec] = std::from_chars(filtered_value_.data(), filtered_value_.data() + filtered_value_.size(), val); ec == std::errc()) {
+            std::array<char, 32> buf;
+            auto [ptr, ec2] = std::to_chars(buf.data(), buf.data() + buf.size(), val, 8);
+            filtered_value_.assign(buf.data(), ptr - buf.data());
           }
           ++pc;
           break;
@@ -1597,8 +1608,8 @@ public:
 
         /** @brief 整数2進数変換 */
         case bc_opcode::filter_int_bin: {
-          try {
-            long long val = std::stoll(filtered_value_);
+          long long val{};
+          if (auto [p, ec] = std::from_chars(filtered_value_.data(), filtered_value_.data() + filtered_value_.size(), val); ec == std::errc()) {
             filtered_value_ = "";
             if (val == 0) {
               filtered_value_ = "0";
@@ -1608,8 +1619,6 @@ public:
                 val /= 2;
               }
             }
-          } catch (...) {
-            // 変換失敗: そのまま
           }
           ++pc;
           break;
@@ -1617,16 +1626,18 @@ public:
 
         /** @brief 整数符号逆転 */
         case bc_opcode::filter_int_neg: {
-          try {
-            if (filtered_value_.find('.') != std::string::npos || filtered_value_.find('e') != std::string::npos || filtered_value_.find('E') != std::string::npos) {
-              double val = std::stod(filtered_value_);
-              filtered_value_ = std::to_string(-val);
-            } else {
-              long long val = std::stoll(filtered_value_);
+          auto data = filtered_value_.data();
+          auto size = filtered_value_.size();
+          if (filtered_value_.find('.') != std::string::npos || filtered_value_.find('e') != std::string::npos || filtered_value_.find('E') != std::string::npos) {
+            double val{};
+            if (auto [p, ec] = std::from_chars(data, data + size, val); ec == std::errc()) {
               filtered_value_ = std::to_string(-val);
             }
-          } catch (...) {
-            // 変換失敗: そのまま
+          } else {
+            long long val{};
+            if (auto [p, ec] = std::from_chars(data, data + size, val); ec == std::errc()) {
+              filtered_value_ = std::to_string(-val);
+            }
           }
           ++pc;
           break;
@@ -1634,14 +1645,12 @@ public:
 
         /** @brief 整数余り（引数: 除数） */
         case bc_opcode::filter_int_mod: {
-          try {
-            long long val = std::stoll(filtered_value_);
+          long long val{};
+          if (auto [p, ec] = std::from_chars(filtered_value_.data(), filtered_value_.data() + filtered_value_.size(), val); ec == std::errc()) {
             auto divisor = instr.operand;
             if (divisor != 0) {
               filtered_value_ = std::to_string(val % divisor);
             }
-          } catch (...) {
-            // 変換失敗: そのまま
           }
           ++pc;
           break;
@@ -1649,9 +1658,11 @@ public:
 
         /** @brief 整数3桁カンマ区切り */
         case bc_opcode::filter_int_numify: {
-          try {
-            if (filtered_value_.find('.') != std::string::npos || filtered_value_.find('e') != std::string::npos || filtered_value_.find('E') != std::string::npos) {
-              double val = std::stod(filtered_value_);
+          auto data = filtered_value_.data();
+          auto size = filtered_value_.size();
+          if (filtered_value_.find('.') != std::string::npos || filtered_value_.find('e') != std::string::npos || filtered_value_.find('E') != std::string::npos) {
+            double val{};
+            if (auto [p, ec] = std::from_chars(data, data + size, val); ec == std::errc()) {
               bool negative = val < 0;
               if (negative) val = -val;
               auto int_part = static_cast<long long>(val);
@@ -1674,19 +1685,21 @@ public:
                   if (prec > 6) prec = 6;
                   if (prec == 0) prec = 1;
                 }
-                std::ostringstream oss;
-                oss << std::fixed;
-                oss.precision(prec);
-                oss << frac;
-                auto frac_str = oss.str();
-                if (frac_str.size() > 2) {
-                  frac_str = frac_str.substr(1);
+                std::array<char, 64> buf;
+                auto [ptr, ec2] = std::to_chars(buf.data(), buf.data() + buf.size(), frac, std::chars_format::fixed, static_cast<int>(prec));
+                if (ec2 == std::errc()) {
+                  auto frac_str = std::string_view(buf.data(), ptr - buf.data());
+                  if (frac_str.size() > 2) {
+                    frac_str = frac_str.substr(1);
+                  }
+                  result += frac_str;
                 }
-                result += frac_str;
               }
               filtered_value_ = negative ? "-" + result : result;
-            } else {
-              long long val = std::stoll(filtered_value_);
+            }
+          } else {
+            long long val{};
+            if (auto [p, ec] = std::from_chars(data, data + size, val); ec == std::errc()) {
               bool negative = val < 0;
               if (negative) val = -val;
               std::string num = std::to_string(val);
@@ -1701,8 +1714,6 @@ public:
               }
               filtered_value_ = negative ? "-" + result : result;
             }
-          } catch (...) {
-            // 変換失敗: そのまま
           }
           ++pc;
           break;
@@ -1710,15 +1721,13 @@ public:
 
         /** @brief 実数小数点以下桁数（引数: 桁数） */
         case bc_opcode::filter_float_precision: {
-          try {
-            double val = std::stod(filtered_value_);
-            std::ostringstream oss;
-            oss << std::fixed;
-            oss.precision(instr.operand);
-            oss << val;
-            filtered_value_ = oss.str();
-          } catch (...) {
-            // 変換失敗: そのまま
+          double val{};
+          if (auto [p, ec] = std::from_chars(filtered_value_.data(), filtered_value_.data() + filtered_value_.size(), val); ec == std::errc()) {
+            std::array<char, 64> buf;
+            auto [ptr, ec2] = std::to_chars(buf.data(), buf.data() + buf.size(), val, std::chars_format::fixed, static_cast<int>(instr.operand));
+            if (ec2 == std::errc()) {
+              filtered_value_.assign(buf.data(), ptr - buf.data());
+            }
           }
           ++pc;
           break;
@@ -1726,16 +1735,27 @@ public:
 
         /** @brief 負数判定: "true"/"false" を出力 */
         case bc_opcode::filter_int_is_neg: {
-          try {
-            if (filtered_value_.find('.') != std::string::npos || filtered_value_.find('e') != std::string::npos || filtered_value_.find('E') != std::string::npos) {
-              double val = std::stod(filtered_value_);
+          auto data = filtered_value_.data();
+          auto size = filtered_value_.size();
+          if (filtered_value_.find('.') != std::string::npos || filtered_value_.find('e') != std::string::npos || filtered_value_.find('E') != std::string::npos) {
+            double val{};
+            if (auto [p, ec] = std::from_chars(data, data + size, val); ec == std::errc()) {
               filtered_value_ = val < 0 ? "true" : "false";
             } else {
-              long long val = std::stoll(filtered_value_);
-              filtered_value_ = val < 0 ? "true" : "false";
+              long long val2{};
+              if (auto [p2, ec2] = std::from_chars(data, data + size, val2); ec2 == std::errc()) {
+                filtered_value_ = val2 < 0 ? "true" : "false";
+              } else {
+                filtered_value_ = "false";
+              }
             }
-          } catch (...) {
-            filtered_value_ = "false";
+          } else {
+            long long val{};
+            if (auto [p, ec] = std::from_chars(data, data + size, val); ec == std::errc()) {
+              filtered_value_ = val < 0 ? "true" : "false";
+            } else {
+              filtered_value_ = "false";
+            }
           }
           ++pc;
           break;
@@ -1743,17 +1763,28 @@ public:
 
         /** @brief 等価判定: 値と引数が等しければ "true" / "false" */
         case bc_opcode::filter_int_eq: {
-          try {
-            auto target = instr.operand;
-            if (filtered_value_.find('.') != std::string::npos || filtered_value_.find('e') != std::string::npos || filtered_value_.find('E') != std::string::npos) {
-              double val = std::stod(filtered_value_);
+          auto target = instr.operand;
+          auto data = filtered_value_.data();
+          auto size = filtered_value_.size();
+          if (filtered_value_.find('.') != std::string::npos || filtered_value_.find('e') != std::string::npos || filtered_value_.find('E') != std::string::npos) {
+            double val{};
+            if (auto [p, ec] = std::from_chars(data, data + size, val); ec == std::errc()) {
               filtered_value_ = (static_cast<long long>(val) == target) ? "true" : "false";
             } else {
-              long long val = std::stoll(filtered_value_);
-              filtered_value_ = (val == target) ? "true" : "false";
+              long long val2{};
+              if (auto [p2, ec2] = std::from_chars(data, data + size, val2); ec2 == std::errc()) {
+                filtered_value_ = (val2 == target) ? "true" : "false";
+              } else {
+                filtered_value_ = "false";
+              }
             }
-          } catch (...) {
-            filtered_value_ = "false";
+          } else {
+            long long val{};
+            if (auto [p, ec] = std::from_chars(data, data + size, val); ec == std::errc()) {
+              filtered_value_ = (val == target) ? "true" : "false";
+            } else {
+              filtered_value_ = "false";
+            }
           }
           ++pc;
           break;

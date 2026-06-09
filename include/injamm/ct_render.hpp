@@ -6,10 +6,11 @@
 #include "loop_state.hpp"
 #include "resolve.hpp"
 #include "serialize_value.hpp"
+#include <array>
+#include <charconv>
 #include <cmath>
 #include <expected>
 #include <glaze/glaze.hpp>
-#include <sstream>
 #include <string>
 #include <string_view>
 
@@ -192,45 +193,42 @@ constexpr void apply_string_filter(std::string& str, string_filter_entry entry) 
 constexpr void apply_int_filter(std::string& str, int_filter_entry entry) {
   switch (entry.filter) {
     case int_filter::abs: {
-      try {
-        // 小数点を含む場合は実数として扱う
-        if (str.find('.') != std::string::npos || str.find('e') != std::string::npos || str.find('E') != std::string::npos) {
-          double val = std::stod(str);
-          str = std::to_string(std::abs(val));
-        } else {
-          long long val = std::stoll(str);
+      auto data = str.data();
+      auto size = str.size();
+      if (str.find('.') != std::string::npos || str.find('e') != std::string::npos || str.find('E') != std::string::npos) {
+        double val{};
+        if (auto [p, ec] = std::from_chars(data, data + size, val); ec == std::errc()) {
           str = std::to_string(std::abs(val));
         }
-      } catch (...) {
-        // 変換失敗: そのまま
+      } else {
+        long long val{};
+        if (auto [p, ec] = std::from_chars(data, data + size, val); ec == std::errc()) {
+          str = std::to_string(std::abs(val));
+        }
       }
       break;
     }
     case int_filter::hex: {
-      try {
-        long long val = std::stoll(str);
-        std::ostringstream oss;
-        oss << std::hex << val;
-        str = oss.str();
-      } catch (...) {
-        // 変換失敗: そのまま
+      long long val{};
+      if (auto [p, ec] = std::from_chars(str.data(), str.data() + str.size(), val); ec == std::errc()) {
+        std::array<char, 32> buf;
+        auto [ptr, ec2] = std::to_chars(buf.data(), buf.data() + buf.size(), val, 16);
+        str.assign(buf.data(), ptr - buf.data());
       }
       break;
     }
     case int_filter::oct: {
-      try {
-        long long val = std::stoll(str);
-        std::ostringstream oss;
-        oss << std::oct << val;
-        str = oss.str();
-      } catch (...) {
-        // 変換失敗: そのまま
+      long long val{};
+      if (auto [p, ec] = std::from_chars(str.data(), str.data() + str.size(), val); ec == std::errc()) {
+        std::array<char, 32> buf;
+        auto [ptr, ec2] = std::to_chars(buf.data(), buf.data() + buf.size(), val, 8);
+        str.assign(buf.data(), ptr - buf.data());
       }
       break;
     }
     case int_filter::bin: {
-      try {
-        long long val = std::stoll(str);
+      long long val{};
+      if (auto [p, ec] = std::from_chars(str.data(), str.data() + str.size(), val); ec == std::errc()) {
         str = "";
         if (val == 0) {
           str = "0";
@@ -240,42 +238,41 @@ constexpr void apply_int_filter(std::string& str, int_filter_entry entry) {
             val /= 2;
           }
         }
-      } catch (...) {
-        // 変換失敗: そのまま
       }
       break;
     }
     case int_filter::neg: {
-      try {
-        if (str.find('.') != std::string::npos || str.find('e') != std::string::npos || str.find('E') != std::string::npos) {
-          double val = std::stod(str);
-          str = std::to_string(-val);
-        } else {
-          long long val = std::stoll(str);
+      auto data = str.data();
+      auto size = str.size();
+      if (str.find('.') != std::string::npos || str.find('e') != std::string::npos || str.find('E') != std::string::npos) {
+        double val{};
+        if (auto [p, ec] = std::from_chars(data, data + size, val); ec == std::errc()) {
           str = std::to_string(-val);
         }
-      } catch (...) {
-        // 変換失敗: そのまま
+      } else {
+        long long val{};
+        if (auto [p, ec] = std::from_chars(data, data + size, val); ec == std::errc()) {
+          str = std::to_string(-val);
+        }
       }
       break;
     }
     case int_filter::mod: {
-      try {
-        long long val = std::stoll(str);
+      long long val{};
+      if (auto [p, ec] = std::from_chars(str.data(), str.data() + str.size(), val); ec == std::errc()) {
         auto divisor = entry.arg;
         if (divisor != 0) {
           str = std::to_string(val % divisor);
         }
-      } catch (...) {
-        // 変換失敗: そのまま
       }
       break;
     }
     case int_filter::numify: {
-      try {
-        // 小数点を含む場合は実数としてカンマ区切りを適用
-        if (str.find('.') != std::string::npos || str.find('e') != std::string::npos || str.find('E') != std::string::npos) {
-          double val = std::stod(str);
+      auto data = str.data();
+      auto size = str.size();
+      if (str.find('.') != std::string::npos || str.find('e') != std::string::npos || str.find('E') != std::string::npos) {
+        double val{};
+        if (auto [p, ec] = std::from_chars(data, data + size, val); ec == std::errc()) {
           bool negative = val < 0;
           if (negative) val = -val;
           auto int_part = static_cast<long long>(val);
@@ -289,7 +286,6 @@ constexpr void apply_int_filter(std::string& str, int_filter_entry entry) {
               result = ',' + result;
             }
           }
-          // 小数部分を処理
           auto frac = val - static_cast<double>(int_part);
           if (frac != 0.0) {
             auto dot_pos = str.find('.');
@@ -299,19 +295,21 @@ constexpr void apply_int_filter(std::string& str, int_filter_entry entry) {
               if (prec > 6) prec = 6;
               if (prec == 0) prec = 1;
             }
-            std::ostringstream oss;
-            oss << std::fixed;
-            oss.precision(prec);
-            oss << frac;
-            auto frac_str = oss.str();
-            if (frac_str.size() > 2) {
-              frac_str = frac_str.substr(1);
+            std::array<char, 64> buf;
+            auto [ptr, ec2] = std::to_chars(buf.data(), buf.data() + buf.size(), frac, std::chars_format::fixed, static_cast<int>(prec));
+            if (ec2 == std::errc()) {
+              auto frac_str = std::string_view(buf.data(), ptr - buf.data());
+              if (frac_str.size() > 2) {
+                frac_str = frac_str.substr(1);
+              }
+              result += frac_str;
             }
-            result += frac_str;
           }
           str = negative ? "-" + result : result;
-        } else {
-          long long val = std::stoll(str);
+        }
+      } else {
+        long long val{};
+        if (auto [p, ec] = std::from_chars(data, data + size, val); ec == std::errc()) {
           bool negative = val < 0;
           if (negative) val = -val;
           std::string num = std::to_string(val);
@@ -326,37 +324,57 @@ constexpr void apply_int_filter(std::string& str, int_filter_entry entry) {
           }
           str = negative ? "-" + result : result;
         }
-      } catch (...) {
-        // 変換失敗: そのまま
       }
       break;
     }
     case int_filter::is_neg: {
-      try {
-        if (str.find('.') != std::string::npos || str.find('e') != std::string::npos || str.find('E') != std::string::npos) {
-          double val = std::stod(str);
+      auto data = str.data();
+      auto size = str.size();
+      if (str.find('.') != std::string::npos || str.find('e') != std::string::npos || str.find('E') != std::string::npos) {
+        double val{};
+        if (auto [p, ec] = std::from_chars(data, data + size, val); ec == std::errc()) {
           str = val < 0 ? "true" : "false";
         } else {
-          long long val = std::stoll(str);
-          str = val < 0 ? "true" : "false";
+          long long val2{};
+          if (auto [p2, ec2] = std::from_chars(data, data + size, val2); ec2 == std::errc()) {
+            str = val2 < 0 ? "true" : "false";
+          } else {
+            str = "false";
+          }
         }
-      } catch (...) {
-        str = "false";
+      } else {
+        long long val{};
+        if (auto [p, ec] = std::from_chars(data, data + size, val); ec == std::errc()) {
+          str = val < 0 ? "true" : "false";
+        } else {
+          str = "false";
+        }
       }
       break;
     }
     case int_filter::eq: {
-      try {
-        auto target = entry.arg;
-        if (str.find('.') != std::string::npos || str.find('e') != std::string::npos || str.find('E') != std::string::npos) {
-          double val = std::stod(str);
+      auto target = entry.arg;
+      auto data = str.data();
+      auto size = str.size();
+      if (str.find('.') != std::string::npos || str.find('e') != std::string::npos || str.find('E') != std::string::npos) {
+        double val{};
+        if (auto [p, ec] = std::from_chars(data, data + size, val); ec == std::errc()) {
           str = (static_cast<long long>(val) == target) ? "true" : "false";
         } else {
-          long long val = std::stoll(str);
-          str = (val == target) ? "true" : "false";
+          long long val2{};
+          if (auto [p2, ec2] = std::from_chars(data, data + size, val2); ec2 == std::errc()) {
+            str = (val2 == target) ? "true" : "false";
+          } else {
+            str = "false";
+          }
         }
-      } catch (...) {
-        str = "false";
+      } else {
+        long long val{};
+        if (auto [p, ec] = std::from_chars(data, data + size, val); ec == std::errc()) {
+          str = (val == target) ? "true" : "false";
+        } else {
+          str = "false";
+        }
       }
       break;
     }
@@ -371,15 +389,13 @@ constexpr void apply_int_filter(std::string& str, int_filter_entry entry) {
 constexpr void apply_float_filter(std::string& str, float_filter_entry entry) {
   switch (entry.filter) {
     case float_filter::precision: {
-      try {
-        double val = std::stod(str);
-        std::ostringstream oss;
-        oss << std::fixed;
-        oss.precision(entry.arg);
-        oss << val;
-        str = oss.str();
-      } catch (...) {
-        // 変換失敗: そのまま
+      double val{};
+      if (auto [p, ec] = std::from_chars(str.data(), str.data() + str.size(), val); ec == std::errc()) {
+        std::array<char, 64> buf;
+        auto [ptr, ec2] = std::to_chars(buf.data(), buf.data() + buf.size(), val, std::chars_format::fixed, static_cast<int>(entry.arg));
+        if (ec2 == std::errc()) {
+          str.assign(buf.data(), ptr - buf.data());
+        }
       }
       break;
     }
