@@ -45,7 +45,6 @@ class bc_executor {
   RootT const& root_value_;
   bc_loop_state const* loop_ = nullptr;
   std::string& out_;
-  std::string filtered_value_;  // フィルタ処理用の一時バッファ
 
   /**
    * @brief ネストされたドット区切りパスを再帰的に解決し visitor を呼び出す
@@ -278,6 +277,7 @@ public:
    */
   std::expected<void, error_ctx> execute_impl(std::size_t start, std::size_t end) {
     std::size_t pc = start;
+    std::string filtered_value_;
 
 #if defined(__GNUC__) && !defined(__clang__) && defined(INJAMM_THREADED_DISPATCH)
     /**
