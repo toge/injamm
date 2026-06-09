@@ -325,6 +325,31 @@ class bc_compiler {
   }
 
   /**
+   * @brief ループ状態を用いた@varセクション（{{#@var}}）をコンパイルする
+   * @param key @index / @first / @last のいずれか
+   * @details ループ状態の値に応じて本体を条件描画するセクションをコンパイルする。
+   *          kind フィールドに @index=0 / @first=1 / @last=2 をエンコードする。
+   */
+  void compile_at_section(std::string_view key) {
+    auto k = parse_at_kind(key);
+    std::uint32_t kind;
+    switch (k) {
+      case chunk_at_var::kind::index: kind = 0; break;
+      case chunk_at_var::kind::first: kind = 1; break;
+      case chunk_at_var::kind::last: kind = 2; break;
+      default: return;
+    }
+
+    bc_.add_instruction(bc_opcode::emit_at_section, 0, kind);
+    auto instr_idx = bc_.current_offset() - 1;
+
+    compile_body();
+
+    bc_.add_instruction(bc_opcode::emit_end);
+    bc_.patch_jump(instr_idx, static_cast<std::uint32_t>(bc_.current_offset()));
+  }
+
+  /**
    * @brief テンプレート本体をコンパイルする
    * @details テンプレート文字列を先頭から走査し、リテラル・変数・セクション・if などを
    *          バイトコード命令に変換する。{{/xxx}} や {{else}} に遭遇すると戻る。
@@ -334,6 +359,7 @@ class bc_compiler {
    *          - {{#section}} : セクション開始
    *          - {{#if expr}} : 条件分岐
    *          - {{^section}} : 反転セクション
+   *          - {{#@var}} / {{^@var}} : @var 条件セクション
    *          - {{@index}} / {{@first}} / {{@last}} : ループ変数
    *          - {{/xxx}}  : セクション終了（return）
    *          - {{else}}  : else 節（return）
@@ -427,6 +453,7 @@ class bc_compiler {
         }
 
         if (key.starts_with("@")) {
+          compile_at_section(key);
           continue;
         }
 
@@ -542,6 +569,10 @@ class bc_compiler {
         if (key.starts_with("if") && (key.size() == 2 || key[2] == ' ')) {
           auto expr = key.size() > 2 ? trim_sv(key.substr(3)) : std::string_view{};
           compile_if(expr);
+          continue;
+        }
+        if (key.starts_with("@")) {
+          compile_at_section(key);
           continue;
         }
         compile_section(key);

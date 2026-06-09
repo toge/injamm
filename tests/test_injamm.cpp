@@ -287,6 +287,64 @@ TEST_CASE("bc_at_last", "[injamm]") {
 }
 
 /**
+ * @brief {{#@first}} セクション構文のテスト
+ * @details {{#@first}}...{{/@first}} で先頭要素のみ描画されることを確認する。
+ */
+TEST_CASE("bc_at_first_section", "[injamm]") {
+  BcUsersData data;
+  data.users.push_back(BcUser{"a", 1});
+  data.users.push_back(BcUser{"b", 2});
+  data.users.push_back(BcUser{"c", 3});
+  auto bc = injamm::engine<BcUsersData>("{{#users}}{{#@first}}<{{name}}>{{/@first}}{{/users}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "<a>");
+}
+
+/**
+ * @brief {{#@last}} セクション構文のテスト
+ * @details {{#@last}}...{{/@last}} で末尾要素のみ描画されることを確認する。
+ */
+TEST_CASE("bc_at_last_section", "[injamm]") {
+  BcUsersData data;
+  data.users.push_back(BcUser{"a", 1});
+  data.users.push_back(BcUser{"b", 2});
+  auto bc = injamm::engine<BcUsersData>("{{#users}}{{#@last}}<{{name}}>{{/@last}}{{/users}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "<b>");
+}
+
+/**
+ * @brief {{^@first}} 逆セクション構文のテスト
+ * @details {{^@first}}...{{/@first}} で先頭要素以外を描画することを確認する。
+ */
+TEST_CASE("bc_at_first_inverted_section", "[injamm]") {
+  BcUsersData data;
+  data.users.push_back(BcUser{"a", 1});
+  data.users.push_back(BcUser{"b", 2});
+  data.users.push_back(BcUser{"c", 3});
+  auto bc = injamm::engine<BcUsersData>("{{#users}}{{^@first}}<{{name}}>{{/@first}}{{/users}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "<b><c>");
+}
+
+/**
+ * @brief {{^@last}} 逆セクション構文のテスト
+ * @details {{^@last}}...{{/@last}} で末尾要素以外を描画することを確認する。
+ */
+TEST_CASE("bc_at_last_inverted_section", "[injamm]") {
+  BcUsersData data;
+  data.users.push_back(BcUser{"a", 1});
+  data.users.push_back(BcUser{"b", 2});
+  auto bc = injamm::engine<BcUsersData>("{{#users}}{{^@last}}<{{name}}>{{/@last}}{{/users}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "<a>");
+}
+
+/**
  * @brief ネストセクションの描画テスト
  * @details オブジェクトの配列内のフィールドにアクセスするネスト構造が正しく描画されることを確認する。
  */

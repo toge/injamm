@@ -588,7 +588,26 @@ public:
 
     /** @brief @var セクション（現在未使用、将来拡張用） */
     L_emit_at_section: {
-      ++pc;
+      auto const& instr = bc_.instructions[pc];
+      bool cond = false;
+      if (loop_) {
+        auto kind = instr.operand2;
+        if (kind == 0) {
+          cond = loop_->index > 0;
+        } else if (kind == 1) {
+          cond = loop_->index == 0;
+        } else if (kind == 2) {
+          cond = loop_->index + 1 == loop_->count;
+        }
+      }
+      if (cond) {
+        auto body_end = instr.operand;
+        auto r = execute_impl(pc + 1, body_end - 1);
+        if (!r) return r;
+        pc = body_end;
+      } else {
+        pc = instr.operand;
+      }
       DISPATCH();
     }
 
@@ -603,8 +622,7 @@ public:
       if (loop_) {
         auto kind = instr.operand2;
         if (kind == 0) {
-          /** @index: 常に偽（@index 逆セクションは空ループ時のみ？） */
-          cond = false;
+          cond = loop_->index == 0;
         } else if (kind == 1) {
           /** @first: 先頭要素の場合は逆セクションをスキップ */
           cond = loop_->index == 0;
@@ -1219,13 +1237,37 @@ public:
           break;
         }
 
+        /** @brief @var 条件セクション */
+        case bc_opcode::emit_at_section: {
+          bool cond = false;
+          if (loop_) {
+            auto kind = instr.operand2;
+            if (kind == 0) {
+              cond = loop_->index > 0;
+            } else if (kind == 1) {
+              cond = loop_->index == 0;
+            } else if (kind == 2) {
+              cond = loop_->index + 1 == loop_->count;
+            }
+          }
+          if (cond) {
+            auto body_end = instr.operand;
+            auto r = execute_impl(pc + 1, body_end - 1);
+            if (!r) return r;
+            pc = body_end;
+          } else {
+            pc = instr.operand;
+          }
+          break;
+        }
+
         /** @brief @var 逆セクション */
         case bc_opcode::emit_at_inverted: {
           bool cond = false;
           if (loop_) {
             auto kind = instr.operand2;
-            if (kind == 0) {
-              cond = false;
+          if (kind == 0) {
+            cond = loop_->index == 0;
             } else if (kind == 1) {
               cond = loop_->index == 0;
             } else if (kind == 2) {
