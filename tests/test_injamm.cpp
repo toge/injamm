@@ -1241,3 +1241,73 @@ TEST_CASE("bc_continue_nested_section", "[continue]") {
   REQUIRE(*r == "[][][]");
 }
 
+TEST_CASE("disassemble_simple_var", "[disassemble]") {
+  auto bc = injamm::engine<BcUser>("Hello {{name}}!");
+  auto asm_str = bc.disassemble();
+  REQUIRE(asm_str.contains("--- instructions ---"));
+  REQUIRE(asm_str.contains("emit_litvar"));
+  REQUIRE(asm_str.contains("name"));
+  REQUIRE(asm_str.contains("--- literals ---"));
+  REQUIRE(asm_str.contains("--- var_refs ---"));
+}
+
+TEST_CASE("disassemble_raw_var", "[disassemble]") {
+  auto bc = injamm::engine<BcUser>("{{{name}}}");
+  auto asm_str = bc.disassemble();
+  REQUIRE(asm_str.contains("emit_var_raw"));
+  REQUIRE(asm_str.contains("name"));
+}
+
+TEST_CASE("disassemble_section", "[disassemble]") {
+  auto bc = injamm::engine<BcUsersData>("{{#users}}{{name}}{{/users}}");
+  auto asm_str = bc.disassemble();
+  REQUIRE(asm_str.contains("emit_section"));
+  REQUIRE(asm_str.contains("users"));
+  REQUIRE(asm_str.contains("emit_end"));
+}
+
+TEST_CASE("disassemble_if", "[disassemble]") {
+  auto bc = injamm::engine<BcUser>("{{#if name}}yes{{else}}no{{/if}}");
+  auto asm_str = bc.disassemble();
+  REQUIRE(asm_str.contains("emit_if"));
+  REQUIRE(asm_str.contains("emit_else"));
+  REQUIRE(asm_str.contains("emit_endif"));
+}
+
+TEST_CASE("disassemble_litvar_fusion", "[disassemble]") {
+  auto bc = injamm::engine<BcUser>("Hello {{name}}");
+  auto asm_str = bc.disassemble();
+  REQUIRE(asm_str.contains("emit_litvar"));
+  REQUIRE(asm_str.contains("Hello "));
+  REQUIRE(asm_str.contains("name"));
+}
+
+TEST_CASE("disassemble_filter", "[disassemble]") {
+  auto bc = injamm::engine<BcUser>("{{name | upper}}");
+  auto asm_str = bc.disassemble();
+  REQUIRE(asm_str.contains("resolve_filtered"));
+  REQUIRE(asm_str.contains("emit_filtered"));
+  REQUIRE(asm_str.contains("filters=[upper]"));
+}
+
+TEST_CASE("disassemble_inverted", "[disassemble]") {
+  auto bc = injamm::engine<BcUsersData>("{{^users}}empty{{/users}}");
+  auto asm_str = bc.disassemble();
+  REQUIRE(asm_str.contains("emit_inverted"));
+  REQUIRE(asm_str.contains("users"));
+}
+
+TEST_CASE("disassemble_field_index", "[disassemble]") {
+  auto bc = injamm::engine<BcUser>("{{name}}");
+  auto asm_str = bc.disassemble();
+  REQUIRE(asm_str.contains("field="));
+}
+
+TEST_CASE("disassemble_empty_template", "[disassemble]") {
+  auto bc = injamm::engine<BcUser>("plain text only");
+  auto asm_str = bc.disassemble();
+  REQUIRE(asm_str.contains("--- instructions ---"));
+  REQUIRE(asm_str.contains("halt"));
+  REQUIRE(asm_str.contains("\"plain text only\""));
+}
+

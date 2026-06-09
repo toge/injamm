@@ -136,6 +136,17 @@ public:
   [[nodiscard]] expected<std::string> render(T const& value) const {
     return detail::bc_execute(bc_, value);
   }
+
+  /**
+   * @brief コンパイル済みバイトコードを可読な形式に逆アセンブルする
+   *
+   * @details デバッグと最適化のために、内部バイトコードを人間に読みやすい形式で
+   *          出力する。命令列・リテラルテーブル・変数参照テーブルを含む。
+   * @return std::string 逆アセンブル結果
+   */
+  [[nodiscard]] std::string disassemble() const {
+    return bc_.disassemble();
+  }
 };
 
 } // namespace injamm
