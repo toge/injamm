@@ -863,56 +863,72 @@ public:
 
     /** @brief 整数絶対値変換 */
     L_filter_int_abs: {
-      apply_int_filter(filtered_value_, {.filter = int_filter::abs});
+      if (auto err = apply_int_filter(filtered_value_, {.filter = int_filter::abs}); !err) {
+        return std::unexpected(err.error());
+      }
       ++pc;
       DISPATCH();
     }
 
     /** @brief 整数16進数変換 */
     L_filter_int_hex: {
-      apply_int_filter(filtered_value_, {.filter = int_filter::hex});
+      if (auto err = apply_int_filter(filtered_value_, {.filter = int_filter::hex}); !err) {
+        return std::unexpected(err.error());
+      }
       ++pc;
       DISPATCH();
     }
 
     /** @brief 整数8進数変換 */
     L_filter_int_oct: {
-      apply_int_filter(filtered_value_, {.filter = int_filter::oct});
+      if (auto err = apply_int_filter(filtered_value_, {.filter = int_filter::oct}); !err) {
+        return std::unexpected(err.error());
+      }
       ++pc;
       DISPATCH();
     }
 
     /** @brief 整数2進数変換 */
     L_filter_int_bin: {
-      apply_int_filter(filtered_value_, {.filter = int_filter::bin});
+      if (auto err = apply_int_filter(filtered_value_, {.filter = int_filter::bin}); !err) {
+        return std::unexpected(err.error());
+      }
       ++pc;
       DISPATCH();
     }
 
     /** @brief 整数符号逆転 */
     L_filter_int_neg: {
-      apply_int_filter(filtered_value_, {.filter = int_filter::neg});
+      if (auto err = apply_int_filter(filtered_value_, {.filter = int_filter::neg}); !err) {
+        return std::unexpected(err.error());
+      }
       ++pc;
       DISPATCH();
     }
 
     /** @brief 整数余り（引数: 除数） */
     L_filter_int_mod: {
-      apply_int_filter(filtered_value_, {.filter = int_filter::mod, .arg = static_cast<int>(bc_.instructions[pc].operand)});
+      if (auto err = apply_int_filter(filtered_value_, {.filter = int_filter::mod, .arg = static_cast<int>(bc_.instructions[pc].operand)}); !err) {
+        return std::unexpected(err.error());
+      }
       ++pc;
       DISPATCH();
     }
 
     /** @brief 整数3桁カンマ区切り */
     L_filter_int_numify: {
-      apply_int_filter(filtered_value_, {.filter = int_filter::numify});
+      if (auto err = apply_int_filter(filtered_value_, {.filter = int_filter::numify}); !err) {
+        return std::unexpected(err.error());
+      }
       ++pc;
       DISPATCH();
     }
 
     /** @brief 整数0埋め（引数: 最小桁数） */
     L_filter_int_zerofill: {
-      apply_int_filter(filtered_value_, {.filter = int_filter::zerofill, .arg = static_cast<int>(bc_.instructions[pc].operand)});
+      if (auto err = apply_int_filter(filtered_value_, {.filter = int_filter::zerofill, .arg = static_cast<int>(bc_.instructions[pc].operand)}); !err) {
+        return std::unexpected(err.error());
+      }
       ++pc;
       DISPATCH();
     }
@@ -926,14 +942,18 @@ public:
 
     /** @brief 負数判定: "true"/"false" を出力 */
     L_filter_int_is_neg: {
-      apply_int_filter(filtered_value_, {.filter = int_filter::is_neg});
+      if (auto err = apply_int_filter(filtered_value_, {.filter = int_filter::is_neg}); !err) {
+        return std::unexpected(err.error());
+      }
       ++pc;
       DISPATCH();
     }
 
     /** @brief 等価判定: 値と引数が等しければ "true"、そうでなければ "false" を出力 */
     L_filter_int_eq: {
-      apply_int_filter(filtered_value_, {.filter = int_filter::eq, .arg = static_cast<int>(bc_.instructions[pc].operand)});
+      if (auto err = apply_int_filter(filtered_value_, {.filter = int_filter::eq, .arg = static_cast<int>(bc_.instructions[pc].operand)}); !err) {
+        return std::unexpected(err.error());
+      }
       ++pc;
       DISPATCH();
     }
@@ -1404,49 +1424,63 @@ public:
 
         /** @brief 整数絶対値変換 */
         case bc_opcode::filter_int_abs: {
-          apply_int_filter(filtered_value_, {.filter = int_filter::abs});
+          if (auto err = apply_int_filter(filtered_value_, {.filter = int_filter::abs}); !err) {
+            return std::unexpected(err.error());
+          }
           ++pc;
           break;
         }
 
         /** @brief 整数16進数変換 */
         case bc_opcode::filter_int_hex: {
-          apply_int_filter(filtered_value_, {.filter = int_filter::hex});
+          if (auto err = apply_int_filter(filtered_value_, {.filter = int_filter::hex}); !err) {
+            return std::unexpected(err.error());
+          }
           ++pc;
           break;
         }
 
         /** @brief 整数8進数変換 */
         case bc_opcode::filter_int_oct: {
-          apply_int_filter(filtered_value_, {.filter = int_filter::oct});
+          if (auto err = apply_int_filter(filtered_value_, {.filter = int_filter::oct}); !err) {
+            return std::unexpected(err.error());
+          }
           ++pc;
           break;
         }
 
         /** @brief 整数2進数変換 */
         case bc_opcode::filter_int_bin: {
-          apply_int_filter(filtered_value_, {.filter = int_filter::bin});
+          if (auto err = apply_int_filter(filtered_value_, {.filter = int_filter::bin}); !err) {
+            return std::unexpected(err.error());
+          }
           ++pc;
           break;
         }
 
         /** @brief 整数符号逆転 */
         case bc_opcode::filter_int_neg: {
-          apply_int_filter(filtered_value_, {.filter = int_filter::neg});
+          if (auto err = apply_int_filter(filtered_value_, {.filter = int_filter::neg}); !err) {
+            return std::unexpected(err.error());
+          }
           ++pc;
           break;
         }
 
         /** @brief 整数余り（引数: 除数） */
         case bc_opcode::filter_int_mod: {
-          apply_int_filter(filtered_value_, {.filter = int_filter::mod, .arg = static_cast<int>(instr.operand)});
+          if (auto err = apply_int_filter(filtered_value_, {.filter = int_filter::mod, .arg = static_cast<int>(instr.operand)}); !err) {
+            return std::unexpected(err.error());
+          }
           ++pc;
           break;
         }
 
         /** @brief 整数3桁カンマ区切り */
         case bc_opcode::filter_int_numify: {
-          apply_int_filter(filtered_value_, {.filter = int_filter::numify});
+          if (auto err = apply_int_filter(filtered_value_, {.filter = int_filter::numify}); !err) {
+            return std::unexpected(err.error());
+          }
           ++pc;
           break;
         }
@@ -1460,21 +1494,27 @@ public:
 
         /** @brief 負数判定: "true"/"false" を出力 */
         case bc_opcode::filter_int_is_neg: {
-          apply_int_filter(filtered_value_, {.filter = int_filter::is_neg});
+          if (auto err = apply_int_filter(filtered_value_, {.filter = int_filter::is_neg}); !err) {
+            return std::unexpected(err.error());
+          }
           ++pc;
           break;
         }
 
         /** @brief 等価判定: 値と引数が等しければ "true" / "false" */
         case bc_opcode::filter_int_eq: {
-          apply_int_filter(filtered_value_, {.filter = int_filter::eq, .arg = static_cast<int>(instr.operand)});
+          if (auto err = apply_int_filter(filtered_value_, {.filter = int_filter::eq, .arg = static_cast<int>(instr.operand)}); !err) {
+            return std::unexpected(err.error());
+          }
           ++pc;
           break;
         }
 
         /** @brief 整数0埋め（引数: 最小桁数） */
         case bc_opcode::filter_int_zerofill: {
-          apply_int_filter(filtered_value_, {.filter = int_filter::zerofill, .arg = static_cast<int>(instr.operand)});
+          if (auto err = apply_int_filter(filtered_value_, {.filter = int_filter::zerofill, .arg = static_cast<int>(instr.operand)}); !err) {
+            return std::unexpected(err.error());
+          }
           ++pc;
           break;
         }

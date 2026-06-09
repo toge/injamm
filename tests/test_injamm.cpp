@@ -854,6 +854,14 @@ TEST_CASE("int_filter: mod", "[int_filter]") {
   REQUIRE(*result == "2");
 }
 
+TEST_CASE("int_filter: mod by zero", "[int_filter]") {
+  BcIfData data{"test", 17};
+  auto bc = injamm::engine<BcIfData>("{{age | mod(0)}}");
+  auto result = bc.render(data);
+  REQUIRE(!result);
+  REQUIRE(result.error().ec == injamm::error_code::division_by_zero);
+}
+
 TEST_CASE("int_filter: numify", "[int_filter]") {
   BcIfData data{"test", 1234567};
   auto bc = injamm::engine<BcIfData>("{{age | numify}}");

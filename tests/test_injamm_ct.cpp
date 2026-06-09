@@ -604,6 +604,13 @@ TEST_CASE("ct_int_filter_mod", "[injamm][ct]") {
   REQUIRE(*r == "2");
 }
 
+TEST_CASE("ct_int_filter_mod_by_zero", "[injamm][ct]") {
+  auto constexpr tmpl = injamm::fixed_string("{{age | mod(0)}}");
+  auto r = injamm::render<tmpl>(CtIfData{"t", 17});
+  REQUIRE(!r.has_value());
+  REQUIRE(r.error().ec == injamm::error_code::division_by_zero);
+}
+
 TEST_CASE("ct_int_filter_numify", "[injamm][ct]") {
   auto constexpr tmpl = injamm::fixed_string("{{age | numify}}");
   auto r = injamm::render<tmpl>(CtIfData{"t", 1234567});

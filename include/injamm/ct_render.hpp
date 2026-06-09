@@ -240,7 +240,9 @@ constexpr auto ct_render_placeholder(Buffer& out, ct_parsed_template<N> const& c
     }
     // 整数フィルタ適用
     for (std::size_t j = 0; j < ifcnt; ++j) {
-      apply_int_filter(tmp, int_filters[j]);
+      if (auto err = apply_int_filter(tmp, int_filters[j]); !err) {
+        return std::unexpected(err.error());
+      }
     }
     // 実数フィルタ適用
     for (std::size_t j = 0; j < ffcnt; ++j) {
@@ -770,7 +772,9 @@ constexpr auto ct_render_if(Buffer& out, ct_parsed_template<N> const& chunks, st
         apply_string_filter(tmp, filters[j]);
       }
       for (std::size_t j = 0; j < ifcnt; ++j) {
-        apply_int_filter(tmp, int_filters[j]);
+        if (auto err = apply_int_filter(tmp, int_filters[j]); !err) {
+          return std::unexpected(err.error());
+        }
       }
       for (std::size_t j = 0; j < ffcnt; ++j) {
         apply_float_filter(tmp, float_filters[j]);
