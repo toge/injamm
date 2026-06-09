@@ -220,12 +220,13 @@ namespace injamm::detail {
  * @tparam Container push_back メソッドを持つ出力先コンテナ
  * @param result 出力先コンテナ
  * @param tmpl テンプレート文字列
+ * @return 成功時は false、未知のフィルタがある場合は error_ctx を含む unexpected
  * @details Mustache 互換の構文を解析し、各種チャンク（リテラル、プレースホルダー、
  *          セクション、if、逆セクション、@変数）を生成する。
  *          constexpr 対応。文字列のコピーを避けるため string_view で処理する。
  */
 template <class Container>
-constexpr bool parse_into(Container& result, std::string_view tmpl) {
+constexpr expected<bool> parse_into(Container& result, std::string_view tmpl) {
   std::size_t pos = 0;
 
   while (pos < tmpl.size()) {
@@ -273,7 +274,7 @@ constexpr bool parse_into(Container& result, std::string_view tmpl) {
           float_filters.push_back(*ffl);
           continue;
         }
-        return true;
+        return std::unexpected(error_ctx{tag_start, error_code::unknown_filter, parts[fi]});
       }
       result.push_back(chunk_placeholder{std::string{actual_key}, true, std::move(filters), std::move(int_filters), std::move(float_filters)});
       pos = end + 3;
@@ -336,7 +337,7 @@ constexpr bool parse_into(Container& result, std::string_view tmpl) {
             if_float_filters.push_back(*ffl);
             continue;
           }
-          return true;
+          return std::unexpected(error_ctx{tag_start, error_code::unknown_filter, parts[fi]});
         }
 
         /**
@@ -396,12 +397,12 @@ constexpr bool parse_into(Container& result, std::string_view tmpl) {
         ci.float_filters = std::move(if_float_filters);
         {
           auto parsed = parse(then_body);
-          if (!parsed) return true;
+          if (!parsed) return std::unexpected(parsed.error());
           ci.then_branch = wrap_body_chunks(std::move(*parsed));
         }
         {
           auto parsed = parse(else_body);
-          if (!parsed) return true;
+          if (!parsed) return std::unexpected(parsed.error());
           ci.else_branch = wrap_body_chunks(std::move(*parsed));
         }
         result.push_back(std::move(ci));
@@ -421,7 +422,7 @@ constexpr bool parse_into(Container& result, std::string_view tmpl) {
           cas.var = var_kind;
           {
             auto parsed = parse(body);
-            if (!parsed) return true;
+            if (!parsed) return std::unexpected(parsed.error());
             cas.body = wrap_body_chunks(std::move(*parsed));
           }
           cas.inverted = false;
@@ -465,7 +466,7 @@ constexpr bool parse_into(Container& result, std::string_view tmpl) {
           pos = close_pos + close_tag_str.size();
           {
             auto parsed = parse(body);
-            if (!parsed) return true;
+            if (!parsed) return std::unexpected(parsed.error());
             chunk_section cs;
             cs.key = std::string{key};
             cs.body = wrap_body_chunks(std::move(*parsed));
@@ -477,7 +478,7 @@ constexpr bool parse_into(Container& result, std::string_view tmpl) {
           pos = tmpl.size();
           {
             auto parsed = parse(body);
-            if (!parsed) return true;
+            if (!parsed) return std::unexpected(parsed.error());
             chunk_section cs;
             cs.key = std::string{key};
             cs.body = wrap_body_chunks(std::move(*parsed));
@@ -505,7 +506,7 @@ constexpr bool parse_into(Container& result, std::string_view tmpl) {
           cas.var = var_kind;
           {
             auto parsed = parse(body);
-            if (!parsed) return true;
+            if (!parsed) return std::unexpected(parsed.error());
             cas.body = wrap_body_chunks(std::move(*parsed));
           }
           cas.inverted = true;
@@ -553,7 +554,7 @@ constexpr bool parse_into(Container& result, std::string_view tmpl) {
         }
         {
           auto parsed = parse(body);
-          if (!parsed) return true;
+          if (!parsed) return std::unexpected(parsed.error());
           chunk_inverted ci;
           ci.key = std::string{key};
           ci.body = wrap_body_chunks(std::move(*parsed));
@@ -597,7 +598,7 @@ constexpr bool parse_into(Container& result, std::string_view tmpl) {
         float_filters.push_back(*ffl);
         continue;
       }
-      return true;
+      return std::unexpected(error_ctx{tag_start, error_code::unknown_filter, parts[fi]});
     }
     result.push_back(chunk_placeholder{std::string{filter_key}, false, std::move(filters), std::move(int_filters), std::move(float_filters)});
   }
@@ -613,8 +614,9 @@ constexpr bool parse_into(Container& result, std::string_view tmpl) {
  */
 [[nodiscard]] constexpr auto parse(std::string_view tmpl) -> expected<std::vector<chunk>> {
   std::vector<chunk> result;
-  if (parse_into(result, tmpl)) {
-    return std::unexpected(error_ctx{0, error_code::unknown_filter, "unknown filter in placeholder"});
+  auto r = parse_into(result, tmpl);
+  if (!r) {
+    return std::unexpected(r.error());
   }
   return result;
 }
