@@ -97,21 +97,24 @@ struct ct_parsed_template {
     kinds[size] = ct_chunk_kind::placeholder;
     texts[size] = key;
     flags[size] = raw ? 1 : 0;
-    auto n = filter_list.size();
-    if (n > max_filters_per_chunk) n = max_filters_per_chunk;
-    for (std::size_t j = 0; j < n; ++j)
+    if (filter_list.size() > max_filters_per_chunk) {
+      throw std::overflow_error("injamm: too many string filters per placeholder");
+    }
+    for (std::size_t j = 0; j < filter_list.size(); ++j)
       filters[size][j] = filter_list[j];
-    filter_count[size] = static_cast<std::uint8_t>(n);
-    n = int_filter_list.size();
-    if (n > max_filters_per_chunk) n = max_filters_per_chunk;
-    for (std::size_t j = 0; j < n; ++j)
+    filter_count[size] = static_cast<std::uint8_t>(filter_list.size());
+    if (int_filter_list.size() > max_filters_per_chunk) {
+      throw std::overflow_error("injamm: too many int filters per placeholder");
+    }
+    for (std::size_t j = 0; j < int_filter_list.size(); ++j)
       int_filters[size][j] = int_filter_list[j];
-    int_filter_count[size] = static_cast<std::uint8_t>(n);
-    n = float_filter_list.size();
-    if (n > max_filters_per_chunk) n = max_filters_per_chunk;
-    for (std::size_t j = 0; j < n; ++j)
+    int_filter_count[size] = static_cast<std::uint8_t>(int_filter_list.size());
+    if (float_filter_list.size() > max_filters_per_chunk) {
+      throw std::overflow_error("injamm: too many float filters per placeholder");
+    }
+    for (std::size_t j = 0; j < float_filter_list.size(); ++j)
       float_filters[size][j] = float_filter_list[j];
-    float_filter_count[size] = static_cast<std::uint8_t>(n);
+    float_filter_count[size] = static_cast<std::uint8_t>(float_filter_list.size());
     ++size;
   }
 
@@ -213,21 +216,24 @@ struct ct_parsed_template {
     body_ends[size] = then_end;
     else_starts[size] = else_start;
     else_ends[size] = else_end;
-    auto n = filter_list.size();
-    if (n > max_filters_per_chunk) n = max_filters_per_chunk;
-    for (std::size_t j = 0; j < n; ++j)
+    if (filter_list.size() > max_filters_per_chunk) {
+      throw std::overflow_error("injamm: too many string filters per if/else");
+    }
+    for (std::size_t j = 0; j < filter_list.size(); ++j)
       filters[size][j] = filter_list[j];
-    filter_count[size] = static_cast<std::uint8_t>(n);
-    n = int_filter_list.size();
-    if (n > max_filters_per_chunk) n = max_filters_per_chunk;
-    for (std::size_t j = 0; j < n; ++j)
+    filter_count[size] = static_cast<std::uint8_t>(filter_list.size());
+    if (int_filter_list.size() > max_filters_per_chunk) {
+      throw std::overflow_error("injamm: too many int filters per if/else");
+    }
+    for (std::size_t j = 0; j < int_filter_list.size(); ++j)
       int_filters[size][j] = int_filter_list[j];
-    int_filter_count[size] = static_cast<std::uint8_t>(n);
-    n = float_filter_list.size();
-    if (n > max_filters_per_chunk) n = max_filters_per_chunk;
-    for (std::size_t j = 0; j < n; ++j)
+    int_filter_count[size] = static_cast<std::uint8_t>(int_filter_list.size());
+    if (float_filter_list.size() > max_filters_per_chunk) {
+      throw std::overflow_error("injamm: too many float filters per if/else");
+    }
+    for (std::size_t j = 0; j < float_filter_list.size(); ++j)
       float_filters[size][j] = float_filter_list[j];
-    float_filter_count[size] = static_cast<std::uint8_t>(n);
+    float_filter_count[size] = static_cast<std::uint8_t>(float_filter_list.size());
     ++size;
   }
 
