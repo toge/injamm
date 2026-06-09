@@ -1,27 +1,27 @@
 # injamm - inja minus minus
 
-injaサブセットの高速化を重視したテンプレートエンジンです。
+Mustache/inja サブセットの高速テンプレートエンジン。glaze でメタプログラミングされた C++ 構造体をコンテキストとして、テンプレートをレンダリングします。
 
-glaze でメタプログラミングされた C++ 構造体をコンテキストとして、Mustache / inja 風のテンプレートをレンダリングします。
-現時点ではコンパイル時テンプレートパースとバイトコード VM の両方を提供しています。
+2つのレンダリング API を提供:
+- **バイトコード VM** (`engine<T>`): 実行時コンパイル、全機能対応
+- **NTTP コンパイル時** (`render<fixed_string>`): 簡易変数のみ
 
 ## 特徴
 
-- **2つの API**: バイトコード VM（実行時コンパイル、全機能対応）と NTTP コンパイル時レンダリング（簡易変数のみ）
-- **高速**: コンパイル時テンプレートパース、 Computed goto ディスパッチ（GCC）、Glazeが提供するリフレクションによる O(1) フィールドアクセス
 - **ヘッダオンリー**: インクルードするだけで使用可能
-- **依存最小**: Glaze のみ必須
+- **高速**: コンパイル時テンプレートパース、Computed goto ディスパッチ（GCC）、Glaze リフレクションによる O(1) フィールドアクセス
+- **依存最小**: glaze のみ必須
 
 ## 要件
 
 - C++26 対応コンパイラ（GCC 16+ 推奨）
-- [glaze](https://github.com/stephenberry/glaze)（反射ベースのシリアライゼーション）
+- [glaze](https://github.com/stephenberry/glaze)
 
 ## ビルド・インストール
 
 ```bash
 # vcpkg を使う場合
-cmake -B build -S . -DCMAKE_TOOLCHAIN_FILE=/path/to/vcpkg/scripts/buildsystems/vcpkg.cmake
+cmake -B build -S . -DCMAKE_TOOLCHAIN_FILE=~/vm/vcpkg/scripts/buildsystems/vcpkg.cmake
 cmake --build build
 ctest --test-dir build -V
 
@@ -35,11 +35,11 @@ cmake --build build
 
 ### CMake オプション
 
-| オプション | 既定値 | 説明 |
-|---|---|---|
-| `INJAMM_ENABLE_THREADED_DISPATCH` | ON | GCC computed goto による高速ディスパッチ（GCC 限定） |
-| `INJAMM_BUILD_TESTS` | ON | テストをビルドする |
-| `INJAMM_BUILD_EXAMPLES` | ON | サンプルをビルドする |
+| オプション                        | 既定値 | 説明                                       |
+| --------------------------------- | ------ | ------------------------------------------ |
+| `INJAMM_ENABLE_THREADED_DISPATCH` | ON     | GCC computed goto ディスパッチ（GCC のみ） |
+| `INJAMM_BUILD_TESTS`              | ON     | テストをビルドする                         |
+| `INJAMM_BUILD_EXAMPLES`           | ON     | サンプルをビルドする                       |
 
 ### find_package
 
@@ -66,7 +66,7 @@ struct glz::meta<User> {
 
 ### 2. バイトコード VM（推奨）
 
-`engine<T>` にテンプレート文字列を渡し、`.render(value)` でレンダリングする。セクション、if/else、@index/@first/@last、ネストパスのすべてに対応。
+`engine<T>` にテンプレート文字列を渡し、`.render(value)` でレンダリングします。セクション、if/else、@index/@first/@last、ネストパスに対応。
 
 ```cpp
 #include "injamm.hpp"
@@ -78,7 +78,7 @@ auto r = bc.render(User{"Alice", 30});
 
 ### 3. NTTP コンパイル時レンダリング
 
-`fixed_string` と `render<kTmpl>(value)` でコンパイル時にテンプレートをパースする。簡易変数のみ対応。
+`fixed_string` と `render<kTmpl>(value)` でコンパイル時にテンプレートをパースします。簡易変数のみ対応。
 
 ```cpp
 constexpr auto kTmpl = injamm::fixed_string("Hello {{name}}! You are {{age}}.");
@@ -111,7 +111,8 @@ int main() {
   auto bc = injamm::engine<Data>(
     "{{#users}}{{name}} ({{age}})"
     "{{#if @last}}.{{else}}, {{/if}}{{/users}}");
-  std::cout << *bc.render(data) << "\n";  // "Alice (30), Bob (25), Charlie (35)."
+  std::cout << *bc.render(data) << "\n";
+  // "Alice (30), Bob (25), Charlie (35)."
 
   // NTTP コンパイル時レンダリング
   constexpr auto kTmpl = injamm::fixed_string("Hello {{name}}! Age: {{age}}.");
@@ -122,56 +123,58 @@ int main() {
 
 ## テンプレート構文
 
-| 構文                                | 説明                                   |
-| ----------------------------------- | -------------------------------------- |
-| `{{var}}`                           | 変数（HTMLエスケープあり）             |
-| `{{{var}}}`                         | 変数（HTMLエスケープなし）             |
-| `{{#section}}...{{/section}}`       | セクション（配列のループまたは真理値） |
-| `{{^section}}...{{/section}}`       | 逆セクション（空/偽 のとき描画）       |
-| `{{#if cond}}...{{/if}}`            | 条件分岐（0/空/偽は偽、それ以外は真）  |
-| `{{#if cond}}...{{else}}...{{/if}}` | if/else                                |
-| `{{@index}}`                        | 現在のループインデックス（0始まり）    |
-| `{{@first}}`                        | 最初の要素なら `true`                  |
-| `{{@last}}`                         | 最後の要素なら `true`                  |
-| `{{foo.bar.baz}}`                   | ネストパス                             |
+| 構文                                | 説明                                  |
+| ----------------------------------- | ------------------------------------- |
+| `{{var}}`                           | 変数（HTML エスケープあり）           |
+| `{{{var}}}`                         | 変数（HTML エスケープなし）           |
+| `{{#section}}...{{/section}}`       | セクション（配列ループまたは真理値）  |
+| `{{^section}}...{{/section}}`       | 逆セクション（空/偽 のとき描画）      |
+| `{{#break}}`                        | ループを中断する                      |
+| `{{#continue}}`                     | ループをスキップして次の反復へ        |
+| `{{#if cond}}...{{/if}}`            | 条件分岐（0/空/偽は偽、それ以外は真） |
+| `{{#if cond}}...{{else}}...{{/if}}` | if/else                               |
+| `{{@index}}`                        | ループインデックス（0 始まり）        |
+| `{{@first}}`                        | 最初の要素なら `true`                 |
+| `{{@last}}`                         | 最後の要素なら `true`                 |
+| `{{foo.bar.baz}}`                   | ネストパス                            |
 
 ## フィルター
 
-`|` 記法で変数の出力前に文字列・数値の変換を適用できる。engine版とNTTP版の両方でサポート。
+`|` 記法で変数の出力前に文字列・数値の変換を適用できます。engine 版と NTTP 版の両方でサポート。
 
 ### 文字列フィルター
 
-| フィルタ | 説明 | 構文例 |
-|----------|------|--------|
-| `upper` | ASCII小文字→大文字 | `{{name \| upper}}` |
-| `lower` | ASCII大文字→小文字 | `{{name \| lower}}` |
-| `capitalize` | 先頭の文字を大文字 | `{{name \| capitalize}}` |
-| `title` | 単語の先頭を大文字 | `{{name \| title}}` |
-| `trim` | 先頭末尾の空白除去 | `{{name \| trim}}` |
-| `ltrim` | 先頭の空白除去 | `{{name \| ltrim}}` |
-| `rtrim` | 末尾の空白除去 | `{{name \| rtrim}}` |
-| `left(n)` | n文字分の枠をとり左寄せ | `{{name \| left(10)}}` |
-| `right(n)` | n文字分の枠をとり右寄せ | `{{name \| right(10)}}` |
-| `center(n)` | n文字分の枠をとり中央寄せ | `{{name \| center(10)}}` |
-| `truncate(n)` | n文字以下ならそのまま、超えたら先頭n-3文字+"..." | `{{name \| truncate(8)}}` |
-| `substr(n)` | n文字目から末尾まで | `{{name \| substr(2)}}` |
-| `substr(n,m)` | n文字目からm文字分 | `{{name \| substr(1,3)}}` |
+| フィルタ      | 説明                                                | 構文例                    |
+| ------------- | --------------------------------------------------- | ------------------------- |
+| `upper`       | ASCII 小文字→大文字                                 | `{{name \| upper}}`       |
+| `lower`       | ASCII 大文字→小文字                                 | `{{name \| lower}}`       |
+| `capitalize`  | 先頭の文字を大文字                                  | `{{name \| capitalize}}`  |
+| `title`       | 単語の先頭を大文字                                  | `{{name \| title}}`       |
+| `trim`        | 先頭末尾の空白除去                                  | `{{name \| trim}}`        |
+| `ltrim`       | 先頭の空白除去                                      | `{{name \| ltrim}}`       |
+| `rtrim`       | 末尾の空白除去                                      | `{{name \| rtrim}}`       |
+| `left(n)`     | n 文字分の枠をとり左寄せ                            | `{{name \| left(10)}}`    |
+| `right(n)`    | n 文字分の枠をとり右寄せ                            | `{{name \| right(10)}}`   |
+| `center(n)`   | n 文字分の枠をとり中央寄せ                          | `{{name \| center(10)}}`  |
+| `truncate(n)` | n 文字以下ならそのまま、超えたら先頭 n-3 文字+"..." | `{{name \| truncate(8)}}` |
+| `substr(n)`   | n 文字目から末尾まで                                | `{{name \| substr(2)}}`   |
+| `substr(n,m)` | n 文字目から m 文字分                               | `{{name \| substr(1,3)}}` |
 
 ### 整数フィルター
 
-| フィルタ | 説明 | 構文例 |
-|----------|------|--------|
-| `abs` | 絶対値 | `{{age \| abs}}` |
-| `neg` | 符号の逆転 | `{{age \| neg}}` |
-| `hex` | 16進数表記 | `{{age \| hex}}` |
-| `oct` | 8進数表記 | `{{age \| oct}}` |
-| `bin` | 2進数表記 | `{{age \| bin}}` |
-| `mod(n)` | nで割った余り | `{{age \| mod(5)}}` |
-| `numify` | 3桁ごとにカンマ区切り | `{{age \| numify}}` |
+| フィルタ | 説明                   | 構文例              |
+| -------- | ---------------------- | ------------------- |
+| `abs`    | 絶対値                 | `{{age \| abs}}`    |
+| `neg`    | 符号の逆転             | `{{age \| neg}}`    |
+| `hex`    | 16 進数表記            | `{{age \| hex}}`    |
+| `oct`    | 8 進数表記             | `{{age \| oct}}`    |
+| `bin`    | 2 進数表記             | `{{age \| bin}}`    |
+| `mod(n)` | n で割った余り         | `{{age \| mod(5)}}` |
+| `numify` | 3 桁ごとにカンマ区切り | `{{age \| numify}}` |
 
 ### フィルターのチェーン
 
-複数のフィルターを組み合わせ可能。左から右に順に適用される。
+複数のフィルターを組み合わせ可能。左から右に順に適用されます。
 
 ```cpp
 {{name | trim | upper}}        // "  hello  " → "HELLO"
@@ -183,7 +186,7 @@ int main() {
 
 ### `injamm::fixed_string<N>`
 
-コンパイル時文字列定数。NTTP としてテンプレート文字列を渡すために使用する。
+コンパイル時文字列定数。NTTP としてテンプレート文字列を渡すために使用します。
 
 ```cpp
 constexpr auto kTmpl = injamm::fixed_string("Hello {{name}}!");
@@ -228,7 +231,5 @@ auto r2 = bc.render(data2);
 
 ## 注意事項
 
-- **NTTP コンパイル時レンダリング** (`render<fixed_string>`) はセクション・if/else に対応していない（既知の制限）。複雑なテンプレートにはバイトコード VM を使用すること。
-- `render<fixed_string>` の戻り値型 `expected<std::string>` は、GCC 16 の `[[nodiscard]] expected<void, error_ctx>` と衝突する可能性がある。必要に応じて `void` 特殊化を無視する。
-- GCC 以外のコンパイラでは `INJAMM_ENABLE_THREADED_DISPATCH` を OFF にすること。
-- コンテキスト型への glaze メタプログラミング（`glz::meta<T>` の特殊化）が必須。
+- `render<fixed_string>` の戻り値型 `expected<std::string>` は、GCC 16 の `[[nodiscard]] expected<void, error_ctx>` と衝突する可能性があります。必要に応じて `void` 特殊化を無視してください。
+- GCC 以外のコンパイラでは `INJAMM_ENABLE_THREADED_DISPATCH` を OFF にしてください。
