@@ -331,6 +331,35 @@ constexpr void apply_int_filter(std::string& str, int_filter_entry entry) {
       }
       break;
     }
+    case int_filter::is_neg: {
+      try {
+        if (str.find('.') != std::string::npos || str.find('e') != std::string::npos || str.find('E') != std::string::npos) {
+          double val = std::stod(str);
+          str = val < 0 ? "true" : "false";
+        } else {
+          long long val = std::stoll(str);
+          str = val < 0 ? "true" : "false";
+        }
+      } catch (...) {
+        str = "false";
+      }
+      break;
+    }
+    case int_filter::eq: {
+      try {
+        auto target = entry.arg;
+        if (str.find('.') != std::string::npos || str.find('e') != std::string::npos || str.find('E') != std::string::npos) {
+          double val = std::stod(str);
+          str = (static_cast<long long>(val) == target) ? "true" : "false";
+        } else {
+          long long val = std::stoll(str);
+          str = (val == target) ? "true" : "false";
+        }
+      } catch (...) {
+        str = "false";
+      }
+      break;
+    }
   }
 }
 
@@ -807,12 +836,31 @@ constexpr auto ct_render_if(Buffer& out, ct_parsed_template<N> const& chunks, st
   bool cond = false;
   auto const expr = chunks.texts[i];
 
-  /**
-   * @brief `@` で始まる条件式の処理
-   * @details @last / @first / @index はループ状態から直接判定する。
-   *          ループ外ではすべて偽となる。
-   */
-  if (!expr.empty() && expr[0] == '@') {
+  auto const& filters = chunks.filters[i];
+  auto const& int_filters = chunks.int_filters[i];
+  auto const& float_filters = chunks.float_filters[i];
+
+  /** フィルタがある場合は先に値を解決してフィルタを適用する */
+  if (!filters.empty() || !int_filters.empty() || !float_filters.empty()) {
+    std::string tmp;
+    if (resolve_value(tmp, expr, value, loop)) {
+      for (auto f : filters) {
+        apply_string_filter(tmp, f);
+      }
+      for (auto f : int_filters) {
+        apply_int_filter(tmp, f);
+      }
+      for (auto f : float_filters) {
+        apply_float_filter(tmp, f);
+      }
+      cond = !tmp.empty() && tmp != "false" && tmp != "0";
+    }
+  } else if (!expr.empty() && expr[0] == '@') {
+    /**
+     * @brief `@` で始まる条件式の処理
+     * @details @last / @first / @index はループ状態から直接判定する。
+     *          ループ外ではすべて偽となる。
+     */
     if (loop) {
       if (expr == "@last") cond = loop->is_last();
       else if (expr == "@first") cond = loop->is_first();

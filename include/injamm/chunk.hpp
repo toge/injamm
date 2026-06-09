@@ -96,6 +96,9 @@ struct chunk_at_section {
  */
 struct chunk_if {
   std::string expr;
+  std::vector<string_filter_entry> filters;
+  std::vector<int_filter_entry> int_filters;
+  std::vector<float_filter_entry> float_filters;
   std::vector<parsed_template> then_branch;
   std::vector<parsed_template> else_branch;
 };

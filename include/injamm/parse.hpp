@@ -112,14 +112,16 @@ namespace injamm::detail {
       if (c >= '0' && c <= '9') arg = arg * 10 + (c - '0');
     }
     if (fname == "mod") return int_filter_entry{int_filter::mod, arg};
+    if (fname == "eq") return int_filter_entry{int_filter::eq, arg};
   }
   // 引数なしフィルタ
-  if (name == "abs") return int_filter_entry{int_filter::abs, 0};
-  if (name == "hex") return int_filter_entry{int_filter::hex, 0};
-  if (name == "oct") return int_filter_entry{int_filter::oct, 0};
-  if (name == "bin") return int_filter_entry{int_filter::bin, 0};
-  if (name == "neg") return int_filter_entry{int_filter::neg, 0};
-  if (name == "numify") return int_filter_entry{int_filter::numify, 0};
+  if (name == "abs")     return int_filter_entry{int_filter::abs, 0};
+  if (name == "hex")     return int_filter_entry{int_filter::hex, 0};
+  if (name == "oct")     return int_filter_entry{int_filter::oct, 0};
+  if (name == "bin")     return int_filter_entry{int_filter::bin, 0};
+  if (name == "neg")     return int_filter_entry{int_filter::neg, 0};
+  if (name == "numify")  return int_filter_entry{int_filter::numify, 0};
+  if (name == "is_neg")  return int_filter_entry{int_filter::is_neg, 0};
   return std::nullopt;
 }
 
@@ -314,7 +316,59 @@ constexpr void parse_into(Container& result, std::string_view tmpl) {
 
       /** {{#if X}} — if ブロック */
       if (key.starts_with("if") && (key.size() == 2 || key[2] == ' ')) {
-        auto expr = key.size() > 2 ? trim_sv(key.substr(3)) : std::string_view{};
+        auto expr_raw = key.size() > 2 ? trim_sv(key.substr(3)) : std::string_view{};
+
+        /** フィルタチェーンの解析: "age | is_neg" → key="age", filters=[is_neg] */
+        auto parts = split_by_pipe(expr_raw);
+        auto expr = parts.empty() ? std::string_view{} : parts[0];
+        std::vector<string_filter_entry> if_filters;
+        std::vector<int_filter_entry> if_int_filters;
+        std::vector<float_filter_entry> if_float_filters;
+        bool filter_error = false;
+        for (std::size_t fi = 1; fi < parts.size(); ++fi) {
+          auto sf = parse_string_filter(parts[fi]);
+          if (sf) {
+            if_filters.push_back(*sf);
+            continue;
+          }
+          auto ifl = parse_int_filter(parts[fi]);
+          if (ifl) {
+            if_int_filters.push_back(*ifl);
+            continue;
+          }
+          auto ffl = parse_float_filter(parts[fi]);
+          if (ffl) {
+            if_float_filters.push_back(*ffl);
+            continue;
+          }
+          result.push_back(chunk_literal{std::string{"ERROR_UNKNOWN_FILTER"}});
+          filter_error = true;
+          break;
+        }
+
+        if (filter_error) {
+          // 閉じタグを探してスキップする
+          int depth = 1;
+          std::size_t search_pos = pos;
+          while (search_pos < tmpl.size()) {
+            auto next_open = tmpl.find("{{#if", search_pos);
+            auto next_close = tmpl.find("{{/if}}", search_pos);
+            if (next_close == std::string_view::npos) break;
+            if (next_open != std::string_view::npos && next_open < next_close) {
+              ++depth;
+              search_pos = next_open + 5;
+            } else {
+              --depth;
+              if (depth == 0) {
+                pos = next_close + 7;
+                break;
+              }
+              search_pos = next_close + 7;
+            }
+          }
+          if (depth != 0) pos = tmpl.size();
+          continue;
+        }
 
         /**
          * {{/if}} を深さカウント付きで検索する
@@ -368,6 +422,9 @@ constexpr void parse_into(Container& result, std::string_view tmpl) {
 
         chunk_if ci;
         ci.expr = std::string{expr};
+        ci.filters = std::move(if_filters);
+        ci.int_filters = std::move(if_int_filters);
+        ci.float_filters = std::move(if_float_filters);
         ci.then_branch = wrap_body_chunks(parse(then_body));
         ci.else_branch = wrap_body_chunks(parse(else_body));
         result.push_back(std::move(ci));

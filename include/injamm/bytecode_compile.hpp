@@ -215,17 +215,76 @@ class bc_compiler {
    * @details {{#if expr}}...{{else}}...{{/if}} の構文を emit_if / emit_else / emit_endif 命令に変換する。
    *          else がある場合とない場合の両方を処理する。
    */
-  void compile_if(std::string_view expr) {
+  void compile_if(std::string_view expr_full) {
+    /** フィルタチェーンの解析 */
+    auto parts = split_by_pipe(expr_full);
+    auto expr = parts.empty() ? std::string_view{} : parts[0];
+    std::vector<string_filter_entry> filters;
+    std::vector<int_filter_entry> int_filters;
+    std::vector<float_filter_entry> float_filters;
+    for (std::size_t fi = 1; fi < parts.size(); ++fi) {
+      auto sf = parse_string_filter(parts[fi]);
+      if (sf) { filters.push_back(*sf); continue; }
+      auto ifl = parse_int_filter(parts[fi]);
+      if (ifl) { int_filters.push_back(*ifl); continue; }
+      auto ffl = parse_float_filter(parts[fi]);
+      if (ffl) { float_filters.push_back(*ffl); continue; }
+    }
+
     auto idx = bc_.add_var_ref(expr);
     auto field_idx = resolve_field_index<T>(expr);
     if (field_idx != UINT32_MAX) {
       bc_.set_field_index(idx, field_idx);
     }
-    bc_.add_instruction(bc_opcode::emit_if, 0, idx);
+    bc_.var_refs[idx].filters = filters;
+    bc_.var_refs[idx].int_filters = int_filters;
+    bc_.var_refs[idx].float_filters = float_filters;
+
+    /** フィルタがある場合は resolve_filtered → filter_* 命令列を発行し、emit_if_filtered を使う */
+    bool has_filters = !filters.empty() || !int_filters.empty() || !float_filters.empty();
+    if (has_filters) {
+      bc_.add_instruction(bc_opcode::resolve_filtered, 0, idx);
+      for (auto f : filters) {
+        switch (f.filter) {
+          case string_filter::upper:      bc_.add_instruction(bc_opcode::filter_upper); break;
+          case string_filter::lower:      bc_.add_instruction(bc_opcode::filter_lower); break;
+          case string_filter::capitalize: bc_.add_instruction(bc_opcode::filter_capitalize); break;
+          case string_filter::title:      bc_.add_instruction(bc_opcode::filter_title); break;
+          case string_filter::trim:       bc_.add_instruction(bc_opcode::filter_trim); break;
+          case string_filter::ltrim:      bc_.add_instruction(bc_opcode::filter_ltrim); break;
+          case string_filter::rtrim:      bc_.add_instruction(bc_opcode::filter_rtrim); break;
+          case string_filter::left:       bc_.add_instruction(bc_opcode::filter_left, f.arg1); break;
+          case string_filter::right:      bc_.add_instruction(bc_opcode::filter_right, f.arg1); break;
+          case string_filter::center:     bc_.add_instruction(bc_opcode::filter_center, f.arg1); break;
+          case string_filter::truncate:   bc_.add_instruction(bc_opcode::filter_truncate, f.arg1); break;
+          case string_filter::substr:     bc_.add_instruction(bc_opcode::filter_substr, f.arg1, f.arg2); break;
+        }
+      }
+      for (auto f : int_filters) {
+        switch (f.filter) {
+          case int_filter::abs:    bc_.add_instruction(bc_opcode::filter_int_abs); break;
+          case int_filter::hex:    bc_.add_instruction(bc_opcode::filter_int_hex); break;
+          case int_filter::oct:    bc_.add_instruction(bc_opcode::filter_int_oct); break;
+          case int_filter::bin:    bc_.add_instruction(bc_opcode::filter_int_bin); break;
+          case int_filter::neg:    bc_.add_instruction(bc_opcode::filter_int_neg); break;
+          case int_filter::mod:    bc_.add_instruction(bc_opcode::filter_int_mod, f.arg); break;
+          case int_filter::numify: bc_.add_instruction(bc_opcode::filter_int_numify); break;
+          case int_filter::is_neg: bc_.add_instruction(bc_opcode::filter_int_is_neg); break;
+          case int_filter::eq:     bc_.add_instruction(bc_opcode::filter_int_eq, f.arg); break;
+        }
+      }
+      for (auto f : float_filters) {
+        switch (f.filter) {
+          case float_filter::precision: bc_.add_instruction(bc_opcode::filter_float_precision, f.arg); break;
+        }
+      }
+      bc_.add_instruction(bc_opcode::emit_if_filtered, 0, idx);
+    } else {
+      bc_.add_instruction(bc_opcode::emit_if, 0, idx);
+    }
 
     auto if_instr_idx = bc_.current_offset() - 1;
 
-    /** @brief else 命令のインデックス（else がある場合のみ有効） */
     std::uint32_t else_instr_idx = 0;
     bool has_else = compile_body_with_else(else_instr_idx);
 

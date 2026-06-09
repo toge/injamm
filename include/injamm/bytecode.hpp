@@ -56,8 +56,11 @@ enum class bc_opcode : std::uint8_t {
   filter_int_bin,     /**< 整数2進数変換 */
   filter_int_neg,     /**< 整数符号逆転 */
   filter_int_mod,     /**< 整数余り（引数: 除数） */
-  filter_int_numify,  /**< 整数3桁カンマ区切り */
-  filter_float_precision, /**< 実数小数点以下桁数（引数: 桁数） */
+  filter_int_numify,        /**< 整数3桁カンマ区切り */
+  filter_int_is_neg,           /**< 負数判定: "true"/"false" を出力 */
+  filter_int_eq,               /**< 等価判定: 引数と比較し "true"/"false" を出力 */
+  filter_float_precision,     /**< 実数小数点以下桁数（引数: 桁数） */
+  emit_if_filtered,           /**< フィルタ適用済み値での if 分岐 */
   halt                /**< プログラム終了 */
 };
 
@@ -101,7 +104,9 @@ enum class int_filter : std::uint8_t {
   bin,     /**< 2進数表記 */
   neg,     /**< 符号の逆転 */
   mod,     /**< 余り（引数: 除数） */
-  numify   /**< 3桁ごとにカンマ区切り */
+  numify,  /**< 3桁ごとにカンマ区切り */
+  is_neg,  /**< 負数判定（真偽値出力: "true"/"false"） */
+  eq       /**< 等価判定（引数: 比較値、真偽値出力: "true"/"false"） */
 };
 
 /**

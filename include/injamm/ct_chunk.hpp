@@ -170,9 +170,15 @@ struct ct_parsed_template {
    * @param then_end   then 節の終了インデックス
    * @param else_start else 節の開始インデックス（省略時は 0）
    * @param else_end   else 節の終了インデックス（省略時は 0）
+   * @param filter_list 文字列フィルタのリスト
+   * @param int_filter_list 整数フィルタのリスト
+   * @param float_filter_list 実数フィルタのリスト
    */
   constexpr void push_if(std::string_view expr, std::size_t then_start, std::size_t then_end,
-                          std::size_t else_start, std::size_t else_end) {
+                          std::size_t else_start, std::size_t else_end,
+                          std::vector<string_filter_entry> filter_list = {},
+                          std::vector<int_filter_entry> int_filter_list = {},
+                          std::vector<float_filter_entry> float_filter_list = {}) {
     if (size >= N) {
       throw std::overflow_error("ct_parsed_template: chunk buffer overflow");
     }
@@ -182,6 +188,9 @@ struct ct_parsed_template {
     body_ends[size] = then_end;
     else_starts[size] = else_start;
     else_ends[size] = else_end;
+    filters[size] = std::move(filter_list);
+    int_filters[size] = std::move(int_filter_list);
+    float_filters[size] = std::move(float_filter_list);
     ++size;
   }
 };

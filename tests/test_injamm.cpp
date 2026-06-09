@@ -798,6 +798,88 @@ TEST_CASE("int_filter: numify negative", "[int_filter]") {
   REQUIRE(*result == "-9,876");
 }
 
+// ---- if フィルタテスト ----
+
+TEST_CASE("bc_if_filter_is_neg_true", "[if_filter]") {
+  auto bc = injamm::engine<BcIfData>("{{#if age | is_neg}}neg{{/if}}");
+  BcIfData data{"test", -5};
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "neg");
+}
+
+TEST_CASE("bc_if_filter_is_neg_false", "[if_filter]") {
+  auto bc = injamm::engine<BcIfData>("{{#if age | is_neg}}neg{{/if}}");
+  BcIfData data{"test", 5};
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "");
+}
+
+TEST_CASE("bc_if_filter_is_neg_zero", "[if_filter]") {
+  auto bc = injamm::engine<BcIfData>("{{#if age | is_neg}}neg{{/if}}");
+  BcIfData data{"test", 0};
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "");
+}
+
+TEST_CASE("bc_if_filter_eq_true", "[if_filter]") {
+  auto bc = injamm::engine<BcIfData>("{{#if age | eq(20)}}yes{{/if}}");
+  BcIfData data{"test", 20};
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "yes");
+}
+
+TEST_CASE("bc_if_filter_eq_false", "[if_filter]") {
+  auto bc = injamm::engine<BcIfData>("{{#if age | eq(20)}}yes{{/if}}");
+  BcIfData data{"test", 10};
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "");
+}
+
+TEST_CASE("bc_if_filter_mod_eq", "[if_filter]") {
+  auto bc = injamm::engine<BcIfData>("{{#if age | mod(4) | eq(2)}}match{{/if}}");
+  BcIfData data{"test", 6};
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "match");
+}
+
+TEST_CASE("bc_if_filter_mod_eq_no", "[if_filter]") {
+  auto bc = injamm::engine<BcIfData>("{{#if age | mod(4) | eq(2)}}match{{/if}}");
+  BcIfData data{"test", 5};
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "");
+}
+
+TEST_CASE("bc_if_filter_with_else", "[if_filter]") {
+  auto bc = injamm::engine<BcIfData>("{{#if age | is_neg}}neg{{else}}pos{{/if}}");
+  BcIfData data{"test", -3};
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "neg");
+}
+
+TEST_CASE("bc_if_filter_else_false", "[if_filter]") {
+  auto bc = injamm::engine<BcIfData>("{{#if age | is_neg}}neg{{else}}pos{{/if}}");
+  BcIfData data{"test", 3};
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "pos");
+}
+
+TEST_CASE("bc_if_plain_still_works", "[if_filter]") {
+  auto bc = injamm::engine<BcIfData>("{{#if age}}adult{{/if}}");
+  BcIfData data{"test", 20};
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "adult");
+}
+
 // ---- ネストしたセクション内 else のテスト ----
 
 TEST_CASE("if with nested section: else belongs to if", "[if][section]") {

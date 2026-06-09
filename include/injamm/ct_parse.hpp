@@ -102,12 +102,19 @@ struct ct_parse_context {
    * @param then_end    then 節の終了チャンクインデックス
    * @param else_start  else 節の開始チャンクインデックス
    * @param else_end    else 節の終了チャンクインデックス
+   * @param filter_list 文字列フィルタのリスト
+   * @param int_filter_list 整数フィルタのリスト
+   * @param float_filter_list 実数フィルタのリスト
    * @return 追加されたチャンクのインデックス
    */
   constexpr std::size_t push_if(std::string_view expr, std::size_t then_start, std::size_t then_end,
-                                 std::size_t else_start, std::size_t else_end) {
+                                 std::size_t else_start, std::size_t else_end,
+                                 std::vector<string_filter_entry> filter_list = {},
+                                 std::vector<int_filter_entry> int_filter_list = {},
+                                 std::vector<float_filter_entry> float_filter_list = {}) {
     auto idx = tmpl.size;
-    tmpl.push_if(expr, then_start, then_end, else_start, else_end);
+    tmpl.push_if(expr, then_start, then_end, else_start, else_end,
+                 std::move(filter_list), std::move(int_filter_list), std::move(float_filter_list));
     return idx;
   }
 
@@ -272,8 +279,32 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
        *          else 節は省略可能。
        */
       if (key.starts_with("if") && (key.size() == 2 || key[2] == ' ')) {
-        /** @brief if の条件式（"if X" から "if" を取り除いた部分） */
-        auto expr = key.size() > 2 ? trim_sv(key.substr(3)) : std::string_view{};
+        /** @brief if の条件式 */
+        auto expr_raw = key.size() > 2 ? trim_sv(key.substr(3)) : std::string_view{};
+
+        /** フィルタチェーンの解析 */
+        auto parts = split_by_pipe(expr_raw);
+        auto expr = parts.empty() ? std::string_view{} : parts[0];
+        std::vector<string_filter_entry> if_filters;
+        std::vector<int_filter_entry> if_int_filters;
+        std::vector<float_filter_entry> if_float_filters;
+        for (std::size_t fi = 1; fi < parts.size(); ++fi) {
+          auto sf = parse_string_filter(parts[fi]);
+          if (sf) {
+            if_filters.push_back(*sf);
+            continue;
+          }
+          auto ifl = parse_int_filter(parts[fi]);
+          if (ifl) {
+            if_int_filters.push_back(*ifl);
+            continue;
+          }
+          auto ffl = parse_float_filter(parts[fi]);
+          if (ffl) {
+            if_float_filters.push_back(*ffl);
+            continue;
+          }
+        }
 
         /** @brief ネスト対応のための深さカウンタ */
         int depth = 1;
@@ -330,7 +361,8 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
         }
 
         /** @brief if チャンクを仮追加（範囲は後で更新） */
-        auto chunk_idx = ctx.push_if(expr, 0, 0, 0, 0);
+        auto chunk_idx = ctx.push_if(expr, 0, 0, 0, 0,
+                                         std::move(if_filters), std::move(if_int_filters), std::move(if_float_filters));
 
         /** @brief then 節を再帰パース */
         auto then_start = ctx.tmpl.size;

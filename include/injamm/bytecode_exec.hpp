@@ -330,8 +330,11 @@ public:
       &&L_filter_int_neg,    // 41
       &&L_filter_int_mod,    // 42
       &&L_filter_int_numify, // 43
-      &&L_filter_float_precision, // 44
-      &&L_halt,              // 45
+      &&L_filter_int_is_neg, // 44
+      &&L_filter_int_eq,     // 45
+      &&L_filter_float_precision, // 46
+      &&L_emit_if_filtered,  // 47
+      &&L_halt,              // 48
     };
 
 /** @brief 現在の命令のオペコードに対応するラベルにジャンプする */
@@ -1044,6 +1047,53 @@ public:
       DISPATCH();
     }
 
+    /** @brief 負数判定: "true"/"false" を出力 */
+    L_filter_int_is_neg: {
+      try {
+        if (filtered_value_.find('.') != std::string::npos || filtered_value_.find('e') != std::string::npos || filtered_value_.find('E') != std::string::npos) {
+          double val = std::stod(filtered_value_);
+          filtered_value_ = val < 0 ? "true" : "false";
+        } else {
+          long long val = std::stoll(filtered_value_);
+          filtered_value_ = val < 0 ? "true" : "false";
+        }
+      } catch (...) {
+        filtered_value_ = "false";
+      }
+      ++pc;
+      DISPATCH();
+    }
+
+    /** @brief 等価判定: 値と引数が等しければ "true"、そうでなければ "false" を出力 */
+    L_filter_int_eq: {
+      try {
+        auto target = bc_.instructions[pc].operand;
+        if (filtered_value_.find('.') != std::string::npos || filtered_value_.find('e') != std::string::npos || filtered_value_.find('E') != std::string::npos) {
+          double val = std::stod(filtered_value_);
+          filtered_value_ = (static_cast<long long>(val) == target) ? "true" : "false";
+        } else {
+          long long val = std::stoll(filtered_value_);
+          filtered_value_ = (val == target) ? "true" : "false";
+        }
+      } catch (...) {
+        filtered_value_ = "false";
+      }
+      ++pc;
+      DISPATCH();
+    }
+
+    /** @brief フィルタ適用済み値での if 分岐 */
+    L_emit_if_filtered: {
+      auto const& instr = bc_.instructions[pc];
+      bool cond = !filtered_value_.empty() && filtered_value_ != "false" && filtered_value_ != "0";
+      if (!cond) {
+        pc = instr.operand;
+      } else {
+        ++pc;
+      }
+      DISPATCH();
+    }
+
     /** @brief プログラム終端 */
     L_halt: {
       return {};
@@ -1671,6 +1721,52 @@ public:
             // 変換失敗: そのまま
           }
           ++pc;
+          break;
+        }
+
+        /** @brief 負数判定: "true"/"false" を出力 */
+        case bc_opcode::filter_int_is_neg: {
+          try {
+            if (filtered_value_.find('.') != std::string::npos || filtered_value_.find('e') != std::string::npos || filtered_value_.find('E') != std::string::npos) {
+              double val = std::stod(filtered_value_);
+              filtered_value_ = val < 0 ? "true" : "false";
+            } else {
+              long long val = std::stoll(filtered_value_);
+              filtered_value_ = val < 0 ? "true" : "false";
+            }
+          } catch (...) {
+            filtered_value_ = "false";
+          }
+          ++pc;
+          break;
+        }
+
+        /** @brief 等価判定: 値と引数が等しければ "true" / "false" */
+        case bc_opcode::filter_int_eq: {
+          try {
+            auto target = instr.operand;
+            if (filtered_value_.find('.') != std::string::npos || filtered_value_.find('e') != std::string::npos || filtered_value_.find('E') != std::string::npos) {
+              double val = std::stod(filtered_value_);
+              filtered_value_ = (static_cast<long long>(val) == target) ? "true" : "false";
+            } else {
+              long long val = std::stoll(filtered_value_);
+              filtered_value_ = (val == target) ? "true" : "false";
+            }
+          } catch (...) {
+            filtered_value_ = "false";
+          }
+          ++pc;
+          break;
+        }
+
+        /** @brief フィルタ適用済み値での if 分岐 */
+        case bc_opcode::emit_if_filtered: {
+          bool cond = !filtered_value_.empty() && filtered_value_ != "false" && filtered_value_ != "0";
+          if (!cond) {
+            pc = instr.operand;
+          } else {
+            ++pc;
+          }
           break;
         }
 
