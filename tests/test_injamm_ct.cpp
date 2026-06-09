@@ -4,6 +4,7 @@
 #include <climits>
 #include <map>
 #include <optional>
+#include <set>
 #include <vector>
 
 // ---- NTTP テスト用データ型 ----
@@ -860,4 +861,63 @@ TEST_CASE("ct_map_single_entry", "[injamm][ct][map]") {
   auto r = injamm::render<tmpl>(data);
   REQUIRE(r.has_value());
   REQUIRE(*r == "only=99");
+}
+
+// ---- std::set テスト ----
+
+struct CtSetIntData {
+  std::set<int> values;
+};
+
+template <>
+struct glz::meta<CtSetIntData> {
+  static constexpr auto value = glz::object("values", &CtSetIntData::values);
+};
+
+TEST_CASE("ct_set_section", "[injamm][ct][set]") {
+  auto constexpr tmpl = injamm::fixed_string("{{#values}}[{{this}}]{{/values}}");
+  CtSetIntData data{{ {3, 1, 2} }};
+  auto r = injamm::render<tmpl>(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "[1][2][3]");
+}
+
+TEST_CASE("ct_set_empty", "[injamm][ct][set]") {
+  auto constexpr tmpl = injamm::fixed_string("{{#values}}[{{this}}]{{/values}}");
+  CtSetIntData data{};
+  auto r = injamm::render<tmpl>(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "");
+}
+
+TEST_CASE("ct_set_inverted_empty", "[injamm][ct][set]") {
+  auto constexpr tmpl = injamm::fixed_string("{{^values}}empty{{/values}}");
+  CtSetIntData data{};
+  auto r = injamm::render<tmpl>(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "empty");
+}
+
+TEST_CASE("ct_set_inverted_nonempty", "[injamm][ct][set]") {
+  auto constexpr tmpl = injamm::fixed_string("{{^values}}empty{{/values}}");
+  CtSetIntData data{{ {1} }};
+  auto r = injamm::render<tmpl>(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "");
+}
+
+TEST_CASE("ct_set_if", "[injamm][ct][set]") {
+  auto constexpr tmpl = injamm::fixed_string("{{#values}}[{{this}}]{{/values}}");
+  CtSetIntData data{{ {1, 2} }};
+  auto r = injamm::render<tmpl>(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "[1][2]");
+}
+
+TEST_CASE("ct_set_if_empty", "[injamm][ct][set]") {
+  auto constexpr tmpl = injamm::fixed_string("{{#values}}[{{this}}]{{/values}}");
+  CtSetIntData data{};
+  auto r = injamm::render<tmpl>(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "");
 }

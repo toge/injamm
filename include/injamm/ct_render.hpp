@@ -55,6 +55,30 @@ concept ct_is_map_like = requires {
 };
 
 /**
+ * @brief set-like コンテナを判定するコンセプト
+ * @details `std::set` / `std::multiset` 等の順序付き集合を判定する。
+ *          `ct_is_vector_like`（`operator[]` あり）とも `ct_is_map_like`（`key_type`/`mapped_type` あり）とも排他。
+ *          セクション反復では各要素を `{{this}}` としてイテレータベースで処理する。
+ * @tparam T 判定対象の型
+ */
+template <class T>
+concept ct_is_set_like =
+    !std::is_arithmetic_v<T> &&
+    !std::same_as<T, std::string> &&
+    !std::same_as<T, std::string_view> &&
+    requires(T const& v) {
+      typename T::value_type;
+      { v.size() } -> std::convertible_to<std::size_t>;
+      { v.begin() };
+      { v.end() };
+    } && !requires(T const& v, std::size_t i) {
+      { v[i] };
+    } && !requires {
+      typename T::key_type;
+      typename T::mapped_type;
+    };
+
+/**
  * @brief glz::meta によるリフレクションが可能な型を判定するコンセプト
  * @details `glz::reflect<T>::size` がコンパイル時に評価できる場合に true となる。
  *          map-like 型は glz::to_tie が使えないため除外する。
@@ -441,6 +465,21 @@ constexpr auto ct_render_section(Buffer& out, ct_parsed_template<N> const& chunk
           if (ls.break_flag) break;
           ++ls.index;
         }
+      } else if constexpr (ct_is_set_like<FT>) {
+        /** set の場合: 各要素を {{this}} としてイテレータベースでループ */
+        loop_state ls;
+        ls.count = static_cast<std::uint32_t>(field.size());
+        ls.in_loop = true;
+        for (auto const& elem : field) {
+          res = ct_render_chunks<Mode>(out, chunks, body_start, body_end, elem, root_value, &ls);
+          if (!res) return;
+          if (ls.continue_flag) {
+            ls.continue_flag = false;
+            continue;
+          }
+          if (ls.break_flag) break;
+          ++ls.index;
+        }
       } else if constexpr (ct_glz_reflectable<FT>) {
         constexpr auto sz2 = glz::reflect<FT>::size;
         auto tied2 = glz::to_tie(field);
@@ -552,6 +591,10 @@ constexpr auto ct_render_inverted(Buffer& out, ct_parsed_template<N> const& chun
           res = ct_render_chunks<Mode>(out, chunks, body_start, body_end, value, root_value, parent_loop);
         }
       } else if constexpr (ct_is_map_like<FT>) {
+        if (field.empty()) {
+          res = ct_render_chunks<Mode>(out, chunks, body_start, body_end, value, root_value, parent_loop);
+        }
+      } else if constexpr (ct_is_set_like<FT>) {
         if (field.empty()) {
           res = ct_render_chunks<Mode>(out, chunks, body_start, body_end, value, root_value, parent_loop);
         }
@@ -743,6 +786,8 @@ constexpr bool evaluate_if_expr_impl(std::string_view expr, T const& value) {
         auto const& field = glz::get<I>(tied);
         using FT = std::remove_cvref_t<decltype(field)>;
         if constexpr (ct_is_vector_like<FT>) {
+          cond = !field.empty();
+        } else if constexpr (ct_is_set_like<FT>) {
           cond = !field.empty();
         } else if constexpr (std::same_as<FT, bool>) {
           cond = field;

@@ -4,7 +4,7 @@
 #include <climits>
 #include <map>
 #include <optional>
-#include <unordered_map>
+#include <set>
 #include <vector>
 
 // ---- テスト用データ型 ----
@@ -1576,5 +1576,64 @@ TEST_CASE("bc_map_many_entries", "[injamm][bc][map]") {
     std::string key(1, 'a' + i);
     REQUIRE(r->contains(key + "=" + std::to_string(i)));
   }
+}
+
+// ---- std::set テスト (bytecode VM) ----
+
+struct BcSetIntData {
+  std::set<int> values;
+};
+
+template <>
+struct glz::meta<BcSetIntData> {
+  static constexpr auto value = glz::object("values", &BcSetIntData::values);
+};
+
+TEST_CASE("bc_set_section", "[injamm][bc][set]") {
+  auto bc = injamm::engine<BcSetIntData>("{{#values}}[{{this}}]{{/values}}");
+  BcSetIntData data{{ {3, 1, 2} }};
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "[1][2][3]");
+}
+
+TEST_CASE("bc_set_empty", "[injamm][bc][set]") {
+  auto bc = injamm::engine<BcSetIntData>("{{#values}}[{{this}}]{{/values}}");
+  BcSetIntData data{};
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "");
+}
+
+TEST_CASE("bc_set_inverted_empty", "[injamm][bc][set]") {
+  auto bc = injamm::engine<BcSetIntData>("{{^values}}empty{{/values}}");
+  BcSetIntData data{};
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "empty");
+}
+
+TEST_CASE("bc_set_inverted_nonempty", "[injamm][bc][set]") {
+  auto bc = injamm::engine<BcSetIntData>("{{^values}}empty{{/values}}");
+  BcSetIntData data{{ {1} }};
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "");
+}
+
+TEST_CASE("bc_set_if", "[injamm][bc][set]") {
+  auto bc = injamm::engine<BcSetIntData>("{{#values}}[{{this}}]{{/values}}");
+  BcSetIntData data{{ {1, 2} }};
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "[1][2]");
+}
+
+TEST_CASE("bc_set_if_empty", "[injamm][bc][set]") {
+  auto bc = injamm::engine<BcSetIntData>("{{#values}}[{{this}}]{{/values}}");
+  BcSetIntData data{};
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "");
 }
 

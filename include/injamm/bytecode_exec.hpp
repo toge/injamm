@@ -436,6 +436,23 @@ public:
               if (ls.break_flag) break;
               ++ls.index;
             }
+          } else if constexpr (ct_is_set_like<FT>) {
+            /** set の場合: 各要素を {{this}} としてイテレータベースでループ */
+            using elem_t = typename FT::value_type;
+            bc_loop_state ls;
+            ls.count = static_cast<std::uint32_t>(field.size());
+            for (auto const& elem : field) {
+              ls.continue_flag = false;
+              bc_executor<elem_t, RootT> child_exec(bc_, elem, root_value_, &ls, out_);
+              auto r2 = child_exec.execute_impl(pc + 1, body_end - 1);
+              if (!r2) return r2;
+              if (ls.continue_flag) {
+                ls.continue_flag = false;
+                continue;
+              }
+              if (ls.break_flag) break;
+              ++ls.index;
+            }
           } else if constexpr (ct_glz_reflectable<FT>) {
            /** 構造体の場合: 全フィールドを反復 */
            constexpr auto sz = glz::reflect<FT>::size;
@@ -515,6 +532,8 @@ public:
         } else if constexpr (is_std_optional_v<FT>) {
           empty = !field.has_value();
         } else if constexpr (ct_is_map_like<FT>) {
+          empty = field.empty();
+        } else if constexpr (ct_is_set_like<FT>) {
           empty = field.empty();
         }
       });
@@ -605,6 +624,8 @@ public:
           } else if constexpr (is_std_optional_v<FT>) {
             cond = field.has_value();
           } else if constexpr (ct_is_map_like<FT>) {
+            cond = !field.empty();
+          } else if constexpr (ct_is_set_like<FT>) {
             cond = !field.empty();
           }
         });
@@ -1090,6 +1111,23 @@ public:
                   if (ls.break_flag) break;
                   ++ls.index;
                 }
+              } else if constexpr (ct_is_set_like<FT>) {
+                /** set の場合: 各要素を {{this}} としてイテレータベースでループ */
+                using elem_t = typename FT::value_type;
+                bc_loop_state ls;
+                ls.count = static_cast<std::uint32_t>(field.size());
+                for (auto const& elem : field) {
+                  ls.continue_flag = false;
+                  bc_executor<elem_t, RootT> child_exec(bc_, elem, root_value_, &ls, out_);
+                  auto r2 = child_exec.execute_impl(pc + 1, body_end - 1);
+                  if (!r2) return r2;
+                  if (ls.continue_flag) {
+                    ls.continue_flag = false;
+                    continue;
+                  }
+                  if (ls.break_flag) break;
+                  ++ls.index;
+                }
               } else if constexpr (ct_glz_reflectable<FT>) {
                constexpr auto sz = glz::reflect<FT>::size;
                auto tied = glz::to_tie(field);
@@ -1133,6 +1171,8 @@ public:
             } else if constexpr (is_std_optional_v<FT>) {
               empty = !field.has_value();
             } else if constexpr (ct_is_map_like<FT>) {
+              empty = field.empty();
+            } else if constexpr (ct_is_set_like<FT>) {
               empty = field.empty();
             }
           });
@@ -1257,6 +1297,8 @@ public:
               } else if constexpr (is_std_optional_v<FT>) {
                 cond = field.has_value();
               } else if constexpr (ct_is_map_like<FT>) {
+                cond = !field.empty();
+              } else if constexpr (ct_is_set_like<FT>) {
                 cond = !field.empty();
               }
             });
