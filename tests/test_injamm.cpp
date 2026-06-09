@@ -136,7 +136,7 @@ struct glz::meta<BcFloatData> {
  * @details 変数やセクションを含まないベタ文字列がそのまま出力されることを確認する。
  */
 TEST_CASE("bc_literal", "[injamm]") {
-  auto bc = injamm::bc_template<BcBoolData>("hello world");
+  auto bc = injamm::engine<BcBoolData>("hello world");
   auto r = bc.render(BcBoolData{true});
   REQUIRE(r.has_value());
   REQUIRE(*r == "hello world");
@@ -148,7 +148,7 @@ TEST_CASE("bc_literal", "[injamm]") {
  */
 TEST_CASE("bc_var_string", "[injamm]") {
   BcUser data{"alice", 30};
-  auto bc = injamm::bc_template<BcUser>("{{name}}");
+  auto bc = injamm::engine<BcUser>("{{name}}");
   auto r = bc.render(data);
   REQUIRE(r.has_value());
   REQUIRE(*r == "alice");
@@ -160,7 +160,7 @@ TEST_CASE("bc_var_string", "[injamm]") {
  */
 TEST_CASE("bc_var_int", "[injamm]") {
   BcUser data{"alice", 30};
-  auto bc = injamm::bc_template<BcUser>("{{age}}");
+  auto bc = injamm::engine<BcUser>("{{age}}");
   auto r = bc.render(data);
   REQUIRE(r.has_value());
   REQUIRE(*r == "30");
@@ -174,7 +174,7 @@ TEST_CASE("bc_section", "[injamm]") {
   BcUsersData data;
   data.users.push_back(BcUser{"alice", 30});
   data.users.push_back(BcUser{"bob", 25});
-  auto bc = injamm::bc_template<BcUsersData>("{{#users}}{{name}}-{{age}}/{{/users}}");
+  auto bc = injamm::engine<BcUsersData>("{{#users}}{{name}}-{{age}}/{{/users}}");
   auto r = bc.render(data);
   REQUIRE(r.has_value());
   REQUIRE(*r == "alice-30/bob-25/");
@@ -187,7 +187,7 @@ TEST_CASE("bc_section", "[injamm]") {
  */
 TEST_CASE("bc_section_empty", "[injamm]") {
   BcUsersData data;
-  auto bc = injamm::bc_template<BcUsersData>("{{#users}}{{name}}{{/users}}none");
+  auto bc = injamm::engine<BcUsersData>("{{#users}}{{name}}{{/users}}none");
   auto r = bc.render(data);
   REQUIRE(r.has_value());
   REQUIRE(*r == "none");
@@ -199,7 +199,7 @@ TEST_CASE("bc_section_empty", "[injamm]") {
  */
 TEST_CASE("bc_section_bool_true", "[injamm]") {
   BcBoolData data{true};
-  auto bc = injamm::bc_template<BcBoolData>("{{#flag}}yes{{/flag}}");
+  auto bc = injamm::engine<BcBoolData>("{{#flag}}yes{{/flag}}");
   auto r = bc.render(data);
   REQUIRE(r.has_value());
   REQUIRE(*r == "yes");
@@ -211,7 +211,7 @@ TEST_CASE("bc_section_bool_true", "[injamm]") {
  */
 TEST_CASE("bc_section_bool_false", "[injamm]") {
   BcBoolData data{false};
-  auto bc = injamm::bc_template<BcBoolData>("{{#flag}}yes{{/flag}}");
+  auto bc = injamm::engine<BcBoolData>("{{#flag}}yes{{/flag}}");
   auto r = bc.render(data);
   REQUIRE(r.has_value());
   REQUIRE(*r == "");
@@ -223,7 +223,7 @@ TEST_CASE("bc_section_bool_false", "[injamm]") {
  */
 TEST_CASE("bc_inverted_true", "[injamm]") {
   BcBoolData data{true};
-  auto bc = injamm::bc_template<BcBoolData>("{{^flag}}no{{/flag}}");
+  auto bc = injamm::engine<BcBoolData>("{{^flag}}no{{/flag}}");
   auto r = bc.render(data);
   REQUIRE(r.has_value());
   REQUIRE(*r == "");
@@ -235,7 +235,7 @@ TEST_CASE("bc_inverted_true", "[injamm]") {
  */
 TEST_CASE("bc_inverted_false", "[injamm]") {
   BcBoolData data{false};
-  auto bc = injamm::bc_template<BcBoolData>("{{^flag}}no{{/flag}}");
+  auto bc = injamm::engine<BcBoolData>("{{^flag}}no{{/flag}}");
   auto r = bc.render(data);
   REQUIRE(r.has_value());
   REQUIRE(*r == "no");
@@ -250,7 +250,7 @@ TEST_CASE("bc_at_index", "[injamm]") {
   data.users.push_back(BcUser{"a", 1});
   data.users.push_back(BcUser{"b", 2});
   data.users.push_back(BcUser{"c", 3});
-  auto bc = injamm::bc_template<BcUsersData>("{{#users}}{{@index}}{{/users}}");
+  auto bc = injamm::engine<BcUsersData>("{{#users}}{{@index}}{{/users}}");
   auto r = bc.render(data);
   REQUIRE(r.has_value());
   REQUIRE(*r == "012");
@@ -265,7 +265,7 @@ TEST_CASE("bc_at_first", "[injamm]") {
   BcUsersData data;
   data.users.push_back(BcUser{"a", 1});
   data.users.push_back(BcUser{"b", 2});
-  auto bc = injamm::bc_template<BcUsersData>("{{#users}}{{@first}}{{/users}}");
+  auto bc = injamm::engine<BcUsersData>("{{#users}}{{@first}}{{/users}}");
   auto r = bc.render(data);
   REQUIRE(r.has_value());
   REQUIRE(*r == "truefalse");
@@ -280,7 +280,7 @@ TEST_CASE("bc_at_last", "[injamm]") {
   BcUsersData data;
   data.users.push_back(BcUser{"a", 1});
   data.users.push_back(BcUser{"b", 2});
-  auto bc = injamm::bc_template<BcUsersData>("{{#users}}{{@last}}{{/users}}");
+  auto bc = injamm::engine<BcUsersData>("{{#users}}{{@last}}{{/users}}");
   auto r = bc.render(data);
   REQUIRE(r.has_value());
   REQUIRE(*r == "falsetrue");
@@ -294,7 +294,7 @@ TEST_CASE("bc_nested_section", "[injamm]") {
   BcOuter data;
   data.items.push_back(BcNested{"x"});
   data.items.push_back(BcNested{"y"});
-  auto bc = injamm::bc_template<BcOuter>("{{#items}}{{inner}}{{/items}}");
+  auto bc = injamm::engine<BcOuter>("{{#items}}{{inner}}{{/items}}");
   auto r = bc.render(data);
   REQUIRE(r.has_value());
   REQUIRE(*r == "xy");
@@ -307,7 +307,7 @@ TEST_CASE("bc_nested_section", "[injamm]") {
  */
 TEST_CASE("bc_raw_output", "[injamm]") {
   BcUser data{"<b>alice</b>", 30};
-  auto bc = injamm::bc_template<BcUser>("{{{name}}}");
+  auto bc = injamm::engine<BcUser>("{{{name}}}");
   auto r = bc.render(data);
   REQUIRE(r.has_value());
   REQUIRE(*r == "<b>alice</b>");
@@ -319,7 +319,7 @@ TEST_CASE("bc_raw_output", "[injamm]") {
  */
 TEST_CASE("bc_escaped_output", "[injamm]") {
   BcUser data{"<b>alice</b>", 30};
-  auto bc = injamm::bc_template<BcUser>("{{name}}");
+  auto bc = injamm::engine<BcUser>("{{name}}");
   auto r = bc.render(data);
   REQUIRE(r.has_value());
   REQUIRE(*r == "&lt;b&gt;alice&lt;/b&gt;");
@@ -331,7 +331,7 @@ TEST_CASE("bc_escaped_output", "[injamm]") {
  */
 TEST_CASE("bc_multiple_vars", "[injamm]") {
   BcUser data{"alice", 30};
-  auto bc = injamm::bc_template<BcUser>("{{name}}:{{age}}");
+  auto bc = injamm::engine<BcUser>("{{name}}:{{age}}");
   auto r = bc.render(data);
   REQUIRE(r.has_value());
   REQUIRE(*r == "alice:30");
@@ -347,7 +347,7 @@ TEST_CASE("bc_complex_template", "[injamm]") {
   BcUsersData data;
   data.users.push_back(BcUser{"alice", 30});
   data.users.push_back(BcUser{"bob", 25});
-  auto bc = injamm::bc_template<BcUsersData>(
+  auto bc = injamm::engine<BcUsersData>(
     "users: {{#users}}{{name}} ({{age}}){{#if @last}}.{{else}}, {{/if}}{{/users}}");
   auto r = bc.render(data);
   REQUIRE(r.has_value());
@@ -406,7 +406,7 @@ struct glz::meta<BcCompany> {
  * @details {{founder.name}} がドット区切りパスを正しく解決し、創業者名を出力することを確認する。
  */
 TEST_CASE("bc_nested_path_simple", "[injamm]") {
-  auto bc = injamm::bc_template<BcCompany>("{{founder.name}}");
+  auto bc = injamm::engine<BcCompany>("{{founder.name}}");
   BcCompany data{.name = "Acme", .founder = BcFounder{.name = "John", .address = {"NYC", "USA"}}};
   auto r = bc.render(data);
   REQUIRE(r.has_value());
@@ -419,7 +419,7 @@ TEST_CASE("bc_nested_path_simple", "[injamm]") {
  *          市区町村名を出力することを確認する。
  */
 TEST_CASE("bc_nested_path_deep", "[injamm]") {
-  auto bc = injamm::bc_template<BcCompany>("{{founder.address.city}}");
+  auto bc = injamm::engine<BcCompany>("{{founder.address.city}}");
   BcCompany data{.name = "Acme", .founder = BcFounder{.name = "John", .address = {"NYC", "USA"}}};
   auto r = bc.render(data);
   REQUIRE(r.has_value());
@@ -448,7 +448,7 @@ struct glz::meta<BcIfData> {
  * @details {{#if age}} が非ゼロ値に対して内容を出力することを確認する。
  */
 TEST_CASE("bc_if_bool_true", "[injamm]") {
-  auto bc = injamm::bc_template<BcIfData>("{{#if age}}adult{{/if}}");
+  auto bc = injamm::engine<BcIfData>("{{#if age}}adult{{/if}}");
   BcIfData data{"alice", 20};
   auto r = bc.render(data);
   REQUIRE(r.has_value());
@@ -460,7 +460,7 @@ TEST_CASE("bc_if_bool_true", "[injamm]") {
  * @details {{#if age}} がゼロ値に対して内容を出力しないことを確認する。
  */
 TEST_CASE("bc_if_bool_false", "[injamm]") {
-  auto bc = injamm::bc_template<BcIfData>("{{#if age}}adult{{/if}}");
+  auto bc = injamm::engine<BcIfData>("{{#if age}}adult{{/if}}");
   BcIfData data{"alice", 0};
   auto r = bc.render(data);
   REQUIRE(r.has_value());
@@ -472,7 +472,7 @@ TEST_CASE("bc_if_bool_false", "[injamm]") {
  * @details {{#if age}}...{{else}}...{{/if}} で真の場合に if 節が出力されることを確認する。
  */
 TEST_CASE("bc_if_else_true", "[injamm]") {
-  auto bc = injamm::bc_template<BcIfData>("{{#if age}}A{{else}}B{{/if}}");
+  auto bc = injamm::engine<BcIfData>("{{#if age}}A{{else}}B{{/if}}");
   BcIfData data{"alice", 20};
   auto r = bc.render(data);
   REQUIRE(r.has_value());
@@ -484,7 +484,7 @@ TEST_CASE("bc_if_else_true", "[injamm]") {
  * @details {{#if age}}...{{else}}...{{/if}} で偽の場合に else 節が出力されることを確認する。
  */
 TEST_CASE("bc_if_else_false", "[injamm]") {
-  auto bc = injamm::bc_template<BcIfData>("{{#if age}}A{{else}}B{{/if}}");
+  auto bc = injamm::engine<BcIfData>("{{#if age}}A{{else}}B{{/if}}");
   BcIfData data{"alice", 0};
   auto r = bc.render(data);
   REQUIRE(r.has_value());
@@ -496,7 +496,7 @@ TEST_CASE("bc_if_else_false", "[injamm]") {
  * @details セクション内で {{@last}} を if 条件に使用し、末尾要素のみドットを追記する動作を確認する。
  */
 TEST_CASE("bc_if_with_at_last", "[injamm]") {
-  auto bc = injamm::bc_template<BcUsersData>("{{#users}}{{name}}{{#if @last}}.{{/if}}{{/users}}");
+  auto bc = injamm::engine<BcUsersData>("{{#users}}{{name}}{{#if @last}}.{{/if}}{{/users}}");
   BcUsersData data{.users = {{"a", 1}, {"b", 2}}};
   auto r = bc.render(data);
   REQUIRE(r.has_value());
@@ -509,7 +509,7 @@ TEST_CASE("bc_if_with_at_last", "[injamm]") {
  *          カンマ区切りと末尾のピリオドが正しく出力されることを確認する。
  */
 TEST_CASE("bc_if_else_with_section", "[injamm]") {
-  auto bc = injamm::bc_template<BcUsersData>("{{#users}}{{name}}{{#if @last}}.{{else}},{{/if}}{{/users}}");
+  auto bc = injamm::engine<BcUsersData>("{{#users}}{{name}}{{#if @last}}.{{else}},{{/if}}{{/users}}");
   BcUsersData data{.users = {{"a", 1}, {"b", 2}, {"c", 3}}};
   auto r = bc.render(data);
   REQUIRE(r.has_value());
@@ -518,7 +518,7 @@ TEST_CASE("bc_if_else_with_section", "[injamm]") {
 
 TEST_CASE("bc_at_root", "[injamm]") {
   BcRootData data;
-  auto bc = injamm::bc_template<BcRootData>("app: {{@root}}");
+  auto bc = injamm::engine<BcRootData>("app: {{@root}}");
   auto r = bc.render(data);
   REQUIRE(r.has_value());
   REQUIRE(*r == "app: ");
@@ -526,7 +526,7 @@ TEST_CASE("bc_at_root", "[injamm]") {
 
 TEST_CASE("bc_at_root_field_simple", "[injamm]") {
   BcRootData data;
-  auto bc = injamm::bc_template<BcRootData>("{{@root.app_name}}");
+  auto bc = injamm::engine<BcRootData>("{{@root.app_name}}");
   auto r = bc.render(data);
   REQUIRE(r.has_value());
   REQUIRE(*r == "injamm");
@@ -534,7 +534,7 @@ TEST_CASE("bc_at_root_field_simple", "[injamm]") {
 
 TEST_CASE("bc_at_root_field_nested", "[injamm]") {
   BcRootData data;
-  auto bc = injamm::bc_template<BcRootData>("{{@root.info.version}}");
+  auto bc = injamm::engine<BcRootData>("{{@root.info.version}}");
   auto r = bc.render(data);
   REQUIRE(r.has_value());
   REQUIRE(*r == "1.0");
@@ -544,7 +544,7 @@ TEST_CASE("bc_at_key_array", "[injamm]") {
   BcUsersData data;
   data.users.push_back(BcUser{"a", 1});
   data.users.push_back(BcUser{"b", 2});
-  auto bc = injamm::bc_template<BcUsersData>("{{#users}}{{@key}}:{{name}},{{/users}}");
+  auto bc = injamm::engine<BcUsersData>("{{#users}}{{@key}}:{{name}},{{/users}}");
   auto r = bc.render(data);
   REQUIRE(r.has_value());
   REQUIRE(*r == "0:a,1:b,");
@@ -552,7 +552,7 @@ TEST_CASE("bc_at_key_array", "[injamm]") {
 
 TEST_CASE("bc_at_key_struct", "[injamm]") {
   BcMapWrapper data;
-  auto bc = injamm::bc_template<BcMapWrapper>("{{#config}}{{@key}}={{this}};{{/config}}");
+  auto bc = injamm::engine<BcMapWrapper>("{{#config}}{{@key}}={{this}};{{/config}}");
   auto r = bc.render(data);
   REQUIRE(r.has_value());
   REQUIRE(*r == "host=localhost;port=8080;");
@@ -560,7 +560,7 @@ TEST_CASE("bc_at_key_struct", "[injamm]") {
 
 TEST_CASE("bc_struct_iteration_nested", "[injamm]") {
   BcMapWrapper data;
-  auto bc = injamm::bc_template<BcMapWrapper>("{{#config}}{{#if @key}}k{{/if}}{{/config}}");
+  auto bc = injamm::engine<BcMapWrapper>("{{#config}}{{#if @key}}k{{/if}}{{/config}}");
   auto r = bc.render(data);
   REQUIRE(r.has_value());
   REQUIRE(*r == "kk");
@@ -570,7 +570,7 @@ TEST_CASE("bc_struct_iteration_nested", "[injamm]") {
 
 TEST_CASE("filter: upper", "[filter]") {
   BcUser data{"hello world", 30};
-  auto bc = injamm::bc_template<BcUser>("{{name | upper}}");
+  auto bc = injamm::engine<BcUser>("{{name | upper}}");
   auto result = bc.render(data);
   REQUIRE(result);
   REQUIRE(*result == "HELLO WORLD");
@@ -578,7 +578,7 @@ TEST_CASE("filter: upper", "[filter]") {
 
 TEST_CASE("filter: lower", "[filter]") {
   BcUser data{"HELLO WORLD", 30};
-  auto bc = injamm::bc_template<BcUser>("{{name | lower}}");
+  auto bc = injamm::engine<BcUser>("{{name | lower}}");
   auto result = bc.render(data);
   REQUIRE(result);
   REQUIRE(*result == "hello world");
@@ -586,7 +586,7 @@ TEST_CASE("filter: lower", "[filter]") {
 
 TEST_CASE("filter: capitalize", "[filter]") {
   BcUser data{"hello world", 30};
-  auto bc = injamm::bc_template<BcUser>("{{name | capitalize}}");
+  auto bc = injamm::engine<BcUser>("{{name | capitalize}}");
   auto result = bc.render(data);
   REQUIRE(result);
   REQUIRE(*result == "Hello world");
@@ -594,7 +594,7 @@ TEST_CASE("filter: capitalize", "[filter]") {
 
 TEST_CASE("filter: title", "[filter]") {
   BcUser data{"hello world", 30};
-  auto bc = injamm::bc_template<BcUser>("{{name | title}}");
+  auto bc = injamm::engine<BcUser>("{{name | title}}");
   auto result = bc.render(data);
   REQUIRE(result);
   REQUIRE(*result == "Hello World");
@@ -602,7 +602,7 @@ TEST_CASE("filter: title", "[filter]") {
 
 TEST_CASE("filter: trim", "[filter]") {
   BcUser data{"  hello  ", 30};
-  auto bc = injamm::bc_template<BcUser>("{{name | trim}}");
+  auto bc = injamm::engine<BcUser>("{{name | trim}}");
   auto result = bc.render(data);
   REQUIRE(result);
   REQUIRE(*result == "hello");
@@ -610,7 +610,7 @@ TEST_CASE("filter: trim", "[filter]") {
 
 TEST_CASE("filter: ltrim", "[filter]") {
   BcUser data{"  hello  ", 30};
-  auto bc = injamm::bc_template<BcUser>("{{name | ltrim}}");
+  auto bc = injamm::engine<BcUser>("{{name | ltrim}}");
   auto result = bc.render(data);
   REQUIRE(result);
   REQUIRE(*result == "hello  ");
@@ -618,7 +618,7 @@ TEST_CASE("filter: ltrim", "[filter]") {
 
 TEST_CASE("filter: rtrim", "[filter]") {
   BcUser data{"  hello  ", 30};
-  auto bc = injamm::bc_template<BcUser>("{{name | rtrim}}");
+  auto bc = injamm::engine<BcUser>("{{name | rtrim}}");
   auto result = bc.render(data);
   REQUIRE(result);
   REQUIRE(*result == "  hello");
@@ -626,7 +626,7 @@ TEST_CASE("filter: rtrim", "[filter]") {
 
 TEST_CASE("filter: chaining", "[filter]") {
   BcUser data{"  hello  ", 30};
-  auto bc = injamm::bc_template<BcUser>("{{name | trim | upper}}");
+  auto bc = injamm::engine<BcUser>("{{name | trim | upper}}");
   auto result = bc.render(data);
   REQUIRE(result);
   REQUIRE(*result == "HELLO");
@@ -634,7 +634,7 @@ TEST_CASE("filter: chaining", "[filter]") {
 
 TEST_CASE("filter: raw output", "[filter]") {
   BcUser data{"  <script>  ", 30};
-  auto bc = injamm::bc_template<BcUser>("{{{name | trim}}}");
+  auto bc = injamm::engine<BcUser>("{{{name | trim}}}");
   auto result = bc.render(data);
   REQUIRE(result);
   REQUIRE(*result == "<script>");
@@ -644,7 +644,7 @@ TEST_CASE("filter: raw output", "[filter]") {
 
 TEST_CASE("int_filter: abs positive", "[int_filter]") {
   BcIfData data{"test", 42};
-  auto bc = injamm::bc_template<BcIfData>("{{age | abs}}");
+  auto bc = injamm::engine<BcIfData>("{{age | abs}}");
   auto result = bc.render(data);
   REQUIRE(result);
   REQUIRE(*result == "42");
@@ -652,7 +652,7 @@ TEST_CASE("int_filter: abs positive", "[int_filter]") {
 
 TEST_CASE("int_filter: abs negative", "[int_filter]") {
   BcIfData data{"test", -42};
-  auto bc = injamm::bc_template<BcIfData>("{{age | abs}}");
+  auto bc = injamm::engine<BcIfData>("{{age | abs}}");
   auto result = bc.render(data);
   REQUIRE(result);
   REQUIRE(*result == "42");
@@ -660,7 +660,7 @@ TEST_CASE("int_filter: abs negative", "[int_filter]") {
 
 TEST_CASE("int_filter: hex", "[int_filter]") {
   BcIfData data{"test", 255};
-  auto bc = injamm::bc_template<BcIfData>("{{age | hex}}");
+  auto bc = injamm::engine<BcIfData>("{{age | hex}}");
   auto result = bc.render(data);
   REQUIRE(result);
   REQUIRE(*result == "ff");
@@ -668,7 +668,7 @@ TEST_CASE("int_filter: hex", "[int_filter]") {
 
 TEST_CASE("int_filter: oct", "[int_filter]") {
   BcIfData data{"test", 64};
-  auto bc = injamm::bc_template<BcIfData>("{{age | oct}}");
+  auto bc = injamm::engine<BcIfData>("{{age | oct}}");
   auto result = bc.render(data);
   REQUIRE(result);
   REQUIRE(*result == "100");
@@ -676,7 +676,7 @@ TEST_CASE("int_filter: oct", "[int_filter]") {
 
 TEST_CASE("int_filter: bin", "[int_filter]") {
   BcIfData data{"test", 10};
-  auto bc = injamm::bc_template<BcIfData>("{{age | bin}}");
+  auto bc = injamm::engine<BcIfData>("{{age | bin}}");
   auto result = bc.render(data);
   REQUIRE(result);
   REQUIRE(*result == "1010");
@@ -684,7 +684,7 @@ TEST_CASE("int_filter: bin", "[int_filter]") {
 
 TEST_CASE("int_filter: bin zero", "[int_filter]") {
   BcIfData data{"test", 0};
-  auto bc = injamm::bc_template<BcIfData>("{{age | bin}}");
+  auto bc = injamm::engine<BcIfData>("{{age | bin}}");
   auto result = bc.render(data);
   REQUIRE(result);
   REQUIRE(*result == "0");
@@ -694,7 +694,7 @@ TEST_CASE("int_filter: bin zero", "[int_filter]") {
 
 TEST_CASE("filter: left", "[filter]") {
   BcUser data{"hi", 30};
-  auto bc = injamm::bc_template<BcUser>("{{name | left(5)}}");
+  auto bc = injamm::engine<BcUser>("{{name | left(5)}}");
   auto result = bc.render(data);
   REQUIRE(result);
   REQUIRE(*result == "   hi");
@@ -702,7 +702,7 @@ TEST_CASE("filter: left", "[filter]") {
 
 TEST_CASE("filter: right", "[filter]") {
   BcUser data{"hi", 30};
-  auto bc = injamm::bc_template<BcUser>("{{name | right(5)}}");
+  auto bc = injamm::engine<BcUser>("{{name | right(5)}}");
   auto result = bc.render(data);
   REQUIRE(result);
   REQUIRE(*result == "hi   ");
@@ -710,7 +710,7 @@ TEST_CASE("filter: right", "[filter]") {
 
 TEST_CASE("filter: center", "[filter]") {
   BcUser data{"hi", 30};
-  auto bc = injamm::bc_template<BcUser>("{{name | center(6)}}");
+  auto bc = injamm::engine<BcUser>("{{name | center(6)}}");
   auto result = bc.render(data);
   REQUIRE(result);
   REQUIRE(*result == "  hi  ");
@@ -718,7 +718,7 @@ TEST_CASE("filter: center", "[filter]") {
 
 TEST_CASE("filter: truncate short", "[filter]") {
   BcUser data{"hello", 30};
-  auto bc = injamm::bc_template<BcUser>("{{name | truncate(10)}}");
+  auto bc = injamm::engine<BcUser>("{{name | truncate(10)}}");
   auto result = bc.render(data);
   REQUIRE(result);
   REQUIRE(*result == "hello");
@@ -726,7 +726,7 @@ TEST_CASE("filter: truncate short", "[filter]") {
 
 TEST_CASE("filter: truncate long", "[filter]") {
   BcUser data{"hello world", 30};
-  auto bc = injamm::bc_template<BcUser>("{{name | truncate(8)}}");
+  auto bc = injamm::engine<BcUser>("{{name | truncate(8)}}");
   auto result = bc.render(data);
   REQUIRE(result);
   REQUIRE(*result == "hello...");
@@ -734,7 +734,7 @@ TEST_CASE("filter: truncate long", "[filter]") {
 
 TEST_CASE("filter: substr one arg", "[filter]") {
   BcUser data{"hello", 30};
-  auto bc = injamm::bc_template<BcUser>("{{name | substr(2)}}");
+  auto bc = injamm::engine<BcUser>("{{name | substr(2)}}");
   auto result = bc.render(data);
   REQUIRE(result);
   REQUIRE(*result == "llo");
@@ -742,7 +742,7 @@ TEST_CASE("filter: substr one arg", "[filter]") {
 
 TEST_CASE("filter: substr two args", "[filter]") {
   BcUser data{"hello", 30};
-  auto bc = injamm::bc_template<BcUser>("{{name | substr(1,3)}}");
+  auto bc = injamm::engine<BcUser>("{{name | substr(1,3)}}");
   auto result = bc.render(data);
   REQUIRE(result);
   REQUIRE(*result == "ell");
@@ -752,7 +752,7 @@ TEST_CASE("filter: substr two args", "[filter]") {
 
 TEST_CASE("int_filter: neg positive", "[int_filter]") {
   BcIfData data{"test", 42};
-  auto bc = injamm::bc_template<BcIfData>("{{age | neg}}");
+  auto bc = injamm::engine<BcIfData>("{{age | neg}}");
   auto result = bc.render(data);
   REQUIRE(result);
   REQUIRE(*result == "-42");
@@ -760,7 +760,7 @@ TEST_CASE("int_filter: neg positive", "[int_filter]") {
 
 TEST_CASE("int_filter: neg negative", "[int_filter]") {
   BcIfData data{"test", -10};
-  auto bc = injamm::bc_template<BcIfData>("{{age | neg}}");
+  auto bc = injamm::engine<BcIfData>("{{age | neg}}");
   auto result = bc.render(data);
   REQUIRE(result);
   REQUIRE(*result == "10");
@@ -768,7 +768,7 @@ TEST_CASE("int_filter: neg negative", "[int_filter]") {
 
 TEST_CASE("int_filter: mod", "[int_filter]") {
   BcIfData data{"test", 17};
-  auto bc = injamm::bc_template<BcIfData>("{{age | mod(5)}}");
+  auto bc = injamm::engine<BcIfData>("{{age | mod(5)}}");
   auto result = bc.render(data);
   REQUIRE(result);
   REQUIRE(*result == "2");
@@ -776,7 +776,7 @@ TEST_CASE("int_filter: mod", "[int_filter]") {
 
 TEST_CASE("int_filter: numify", "[int_filter]") {
   BcIfData data{"test", 1234567};
-  auto bc = injamm::bc_template<BcIfData>("{{age | numify}}");
+  auto bc = injamm::engine<BcIfData>("{{age | numify}}");
   auto result = bc.render(data);
   REQUIRE(result);
   REQUIRE(*result == "1,234,567");
@@ -784,7 +784,7 @@ TEST_CASE("int_filter: numify", "[int_filter]") {
 
 TEST_CASE("int_filter: numify small", "[int_filter]") {
   BcIfData data{"test", 123};
-  auto bc = injamm::bc_template<BcIfData>("{{age | numify}}");
+  auto bc = injamm::engine<BcIfData>("{{age | numify}}");
   auto result = bc.render(data);
   REQUIRE(result);
   REQUIRE(*result == "123");
@@ -792,7 +792,7 @@ TEST_CASE("int_filter: numify small", "[int_filter]") {
 
 TEST_CASE("int_filter: numify negative", "[int_filter]") {
   BcIfData data{"test", -9876};
-  auto bc = injamm::bc_template<BcIfData>("{{age | numify}}");
+  auto bc = injamm::engine<BcIfData>("{{age | numify}}");
   auto result = bc.render(data);
   REQUIRE(result);
   REQUIRE(*result == "-9,876");
@@ -804,7 +804,7 @@ TEST_CASE("if with nested section: else belongs to if", "[if][section]") {
   BcUsersData data{{{"Alice", 30}, {"Bob", 25}}};
   // {{#if users}} の else は、users が空のとき描画される
   // {{#users}} 内の {{else}} は無視される
-  auto bc = injamm::bc_template<BcUsersData>(
+  auto bc = injamm::engine<BcUsersData>(
     "{{#if users}}"
     "{{#users}}{{name}} {{/users}}"
     "{{else}}"
@@ -817,7 +817,7 @@ TEST_CASE("if with nested section: else belongs to if", "[if][section]") {
 
 TEST_CASE("if with nested section: else triggers on empty", "[if][section]") {
   BcUsersData data{{}};
-  auto bc = injamm::bc_template<BcUsersData>(
+  auto bc = injamm::engine<BcUsersData>(
     "{{#if users}}"
     "{{#users}}{{name}} {{/users}}"
     "{{else}}"
@@ -830,7 +830,7 @@ TEST_CASE("if with nested section: else triggers on empty", "[if][section]") {
 
 TEST_CASE("deeply nested: if inside section", "[if][section]") {
   BcUsersData data{{{"Alice", 30}, {"Bob", 25}}};
-  auto bc = injamm::bc_template<BcUsersData>(
+  auto bc = injamm::engine<BcUsersData>(
     "{{#users}}"
     "{{#if @first}}"
     "First: {{name}}"
@@ -847,7 +847,7 @@ TEST_CASE("deeply nested: if inside section", "[if][section]") {
 
 TEST_CASE("float_filter: abs positive", "[float_filter]") {
   BcFloatData data{3.14};
-  auto bc = injamm::bc_template<BcFloatData>("{{value | abs}}");
+  auto bc = injamm::engine<BcFloatData>("{{value | abs}}");
   auto result = bc.render(data);
   REQUIRE(result);
   REQUIRE(*result == "3.14");
@@ -855,7 +855,7 @@ TEST_CASE("float_filter: abs positive", "[float_filter]") {
 
 TEST_CASE("float_filter: abs negative", "[float_filter]") {
   BcFloatData data{-3.14};
-  auto bc = injamm::bc_template<BcFloatData>("{{value | abs}}");
+  auto bc = injamm::engine<BcFloatData>("{{value | abs}}");
   auto result = bc.render(data);
   REQUIRE(result);
   REQUIRE(*result == "3.14");
@@ -863,7 +863,7 @@ TEST_CASE("float_filter: abs negative", "[float_filter]") {
 
 TEST_CASE("float_filter: neg positive", "[float_filter]") {
   BcFloatData data{3.14};
-  auto bc = injamm::bc_template<BcFloatData>("{{value | neg}}");
+  auto bc = injamm::engine<BcFloatData>("{{value | neg}}");
   auto result = bc.render(data);
   REQUIRE(result);
   REQUIRE(*result == "-3.14");
@@ -871,7 +871,7 @@ TEST_CASE("float_filter: neg positive", "[float_filter]") {
 
 TEST_CASE("float_filter: neg negative", "[float_filter]") {
   BcFloatData data{-3.14};
-  auto bc = injamm::bc_template<BcFloatData>("{{value | neg}}");
+  auto bc = injamm::engine<BcFloatData>("{{value | neg}}");
   auto result = bc.render(data);
   REQUIRE(result);
   REQUIRE(*result == "3.14");
@@ -879,7 +879,7 @@ TEST_CASE("float_filter: neg negative", "[float_filter]") {
 
 TEST_CASE("float_filter: precision", "[float_filter]") {
   BcFloatData data{3.14159265};
-  auto bc = injamm::bc_template<BcFloatData>("{{value | precision(2)}}");
+  auto bc = injamm::engine<BcFloatData>("{{value | precision(2)}}");
   auto result = bc.render(data);
   REQUIRE(result);
   REQUIRE(*result == "3.14");
@@ -887,7 +887,7 @@ TEST_CASE("float_filter: precision", "[float_filter]") {
 
 TEST_CASE("float_filter: precision zero", "[float_filter]") {
   BcFloatData data{3.14159265};
-  auto bc = injamm::bc_template<BcFloatData>("{{value | precision(0)}}");
+  auto bc = injamm::engine<BcFloatData>("{{value | precision(0)}}");
   auto result = bc.render(data);
   REQUIRE(result);
   REQUIRE(*result == "3");
@@ -895,7 +895,7 @@ TEST_CASE("float_filter: precision zero", "[float_filter]") {
 
 TEST_CASE("float_filter: precision four", "[float_filter]") {
   BcFloatData data{3.14159265};
-  auto bc = injamm::bc_template<BcFloatData>("{{value | precision(4)}}");
+  auto bc = injamm::engine<BcFloatData>("{{value | precision(4)}}");
   auto result = bc.render(data);
   REQUIRE(result);
   REQUIRE(*result == "3.1416");
@@ -903,7 +903,7 @@ TEST_CASE("float_filter: precision four", "[float_filter]") {
 
 TEST_CASE("float_filter: numify integer", "[float_filter]") {
   BcFloatData data{1234567.0};
-  auto bc = injamm::bc_template<BcFloatData>("{{value | numify}}");
+  auto bc = injamm::engine<BcFloatData>("{{value | numify}}");
   auto result = bc.render(data);
   REQUIRE(result);
   REQUIRE(*result == "1,234,567");
@@ -911,7 +911,7 @@ TEST_CASE("float_filter: numify integer", "[float_filter]") {
 
 TEST_CASE("float_filter: numify fractional", "[float_filter]") {
   BcFloatData data{1234567.89};
-  auto bc = injamm::bc_template<BcFloatData>("{{value | numify}}");
+  auto bc = injamm::engine<BcFloatData>("{{value | numify}}");
   auto result = bc.render(data);
   REQUIRE(result);
   REQUIRE(*result == "1,234,567.89");
@@ -919,7 +919,7 @@ TEST_CASE("float_filter: numify fractional", "[float_filter]") {
 
 TEST_CASE("float_filter: numify negative", "[float_filter]") {
   BcFloatData data{-9876.54};
-  auto bc = injamm::bc_template<BcFloatData>("{{value | numify}}");
+  auto bc = injamm::engine<BcFloatData>("{{value | numify}}");
   auto result = bc.render(data);
   REQUIRE(result);
   REQUIRE(*result == "-9,876.54");
@@ -927,7 +927,7 @@ TEST_CASE("float_filter: numify negative", "[float_filter]") {
 
 TEST_CASE("float_filter: numify small", "[float_filter]") {
   BcFloatData data{123.45};
-  auto bc = injamm::bc_template<BcFloatData>("{{value | numify}}");
+  auto bc = injamm::engine<BcFloatData>("{{value | numify}}");
   auto result = bc.render(data);
   REQUIRE(result);
   REQUIRE(*result == "123.45");
@@ -935,7 +935,7 @@ TEST_CASE("float_filter: numify small", "[float_filter]") {
 
 TEST_CASE("float_filter: chaining", "[float_filter]") {
   BcFloatData data{-1234.5678};
-  auto bc = injamm::bc_template<BcFloatData>("{{value | abs | precision(2)}}");
+  auto bc = injamm::engine<BcFloatData>("{{value | abs | precision(2)}}");
   auto result = bc.render(data);
   REQUIRE(result);
   REQUIRE(*result == "1234.57");
@@ -943,7 +943,7 @@ TEST_CASE("float_filter: chaining", "[float_filter]") {
 
 TEST_CASE("float_filter: abs zero", "[float_filter]") {
   BcFloatData data{0.0};
-  auto bc = injamm::bc_template<BcFloatData>("{{value | abs}}");
+  auto bc = injamm::engine<BcFloatData>("{{value | abs}}");
   auto result = bc.render(data);
   REQUIRE(result);
   REQUIRE(*result == "0");

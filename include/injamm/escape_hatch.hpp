@@ -7,7 +7,7 @@
  * @details fixed_string（NTTP 文字列）とコンパイル時パースによる
  *          true compile-time template rendering（render 関数）、
  *          および実行時コンパイル + Bytecode VM によるランタイムレンダリング
- *          （bc_template クラス）の 2 系統の API を提供する。
+ *          （engine クラス）の 2 系統の API を提供する。
  *          SoA（Struct of Arrays）形式を採用しキャッシュ効率を向上している。
  */
 
@@ -84,7 +84,7 @@ consteval auto parse_fixed_impl() -> ct_parsed_template<Tmpl.size() + 1> {
  * @details テンプレート引数 Tmpl で渡された文字列をコンパイル時にパースし、
  *          実行時には変数値の埋め込みのみを行う。
  *          {{var}} は HTML エスケープ付き、{{{var}}} は生出力。
- *          セクション / if は非対応（bc_template を使用すること）。
+ *          セクション / if は非対応（engine を使用すること）。
  *
  * @tparam Tmpl コンパイル時テンプレート文字列（fixed_string リテラル）
  * @tparam T    コンテキスト値の型（glz::meta<T> 要特殊化）
@@ -114,18 +114,18 @@ template <fixed_string Tmpl, class T>
  * @tparam T コンテキスト値の型（glz::meta<T> 要特殊化）
  */
 template <class T>
-class bc_template {
+class engine {
   detail::bytecode bc_;
 
 public:
-  bc_template() = default;
+  engine() = default;
 
   /**
    * @brief テンプレート文字列から構築（実行時コンパイル）
    *
    * @param tmpl テンプレート文字列（std::string_view）
    */
-  explicit bc_template(std::string_view tmpl) : bc_(detail::bc_compile<T>(tmpl)) {}
+  explicit engine(std::string_view tmpl) : bc_(detail::bc_compile<T>(tmpl)) {}
 
   /**
    * @brief レンダリングを実行する

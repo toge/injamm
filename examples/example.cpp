@@ -5,7 +5,7 @@
 
 /**
  * @brief サンプルアプリケーションのユーザーデータ型
- * @details 名前と年齢を保持する単純な構造体。bc_template および render の両 API で使用する。
+ * @details 名前と年齢を保持する単純な構造体。engine および render の両 API で使用する。
  */
 struct User {
   std::string name; /**< ユーザー名 */
@@ -43,11 +43,11 @@ int main() {
 
   /**
    * API 1: Bytecode VM（実行時テンプレートコンパイル、全機能対応）
-   * @details bc_template はテンプレート文字列をバイトコードにコンパイルし、
+   * @details engine はテンプレート文字列をバイトコードにコンパイルし、
    *          任意のコンテキストデータで描画する。セクション、if/else、@index/@first/@last、
    *          ネストパスなどの全機能が利用可能。
    */
-  auto bc = injamm::bc_template<Data>("Users: {{#users}}{{name}} ({{age}})"
+  auto bc = injamm::engine<Data>("Users: {{#users}}{{name}} ({{age}})"
                                        "{{#if @last}}.{{else}}, {{/if}}{{/users}}");
   auto r1 = bc.render(data);
   if (r1) {

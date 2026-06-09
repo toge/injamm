@@ -3,7 +3,7 @@
 ## これは何か
 
 ヘッダオンリー C++26 テンプレートエンジン（Mustache/inja サブセット）。2つのレンダリング API を提供:
-- **Bytecode VM** (`bc_template<T>`) — 実行時コンパイル、全機能（セクション、if/else、`@index`/`@first`/`@last`、ネストパス）
+- **Bytecode VM** (`engine<T>`) — 実行時コンパイル、全機能（セクション、if/else、`@index`/`@first`/`@last`、ネストパス）
 - **NTTP コンパイル時** (`render<fixed_string>`) — `{{var}}` のみ、セクション/if 非対応
 
 ## ビルド & テスト
@@ -34,7 +34,7 @@ CMake オプション: `INJAMM_ENABLE_THREADED_DISPATCH`（デフォルト ON、
 - `{{var}}` = HTML エスケープあり、`{{{var}}}` = 生出力（ステンシルモード）。
 - セクションの真偽: 非ゼロ数値、非空文字列、非ヌルポインタ = true。
 - `{{^section}}` = 逆セクション（偽/空のときに描画）。
-- テンプレートファイル: `include/injamm.hpp` が一次エントリポイント。`include/injamm/escape_hatch.hpp` が `bc_template`/`render` を公開。
+- テンプレートファイル: `include/injamm.hpp` が一次エントリポイント。`include/injamm/escape_hatch.hpp` が `engine`/`render` を公開。
 
 ## 依存関係
 

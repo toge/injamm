@@ -66,12 +66,12 @@ struct glz::meta<User> {
 
 ### 2. バイトコード VM（推奨）
 
-`bc_template<T>` にテンプレート文字列を渡し、`.render(value)` でレンダリングする。セクション、if/else、@index/@first/@last、ネストパスのすべてに対応。
+`engine<T>` にテンプレート文字列を渡し、`.render(value)` でレンダリングする。セクション、if/else、@index/@first/@last、ネストパスのすべてに対応。
 
 ```cpp
 #include "injamm.hpp"
 
-auto bc = injamm::bc_template<User>("{{name}} ({{age}})");
+auto bc = injamm::engine<User>("{{name}} ({{age}})");
 auto r = bc.render(User{"Alice", 30});
 // r == "Alice (30)"
 ```
@@ -108,7 +108,7 @@ int main() {
   Data data{{{"Alice", 30}, {"Bob", 25}, {"Charlie", 35}}};
 
   // バイトコード VM
-  auto bc = injamm::bc_template<Data>(
+  auto bc = injamm::engine<Data>(
     "{{#users}}{{name}} ({{age}})"
     "{{#if @last}}.{{else}}, {{/if}}{{/users}}");
   std::cout << *bc.render(data) << "\n";  // "Alice (30), Bob (25), Charlie (35)."
@@ -137,7 +137,7 @@ int main() {
 
 ## フィルター
 
-`|` 記法で変数の出力前に文字列・数値の変換を適用できる。BC版とNTTP版の両方でサポート。
+`|` 記法で変数の出力前に文字列・数値の変換を適用できる。engine版とNTTP版の両方でサポート。
 
 ### 文字列フィルター
 
@@ -199,12 +199,12 @@ if (r) { /* 成功: *r */ }
 else   { /* 失敗: r.error().ec, r.error().position */ }
 ```
 
-### `injamm::bc_template<T>(tmpl_str)`
+### `injamm::engine<T>(tmpl_str)`
 
 バイトコード VM。テンプレート文字列を実行時にコンパイルし、同じ型に対して複数回レンダリングする場合に効率的。
 
 ```cpp
-auto bc = injamm::bc_template<Data>("{{name}}");
+auto bc = injamm::engine<Data>("{{name}}");
 auto r1 = bc.render(data1);
 auto r2 = bc.render(data2);
 ```
