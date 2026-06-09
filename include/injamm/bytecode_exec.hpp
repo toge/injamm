@@ -2,6 +2,7 @@
 
 #include "bytecode.hpp"
 #include "escape.hpp"
+#include "filters.hpp"
 #include "serialize_value.hpp"
 #include "resolve.hpp"
 #include "../injamm.hpp"
@@ -764,145 +765,84 @@ public:
 
     /** @brief ASCII大文字変換 */
     L_filter_upper: {
-      for (auto& c : filtered_value_) {
-        if (c >= 'a' && c <= 'z') c -= 32;
-      }
+      apply_string_filter(filtered_value_, {.filter = string_filter::upper});
       ++pc;
       DISPATCH();
     }
 
     /** @brief ASCII小文字変換 */
     L_filter_lower: {
-      for (auto& c : filtered_value_) {
-        if (c >= 'A' && c <= 'Z') c += 32;
-      }
+      apply_string_filter(filtered_value_, {.filter = string_filter::lower});
       ++pc;
       DISPATCH();
     }
 
     /** @brief 先頭の文字を大文字にする */
     L_filter_capitalize: {
-      if (!filtered_value_.empty() && filtered_value_[0] >= 'a' && filtered_value_[0] <= 'z') {
-        filtered_value_[0] -= 32;
-      }
+      apply_string_filter(filtered_value_, {.filter = string_filter::capitalize});
       ++pc;
       DISPATCH();
     }
 
     /** @brief 単語の先頭を大文字にする */
     L_filter_title: {
-      bool new_word = true;
-      for (auto& c : filtered_value_) {
-        if (c == ' ' || c == '\t') {
-          new_word = true;
-        } else if (new_word && c >= 'a' && c <= 'z') {
-          c -= 32;
-          new_word = false;
-        } else {
-          new_word = false;
-        }
-      }
+      apply_string_filter(filtered_value_, {.filter = string_filter::title});
       ++pc;
       DISPATCH();
     }
 
     /** @brief 先頭末尾の空白除去 */
     L_filter_trim: {
-      auto start = filtered_value_.find_first_not_of(" \t");
-      if (start == std::string::npos) {
-        filtered_value_.clear();
-      } else {
-        auto end = filtered_value_.find_last_not_of(" \t");
-        filtered_value_ = filtered_value_.substr(start, end - start + 1);
-      }
+      apply_string_filter(filtered_value_, {.filter = string_filter::trim});
       ++pc;
       DISPATCH();
     }
 
     /** @brief 先頭の空白除去 */
     L_filter_ltrim: {
-      auto start = filtered_value_.find_first_not_of(" \t");
-      if (start == std::string::npos) {
-        filtered_value_.clear();
-      } else {
-        filtered_value_ = filtered_value_.substr(start);
-      }
+      apply_string_filter(filtered_value_, {.filter = string_filter::ltrim});
       ++pc;
       DISPATCH();
     }
 
     /** @brief 末尾の空白除去 */
     L_filter_rtrim: {
-      auto end = filtered_value_.find_last_not_of(" \t");
-      if (end == std::string::npos) {
-        filtered_value_.clear();
-      } else {
-        filtered_value_ = filtered_value_.substr(0, end + 1);
-      }
+      apply_string_filter(filtered_value_, {.filter = string_filter::rtrim});
       ++pc;
       DISPATCH();
     }
 
     /** @brief 左寄せ（引数: 幅） */
     L_filter_left: {
-      auto width = bc_.instructions[pc].operand;
-      if (filtered_value_.size() < static_cast<std::size_t>(width)) {
-        auto pad = width - filtered_value_.size();
-        filtered_value_ = std::string(pad, ' ') + filtered_value_;
-      }
+      apply_string_filter(filtered_value_, {.filter = string_filter::left, .arg1 = static_cast<int>(bc_.instructions[pc].operand)});
       ++pc;
       DISPATCH();
     }
 
     /** @brief 右寄せ（引数: 幅） */
     L_filter_right: {
-      auto width = bc_.instructions[pc].operand;
-      if (filtered_value_.size() < static_cast<std::size_t>(width)) {
-        auto pad = width - filtered_value_.size();
-        filtered_value_ = filtered_value_ + std::string(pad, ' ');
-      }
+      apply_string_filter(filtered_value_, {.filter = string_filter::right, .arg1 = static_cast<int>(bc_.instructions[pc].operand)});
       ++pc;
       DISPATCH();
     }
 
     /** @brief 中央寄せ（引数: 幅） */
     L_filter_center: {
-      auto width = bc_.instructions[pc].operand;
-      if (filtered_value_.size() < static_cast<std::size_t>(width)) {
-        auto pad = width - filtered_value_.size();
-        auto left_pad = pad / 2;
-        auto right_pad = pad - left_pad;
-        filtered_value_ = std::string(left_pad, ' ') + filtered_value_ + std::string(right_pad, ' ');
-      }
+      apply_string_filter(filtered_value_, {.filter = string_filter::center, .arg1 = static_cast<int>(bc_.instructions[pc].operand)});
       ++pc;
       DISPATCH();
     }
 
     /** @brief 文字列切り詰め（引数: 最大文字数） */
     L_filter_truncate: {
-      auto max_len = bc_.instructions[pc].operand;
-      if (filtered_value_.size() > static_cast<std::size_t>(max_len) && max_len >= 3) {
-        filtered_value_ = filtered_value_.substr(0, max_len - 3) + "...";
-      } else if (filtered_value_.size() > static_cast<std::size_t>(max_len)) {
-        filtered_value_ = filtered_value_.substr(0, max_len);
-      }
+      apply_string_filter(filtered_value_, {.filter = string_filter::truncate, .arg1 = static_cast<int>(bc_.instructions[pc].operand)});
       ++pc;
       DISPATCH();
     }
 
     /** @brief 部分文字列（引数1: 開始位置, 引数2: 文字数） */
     L_filter_substr: {
-      auto start = bc_.instructions[pc].operand;
-      auto length = bc_.instructions[pc].operand2;
-      if (start >= 0 && static_cast<std::size_t>(start) < filtered_value_.size()) {
-        if (length > 0) {
-          filtered_value_ = filtered_value_.substr(start, length);
-        } else {
-          filtered_value_ = filtered_value_.substr(start);
-        }
-      } else {
-        filtered_value_.clear();
-      }
+      apply_string_filter(filtered_value_, {.filter = string_filter::substr, .arg1 = static_cast<int>(bc_.instructions[pc].operand), .arg2 = static_cast<int>(bc_.instructions[pc].operand2)});
       ++pc;
       DISPATCH();
     }
@@ -923,248 +863,77 @@ public:
 
     /** @brief 整数絶対値変換 */
     L_filter_int_abs: {
-      auto data = filtered_value_.data();
-      auto size = filtered_value_.size();
-      if (filtered_value_.find('.') != std::string::npos || filtered_value_.find('e') != std::string::npos || filtered_value_.find('E') != std::string::npos) {
-        double val{};
-        if (auto [p, ec] = std::from_chars(data, data + size, val); ec == std::errc()) {
-          std::array<char, 64> buf;
-          if (auto [tp, tec] = std::to_chars(buf.data(), buf.data() + buf.size(), std::abs(val)); tec == std::errc()) {
-            filtered_value_.assign(buf.data(), tp - buf.data());
-          }
-        }
-      } else {
-        long long val{};
-        if (auto [p, ec] = std::from_chars(data, data + size, val); ec == std::errc()) {
-          filtered_value_ = std::to_string(std::abs(val));
-        }
-      }
+      apply_int_filter(filtered_value_, {.filter = int_filter::abs});
       ++pc;
       DISPATCH();
     }
 
     /** @brief 整数16進数変換 */
     L_filter_int_hex: {
-      long long val{};
-      if (auto [p, ec] = std::from_chars(filtered_value_.data(), filtered_value_.data() + filtered_value_.size(), val); ec == std::errc()) {
-        std::array<char, 32> buf;
-        auto [ptr, ec2] = std::to_chars(buf.data(), buf.data() + buf.size(), val, 16);
-        filtered_value_.assign(buf.data(), ptr - buf.data());
-      }
+      apply_int_filter(filtered_value_, {.filter = int_filter::hex});
       ++pc;
       DISPATCH();
     }
 
     /** @brief 整数8進数変換 */
     L_filter_int_oct: {
-      long long val{};
-      if (auto [p, ec] = std::from_chars(filtered_value_.data(), filtered_value_.data() + filtered_value_.size(), val); ec == std::errc()) {
-        std::array<char, 32> buf;
-        auto [ptr, ec2] = std::to_chars(buf.data(), buf.data() + buf.size(), val, 8);
-        filtered_value_.assign(buf.data(), ptr - buf.data());
-      }
+      apply_int_filter(filtered_value_, {.filter = int_filter::oct});
       ++pc;
       DISPATCH();
     }
 
     /** @brief 整数2進数変換 */
     L_filter_int_bin: {
-      long long val{};
-      if (auto [p, ec] = std::from_chars(filtered_value_.data(), filtered_value_.data() + filtered_value_.size(), val); ec == std::errc()) {
-        std::array<char, 32> buf;
-        auto [ptr, ec2] = std::to_chars(buf.data(), buf.data() + buf.size(), val, 2);
-        filtered_value_.assign(buf.data(), ptr - buf.data());
-      }
+      apply_int_filter(filtered_value_, {.filter = int_filter::bin});
       ++pc;
       DISPATCH();
     }
 
     /** @brief 整数符号逆転 */
     L_filter_int_neg: {
-      auto data = filtered_value_.data();
-      auto size = filtered_value_.size();
-      if (filtered_value_.find('.') != std::string::npos || filtered_value_.find('e') != std::string::npos || filtered_value_.find('E') != std::string::npos) {
-        double val{};
-        if (auto [p, ec] = std::from_chars(data, data + size, val); ec == std::errc()) {
-          std::array<char, 64> buf;
-          if (auto [tp, tec] = std::to_chars(buf.data(), buf.data() + buf.size(), -val); tec == std::errc()) {
-            filtered_value_.assign(buf.data(), tp - buf.data());
-          }
-        }
-      } else {
-        long long val{};
-        if (auto [p, ec] = std::from_chars(data, data + size, val); ec == std::errc()) {
-          filtered_value_ = std::to_string(-val);
-        }
-      }
+      apply_int_filter(filtered_value_, {.filter = int_filter::neg});
       ++pc;
       DISPATCH();
     }
 
     /** @brief 整数余り（引数: 除数） */
     L_filter_int_mod: {
-      long long val{};
-      if (auto [p, ec] = std::from_chars(filtered_value_.data(), filtered_value_.data() + filtered_value_.size(), val); ec == std::errc()) {
-        auto divisor = bc_.instructions[pc].operand;
-        if (divisor != 0) {
-          filtered_value_ = std::to_string(val % divisor);
-        }
-      }
+      apply_int_filter(filtered_value_, {.filter = int_filter::mod, .arg = static_cast<int>(bc_.instructions[pc].operand)});
       ++pc;
       DISPATCH();
     }
 
     /** @brief 整数3桁カンマ区切り */
     L_filter_int_numify: {
-      auto data = filtered_value_.data();
-      auto size = filtered_value_.size();
-      if (filtered_value_.find('.') != std::string::npos || filtered_value_.find('e') != std::string::npos || filtered_value_.find('E') != std::string::npos) {
-        double val{};
-        if (auto [p, ec] = std::from_chars(data, data + size, val); ec == std::errc()) {
-          bool negative = val < 0;
-          if (negative) val = -val;
-          auto int_part = static_cast<long long>(val);
-          std::string num = std::to_string(int_part);
-          std::string result;
-          int count = 0;
-          for (int i = num.size() - 1; i >= 0; --i) {
-            result = num[i] + result;
-            count++;
-            if (count % 3 == 0 && i > 0) {
-              result = ',' + result;
-            }
-          }
-          auto frac = val - static_cast<double>(int_part);
-          if (frac != 0.0) {
-            auto dot_pos = filtered_value_.find('.');
-            std::size_t prec = 6;
-            if (dot_pos != std::string::npos) {
-              prec = filtered_value_.size() - dot_pos - 1;
-              if (prec > 6) prec = 6;
-              if (prec == 0) prec = 1;
-            }
-            std::array<char, 64> buf;
-            auto [ptr, ec2] = std::to_chars(buf.data(), buf.data() + buf.size(), frac, std::chars_format::fixed, static_cast<int>(prec));
-            if (ec2 == std::errc()) {
-              auto frac_str = std::string_view(buf.data(), ptr - buf.data());
-              if (frac_str.size() > 2) {
-                frac_str = frac_str.substr(1);
-              }
-              result += frac_str;
-            }
-          }
-          filtered_value_ = negative ? "-" + result : result;
-        }
-      } else {
-        long long val{};
-        if (auto [p, ec] = std::from_chars(data, data + size, val); ec == std::errc()) {
-          bool negative = val < 0;
-          if (negative) val = -val;
-          std::string num = std::to_string(val);
-          std::string result;
-          int count = 0;
-          for (int i = num.size() - 1; i >= 0; --i) {
-            result = num[i] + result;
-            count++;
-            if (count % 3 == 0 && i > 0) {
-              result = ',' + result;
-            }
-          }
-          filtered_value_ = negative ? "-" + result : result;
-        }
-      }
+      apply_int_filter(filtered_value_, {.filter = int_filter::numify});
       ++pc;
       DISPATCH();
     }
 
     /** @brief 整数0埋め（引数: 最小桁数） */
     L_filter_int_zerofill: {
-      long long val{};
-      if (auto [p, ec] = std::from_chars(filtered_value_.data(), filtered_value_.data() + filtered_value_.size(), val); ec == std::errc()) {
-        auto width = bc_.instructions[pc].operand;
-        auto abs_val = val < 0 ? -val : val;
-        auto digits = static_cast<int>(std::to_string(abs_val).size());
-        auto total = val < 0 ? digits + 1 : digits;
-        if (total < width) {
-          auto padding = width - total;
-          if (val < 0) {
-            filtered_value_ = "-" + std::string(padding, '0') + filtered_value_.substr(1);
-          } else {
-            filtered_value_ = std::string(padding, '0') + filtered_value_;
-          }
-        }
-      }
+      apply_int_filter(filtered_value_, {.filter = int_filter::zerofill, .arg = static_cast<int>(bc_.instructions[pc].operand)});
       ++pc;
       DISPATCH();
     }
 
     /** @brief 実数小数点以下桁数（引数: 桁数） */
     L_filter_float_precision: {
-      double val{};
-      if (auto [p, ec] = std::from_chars(filtered_value_.data(), filtered_value_.data() + filtered_value_.size(), val); ec == std::errc()) {
-        std::array<char, 64> buf;
-        auto [ptr, ec2] = std::to_chars(buf.data(), buf.data() + buf.size(), val, std::chars_format::fixed, static_cast<int>(bc_.instructions[pc].operand));
-        if (ec2 == std::errc()) {
-          filtered_value_.assign(buf.data(), ptr - buf.data());
-        }
-      }
+      apply_float_filter(filtered_value_, {.filter = float_filter::precision, .arg = static_cast<int>(bc_.instructions[pc].operand)});
       ++pc;
       DISPATCH();
     }
 
     /** @brief 負数判定: "true"/"false" を出力 */
     L_filter_int_is_neg: {
-      auto data = filtered_value_.data();
-      auto size = filtered_value_.size();
-      if (filtered_value_.find('.') != std::string::npos || filtered_value_.find('e') != std::string::npos || filtered_value_.find('E') != std::string::npos) {
-        double val{};
-        if (auto [p, ec] = std::from_chars(data, data + size, val); ec == std::errc()) {
-          filtered_value_ = val < 0 ? "true" : "false";
-        } else {
-          long long val2{};
-          if (auto [p2, ec2] = std::from_chars(data, data + size, val2); ec2 == std::errc()) {
-            filtered_value_ = val2 < 0 ? "true" : "false";
-          } else {
-            filtered_value_ = "false";
-          }
-        }
-      } else {
-        long long val{};
-        if (auto [p, ec] = std::from_chars(data, data + size, val); ec == std::errc()) {
-          filtered_value_ = val < 0 ? "true" : "false";
-        } else {
-          filtered_value_ = "false";
-        }
-      }
+      apply_int_filter(filtered_value_, {.filter = int_filter::is_neg});
       ++pc;
       DISPATCH();
     }
 
     /** @brief 等価判定: 値と引数が等しければ "true"、そうでなければ "false" を出力 */
     L_filter_int_eq: {
-      auto target = bc_.instructions[pc].operand;
-      auto data = filtered_value_.data();
-      auto size = filtered_value_.size();
-      if (filtered_value_.find('.') != std::string::npos || filtered_value_.find('e') != std::string::npos || filtered_value_.find('E') != std::string::npos) {
-        double val{};
-        if (auto [p, ec] = std::from_chars(data, data + size, val); ec == std::errc()) {
-          filtered_value_ = (static_cast<long long>(val) == target) ? "true" : "false";
-        } else {
-          long long val2{};
-          if (auto [p2, ec2] = std::from_chars(data, data + size, val2); ec2 == std::errc()) {
-            filtered_value_ = (val2 == target) ? "true" : "false";
-          } else {
-            filtered_value_ = "false";
-          }
-        }
-      } else {
-        long long val{};
-        if (auto [p, ec] = std::from_chars(data, data + size, val); ec == std::errc()) {
-          filtered_value_ = (val == target) ? "true" : "false";
-        } else {
-          filtered_value_ = "false";
-        }
-      }
+      apply_int_filter(filtered_value_, {.filter = int_filter::eq, .arg = static_cast<int>(bc_.instructions[pc].operand)});
       ++pc;
       DISPATCH();
     }
@@ -1537,145 +1306,84 @@ public:
 
         /** @brief ASCII大文字変換 */
         case bc_opcode::filter_upper: {
-          for (auto& c : filtered_value_) {
-            if (c >= 'a' && c <= 'z') c -= 32;
-          }
+          apply_string_filter(filtered_value_, {.filter = string_filter::upper});
           ++pc;
           break;
         }
 
         /** @brief ASCII小文字変換 */
         case bc_opcode::filter_lower: {
-          for (auto& c : filtered_value_) {
-            if (c >= 'A' && c <= 'Z') c += 32;
-          }
+          apply_string_filter(filtered_value_, {.filter = string_filter::lower});
           ++pc;
           break;
         }
 
         /** @brief 先頭の文字を大文字にする */
         case bc_opcode::filter_capitalize: {
-          if (!filtered_value_.empty() && filtered_value_[0] >= 'a' && filtered_value_[0] <= 'z') {
-            filtered_value_[0] -= 32;
-          }
+          apply_string_filter(filtered_value_, {.filter = string_filter::capitalize});
           ++pc;
           break;
         }
 
         /** @brief 単語の先頭を大文字にする */
         case bc_opcode::filter_title: {
-          bool new_word = true;
-          for (auto& c : filtered_value_) {
-            if (c == ' ' || c == '\t') {
-              new_word = true;
-            } else if (new_word && c >= 'a' && c <= 'z') {
-              c -= 32;
-              new_word = false;
-            } else {
-              new_word = false;
-            }
-          }
+          apply_string_filter(filtered_value_, {.filter = string_filter::title});
           ++pc;
           break;
         }
 
         /** @brief 先頭末尾の空白除去 */
         case bc_opcode::filter_trim: {
-          auto start = filtered_value_.find_first_not_of(" \t");
-          if (start == std::string::npos) {
-            filtered_value_.clear();
-          } else {
-            auto end = filtered_value_.find_last_not_of(" \t");
-            filtered_value_ = filtered_value_.substr(start, end - start + 1);
-          }
+          apply_string_filter(filtered_value_, {.filter = string_filter::trim});
           ++pc;
           break;
         }
 
         /** @brief 先頭の空白除去 */
         case bc_opcode::filter_ltrim: {
-          auto start = filtered_value_.find_first_not_of(" \t");
-          if (start == std::string::npos) {
-            filtered_value_.clear();
-          } else {
-            filtered_value_ = filtered_value_.substr(start);
-          }
+          apply_string_filter(filtered_value_, {.filter = string_filter::ltrim});
           ++pc;
           break;
         }
 
         /** @brief 末尾の空白除去 */
         case bc_opcode::filter_rtrim: {
-          auto end = filtered_value_.find_last_not_of(" \t");
-          if (end == std::string::npos) {
-            filtered_value_.clear();
-          } else {
-            filtered_value_ = filtered_value_.substr(0, end + 1);
-          }
+          apply_string_filter(filtered_value_, {.filter = string_filter::rtrim});
           ++pc;
           break;
         }
 
         /** @brief 左寄せ（引数: 幅） */
         case bc_opcode::filter_left: {
-          auto width = instr.operand;
-          if (filtered_value_.size() < static_cast<std::size_t>(width)) {
-            auto pad = width - filtered_value_.size();
-            filtered_value_ = std::string(pad, ' ') + filtered_value_;
-          }
+          apply_string_filter(filtered_value_, {.filter = string_filter::left, .arg1 = static_cast<int>(instr.operand)});
           ++pc;
           break;
         }
 
         /** @brief 右寄せ（引数: 幅） */
         case bc_opcode::filter_right: {
-          auto width = instr.operand;
-          if (filtered_value_.size() < static_cast<std::size_t>(width)) {
-            auto pad = width - filtered_value_.size();
-            filtered_value_ = filtered_value_ + std::string(pad, ' ');
-          }
+          apply_string_filter(filtered_value_, {.filter = string_filter::right, .arg1 = static_cast<int>(instr.operand)});
           ++pc;
           break;
         }
 
         /** @brief 中央寄せ（引数: 幅） */
         case bc_opcode::filter_center: {
-          auto width = instr.operand;
-          if (filtered_value_.size() < static_cast<std::size_t>(width)) {
-            auto pad = width - filtered_value_.size();
-            auto left_pad = pad / 2;
-            auto right_pad = pad - left_pad;
-            filtered_value_ = std::string(left_pad, ' ') + filtered_value_ + std::string(right_pad, ' ');
-          }
+          apply_string_filter(filtered_value_, {.filter = string_filter::center, .arg1 = static_cast<int>(instr.operand)});
           ++pc;
           break;
         }
 
         /** @brief 文字列切り詰め（引数: 最大文字数） */
         case bc_opcode::filter_truncate: {
-          auto max_len = instr.operand;
-          if (filtered_value_.size() > static_cast<std::size_t>(max_len) && max_len >= 3) {
-            filtered_value_ = filtered_value_.substr(0, max_len - 3) + "...";
-          } else if (filtered_value_.size() > static_cast<std::size_t>(max_len)) {
-            filtered_value_ = filtered_value_.substr(0, max_len);
-          }
+          apply_string_filter(filtered_value_, {.filter = string_filter::truncate, .arg1 = static_cast<int>(instr.operand)});
           ++pc;
           break;
         }
 
         /** @brief 部分文字列（引数1: 開始位置, 引数2: 文字数） */
         case bc_opcode::filter_substr: {
-          auto start = instr.operand;
-          auto length = instr.operand2;
-          if (start >= 0 && static_cast<std::size_t>(start) < filtered_value_.size()) {
-            if (length > 0) {
-              filtered_value_ = filtered_value_.substr(start, length);
-            } else {
-              filtered_value_ = filtered_value_.substr(start);
-            }
-          } else {
-            filtered_value_.clear();
-          }
+          apply_string_filter(filtered_value_, {.filter = string_filter::substr, .arg1 = static_cast<int>(instr.operand), .arg2 = static_cast<int>(instr.operand2)});
           ++pc;
           break;
         }
@@ -1696,254 +1404,77 @@ public:
 
         /** @brief 整数絶対値変換 */
         case bc_opcode::filter_int_abs: {
-          auto data = filtered_value_.data();
-          auto size = filtered_value_.size();
-          if (filtered_value_.find('.') != std::string::npos || filtered_value_.find('e') != std::string::npos || filtered_value_.find('E') != std::string::npos) {
-            double val{};
-            if (auto [p, ec] = std::from_chars(data, data + size, val); ec == std::errc()) {
-              std::array<char, 64> buf;
-              if (auto [tp, tec] = std::to_chars(buf.data(), buf.data() + buf.size(), std::abs(val)); tec == std::errc()) {
-                filtered_value_.assign(buf.data(), tp - buf.data());
-              }
-            }
-          } else {
-            long long val{};
-            if (auto [p, ec] = std::from_chars(data, data + size, val); ec == std::errc()) {
-              filtered_value_ = std::to_string(std::abs(val));
-            }
-          }
+          apply_int_filter(filtered_value_, {.filter = int_filter::abs});
           ++pc;
           break;
         }
 
         /** @brief 整数16進数変換 */
         case bc_opcode::filter_int_hex: {
-          long long val{};
-          if (auto [p, ec] = std::from_chars(filtered_value_.data(), filtered_value_.data() + filtered_value_.size(), val); ec == std::errc()) {
-            std::array<char, 32> buf;
-            auto [ptr, ec2] = std::to_chars(buf.data(), buf.data() + buf.size(), val, 16);
-            filtered_value_.assign(buf.data(), ptr - buf.data());
-          }
+          apply_int_filter(filtered_value_, {.filter = int_filter::hex});
           ++pc;
           break;
         }
 
         /** @brief 整数8進数変換 */
         case bc_opcode::filter_int_oct: {
-          long long val{};
-          if (auto [p, ec] = std::from_chars(filtered_value_.data(), filtered_value_.data() + filtered_value_.size(), val); ec == std::errc()) {
-            std::array<char, 32> buf;
-            auto [ptr, ec2] = std::to_chars(buf.data(), buf.data() + buf.size(), val, 8);
-            filtered_value_.assign(buf.data(), ptr - buf.data());
-          }
+          apply_int_filter(filtered_value_, {.filter = int_filter::oct});
           ++pc;
           break;
         }
 
         /** @brief 整数2進数変換 */
         case bc_opcode::filter_int_bin: {
-          long long val{};
-          if (auto [p, ec] = std::from_chars(filtered_value_.data(), filtered_value_.data() + filtered_value_.size(), val); ec == std::errc()) {
-            filtered_value_ = "";
-            if (val == 0) {
-              filtered_value_ = "0";
-            } else {
-              while (val > 0) {
-                filtered_value_ = (val % 2 == 0 ? "0" : "1") + filtered_value_;
-                val /= 2;
-              }
-            }
-          }
+          apply_int_filter(filtered_value_, {.filter = int_filter::bin});
           ++pc;
           break;
         }
 
         /** @brief 整数符号逆転 */
         case bc_opcode::filter_int_neg: {
-          auto data = filtered_value_.data();
-          auto size = filtered_value_.size();
-          if (filtered_value_.find('.') != std::string::npos || filtered_value_.find('e') != std::string::npos || filtered_value_.find('E') != std::string::npos) {
-            double val{};
-            if (auto [p, ec] = std::from_chars(data, data + size, val); ec == std::errc()) {
-              std::array<char, 64> buf;
-              if (auto [tp, tec] = std::to_chars(buf.data(), buf.data() + buf.size(), -val); tec == std::errc()) {
-                filtered_value_.assign(buf.data(), tp - buf.data());
-              }
-            }
-          } else {
-            long long val{};
-            if (auto [p, ec] = std::from_chars(data, data + size, val); ec == std::errc()) {
-              filtered_value_ = std::to_string(-val);
-            }
-          }
+          apply_int_filter(filtered_value_, {.filter = int_filter::neg});
           ++pc;
           break;
         }
 
         /** @brief 整数余り（引数: 除数） */
         case bc_opcode::filter_int_mod: {
-          long long val{};
-          if (auto [p, ec] = std::from_chars(filtered_value_.data(), filtered_value_.data() + filtered_value_.size(), val); ec == std::errc()) {
-            auto divisor = instr.operand;
-            if (divisor != 0) {
-              filtered_value_ = std::to_string(val % divisor);
-            }
-          }
+          apply_int_filter(filtered_value_, {.filter = int_filter::mod, .arg = static_cast<int>(instr.operand)});
           ++pc;
           break;
         }
 
         /** @brief 整数3桁カンマ区切り */
         case bc_opcode::filter_int_numify: {
-          auto data = filtered_value_.data();
-          auto size = filtered_value_.size();
-          if (filtered_value_.find('.') != std::string::npos || filtered_value_.find('e') != std::string::npos || filtered_value_.find('E') != std::string::npos) {
-            double val{};
-            if (auto [p, ec] = std::from_chars(data, data + size, val); ec == std::errc()) {
-              bool negative = val < 0;
-              if (negative) val = -val;
-              auto int_part = static_cast<long long>(val);
-              std::string num = std::to_string(int_part);
-              std::string result;
-              int count = 0;
-              for (int i = num.size() - 1; i >= 0; --i) {
-                result = num[i] + result;
-                count++;
-                if (count % 3 == 0 && i > 0) {
-                  result = ',' + result;
-                }
-              }
-              auto frac = val - static_cast<double>(int_part);
-              if (frac != 0.0) {
-                auto dot_pos = filtered_value_.find('.');
-                std::size_t prec = 6;
-                if (dot_pos != std::string::npos) {
-                  prec = filtered_value_.size() - dot_pos - 1;
-                  if (prec > 6) prec = 6;
-                  if (prec == 0) prec = 1;
-                }
-                std::array<char, 64> buf;
-                auto [ptr, ec2] = std::to_chars(buf.data(), buf.data() + buf.size(), frac, std::chars_format::fixed, static_cast<int>(prec));
-                if (ec2 == std::errc()) {
-                  auto frac_str = std::string_view(buf.data(), ptr - buf.data());
-                  if (frac_str.size() > 2) {
-                    frac_str = frac_str.substr(1);
-                  }
-                  result += frac_str;
-                }
-              }
-              filtered_value_ = negative ? "-" + result : result;
-            }
-          } else {
-            long long val{};
-            if (auto [p, ec] = std::from_chars(data, data + size, val); ec == std::errc()) {
-              bool negative = val < 0;
-              if (negative) val = -val;
-              std::string num = std::to_string(val);
-              std::string result;
-              int count = 0;
-              for (int i = num.size() - 1; i >= 0; --i) {
-                result = num[i] + result;
-                count++;
-                if (count % 3 == 0 && i > 0) {
-                  result = ',' + result;
-                }
-              }
-              filtered_value_ = negative ? "-" + result : result;
-            }
-          }
+          apply_int_filter(filtered_value_, {.filter = int_filter::numify});
           ++pc;
           break;
         }
 
         /** @brief 実数小数点以下桁数（引数: 桁数） */
         case bc_opcode::filter_float_precision: {
-          double val{};
-          if (auto [p, ec] = std::from_chars(filtered_value_.data(), filtered_value_.data() + filtered_value_.size(), val); ec == std::errc()) {
-            std::array<char, 64> buf;
-            auto [ptr, ec2] = std::to_chars(buf.data(), buf.data() + buf.size(), val, std::chars_format::fixed, static_cast<int>(instr.operand));
-            if (ec2 == std::errc()) {
-              filtered_value_.assign(buf.data(), ptr - buf.data());
-            }
-          }
+          apply_float_filter(filtered_value_, {.filter = float_filter::precision, .arg = static_cast<int>(instr.operand)});
           ++pc;
           break;
         }
 
         /** @brief 負数判定: "true"/"false" を出力 */
         case bc_opcode::filter_int_is_neg: {
-          auto data = filtered_value_.data();
-          auto size = filtered_value_.size();
-          if (filtered_value_.find('.') != std::string::npos || filtered_value_.find('e') != std::string::npos || filtered_value_.find('E') != std::string::npos) {
-            double val{};
-            if (auto [p, ec] = std::from_chars(data, data + size, val); ec == std::errc()) {
-              filtered_value_ = val < 0 ? "true" : "false";
-            } else {
-              long long val2{};
-              if (auto [p2, ec2] = std::from_chars(data, data + size, val2); ec2 == std::errc()) {
-                filtered_value_ = val2 < 0 ? "true" : "false";
-              } else {
-                filtered_value_ = "false";
-              }
-            }
-          } else {
-            long long val{};
-            if (auto [p, ec] = std::from_chars(data, data + size, val); ec == std::errc()) {
-              filtered_value_ = val < 0 ? "true" : "false";
-            } else {
-              filtered_value_ = "false";
-            }
-          }
+          apply_int_filter(filtered_value_, {.filter = int_filter::is_neg});
           ++pc;
           break;
         }
 
         /** @brief 等価判定: 値と引数が等しければ "true" / "false" */
         case bc_opcode::filter_int_eq: {
-          auto target = instr.operand;
-          auto data = filtered_value_.data();
-          auto size = filtered_value_.size();
-          if (filtered_value_.find('.') != std::string::npos || filtered_value_.find('e') != std::string::npos || filtered_value_.find('E') != std::string::npos) {
-            double val{};
-            if (auto [p, ec] = std::from_chars(data, data + size, val); ec == std::errc()) {
-              filtered_value_ = (static_cast<long long>(val) == target) ? "true" : "false";
-            } else {
-              long long val2{};
-              if (auto [p2, ec2] = std::from_chars(data, data + size, val2); ec2 == std::errc()) {
-                filtered_value_ = (val2 == target) ? "true" : "false";
-              } else {
-                filtered_value_ = "false";
-              }
-            }
-          } else {
-            long long val{};
-            if (auto [p, ec] = std::from_chars(data, data + size, val); ec == std::errc()) {
-              filtered_value_ = (val == target) ? "true" : "false";
-            } else {
-              filtered_value_ = "false";
-            }
-          }
+          apply_int_filter(filtered_value_, {.filter = int_filter::eq, .arg = static_cast<int>(instr.operand)});
           ++pc;
           break;
         }
 
         /** @brief 整数0埋め（引数: 最小桁数） */
         case bc_opcode::filter_int_zerofill: {
-          long long val{};
-          if (auto [p, ec] = std::from_chars(filtered_value_.data(), filtered_value_.data() + filtered_value_.size(), val); ec == std::errc()) {
-            auto width = instr.operand;
-            auto abs_val = val < 0 ? -val : val;
-            auto digits = static_cast<int>(std::to_string(abs_val).size());
-            auto total = val < 0 ? digits + 1 : digits;
-            if (total < width) {
-              auto padding = width - total;
-              if (val < 0) {
-                filtered_value_ = "-" + std::string(padding, '0') + filtered_value_.substr(1);
-              } else {
-                filtered_value_ = std::string(padding, '0') + filtered_value_;
-              }
-            }
-          }
+          apply_int_filter(filtered_value_, {.filter = int_filter::zerofill, .arg = static_cast<int>(instr.operand)});
           ++pc;
           break;
         }
