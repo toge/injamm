@@ -474,6 +474,24 @@ constexpr void apply_int_filter(std::string& str, int_filter_entry entry) {
       }
       break;
     }
+    case int_filter::zerofill: {
+      long long val{};
+      if (auto [p, ec] = std::from_chars(str.data(), str.data() + str.size(), val); ec == std::errc()) {
+        auto width = entry.arg;
+        auto abs_val = val < 0 ? -val : val;
+        auto digits = static_cast<int>(std::to_string(abs_val).size());
+        auto total = val < 0 ? digits + 1 : digits;
+        if (total < width) {
+          auto padding = width - total;
+          if (val < 0) {
+            str = "-" + std::string(padding, '0') + str.substr(1);
+          } else {
+            str = std::string(padding, '0') + str;
+          }
+        }
+      }
+      break;
+    }
   }
 }
 

@@ -868,6 +868,46 @@ TEST_CASE("int_filter: numify negative", "[int_filter]") {
   REQUIRE(*result == "-9,876");
 }
 
+TEST_CASE("int_filter: zerofill", "[int_filter]") {
+  BcIfData data{"test", 42};
+  auto bc = injamm::engine<BcIfData>("{{age | zerofill(5)}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "00042");
+}
+
+TEST_CASE("int_filter: zerofill exact width", "[int_filter]") {
+  BcIfData data{"test", 123};
+  auto bc = injamm::engine<BcIfData>("{{age | zerofill(3)}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "123");
+}
+
+TEST_CASE("int_filter: zerofill already wider", "[int_filter]") {
+  BcIfData data{"test", 12345};
+  auto bc = injamm::engine<BcIfData>("{{age | zerofill(3)}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "12345");
+}
+
+TEST_CASE("int_filter: zerofill negative", "[int_filter]") {
+  BcIfData data{"test", -42};
+  auto bc = injamm::engine<BcIfData>("{{age | zerofill(5)}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "-0042");
+}
+
+TEST_CASE("int_filter: zerofill zero", "[int_filter]") {
+  BcIfData data{"test", 0};
+  auto bc = injamm::engine<BcIfData>("{{age | zerofill(4)}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "0000");
+}
+
 // ---- if フィルタテスト ----
 
 TEST_CASE("bc_if_filter_is_neg_true", "[if_filter]") {

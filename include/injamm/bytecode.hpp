@@ -60,6 +60,7 @@ enum class bc_opcode : std::uint8_t {
   filter_int_numify,        /**< 整数3桁カンマ区切り */
   filter_int_is_neg,           /**< 負数判定: "true"/"false" を出力 */
   filter_int_eq,               /**< 等価判定: 引数と比較し "true"/"false" を出力 */
+  filter_int_zerofill,         /**< 整数0埋め（引数: 最小桁数） */
   filter_float_precision,     /**< 実数小数点以下桁数（引数: 桁数） */
   emit_if_filtered,           /**< フィルタ適用済み値での if 分岐 */
   emit_break,         /**< ループ脱出 */
@@ -115,6 +116,7 @@ enum class bc_opcode : std::uint8_t {
   case bc_opcode::filter_int_numify:       return "filter_int_numify";
   case bc_opcode::filter_int_is_neg:       return "filter_int_is_neg";
   case bc_opcode::filter_int_eq:           return "filter_int_eq";
+  case bc_opcode::filter_int_zerofill:     return "filter_int_zerofill";
   case bc_opcode::filter_float_precision:  return "filter_float_precision";
   case bc_opcode::emit_if_filtered:        return "emit_if_filtered";
   case bc_opcode::emit_break:              return "emit_break";
@@ -184,7 +186,8 @@ enum class int_filter : std::uint8_t {
   mod,     /**< 余り（引数: 除数） */
   numify,  /**< 3桁ごとにカンマ区切り */
   is_neg,  /**< 負数判定（真偽値出力: "true"/"false"） */
-  eq       /**< 等価判定（引数: 比較値、真偽値出力: "true"/"false"） */
+  eq,      /**< 等価判定（引数: 比較値、真偽値出力: "true"/"false"） */
+  zerofill /**< 0埋め（引数: 最小桁数） */
 };
 
 [[nodiscard]] inline std::string_view int_filter_name(int_filter f) noexcept {
@@ -198,6 +201,7 @@ enum class int_filter : std::uint8_t {
   case int_filter::numify:  return "numify";
   case int_filter::is_neg:  return "is_neg";
   case int_filter::eq:      return "eq";
+  case int_filter::zerofill: return "zerofill";
   }
   return "unknown";
 }
@@ -471,7 +475,8 @@ struct bytecode {
         break;
       }
       case bc_opcode::filter_float_precision:
-      case bc_opcode::filter_int_eq: {
+      case bc_opcode::filter_int_eq:
+      case bc_opcode::filter_int_zerofill: {
         char buf[16];
         auto [p, ec] = std::to_chars(buf, buf + sizeof(buf), instr.operand);
         append(std::string_view{buf, static_cast<std::size_t>(p - buf)});

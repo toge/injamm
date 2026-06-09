@@ -601,6 +601,34 @@ TEST_CASE("ct_int_filter_numify", "[injamm][ct]") {
   REQUIRE(*r == "1,234,567");
 }
 
+TEST_CASE("ct_int_filter_zerofill", "[injamm][ct]") {
+  auto constexpr tmpl = injamm::fixed_string("{{age | zerofill(5)}}");
+  auto r = injamm::render<tmpl>(CtIfData{"t", 42});
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "00042");
+}
+
+TEST_CASE("ct_int_filter_zerofill_exact", "[injamm][ct]") {
+  auto constexpr tmpl = injamm::fixed_string("{{age | zerofill(3)}}");
+  auto r = injamm::render<tmpl>(CtIfData{"t", 123});
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "123");
+}
+
+TEST_CASE("ct_int_filter_zerofill_negative", "[injamm][ct]") {
+  auto constexpr tmpl = injamm::fixed_string("{{age | zerofill(5)}}");
+  auto r = injamm::render<tmpl>(CtIfData{"t", -42});
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "-0042");
+}
+
+TEST_CASE("ct_int_filter_zerofill_zero", "[injamm][ct]") {
+  auto constexpr tmpl = injamm::fixed_string("{{age | zerofill(4)}}");
+  auto r = injamm::render<tmpl>(CtIfData{"t", 0});
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "0000");
+}
+
 // ---- 実数フィルタ ----
 
 TEST_CASE("ct_float_filter_precision", "[injamm][ct]") {

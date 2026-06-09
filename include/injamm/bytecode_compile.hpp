@@ -110,6 +110,9 @@ class bc_compiler {
           case int_filter::neg:    bc_.add_instruction(bc_opcode::filter_int_neg); break;
           case int_filter::mod:    bc_.add_instruction(bc_opcode::filter_int_mod, f.arg); break;
           case int_filter::numify: bc_.add_instruction(bc_opcode::filter_int_numify); break;
+          case int_filter::is_neg: bc_.add_instruction(bc_opcode::filter_int_is_neg); break;
+          case int_filter::eq:     bc_.add_instruction(bc_opcode::filter_int_eq, f.arg); break;
+          case int_filter::zerofill: bc_.add_instruction(bc_opcode::filter_int_zerofill, f.arg); break;
         }
       }
       for (auto f : float_filters) {
@@ -271,6 +274,7 @@ class bc_compiler {
           case int_filter::numify: bc_.add_instruction(bc_opcode::filter_int_numify); break;
           case int_filter::is_neg: bc_.add_instruction(bc_opcode::filter_int_is_neg); break;
           case int_filter::eq:     bc_.add_instruction(bc_opcode::filter_int_eq, f.arg); break;
+          case int_filter::zerofill: bc_.add_instruction(bc_opcode::filter_int_zerofill, f.arg); break;
         }
       }
       for (auto f : float_filters) {

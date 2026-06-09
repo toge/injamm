@@ -341,11 +341,12 @@ public:
       &&L_filter_int_numify, // 43
       &&L_filter_int_is_neg, // 44
       &&L_filter_int_eq,     // 45
-      &&L_filter_float_precision, // 46
-      &&L_emit_if_filtered,  // 47
-      &&L_emit_break,        // 48
-      &&L_emit_continue,     // 49
-      &&L_halt,              // 50
+      &&L_filter_int_zerofill, // 46
+      &&L_filter_float_precision, // 47
+      &&L_emit_if_filtered,  // 48
+      &&L_emit_break,        // 49
+      &&L_emit_continue,     // 50
+      &&L_halt,              // 51
     };
 
 /** @brief 現在の命令のオペコードに対応するラベルにジャンプする */
@@ -1059,6 +1060,27 @@ public:
             }
           }
           filtered_value_ = negative ? "-" + result : result;
+        }
+      }
+      ++pc;
+      DISPATCH();
+    }
+
+    /** @brief 整数0埋め（引数: 最小桁数） */
+    L_filter_int_zerofill: {
+      long long val{};
+      if (auto [p, ec] = std::from_chars(filtered_value_.data(), filtered_value_.data() + filtered_value_.size(), val); ec == std::errc()) {
+        auto width = bc_.instructions[pc].operand;
+        auto abs_val = val < 0 ? -val : val;
+        auto digits = static_cast<int>(std::to_string(abs_val).size());
+        auto total = val < 0 ? digits + 1 : digits;
+        if (total < width) {
+          auto padding = width - total;
+          if (val < 0) {
+            filtered_value_ = "-" + std::string(padding, '0') + filtered_value_.substr(1);
+          } else {
+            filtered_value_ = std::string(padding, '0') + filtered_value_;
+          }
         }
       }
       ++pc;
@@ -1877,6 +1899,27 @@ public:
               filtered_value_ = (val == target) ? "true" : "false";
             } else {
               filtered_value_ = "false";
+            }
+          }
+          ++pc;
+          break;
+        }
+
+        /** @brief 整数0埋め（引数: 最小桁数） */
+        case bc_opcode::filter_int_zerofill: {
+          long long val{};
+          if (auto [p, ec] = std::from_chars(filtered_value_.data(), filtered_value_.data() + filtered_value_.size(), val); ec == std::errc()) {
+            auto width = instr.operand;
+            auto abs_val = val < 0 ? -val : val;
+            auto digits = static_cast<int>(std::to_string(abs_val).size());
+            auto total = val < 0 ? digits + 1 : digits;
+            if (total < width) {
+              auto padding = width - total;
+              if (val < 0) {
+                filtered_value_ = "-" + std::string(padding, '0') + filtered_value_.substr(1);
+              } else {
+                filtered_value_ = std::string(padding, '0') + filtered_value_;
+              }
             }
           }
           ++pc;
