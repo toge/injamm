@@ -2,7 +2,7 @@
 
 ## これは何か
 
-ヘッダオンリー C++26 テンプレートエンジン（Mustache/inja サブセット）。2つのレンダリング API を提供:
+ヘッダオンリー C++23 テンプレートエンジン（Mustache/inja サブセット）。2つのレンダリング API を提供:
 - **Bytecode VM** (`engine<T>`) — 実行時コンパイル、全機能（セクション、if/else、`@index`/`@first`/`@last`、ネストパス）
 - **NTTP コンパイル時** (`render<fixed_string>`) — `{{var}}` のみ、セクション/if 非対応
 
@@ -19,12 +19,12 @@ CMake オプション: `INJAMM_ENABLE_THREADED_DISPATCH`（デフォルト ON、
 
 ## 重要な規約
 
-- **C++26 必須**、GCC 16+ 推奨。
+- **C++23 必須**（`std::expected`）、GCC 14+ 推奨。
 - **すべてのコンテキスト型に `glz::meta<T>` 特殊化**が必要 — 例外なし。
 - clang-format: `LLVM` スタイル、`IndentWidth: 2`、`ColumnLimit: 200`、`PointerAlignment: Left`。
 - clang-tidy 命名: 型/変数は `lower_case`、関数は `camelBack`、定数は `upper_case`。
 - 後置戻り値型禁止（`modernize-use-trailing-return-type` 無効）。
-- `.clangd` は `-std=c++23`（CMake の `cxx_std_26` と乖離 — 標準変更時は両方を更新）。
+- `.clangd` と CMake はともに `c++23` / `cxx_std_23` で統一。
 - `build.sh` は `~/vm/vcpkg` の vcpkg を使用、スタティックトリプレット `x64-linux-static`。
 
 ## API の注意点

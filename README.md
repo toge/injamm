@@ -14,7 +14,7 @@ Mustache/inja サブセットの高速テンプレートエンジン。glaze で
 
 ## 要件
 
-- C++26 対応コンパイラ（GCC 16+ 推奨）
+- C++23 対応コンパイラ（GCC 14+ 推奨）
 - [glaze](https://github.com/stephenberry/glaze)
 
 ## ビルド・インストール

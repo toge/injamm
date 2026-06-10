@@ -1,7 +1,7 @@
 cmake_minimum_required(VERSION 3.30)
 project(injamm LANGUAGES CXX)
 
-set(CMAKE_CXX_STANDARD 26)
+set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
@@ -22,13 +22,13 @@ target_include_directories(injamm INTERFACE
   $<INSTALL_INTERFACE:include>
 )
 target_link_libraries(injamm INTERFACE glaze::glaze)
-target_compile_features(injamm INTERFACE cxx_std_26)
+target_compile_features(injamm INTERFACE cxx_std_23)
 
 # 高速化のためのGCCスレッデッドディスパッチ
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
   if(INJAMM_ENABLE_THREADED_DISPATCH)
     target_compile_definitions(injamm INTERFACE INJAMM_THREADED_DISPATCH)
-    target_compile_options(injamm INTERFACE -std=gnu++26)
+    target_compile_options(injamm INTERFACE -std=gnu++23)
   endif()
 endif()
 
@@ -43,7 +43,7 @@ if(INJAMM_BUILD_TESTS)
   )
   target_link_libraries(injamm_tests PRIVATE injamm Catch2::Catch2WithMain)
   target_include_directories(injamm_tests PRIVATE include)
-  target_compile_features(injamm_tests PRIVATE cxx_std_26)
+  target_compile_features(injamm_tests PRIVATE cxx_std_23)
   add_test(NAME injamm_tests COMMAND injamm_tests)
 endif()
 
@@ -54,7 +54,7 @@ if(INJAMM_BUILD_EXAMPLES)
   )
   target_link_libraries(injamm_example PRIVATE injamm)
   target_include_directories(injamm_example PRIVATE include)
-  target_compile_features(injamm_example PRIVATE cxx_std_26)
+  target_compile_features(injamm_example PRIVATE cxx_std_23)
 endif()
 
 # ---- インストール ----
