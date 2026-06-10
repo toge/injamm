@@ -20,7 +20,6 @@ CMake オプション: `INJAMM_ENABLE_THREADED_DISPATCH`（デフォルト ON、
 ## 重要な規約
 
 - **C++23 必須**（`std::expected`）、GCC 14+ 推奨。
-- **すべてのコンテキスト型に `glz::meta<T>` 特殊化**が必要 — 例外なし。
 - clang-format: `LLVM` スタイル、`IndentWidth: 2`、`ColumnLimit: 200`、`PointerAlignment: Left`。
 - clang-tidy 命名: 型/変数は `lower_case`、関数は `camelBack`、定数は `upper_case`。
 - 後置戻り値型禁止（`modernize-use-trailing-return-type` 無効）。
@@ -40,7 +39,3 @@ CMake オプション: `INJAMM_ENABLE_THREADED_DISPATCH`（デフォルト ON、
 
 - `glaze`（必須、vcpkg: `~/vm/vcpkg`）
 - `catch2`（テストのみ、vcpkg）
-
-## Git なし
-
-git リポジトリではない。`.gitignore` / `.gitattributes` なし。
