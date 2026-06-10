@@ -6,9 +6,9 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 # ---- オプション ----
-option(INJAMM_ENABLE_THREADED_DISPATCH "GCC computed goto dispatch (GCC only)" ON)
-option(INJAMM_BUILD_TESTS "Build tests" ON)
-option(INJAMM_BUILD_EXAMPLES "Build examples" ON)
+option(ENABLE_THREADED_DISPATCH "GCC computed goto dispatch (GCC only)" ON)
+option(BUILD_TEST "Build tests" ON)
+option(BUILD_EXAMPLE "Build examples" ON)
 
 # ---- 依存 ----
 find_package(glaze CONFIG REQUIRED)
@@ -26,38 +26,13 @@ target_compile_features(injamm INTERFACE cxx_std_23)
 
 # 高速化のためのGCCスレッデッドディスパッチ
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-  if(INJAMM_ENABLE_THREADED_DISPATCH)
+  if(ENABLE_THREADED_DISPATCH)
     target_compile_definitions(injamm INTERFACE INJAMM_THREADED_DISPATCH)
     target_compile_options(injamm INTERFACE -std=gnu++23)
   endif()
 endif()
 
-# ---- テスト ----
-if(INJAMM_BUILD_TESTS)
-  find_package(Catch2 CONFIG REQUIRED)
-
-  enable_testing()
-  add_executable(injamm_tests
-    tests/test_injamm.cpp
-    tests/test_injamm_ct.cpp
-  )
-  target_link_libraries(injamm_tests PRIVATE injamm Catch2::Catch2WithMain)
-  target_include_directories(injamm_tests PRIVATE include)
-  target_compile_features(injamm_tests PRIVATE cxx_std_23)
-  add_test(NAME injamm_tests COMMAND injamm_tests)
-endif()
-
-# ---- サンプル ----
-if(INJAMM_BUILD_EXAMPLES)
-  add_executable(injamm_example
-    examples/example.cpp
-  )
-  target_link_libraries(injamm_example PRIVATE injamm)
-  target_include_directories(injamm_example PRIVATE include)
-  target_compile_features(injamm_example PRIVATE cxx_std_23)
-endif()
-
-# ---- インストール ----
+# ---- Install ----
 include(GNUInstallDirs)
 
 install(
@@ -89,3 +64,27 @@ install(
   FILES ${CMAKE_CURRENT_BINARY_DIR}/injammConfig.cmake
   DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/injamm
 )
+
+# ---- Tests & Examples ----
+if(BUILD_TEST)
+  find_package(Catch2 CONFIG REQUIRED)
+
+  enable_testing()
+  add_executable(injamm_tests
+    tests/test_injamm.cpp
+    tests/test_injamm_ct.cpp
+  )
+  target_link_libraries(injamm_tests PRIVATE injamm Catch2::Catch2WithMain)
+  target_include_directories(injamm_tests PRIVATE include)
+  target_compile_features(injamm_tests PRIVATE cxx_std_23)
+  add_test(NAME injamm_tests COMMAND injamm_tests)
+endif()
+
+if(BUILD_EXAMPLE)
+  add_executable(injamm_example
+    examples/example.cpp
+  )
+  target_link_libraries(injamm_example PRIVATE injamm)
+  target_include_directories(injamm_example PRIVATE include)
+  target_compile_features(injamm_example PRIVATE cxx_std_23)
+endif()
