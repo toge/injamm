@@ -621,4 +621,109 @@ constexpr expected<bool> parse_into(Container& result, std::string_view tmpl) {
   return result;
 }
 
+template <class ConstMap>
+[[nodiscard]] expected<std::string> expand_var_refs(std::string_view content, ConstMap const& consts, int depth = 0) {
+  if (depth > 100) {
+    return std::unexpected(error_ctx{0, error_code::syntax_error, "circular @var reference"});
+  }
+
+  std::string result;
+  std::size_t pos = 0;
+
+  while (pos < content.size()) {
+    auto var_start = content.find("@var(", pos);
+    if (var_start == std::string_view::npos) {
+      result.append(content.substr(pos));
+      break;
+    }
+
+    result.append(content.substr(pos, var_start - pos));
+
+    auto paren_start = var_start + 5;
+    auto paren_end = content.find(')', paren_start);
+    if (paren_end == std::string_view::npos) {
+      result.append(content.substr(var_start));
+      break;
+    }
+
+    auto name = content.substr(paren_start, paren_end - paren_start);
+    auto it = consts.find(name);
+    if (it == consts.end()) {
+      return std::unexpected(error_ctx{var_start, error_code::unknown_key, "undefined @var constant"});
+    }
+
+    auto expanded = expand_var_refs(std::string_view{it->second}, consts, depth + 1);
+    if (!expanded) {
+      return std::unexpected(expanded.error());
+    }
+    result += *expanded;
+
+    pos = paren_end + 1;
+  }
+
+  return result;
+}
+
+template <class ConstMap>
+[[nodiscard]] expected<std::string> expand_vars_in_template(std::string_view tmpl, ConstMap const& consts) {
+  std::string result{tmpl};
+
+  for (int iteration = 0; iteration < 100; ++iteration) {
+    bool expanded_any = false;
+    std::string next;
+    std::size_t pos = 0;
+
+    while (pos < result.size()) {
+      auto tag_start = result.find("{{", pos);
+      if (tag_start == std::string_view::npos) {
+        next.append(result.substr(pos));
+        break;
+      }
+
+      next.append(result.substr(pos, tag_start - pos));
+
+      if (tag_start + 2 < result.size() && result[tag_start + 2] == '{') {
+        auto raw_end = result.find("}}}", tag_start + 3);
+        if (raw_end == std::string_view::npos) {
+          next.append(result.substr(tag_start));
+          break;
+        }
+        next.append(result.substr(tag_start, raw_end + 3 - tag_start));
+        pos = raw_end + 3;
+        continue;
+      }
+
+      auto tag_end = result.find("}}", tag_start + 2);
+      if (tag_end == std::string_view::npos) {
+        next.append(result.substr(tag_start));
+        break;
+      }
+
+      auto inner = result.substr(tag_start + 2, tag_end - tag_start - 2);
+      auto expanded = expand_var_refs(inner, consts);
+      if (!expanded) {
+        return std::unexpected(expanded.error());
+      }
+
+      if (*expanded != inner) {
+        expanded_any = true;
+      }
+
+      next += "{{";
+      next += *expanded;
+      next += "}}";
+
+      pos = tag_end + 2;
+    }
+
+    result = std::move(next);
+
+    if (!expanded_any) {
+      break;
+    }
+  }
+
+  return result;
+}
+
 } // namespace injamm::detail
