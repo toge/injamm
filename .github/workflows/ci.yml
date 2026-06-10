@@ -17,8 +17,7 @@ jobs:
         # gcc 16 : Fedora 44
         # gcc 15 : Fedora 43
         # gcc 14 : Fedora 41
-        # gcc 13 : Fedora 39
-        fedora_version: ["44", "43", "41", "39"]
+        fedora_version: ["44", "43", "41"]
 
     # 2. 定義したバージョンを動的にコンテナへ割り当て
     container: fedora:${{ matrix.fedora_version }}
@@ -32,7 +31,7 @@ jobs:
       - name: Check GCC version
         run: |
           g++ --version
-          g++ -dumpversion | grep -E "^(1[3-9]|[2-9][0-9])(\.|\$)" || { echo "ERROR: GCC 13+ required, found $(g++ -dumpversion)"; exit 1; }
+          g++ -dumpversion | grep -E "^(1[4-9]|[2-9][0-9])(\.|\$)" || { echo "ERROR: GCC 14+ required, found $(g++ -dumpversion)"; exit 1; }
 
       # 3. キャッシュキーにもFedoraのバージョンを混ぜてコンフリクトを防ぐ
       - name: Restore vcpkg cache
