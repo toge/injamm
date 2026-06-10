@@ -1,6 +1,7 @@
 # injamm - inja minus minus
 
-Mustache/inja サブセットの高速テンプレートエンジン。glaze でメタプログラミングされた C++ 構造体をコンテキストとして、テンプレートをレンダリングします。
+Mustache/inja サブセットの高速テンプレートエンジン。
+Glaze でメタプログラミングされた C++ 構造体をコンテキストとして、テンプレートをレンダリングします。
 
 2つのレンダリング API を提供:
 - **バイトコード VM** (`engine<T>`): 実行時コンパイル、全機能対応
@@ -10,12 +11,12 @@ Mustache/inja サブセットの高速テンプレートエンジン。glaze で
 
 - **ヘッダオンリー**: インクルードするだけで使用可能
 - **高速**: コンパイル時テンプレートパース、Computed goto ディスパッチ（GCC）、Glaze リフレクションによる O(1) フィールドアクセス
-- **依存最小**: glaze のみ必須
+- **依存最小**: Glaze のみ必須
 
 ## 要件
 
 - C++23 対応コンパイラ（GCC 14+ 推奨）
-- [glaze](https://github.com/stephenberry/glaze)
+- [Glaze](https://github.com/stephenberry/glaze)
 
 ## ビルド・インストール
 
@@ -35,11 +36,11 @@ cmake --build build
 
 ### CMake オプション
 
-| オプション                        | 既定値 | 説明                                       |
-| --------------------------------- | ------ | ------------------------------------------ |
-| `INJAMM_ENABLE_THREADED_DISPATCH` | ON     | GCC computed goto ディスパッチ（GCC のみ） |
-| `INJAMM_BUILD_TESTS`              | ON     | テストをビルドする                         |
-| `INJAMM_BUILD_EXAMPLES`           | ON     | サンプルをビルドする                       |
+| オプション                 | 既定値 | 説明                                                     |
+| -------------------------- | ------ | -------------------------------------------------------- |
+| `ENABLE_THREADED_DISPATCH` | ON     | 高速化のためのGCC computed gotoディスパッチ（GCC のみ） |
+| `BUILD_TEST`               | ON     | テストをビルドする                                       |
+| `BUILD_EXAMPLE`            | ON     | サンプルをビルドする                                     |
 
 ### find_package
 
@@ -60,6 +61,7 @@ struct User {
   int age{};
 };
 
+// メタデータの定義はなくてもよいです
 template <>
 struct glz::meta<User> {
   static constexpr auto value = glz::object("name", &User::name, "age", &User::age);
