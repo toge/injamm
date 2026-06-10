@@ -1,6 +1,6 @@
-# injamm ユーースケースガイド
+# injamm ユースケースガイド
 
-`injamm` は、C++20/C++26 以降の機能を活用した、高速で型安全なテンプレートエンジンです。Glaze ライブラリによるコンパイル時リフレクションを利用し、実行時のフィールドアクセスを O(1) で行う Bytecode VM と、コンパイル時にテンプレートを解析する NTTP レンダリングの 2 つの API を提供します。
+`injamm` は、C++20 以降の機能を活用した、高速で型安全なテンプレートエンジンです。Glaze ライブラリによるコンパイル時リフレクションを利用し、実行時のフィールドアクセスを O(1) で行う Bytecode VM と、コンパイル時にテンプレートを解析する NTTP レンダリングの 2 つの API を提供します。
 
 本ガイドでは、`injamm` の主なユースケースと、具体的なコード例を紹介します。
 
@@ -61,7 +61,7 @@ int main() {
 
   auto engine = injamm::engine<PageData>(tmpl);
   auto html = engine.render(data);
-  
+
   if (html) std::cout << *html << std::endl;
 }
 ```
@@ -136,8 +136,8 @@ ID   | Name                 | Status
 )";
 
 // 実行結果例:
-// 0000 |                Alice |  READY  
-// 0001 |                  Bob |  BUSY   
+// 0000 |                Alice |  READY
+// 0001 |                  Bob |  BUSY
 ```
 
 ---
@@ -192,7 +192,7 @@ int main() {
   auto constexpr kLogTmpl = injamm::fixed_string("[{{level}}] Error occurred (Code: {{code}})");
 
   LogEvent ev{"CRITICAL", 500};
-  
+
   // コンパイル時にパース済み。実行時は置換のみ。
   auto msg = injamm::render<kLogTmpl>(ev);
   if (msg) std::cout << *msg << std::endl;
