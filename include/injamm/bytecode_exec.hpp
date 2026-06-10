@@ -778,7 +778,9 @@ public:
       if constexpr (serializable_v<T>) {
         serialize_value(out_, value_);
       } else if constexpr (ct_glz_reflectable<T>) {
-        (void)glz::write_json(value_, out_);
+        if (auto ec = glz::write_json(value_, out_)) {
+          return std::unexpected(error_ctx{.position = pc, .ec = error_code::syntax_error});
+        }
       }
       ++pc;
       DISPATCH();
@@ -1380,7 +1382,9 @@ public:
           if constexpr (serializable_v<T>) {
             serialize_value(out_, value_);
           } else if constexpr (ct_glz_reflectable<T>) {
-            (void)glz::write_json(value_, out_);
+            if (auto ec = glz::write_json(value_, out_)) {
+              return std::unexpected(error_ctx{.position = pc, .ec = error_code::syntax_error});
+            }
           }
           ++pc;
           break;
