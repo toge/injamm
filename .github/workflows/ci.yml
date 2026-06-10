@@ -9,7 +9,19 @@ on:
 jobs:
   build:
     runs-on: ubuntu-latest
-    container: fedora:latest
+
+    # 1. 複数のFedoraバージョンをマトリクスとして定義
+    strategy:
+      fail-fast: false # 1つのバージョンが失敗しても、他のバージョンの検証を最後まで継続する
+      matrix:
+        # gcc 16 : Fedora 44
+        # gcc 15 : Fedora 43
+        # gcc 14 : Fedora 41
+        # gcc 13 : Fedora 39
+        fedora_version: ["44", "43", "41", "39"]
+
+    # 2. 定義したバージョンを動的にコンテナへ割り当て
+    container: fedora:${{ matrix.fedora_version }}
 
     steps:
       - uses: actions/checkout@v4
@@ -20,17 +32,18 @@ jobs:
       - name: Check GCC version
         run: |
           g++ --version
-          g++ -dumpversion | grep -E "^(1[6-9]|[2-9][0-9])(\.|\$)" || { echo "ERROR: GCC 16+ required, found $(g++ -dumpversion)"; exit 1; }
+          g++ -dumpversion | grep -E "^(1[3-9]|[2-9][0-9])(\.|\$)" || { echo "ERROR: GCC 13+ required, found $(g++ -dumpversion)"; exit 1; }
 
+      # 3. キャッシュキーにもFedoraのバージョンを混ぜてコンフリクトを防ぐ
       - name: Restore vcpkg cache
         uses: actions/cache@v4
         with:
           path: |
             ~/vcpkg
             build/vcpkg_installed
-          key: ${{ runner.os }}-vcpkg-${{ hashFiles('vcpkg.json') }}
+          key: ${{ runner.os }}-fedora-${{ matrix.fedora_version }}-vcpkg-${{ hashFiles('vcpkg.json') }}
           restore-keys: |
-            ${{ runner.os }}-vcpkg-
+            ${{ runner.os }}-fedora-${{ matrix.fedora_version }}-vcpkg-
 
       - name: Install vcpkg
         run: |
