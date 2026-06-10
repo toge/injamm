@@ -50,6 +50,8 @@ target_link_libraries(myapp PRIVATE injamm::injamm)
 
 ## 使い方
 
+より詳細なユースケースや具体的な活用例については、[ユースケースガイド](docs/USE_CASES.md) を参照してください。
+
 ### 1. データ型を定義する
 
 ```cpp
