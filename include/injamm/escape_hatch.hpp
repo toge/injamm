@@ -127,6 +127,9 @@ public:
    */
   explicit engine(std::string_view tmpl) : bc_(detail::bc_compile<T>(tmpl)) {}
 
+  template <class ConstMap>
+  explicit engine(std::string_view tmpl, ConstMap const& consts) : bc_(detail::bc_compile<T>(tmpl, consts)) {}
+
   /**
    * @brief レンダリングを実行する
    *
@@ -134,6 +137,9 @@ public:
    * @return expected<std::string> レンダリング結果、またはエラー
    */
   [[nodiscard]] expected<std::string> render(T const& value) const {
+    if (bc_.error.ec != error_code::none) {
+      return std::unexpected(bc_.error);
+    }
     return detail::bc_execute(bc_, value);
   }
 
