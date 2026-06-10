@@ -247,7 +247,7 @@ struct float_filter_entry {
  *          フィールドインデックスが解決可能な場合は field_index に値が設定される。
  */
 struct bc_var_ref {
-  std::string_view key;                    /**< 変数名 */
+  std::string key;                         /**< 変数名 */
   std::uint32_t field_index = UINT32_MAX;  /**< コンパイル時解決済みフィールドインデックス */
   std::vector<string_filter_entry> filters; /**< 文字列フィルタチェーン */
   std::vector<int_filter_entry> int_filters; /**< 整数フィルタチェーン */
@@ -273,7 +273,7 @@ struct bc_instruction {
  */
 struct bytecode {
   std::vector<bc_instruction> instructions;  /**< 命令列 */
-  std::vector<std::string_view> literals;    /**< リテラル文字列テーブル */
+  std::vector<std::string> literals;         /**< リテラル文字列テーブル */
   std::vector<bc_var_ref> var_refs;          /**< 変数参照テーブル */
   error_ctx error{};                         /**< コンパイル時エラー（非ゼロ ec でエラー） */
 
@@ -294,7 +294,7 @@ struct bytecode {
    */
   std::uint32_t add_literal(std::string_view lit) {
     auto idx = static_cast<std::uint32_t>(literals.size());
-    literals.push_back(lit);
+    literals.emplace_back(lit);
     return idx;
   }
 
@@ -305,7 +305,10 @@ struct bytecode {
    */
   std::uint32_t add_var_ref(std::string_view key) {
     auto idx = static_cast<std::uint32_t>(var_refs.size());
-    var_refs.push_back({key, UINT32_MAX, {}});
+    bc_var_ref ref;
+    ref.key = std::string{key};
+    ref.field_index = UINT32_MAX;
+    var_refs.push_back(std::move(ref));
     return idx;
   }
 

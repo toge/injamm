@@ -1589,6 +1589,34 @@ struct glz::meta<BcSetIntData> {
   static constexpr auto value = glz::object("values", &BcSetIntData::values);
 };
 
+struct AtVarUser {
+  std::string name;
+  int age{};
+};
+
+template <>
+struct glz::meta<AtVarUser> {
+  static constexpr auto value = glz::object("name", &AtVarUser::name, "age", &AtVarUser::age);
+};
+
+struct AtVarItem {
+  std::string val;
+};
+
+template <>
+struct glz::meta<AtVarItem> {
+  static constexpr auto value = glz::object("val", &AtVarItem::val);
+};
+
+struct AtVarItemsCtx {
+  std::vector<AtVarItem> items;
+};
+
+template <>
+struct glz::meta<AtVarItemsCtx> {
+  static constexpr auto value = glz::object("items", &AtVarItemsCtx::items);
+};
+
 TEST_CASE("bc_set_section", "[injamm][bc][set]") {
   auto bc = injamm::engine<BcSetIntData>("{{#values}}[{{this}}]{{/values}}");
   BcSetIntData data{{ {3, 1, 2} }};
@@ -1635,5 +1663,50 @@ TEST_CASE("bc_set_if_empty", "[injamm][bc][set]") {
   auto r = bc.render(data);
   REQUIRE(r.has_value());
   REQUIRE(*r == "");
+}
+
+TEST_CASE("@var basic expansion in engine", "[injamm][atvar]") {
+  AtVarUser ctx{"Alice", 30};
+  std::map<std::string, std::string, std::less<>> consts{{"f", "name"}};
+  injamm::engine<AtVarUser> eng{"Hello {{@var(f)}}!", consts};
+  auto result = eng.render(ctx);
+  REQUIRE(result.has_value());
+  CHECK(*result == "Hello Alice!");
+}
+
+TEST_CASE("@var in section key engine", "[injamm][atvar]") {
+  AtVarItemsCtx ctx{{{"A"}, {"B"}}};
+  std::map<std::string, std::string, std::less<>> consts{{"s", "items"}};
+  injamm::engine<AtVarItemsCtx> eng{"{{#@var(s)}}{{val}}{{/@var(s)}}", consts};
+  auto result = eng.render(ctx);
+  REQUIRE(result.has_value());
+  CHECK(*result == "AB");
+}
+
+TEST_CASE("@var with filter in engine", "[injamm][atvar]") {
+  AtVarUser ctx{"alice", 30};
+  std::map<std::string, std::string, std::less<>> consts{{"f", "name"}};
+  injamm::engine<AtVarUser> eng{"{{@var(f) | upper}}", consts};
+  auto result = eng.render(ctx);
+  REQUIRE(result.has_value());
+  CHECK(*result == "ALICE");
+}
+
+TEST_CASE("@var undefined constant error in engine", "[injamm][atvar]") {
+  AtVarUser ctx{"Alice", 30};
+  std::map<std::string, std::string, std::less<>> consts{};
+  injamm::engine<AtVarUser> eng{"{{@var(unknown)}}", consts};
+  auto result = eng.render(ctx);
+  REQUIRE(!result.has_value());
+  CHECK(result.error().ec == injamm::error_code::unknown_key);
+}
+
+TEST_CASE("@var inside {{{}}} raw tag in engine", "[injamm][atvar]") {
+  AtVarUser ctx{"Alice", 30};
+  std::map<std::string, std::string, std::less<>> consts{{"f", "name"}};
+  injamm::engine<AtVarUser> eng{"{{{@var(f)}}}", consts};
+  auto result = eng.render(ctx);
+  REQUIRE(result.has_value());
+  CHECK(*result == "Alice");
 }
 
