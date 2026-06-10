@@ -687,4 +687,15 @@ bytecode bc_compile(std::string_view tmpl) {
   return compiler.compile(tmpl);
 }
 
+template <class T, class ConstMap>
+bytecode bc_compile(std::string_view tmpl, ConstMap const& consts) {
+  auto expanded = expand_vars_in_template(tmpl, consts);
+  if (!expanded) {
+    bytecode err_bc;
+    err_bc.error = expanded.error();
+    return err_bc;
+  }
+  return bc_compile<T>(*expanded);
+}
+
 } // namespace injamm::detail

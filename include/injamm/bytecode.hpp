@@ -7,6 +7,8 @@
 #include <string_view>
 #include <vector>
 
+#include "types.hpp"
+
 namespace injamm::detail {
 
 /**
@@ -273,6 +275,7 @@ struct bytecode {
   std::vector<bc_instruction> instructions;  /**< 命令列 */
   std::vector<std::string_view> literals;    /**< リテラル文字列テーブル */
   std::vector<bc_var_ref> var_refs;          /**< 変数参照テーブル */
+  error_ctx error{};                         /**< コンパイル時エラー（非ゼロ ec でエラー） */
 
   /**
    * @brief 命令を追加する
