@@ -86,6 +86,31 @@ auto r = injamm::render<kTmpl>(User{"Bob", 25});
 // r == "Hello Bob! You are 25."
 ```
 
+### 4. @var 定数置換（runtime / NTTP）
+
+`@var(name)` はテンプレート構文としてではなく、プリプロセッサマクロのようにパース前に展開されます。
+
+**Runtime（engine）**:
+```cpp
+// 通常の engine 構築時に定数マップを渡す
+std::map<std::string, std::string, std::less<>> consts{
+  {"f", "name"},
+  {"s", "items"}
+};
+auto bc = injamm::engine<Data>("{{#@var(s)}}{{@var(f)}}{{/@var(s)}}", consts);
+// → 内部的に "{{#items}}{{name}}{{/items}}" としてコンパイルされる
+auto r = bc.render(Data{{{"Alice"}, {"Bob"}}});
+// r == "AliceBob"
+```
+
+**NTTP（render）**:
+```cpp
+// テンプレート引数で key, value を交互に渡す
+auto r = injamm::render<"{{@var(f)}} | upper", "f", "name">(User{"alice", 25});
+// → コンパイル時に "{{name | upper}}" に展開
+// r == "ALICE"
+```
+
 ### 完全な例
 
 ```cpp
@@ -137,6 +162,13 @@ int main() {
 | `{{@first}}`                        | 最初の要素なら `true`                 |
 | `{{@last}}`                         | 最後の要素なら `true`                 |
 | `{{foo.bar.baz}}`                   | ネストパス                            |
+| `{{@var(name)}}`                   | 定数置換（engine 構築時に渡した定数テーブルで展開、NTTP ではテンプレート引数で指定） |
+
+### @var 定数置換
+
+`{{@var(name)}}` はテンプレートをパースする**前**にプリプロセッサ的に展開されます。テンプレート構文を適用する前に定数で置換されるため、フィールド名のエイリアスやセクションキーのパラメータ化に使用できます。
+
+値に `@var(yyy)` が含まれている場合は再帰的に展開します。
 
 ## フィルター
 
@@ -193,23 +225,34 @@ constexpr auto kTmpl = injamm::fixed_string("Hello {{name}}!");
 ```
 
 ### `injamm::render<kTmpl>(value)`
+### `injamm::render<kTmpl, keys...>(value)`
 
 NTTP ベースのコンパイル時レンダリング。戻り値は `expected<std::string>`。
+第2テンプレート引数以降に `"key1", "val1", "key2", "val2"` のように key-value ペアを渡すと、`@var(name)` がコンパイル時に展開されます。
 
 ```cpp
 auto r = injamm::render<kTmpl>(data);
 if (r) { /* 成功: *r */ }
 else   { /* 失敗: r.error().ec, r.error().position */ }
+
+// @var 定数置換付き
+auto r2 = injamm::render<"{{@var(f)}} | upper", "f", "name">(user);
 ```
 
 ### `injamm::engine<T>(tmpl_str)`
+### `injamm::engine<T>(tmpl_str, consts_map)`
 
 バイトコード VM。テンプレート文字列を実行時にコンパイルし、同じ型に対して複数回レンダリングする場合に効率的。
+第2引数で `@var(name)` 展開用の定数マップを渡せます。任意の map-like コンテナ（`find()` + `->second` が `string_view` に変換可能）に対応。
 
 ```cpp
 auto bc = injamm::engine<Data>("{{name}}");
 auto r1 = bc.render(data1);
 auto r2 = bc.render(data2);
+
+// @var 定数置換付き
+std::map<std::string, std::string, std::less<>> c{{"f", "name"}};
+auto bc2 = injamm::engine<User>("{{@var(f)}}", c);
 ```
 
 ### `injamm::expected<T>`
