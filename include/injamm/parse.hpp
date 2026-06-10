@@ -621,9 +621,11 @@ constexpr expected<bool> parse_into(Container& result, std::string_view tmpl) {
   return result;
 }
 
+constexpr int max_var_depth = 100;
+
 template <class ConstMap>
 [[nodiscard]] expected<std::string> expand_var_refs(std::string_view content, ConstMap const& consts, int depth = 0) {
-  if (depth > 100) {
+  if (depth > max_var_depth) {
     return std::unexpected(error_ctx{0, error_code::syntax_error, "circular @var reference"});
   }
 
@@ -666,61 +668,53 @@ template <class ConstMap>
 
 template <class ConstMap>
 [[nodiscard]] expected<std::string> expand_vars_in_template(std::string_view tmpl, ConstMap const& consts) {
-  std::string result{tmpl};
+  std::string result;
+  std::size_t pos = 0;
 
-  for (int iteration = 0; iteration < 100; ++iteration) {
-    bool expanded_any = false;
-    std::string next;
-    std::size_t pos = 0;
+  while (pos < tmpl.size()) {
+    auto tag_start = tmpl.find("{{", pos);
+    if (tag_start == std::string_view::npos) {
+      result.append(tmpl.substr(pos));
+      break;
+    }
 
-    while (pos < result.size()) {
-      auto tag_start = result.find("{{", pos);
-      if (tag_start == std::string_view::npos) {
-        next.append(result.substr(pos));
+    result.append(tmpl.substr(pos, tag_start - pos));
+
+    if (tag_start + 2 < tmpl.size() && tmpl[tag_start + 2] == '{') {
+      auto raw_end = tmpl.find("}}}", tag_start + 3);
+      if (raw_end == std::string_view::npos) {
+        result.append(tmpl.substr(tag_start));
         break;
       }
-
-      next.append(result.substr(pos, tag_start - pos));
-
-      if (tag_start + 2 < result.size() && result[tag_start + 2] == '{') {
-        auto raw_end = result.find("}}}", tag_start + 3);
-        if (raw_end == std::string_view::npos) {
-          next.append(result.substr(tag_start));
-          break;
-        }
-        next.append(result.substr(tag_start, raw_end + 3 - tag_start));
-        pos = raw_end + 3;
-        continue;
-      }
-
-      auto tag_end = result.find("}}", tag_start + 2);
-      if (tag_end == std::string_view::npos) {
-        next.append(result.substr(tag_start));
-        break;
-      }
-
-      auto inner = result.substr(tag_start + 2, tag_end - tag_start - 2);
-      auto expanded = expand_var_refs(inner, consts);
+      auto raw_inner = tmpl.substr(tag_start + 3, raw_end - tag_start - 3);
+      auto expanded = expand_var_refs(raw_inner, consts);
       if (!expanded) {
         return std::unexpected(expanded.error());
       }
-
-      if (*expanded != inner) {
-        expanded_any = true;
-      }
-
-      next += "{{";
-      next += *expanded;
-      next += "}}";
-
-      pos = tag_end + 2;
+      result += "{{{";
+      result += *expanded;
+      result += "}}}";
+      pos = raw_end + 3;
+      continue;
     }
 
-    result = std::move(next);
-
-    if (!expanded_any) {
+    auto tag_end = tmpl.find("}}", tag_start + 2);
+    if (tag_end == std::string_view::npos) {
+      result.append(tmpl.substr(tag_start));
       break;
     }
+
+    auto inner = tmpl.substr(tag_start + 2, tag_end - tag_start - 2);
+    auto expanded = expand_var_refs(inner, consts);
+    if (!expanded) {
+      return std::unexpected(expanded.error());
+    }
+
+    result += "{{";
+    result += *expanded;
+    result += "}}";
+
+    pos = tag_end + 2;
   }
 
   return result;
