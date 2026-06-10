@@ -921,3 +921,55 @@ TEST_CASE("ct_set_if_empty", "[injamm][ct][set]") {
   REQUIRE(r.has_value());
   REQUIRE(*r == "");
 }
+
+// ---- @var NTTP expansion ----
+
+// ---- @var NTTP expansion 用データ型 ----
+
+struct CtAtVarItem {
+  std::string val;
+};
+
+template <>
+struct glz::meta<CtAtVarItem> {
+  static constexpr auto value = glz::object("val", &CtAtVarItem::val);
+};
+
+struct CtAtVarItemsCtx {
+  std::vector<CtAtVarItem> items;
+};
+
+template <>
+struct glz::meta<CtAtVarItemsCtx> {
+  static constexpr auto value = glz::object("items", &CtAtVarItemsCtx::items);
+};
+
+// ---- @var NTTP expansion ----
+
+TEST_CASE("@var basic expansion in render (NTTP)", "[injamm][ct][atvar]") {
+  CtUser ctx{"Alice", 30};
+  auto result = injamm::render<"Hello {{@var(f)}}!", "f", "name">(ctx);
+  REQUIRE(result.has_value());
+  CHECK(*result == "Hello Alice!");
+}
+
+TEST_CASE("@var with raw tag (NTTP)", "[injamm][ct][atvar]") {
+  CtUser ctx{"Alice", 30};
+  auto result = injamm::render<"{{{@var(f)}}}", "f", "name">(ctx);
+  REQUIRE(result.has_value());
+  CHECK(*result == "Alice");
+}
+
+TEST_CASE("@var in section with NTTP", "[injamm][ct][atvar]") {
+  CtAtVarItemsCtx ctx{{{"A"}, {"B"}}};
+  auto result = injamm::render<"{{#@var(s)}}{{val}}{{/@var(s)}}", "s", "items">(ctx);
+  REQUIRE(result.has_value());
+  CHECK(*result == "AB");
+}
+
+TEST_CASE("@var with filter (NTTP)", "[injamm][ct][atvar]") {
+  CtUser ctx{"alice", 30};
+  auto result = injamm::render<"{{@var(f) | upper}}", "f", "name">(ctx);
+  REQUIRE(result.has_value());
+  CHECK(*result == "ALICE");
+}
