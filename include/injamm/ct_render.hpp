@@ -249,7 +249,7 @@ constexpr auto ct_render_placeholder(Buffer& out, ct_parsed_template<N> const& c
       serialize_value(out, value);
     } else if constexpr (ct_glz_reflectable<T>) {
       std::string tmp;
-      glz::write_json(value, tmp);
+      (void)glz::write_json(value, tmp);
       if constexpr (std::is_same_v<Mode, mustache_tag>) {
         if (!raw) {
           html_escape_into(out, tmp);
