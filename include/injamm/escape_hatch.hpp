@@ -76,6 +76,107 @@ consteval auto parse_fixed_impl() -> ct_parsed_template<Tmpl.size() + 1> {
   return ctx.tmpl;
 }
 
+/**
+ * @brief コンパイル時キー・バリュー参照テーブル
+ *
+ * @details fixed_string NTTP のペアをキー・バリューとして格納し、文字列キーから
+ *          定数値を O(n) 検索する。偶数の entries が必要（キー・バリューのペア）。
+ *          見つからない場合は空の string_view を返す。
+ *
+ * @tparam Entries fixed_string のパラメータパック（キー1, 値1, キー2, 値2, ...）
+ */
+template <fixed_string... Entries>
+struct ct_var_table {
+  static constexpr std::size_t num = sizeof...(Entries);
+  static_assert(num % 2 == 0, "@var entries must be key-value pairs (even count)");
+
+  static constexpr std::array<std::string_view, num> entries{
+    std::string_view{Entries.data, Entries.size()}...
+  };
+
+  static constexpr std::string_view lookup(std::string_view key) noexcept {
+    for (std::size_t i = 0; i < num; i += 2) {
+      if (entries[i] == key)
+        return entries[i + 1];
+    }
+    return {};
+  }
+};
+
+/**
+ * @brief コンパイル時 @var(name) 展開テンプレート
+ *
+ * @details テンプレート文字列中の @var(name) を ct_var_table の定数値に
+ *          コンパイル時に展開する。サイズ計算と実データの2段階で動作する。
+ *
+ * @tparam Tmpl    元テンプレート文字列（fixed_string）
+ * @tparam Entries キー・バリューペアのパラメータパック
+ */
+template <fixed_string Tmpl, fixed_string... Entries>
+struct ct_expanded_template {
+  using table = ct_var_table<Entries...>;
+
+  static constexpr std::size_t compute_size() {
+    auto sv = std::string_view{Tmpl.data, Tmpl.size()};
+    std::size_t sz = 0;
+    std::size_t pos = 0;
+    while (pos < sv.size()) {
+      auto var_start = sv.find("@var(", pos);
+      if (var_start == std::string_view::npos) {
+        sz += sv.size() - pos;
+        break;
+      }
+      sz += var_start - pos;
+      auto close = sv.find(")", var_start + 5);
+      if (close == std::string_view::npos) {
+        sz += sv.size() - var_start;
+        break;
+      }
+      auto name = sv.substr(var_start + 5, close - var_start - 5);
+      auto val = table::lookup(name);
+      sz += val.empty() ? (close - var_start + 1) : val.size();
+      pos = close + 1;
+    }
+    return sz;
+  }
+
+  static constexpr std::size_t expanded_size = compute_size();
+
+  static constexpr std::array<char, expanded_size + 1> data = []() {
+    std::array<char, expanded_size + 1> arr{};
+    auto sv = std::string_view{Tmpl.data, Tmpl.size()};
+    std::size_t out = 0;
+    std::size_t pos = 0;
+    while (pos < sv.size()) {
+      auto var_start = sv.find("@var(", pos);
+      if (var_start == std::string_view::npos) {
+        while (pos < sv.size())
+          arr[out++] = sv[pos++];
+        break;
+      }
+      while (pos < var_start)
+        arr[out++] = sv[pos++];
+      auto close = sv.find(")", var_start + 5);
+      if (close == std::string_view::npos) {
+        while (pos < sv.size())
+          arr[out++] = sv[pos++];
+        break;
+      }
+      auto name = sv.substr(var_start + 5, close - var_start - 5);
+      auto val = table::lookup(name);
+      if (!val.empty()) {
+        for (auto c : val)
+          arr[out++] = c;
+      } else {
+        for (auto i = var_start; i <= close; ++i)
+          arr[out++] = sv[i];
+      }
+      pos = close + 1;
+    }
+    return arr;
+  }();
+};
+
 } // namespace detail
 
 /**
@@ -97,6 +198,40 @@ template <fixed_string Tmpl, class T>
   std::string out;
   out.reserve(Tmpl.size() * 2);
   auto r = detail::ct_render_chunks<mustache_tag>(out, fp, 0, fp.size, value, value, nullptr);
+  if (!r) {
+    return std::unexpected(r.error());
+  }
+  return out;
+}
+
+/**
+ * @brief NTTP ベースのレンダリング（@var 定数展開版）
+ *
+ * @details テンプレート引数 Tmpl で渡された文字列中の @var(name) を
+ *          コンパイル時に定数値に展開してからパース・レンダリングする。
+ *          展開後の文字列に対して {{var}} の通常レンダリングが行われる。
+ *
+ * @tparam Tmpl    コンパイル時テンプレート文字列（fixed_string リテラル）
+ * @tparam Entries キー・バリューペア（キー1, 値1, キー2, 値2, ...）
+ * @tparam T       コンテキスト値の型（glz::meta<T> 要特殊化）
+ * @param value    コンテキスト値の const 参照
+ * @return expected<std::string> レンダリング結果、またはエラー
+ */
+template <fixed_string Tmpl, fixed_string... Entries, class T>
+  requires (sizeof...(Entries) > 0)
+[[nodiscard]] inline expected<std::string> render(T const& value) {
+  using ET = detail::ct_expanded_template<Tmpl, Entries...>;
+  constexpr std::string_view expanded_sv{ET::data.data(), ET::expanded_size};
+
+  constexpr auto parsed = [&]() {
+    detail::ct_parse_context<ET::expanded_size + 1> ctx;
+    detail::ct_parse_into(ctx, expanded_sv);
+    return detail::resolve_field_indices<T>(ctx.tmpl);
+  }();
+
+  std::string out;
+  out.reserve(ET::expanded_size * 2);
+  auto r = detail::ct_render_chunks<mustache_tag>(out, parsed, 0, parsed.size, value, value, nullptr);
   if (!r) {
     return std::unexpected(r.error());
   }
