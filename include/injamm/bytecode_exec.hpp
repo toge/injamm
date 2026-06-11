@@ -358,6 +358,7 @@ public:
 /** @brief 現在の命令のオペコードに対応するラベルにジャンプする */
 #define DISPATCH() goto *dispatch_table[static_cast<int>(bc_.instructions[pc].op)]
 
+    if (pc >= end) goto L_halt;
     DISPATCH();
 
     /** @brief リテラル文字列を出力に追記する */

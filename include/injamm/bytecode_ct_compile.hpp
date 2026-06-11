@@ -1,10 +1,11 @@
 #pragma once
 
-#include "bytecode.hpp"
-#include "bytecode_exec.hpp"
 #include "ct_chunk.hpp"
+#include "ct_render.hpp"
 #include "glz_dispatch.hpp"
 #include "types.hpp"
+#include "bytecode.hpp"
+#include "bytecode_exec.hpp"
 
 #include <array>
 #include <cstddef>
@@ -85,6 +86,30 @@ bytecode to_bytecode(ct_bytecode<N> const& ct) {
   }
   bc.error = ct.error;
   return bc;
+}
+
+template <std::size_t N>
+consteval void compile_chunk_range(ct_bytecode_builder<N>& b,
+                                   ct_parsed_template<N> const& chunks,
+                                   std::size_t start, std::size_t end);
+
+template <class T, std::size_t N>
+consteval ct_bytecode<N> ct_chunks_to_bytecode(ct_parsed_template<N> const& chunks) {
+  ct_bytecode<N> bc;
+  ct_bytecode_builder<N> b{bc};
+  compile_chunk_range(b, chunks, 0, chunks.size);
+  return bc;
+}
+
+template <std::size_t N>
+consteval void compile_chunk_range(ct_bytecode_builder<N>& b,
+                                   ct_parsed_template<N> const& chunks,
+                                   std::size_t start, std::size_t end) {
+  for (std::size_t i = start; i < end; ++i) {
+    switch (chunks.kinds[i]) {
+    default: break;
+    }
+  }
 }
 
 } // namespace injamm::detail

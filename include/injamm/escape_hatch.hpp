@@ -14,7 +14,7 @@
 #include "types.hpp"
 #include "ct_chunk.hpp"
 #include "ct_parse.hpp"
-#include "ct_render.hpp"
+#include "bytecode_ct_compile.hpp"
 #include "bytecode.hpp"
 #include "bytecode_compile.hpp"
 #include "bytecode_exec.hpp"
@@ -192,16 +192,15 @@ struct ct_expanded_template {
  * @param value コンテキスト値の const 参照
  * @return expected<std::string> レンダリング結果、またはエラー（error_ctx）
  */
-template <fixed_string Tmpl, class T>
-[[nodiscard]] inline expected<std::string> render(T const& value) {
-  constexpr auto fp = detail::resolve_field_indices<T>(detail::parse_fixed_impl<Tmpl>());
-  std::string out;
-  out.reserve(Tmpl.size() * 2);
-  auto r = detail::ct_render_chunks<mustache_tag>(out, fp, 0, fp.size, value, value, nullptr);
-  if (!r) {
-    return std::unexpected(r.error());
-  }
-  return out;
+template <fixed_string Tmpl, typename T>
+[[nodiscard]] expected<std::string> render(T const& value) {
+  constexpr auto parsed = detail::parse_fixed_impl<Tmpl>();
+  constexpr auto resolved = detail::resolve_field_indices<T>(parsed);
+  constexpr auto ct_bc = detail::ct_chunks_to_bytecode<T>(resolved);
+  if (ct_bc.error.ec != error_code::none)
+    return std::unexpected(ct_bc.error);
+  auto bc = detail::to_bytecode(ct_bc);
+  return detail::bc_execute(bc, value);
 }
 
 /**
@@ -217,25 +216,21 @@ template <fixed_string Tmpl, class T>
  * @param value    コンテキスト値の const 参照
  * @return expected<std::string> レンダリング結果、またはエラー
  */
-template <fixed_string Tmpl, fixed_string... Entries, class T>
-  requires (sizeof...(Entries) > 0)
-[[nodiscard]] inline expected<std::string> render(T const& value) {
+template <fixed_string Tmpl, fixed_string... Entries, typename T>
+  requires(sizeof...(Entries) > 0 && sizeof...(Entries) % 2 == 0)
+[[nodiscard]] expected<std::string> render(T const& value) {
   using ET = detail::ct_expanded_template<Tmpl, Entries...>;
   constexpr std::string_view expanded_sv{ET::data.data(), ET::expanded_size};
-
   constexpr auto parsed = [&]() {
     detail::ct_parse_context<ET::expanded_size + 1> ctx;
     detail::ct_parse_into(ctx, expanded_sv);
     return detail::resolve_field_indices<T>(ctx.tmpl);
   }();
-
-  std::string out;
-  out.reserve(ET::expanded_size * 2);
-  auto r = detail::ct_render_chunks<mustache_tag>(out, parsed, 0, parsed.size, value, value, nullptr);
-  if (!r) {
-    return std::unexpected(r.error());
-  }
-  return out;
+  constexpr auto ct_bc = detail::ct_chunks_to_bytecode<T>(parsed);
+  if (ct_bc.error.ec != error_code::none)
+    return std::unexpected(ct_bc.error);
+  auto bc = detail::to_bytecode(ct_bc);
+  return detail::bc_execute(bc, value);
 }
 
 /**
