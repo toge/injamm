@@ -342,12 +342,17 @@ public:
       &&L_filter_int_numify, // 43
       &&L_filter_int_is_neg, // 44
       &&L_filter_int_eq,     // 45
-      &&L_filter_int_zerofill, // 46
-      &&L_filter_float_precision, // 47
-      &&L_emit_if_filtered,  // 48
-      &&L_emit_break,        // 49
-      &&L_emit_continue,     // 50
-      &&L_halt,              // 51
+      &&L_filter_int_ne,     // 46
+      &&L_filter_int_gt,     // 47
+      &&L_filter_int_gte,    // 48
+      &&L_filter_int_lt,     // 49
+      &&L_filter_int_lte,    // 50
+      &&L_filter_int_zerofill, // 51
+      &&L_filter_float_precision, // 52
+      &&L_emit_if_filtered,  // 53
+      &&L_emit_break,        // 54
+      &&L_emit_continue,     // 55
+      &&L_halt,              // 56
     };
 
 /** @brief 現在の命令のオペコードに対応するラベルにジャンプする */
@@ -1000,6 +1005,51 @@ public:
       DISPATCH();
     }
 
+    /** @brief 不等価判定: 値と引数が異なれば "true"、そうでなければ "false" を出力 */
+    L_filter_int_ne: {
+      if (auto err = apply_int_filter(filtered_value_, {.filter = int_filter::ne, .arg = static_cast<int>(bc_.instructions[pc].operand)}); !err) {
+        return std::unexpected(err.error());
+      }
+      ++pc;
+      DISPATCH();
+    }
+
+    /** @brief 大なり判定: 値が引数より大きければ "true"、そうでなければ "false" を出力 */
+    L_filter_int_gt: {
+      if (auto err = apply_int_filter(filtered_value_, {.filter = int_filter::gt, .arg = static_cast<int>(bc_.instructions[pc].operand)}); !err) {
+        return std::unexpected(err.error());
+      }
+      ++pc;
+      DISPATCH();
+    }
+
+    /** @brief 以上判定: 値が引数以上なら "true"、そうでなければ "false" を出力 */
+    L_filter_int_gte: {
+      if (auto err = apply_int_filter(filtered_value_, {.filter = int_filter::gte, .arg = static_cast<int>(bc_.instructions[pc].operand)}); !err) {
+        return std::unexpected(err.error());
+      }
+      ++pc;
+      DISPATCH();
+    }
+
+    /** @brief 小なり判定: 値が引数未満なら "true"、そうでなければ "false" を出力 */
+    L_filter_int_lt: {
+      if (auto err = apply_int_filter(filtered_value_, {.filter = int_filter::lt, .arg = static_cast<int>(bc_.instructions[pc].operand)}); !err) {
+        return std::unexpected(err.error());
+      }
+      ++pc;
+      DISPATCH();
+    }
+
+    /** @brief 以下判定: 値が引数以下なら "true"、そうでなければ "false" を出力 */
+    L_filter_int_lte: {
+      if (auto err = apply_int_filter(filtered_value_, {.filter = int_filter::lte, .arg = static_cast<int>(bc_.instructions[pc].operand)}); !err) {
+        return std::unexpected(err.error());
+      }
+      ++pc;
+      DISPATCH();
+    }
+
     /** @brief フィルタ適用済み値での if 分岐 */
     L_emit_if_filtered: {
       auto const& instr = bc_.instructions[pc];
@@ -1588,6 +1638,51 @@ public:
         /** @brief 等価判定: 値と引数が等しければ "true" / "false" */
         case bc_opcode::filter_int_eq: {
           if (auto err = apply_int_filter(filtered_value_, {.filter = int_filter::eq, .arg = static_cast<int>(instr.operand)}); !err) {
+            return std::unexpected(err.error());
+          }
+          ++pc;
+          break;
+        }
+
+        /** @brief 不等価判定: 値と引数が異なれば "true" / "false" */
+        case bc_opcode::filter_int_ne: {
+          if (auto err = apply_int_filter(filtered_value_, {.filter = int_filter::ne, .arg = static_cast<int>(instr.operand)}); !err) {
+            return std::unexpected(err.error());
+          }
+          ++pc;
+          break;
+        }
+
+        /** @brief 大なり判定: 値が引数より大きければ "true" / "false" */
+        case bc_opcode::filter_int_gt: {
+          if (auto err = apply_int_filter(filtered_value_, {.filter = int_filter::gt, .arg = static_cast<int>(instr.operand)}); !err) {
+            return std::unexpected(err.error());
+          }
+          ++pc;
+          break;
+        }
+
+        /** @brief 以上判定: 値が引数以上なら "true" / "false" */
+        case bc_opcode::filter_int_gte: {
+          if (auto err = apply_int_filter(filtered_value_, {.filter = int_filter::gte, .arg = static_cast<int>(instr.operand)}); !err) {
+            return std::unexpected(err.error());
+          }
+          ++pc;
+          break;
+        }
+
+        /** @brief 小なり判定: 値が引数未満なら "true" / "false" */
+        case bc_opcode::filter_int_lt: {
+          if (auto err = apply_int_filter(filtered_value_, {.filter = int_filter::lt, .arg = static_cast<int>(instr.operand)}); !err) {
+            return std::unexpected(err.error());
+          }
+          ++pc;
+          break;
+        }
+
+        /** @brief 以下判定: 値が引数以下なら "true" / "false" */
+        case bc_opcode::filter_int_lte: {
+          if (auto err = apply_int_filter(filtered_value_, {.filter = int_filter::lte, .arg = static_cast<int>(instr.operand)}); !err) {
             return std::unexpected(err.error());
           }
           ++pc;

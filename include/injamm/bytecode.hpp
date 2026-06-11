@@ -62,6 +62,11 @@ enum class bc_opcode : std::uint8_t {
   filter_int_numify,        /**< 整数3桁カンマ区切り */
   filter_int_is_neg,           /**< 負数判定: "true"/"false" を出力 */
   filter_int_eq,               /**< 等価判定: 引数と比較し "true"/"false" を出力 */
+  filter_int_ne,               /**< 不等価判定: 引数と比較し "true"/"false" を出力 */
+  filter_int_gt,               /**< 大なり判定: 引数より大きければ "true"/"false" を出力 */
+  filter_int_gte,              /**< 以上判定: 引数以上なら "true"/"false" を出力 */
+  filter_int_lt,               /**< 小なり判定: 引数未満なら "true"/"false" を出力 */
+  filter_int_lte,              /**< 以下判定: 引数以下なら "true"/"false" を出力 */
   filter_int_zerofill,         /**< 整数0埋め（引数: 最小桁数） */
   filter_float_precision,     /**< 実数小数点以下桁数（引数: 桁数） */
   emit_if_filtered,           /**< フィルタ適用済み値での if 分岐 */
@@ -118,6 +123,11 @@ enum class bc_opcode : std::uint8_t {
   case bc_opcode::filter_int_numify:       return "filter_int_numify";
   case bc_opcode::filter_int_is_neg:       return "filter_int_is_neg";
   case bc_opcode::filter_int_eq:           return "filter_int_eq";
+  case bc_opcode::filter_int_ne:           return "filter_int_ne";
+  case bc_opcode::filter_int_gt:           return "filter_int_gt";
+  case bc_opcode::filter_int_gte:          return "filter_int_gte";
+  case bc_opcode::filter_int_lt:           return "filter_int_lt";
+  case bc_opcode::filter_int_lte:          return "filter_int_lte";
   case bc_opcode::filter_int_zerofill:     return "filter_int_zerofill";
   case bc_opcode::filter_float_precision:  return "filter_float_precision";
   case bc_opcode::emit_if_filtered:        return "emit_if_filtered";
@@ -189,6 +199,11 @@ enum class int_filter : std::uint8_t {
   numify,  /**< 3桁ごとにカンマ区切り */
   is_neg,  /**< 負数判定（真偽値出力: "true"/"false"） */
   eq,      /**< 等価判定（引数: 比較値、真偽値出力: "true"/"false"） */
+  ne,      /**< 不等価判定（引数: 比較値、真偽値出力: "true"/"false"） */
+  gt,      /**< 大なり判定（引数: 比較値、真偽値出力: "true"/"false"） */
+  gte,     /**< 以上判定（引数: 比較値、真偽値出力: "true"/"false"） */
+  lt,      /**< 小なり判定（引数: 比較値、真偽値出力: "true"/"false"） */
+  lte,     /**< 以下判定（引数: 比較値、真偽値出力: "true"/"false"） */
   zerofill /**< 0埋め（引数: 最小桁数） */
 };
 
@@ -203,6 +218,11 @@ enum class int_filter : std::uint8_t {
   case int_filter::numify:  return "numify";
   case int_filter::is_neg:  return "is_neg";
   case int_filter::eq:      return "eq";
+  case int_filter::ne:      return "ne";
+  case int_filter::gt:      return "gt";
+  case int_filter::gte:     return "gte";
+  case int_filter::lt:      return "lt";
+  case int_filter::lte:     return "lte";
   case int_filter::zerofill: return "zerofill";
   }
   return "unknown";
@@ -482,6 +502,11 @@ struct bytecode {
       }
       case bc_opcode::filter_float_precision:
       case bc_opcode::filter_int_eq:
+      case bc_opcode::filter_int_ne:
+      case bc_opcode::filter_int_gt:
+      case bc_opcode::filter_int_gte:
+      case bc_opcode::filter_int_lt:
+      case bc_opcode::filter_int_lte:
       case bc_opcode::filter_int_zerofill: {
         char buf[16];
         auto [p, ec] = std::to_chars(buf, buf + sizeof(buf), instr.operand);

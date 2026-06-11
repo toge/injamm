@@ -114,6 +114,11 @@ namespace injamm::detail {
     }
     if (fname == "mod") return int_filter_entry{int_filter::mod, arg};
     if (fname == "eq") return int_filter_entry{int_filter::eq, arg};
+    if (fname == "ne") return int_filter_entry{int_filter::ne, arg};
+    if (fname == "gt") return int_filter_entry{int_filter::gt, arg};
+    if (fname == "gte") return int_filter_entry{int_filter::gte, arg};
+    if (fname == "lt") return int_filter_entry{int_filter::lt, arg};
+    if (fname == "lte") return int_filter_entry{int_filter::lte, arg};
     if (fname == "zerofill") return int_filter_entry{int_filter::zerofill, arg};
   }
   // 引数なしフィルタ

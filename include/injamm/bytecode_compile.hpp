@@ -112,6 +112,11 @@ class bc_compiler {
           case int_filter::numify: bc_.add_instruction(bc_opcode::filter_int_numify); break;
           case int_filter::is_neg: bc_.add_instruction(bc_opcode::filter_int_is_neg); break;
           case int_filter::eq:     bc_.add_instruction(bc_opcode::filter_int_eq, f.arg); break;
+          case int_filter::ne:     bc_.add_instruction(bc_opcode::filter_int_ne, f.arg); break;
+          case int_filter::gt:     bc_.add_instruction(bc_opcode::filter_int_gt, f.arg); break;
+          case int_filter::gte:    bc_.add_instruction(bc_opcode::filter_int_gte, f.arg); break;
+          case int_filter::lt:     bc_.add_instruction(bc_opcode::filter_int_lt, f.arg); break;
+          case int_filter::lte:    bc_.add_instruction(bc_opcode::filter_int_lte, f.arg); break;
           case int_filter::zerofill: bc_.add_instruction(bc_opcode::filter_int_zerofill, f.arg); break;
         }
       }
@@ -274,6 +279,11 @@ class bc_compiler {
           case int_filter::numify: bc_.add_instruction(bc_opcode::filter_int_numify); break;
           case int_filter::is_neg: bc_.add_instruction(bc_opcode::filter_int_is_neg); break;
           case int_filter::eq:     bc_.add_instruction(bc_opcode::filter_int_eq, f.arg); break;
+          case int_filter::ne:     bc_.add_instruction(bc_opcode::filter_int_ne, f.arg); break;
+          case int_filter::gt:     bc_.add_instruction(bc_opcode::filter_int_gt, f.arg); break;
+          case int_filter::gte:    bc_.add_instruction(bc_opcode::filter_int_gte, f.arg); break;
+          case int_filter::lt:     bc_.add_instruction(bc_opcode::filter_int_lt, f.arg); break;
+          case int_filter::lte:    bc_.add_instruction(bc_opcode::filter_int_lte, f.arg); break;
           case int_filter::zerofill: bc_.add_instruction(bc_opcode::filter_int_zerofill, f.arg); break;
         }
       }

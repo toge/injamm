@@ -962,6 +962,136 @@ TEST_CASE("int_filter: zerofill LLONG_MIN", "[int_filter]") {
   REQUIRE(*result == "-000009223372036854775808");
 }
 
+// ---- 比較フィルタ プレースホルダテスト ----
+
+TEST_CASE("int_filter: ne true", "[int_filter]") {
+  BcIfData data{"test", 42};
+  auto bc = injamm::engine<BcIfData>("{{age | ne(10)}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "true");
+}
+
+TEST_CASE("int_filter: ne false", "[int_filter]") {
+  BcIfData data{"test", 10};
+  auto bc = injamm::engine<BcIfData>("{{age | ne(10)}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "false");
+}
+
+TEST_CASE("int_filter: gt true", "[int_filter]") {
+  BcIfData data{"test", 20};
+  auto bc = injamm::engine<BcIfData>("{{age | gt(18)}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "true");
+}
+
+TEST_CASE("int_filter: gt false", "[int_filter]") {
+  BcIfData data{"test", 10};
+  auto bc = injamm::engine<BcIfData>("{{age | gt(18)}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "false");
+}
+
+TEST_CASE("int_filter: gt equal_is_false", "[int_filter]") {
+  BcIfData data{"test", 18};
+  auto bc = injamm::engine<BcIfData>("{{age | gt(18)}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "false");
+}
+
+TEST_CASE("int_filter: gte true", "[int_filter]") {
+  BcIfData data{"test", 18};
+  auto bc = injamm::engine<BcIfData>("{{age | gte(18)}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "true");
+}
+
+TEST_CASE("int_filter: gte false", "[int_filter]") {
+  BcIfData data{"test", 10};
+  auto bc = injamm::engine<BcIfData>("{{age | gte(18)}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "false");
+}
+
+TEST_CASE("int_filter: lt true", "[int_filter]") {
+  BcIfData data{"test", 5};
+  auto bc = injamm::engine<BcIfData>("{{age | lt(10)}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "true");
+}
+
+TEST_CASE("int_filter: lt false", "[int_filter]") {
+  BcIfData data{"test", 20};
+  auto bc = injamm::engine<BcIfData>("{{age | lt(10)}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "false");
+}
+
+TEST_CASE("int_filter: lt equal_is_false", "[int_filter]") {
+  BcIfData data{"test", 10};
+  auto bc = injamm::engine<BcIfData>("{{age | lt(10)}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "false");
+}
+
+TEST_CASE("int_filter: lte true", "[int_filter]") {
+  BcIfData data{"test", 10};
+  auto bc = injamm::engine<BcIfData>("{{age | lte(10)}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "true");
+}
+
+TEST_CASE("int_filter: lte false", "[int_filter]") {
+  BcIfData data{"test", 20};
+  auto bc = injamm::engine<BcIfData>("{{age | lte(10)}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "false");
+}
+
+TEST_CASE("int_filter: ne true (float)", "[int_filter]") {
+  BcFloatData data{2.5};
+  auto bc = injamm::engine<BcFloatData>("{{value | ne(3)}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "true");
+}
+
+TEST_CASE("int_filter: gt float", "[int_filter]") {
+  BcFloatData data{3.14};
+  auto bc = injamm::engine<BcFloatData>("{{value | gt(3)}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "true");
+}
+
+TEST_CASE("int_filter: lt float false", "[int_filter]") {
+  BcFloatData data{2.5};
+  auto bc = injamm::engine<BcFloatData>("{{value | lt(2)}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "false");
+}
+
+TEST_CASE("int_filter: parse_failure_is_false", "[int_filter]") {
+  BcIfData data{"test", 42};
+  auto bc = injamm::engine<BcIfData>("{{name | gt(0)}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "false");
+}
+
 // ---- if フィルタテスト ----
 
 TEST_CASE("bc_if_filter_is_neg_true", "[if_filter]") {
@@ -1018,6 +1148,62 @@ TEST_CASE("bc_if_filter_mod_eq_no", "[if_filter]") {
   auto r = bc.render(data);
   REQUIRE(r.has_value());
   REQUIRE(*r == "");
+}
+
+TEST_CASE("bc_if_filter_ne_true", "[if_filter]") {
+  auto bc = injamm::engine<BcIfData>("{{#if age | ne(20)}}diff{{/if}}");
+  BcIfData data{"test", 10};
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "diff");
+}
+
+TEST_CASE("bc_if_filter_gt_true", "[if_filter]") {
+  auto bc = injamm::engine<BcIfData>("{{#if age | gt(18)}}adult{{else}}minor{{/if}}");
+  BcIfData data{"test", 25};
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "adult");
+}
+
+TEST_CASE("bc_if_filter_gt_false", "[if_filter]") {
+  auto bc = injamm::engine<BcIfData>("{{#if age | gt(18)}}adult{{else}}minor{{/if}}");
+  BcIfData data{"test", 15};
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "minor");
+}
+
+TEST_CASE("bc_if_filter_gte_true", "[if_filter]") {
+  auto bc = injamm::engine<BcIfData>("{{#if age | gte(18)}}ok{{/if}}");
+  BcIfData data{"test", 18};
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "ok");
+}
+
+TEST_CASE("bc_if_filter_lt_false", "[if_filter]") {
+  auto bc = injamm::engine<BcIfData>("{{#if age | lt(0)}}neg{{/if}}");
+  BcIfData data{"test", 5};
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "");
+}
+
+TEST_CASE("bc_if_filter_lte_true", "[if_filter]") {
+  auto bc = injamm::engine<BcIfData>("{{#if age | lte(10)}}small{{/if}}");
+  BcIfData data{"test", 10};
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "small");
+}
+
+TEST_CASE("bc_if_filter_chain_ne", "[if_filter]") {
+  auto bc = injamm::engine<BcIfData>("{{#if age | mod(4) | ne(0)}}not_divisible{{/if}}");
+  BcIfData data{"test", 5};
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "not_divisible");
 }
 
 TEST_CASE("bc_if_filter_with_else", "[if_filter]") {

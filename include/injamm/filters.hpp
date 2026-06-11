@@ -340,6 +340,57 @@ constexpr void apply_string_filter(std::string& str, string_filter_entry entry) 
       }
       break;
     }
+
+    case int_filter::ne:
+    case int_filter::gt:
+    case int_filter::gte:
+    case int_filter::lt:
+    case int_filter::lte: {
+      auto target = static_cast<long long>(entry.arg);
+      auto data = str.data();
+      auto size = str.size();
+      bool result = false;
+      if (str.find('.') != std::string::npos || str.find('e') != std::string::npos || str.find('E') != std::string::npos) {
+        double val{};
+        if (auto [p, ec] = std::from_chars(data, data + size, val); ec == std::errc()) {
+          double ftarget = static_cast<double>(entry.arg);
+          switch (entry.filter) {
+            case int_filter::ne:  result = (val != ftarget); break;
+            case int_filter::gt:  result = (val > ftarget); break;
+            case int_filter::gte: result = (val >= ftarget); break;
+            case int_filter::lt:  result = (val < ftarget); break;
+            case int_filter::lte: result = (val <= ftarget); break;
+            default: break;
+          }
+        } else {
+          long long val2{};
+          if (auto [p2, ec2] = std::from_chars(data, data + size, val2); ec2 == std::errc()) {
+            switch (entry.filter) {
+              case int_filter::ne:  result = (val2 != target); break;
+              case int_filter::gt:  result = (val2 > target); break;
+              case int_filter::gte: result = (val2 >= target); break;
+              case int_filter::lt:  result = (val2 < target); break;
+              case int_filter::lte: result = (val2 <= target); break;
+              default: break;
+            }
+          }
+        }
+      } else {
+        long long val{};
+        if (auto [p, ec] = std::from_chars(data, data + size, val); ec == std::errc()) {
+          switch (entry.filter) {
+            case int_filter::ne:  result = (val != target); break;
+            case int_filter::gt:  result = (val > target); break;
+            case int_filter::gte: result = (val >= target); break;
+            case int_filter::lt:  result = (val < target); break;
+            case int_filter::lte: result = (val <= target); break;
+            default: break;
+          }
+        }
+      }
+      str = result ? "true" : "false";
+      break;
+    }
     case int_filter::zerofill: {
       long long val{};
       if (auto [p, ec] = std::from_chars(str.data(), str.data() + str.size(), val); ec == std::errc()) {

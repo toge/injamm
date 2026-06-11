@@ -710,6 +710,85 @@ TEST_CASE("ct_if_filter_chain", "[injamm][ct]") {
   REQUIRE(*r == "yes");
 }
 
+// ---- 比較フィルタ CT テスト ----
+
+TEST_CASE("ct_int_filter_ne", "[injamm][ct]") {
+  auto constexpr tmpl = injamm::fixed_string("{{age | ne(10)}}");
+  auto r = injamm::render<tmpl>(CtIfData{"t", 42});
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "true");
+}
+
+TEST_CASE("ct_int_filter_gt", "[injamm][ct]") {
+  auto constexpr tmpl = injamm::fixed_string("{{age | gt(18)}}");
+  auto r = injamm::render<tmpl>(CtIfData{"t", 25});
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "true");
+}
+
+TEST_CASE("ct_int_filter_gte_equal", "[injamm][ct]") {
+  auto constexpr tmpl = injamm::fixed_string("{{age | gte(18)}}");
+  auto r = injamm::render<tmpl>(CtIfData{"t", 18});
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "true");
+}
+
+TEST_CASE("ct_int_filter_lt", "[injamm][ct]") {
+  auto constexpr tmpl = injamm::fixed_string("{{age | lt(10)}}");
+  auto r = injamm::render<tmpl>(CtIfData{"t", 5});
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "true");
+}
+
+TEST_CASE("ct_int_filter_lte_equal", "[injamm][ct]") {
+  auto constexpr tmpl = injamm::fixed_string("{{age | lte(10)}}");
+  auto r = injamm::render<tmpl>(CtIfData{"t", 10});
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "true");
+}
+
+TEST_CASE("ct_int_filter_float_ne", "[injamm][ct]") {
+  auto constexpr tmpl = injamm::fixed_string("{{value | ne(3)}}");
+  auto r = injamm::render<tmpl>(CtFloatData{2.5});
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "true");
+}
+
+TEST_CASE("ct_int_filter_gt_float", "[injamm][ct]") {
+  auto constexpr tmpl = injamm::fixed_string("{{value | gt(3)}}");
+  auto r = injamm::render<tmpl>(CtFloatData{3.14});
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "true");
+}
+
+TEST_CASE("ct_int_filter_parse_failure_false", "[injamm][ct]") {
+  auto constexpr tmpl = injamm::fixed_string("{{name | gt(0)}}");
+  auto r = injamm::render<tmpl>(CtIfData{"hello", 42});
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "false");
+}
+
+TEST_CASE("ct_if_filter_gt", "[injamm][ct]") {
+  auto constexpr tmpl = injamm::fixed_string("{{#if age | gt(18)}}adult{{else}}minor{{/if}}");
+  auto r = injamm::render<tmpl>(CtIfData{"t", 25});
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "adult");
+}
+
+TEST_CASE("ct_if_filter_lte", "[injamm][ct]") {
+  auto constexpr tmpl = injamm::fixed_string("{{#if age | lte(10)}}small{{/if}}");
+  auto r = injamm::render<tmpl>(CtIfData{"t", 5});
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "small");
+}
+
+TEST_CASE("ct_if_filter_chain_ne", "[injamm][ct]") {
+  auto constexpr tmpl = injamm::fixed_string("{{#if age | mod(4) | ne(0)}}not_divisible{{/if}}");
+  auto r = injamm::render<tmpl>(CtIfData{"t", 5});
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "not_divisible");
+}
+
 // ---- break / continue ----
 
 TEST_CASE("ct_break", "[injamm][ct]") {
