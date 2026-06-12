@@ -141,42 +141,102 @@ template <std::size_t N>
 consteval void compile_chunk_range(ct_bytecode_builder<N>& b,
                                    ct_parsed_template<N> const& chunks,
                                    std::size_t start, std::size_t end) {
-  for (std::size_t i = start; i < end; ++i) {
-    switch (chunks.kinds[i]) {
-    case ct_chunk_kind::literal: {
+   auto emit_filter_chain = [&](std::size_t idx) {
+     for (std::uint8_t f = 0; f < chunks.filter_count[idx]; ++f) {
+       auto const& sf = chunks.filters[idx][f];
+       switch (sf.filter) {
+       case string_filter::upper:      b.emit(bc_opcode::filter_upper); break;
+       case string_filter::lower:      b.emit(bc_opcode::filter_lower); break;
+       case string_filter::capitalize: b.emit(bc_opcode::filter_capitalize); break;
+       case string_filter::title:      b.emit(bc_opcode::filter_title); break;
+       case string_filter::trim:       b.emit(bc_opcode::filter_trim); break;
+       case string_filter::ltrim:      b.emit(bc_opcode::filter_ltrim); break;
+       case string_filter::rtrim:      b.emit(bc_opcode::filter_rtrim); break;
+       case string_filter::left:       b.emit(bc_opcode::filter_left, sf.arg1); break;
+       case string_filter::right:      b.emit(bc_opcode::filter_right, sf.arg1); break;
+       case string_filter::center:     b.emit(bc_opcode::filter_center, sf.arg1); break;
+       case string_filter::truncate:   b.emit(bc_opcode::filter_truncate, sf.arg1); break;
+       case string_filter::substr:     b.emit(bc_opcode::filter_substr, sf.arg1, sf.arg2); break;
+       }
+     }
+     for (std::uint8_t f = 0; f < chunks.int_filter_count[idx]; ++f) {
+       auto const& intf = chunks.int_filters[idx][f];
+       switch (intf.filter) {
+       case int_filter::abs:      b.emit(bc_opcode::filter_int_abs); break;
+       case int_filter::hex:      b.emit(bc_opcode::filter_int_hex); break;
+       case int_filter::oct:      b.emit(bc_opcode::filter_int_oct); break;
+       case int_filter::bin:      b.emit(bc_opcode::filter_int_bin); break;
+       case int_filter::neg:      b.emit(bc_opcode::filter_int_neg); break;
+       case int_filter::mod:      b.emit(bc_opcode::filter_int_mod, intf.arg); break;
+       case int_filter::numify:   b.emit(bc_opcode::filter_int_numify); break;
+       case int_filter::is_neg:   b.emit(bc_opcode::filter_int_is_neg); break;
+       case int_filter::eq:       b.emit(bc_opcode::filter_int_eq, intf.arg); break;
+       case int_filter::ne:       b.emit(bc_opcode::filter_int_ne, intf.arg); break;
+       case int_filter::gt:       b.emit(bc_opcode::filter_int_gt, intf.arg); break;
+       case int_filter::gte:      b.emit(bc_opcode::filter_int_gte, intf.arg); break;
+       case int_filter::lt:       b.emit(bc_opcode::filter_int_lt, intf.arg); break;
+       case int_filter::lte:      b.emit(bc_opcode::filter_int_lte, intf.arg); break;
+       case int_filter::zerofill: b.emit(bc_opcode::filter_int_zerofill, intf.arg); break;
+       }
+     }
+     for (std::uint8_t f = 0; f < chunks.float_filter_count[idx]; ++f) {
+       auto const& ff = chunks.float_filters[idx][f];
+       if (ff.filter == float_filter::precision)
+         b.emit(bc_opcode::filter_float_precision, ff.arg);
+     }
+   };
+
+   for (std::size_t i = start; i < end; ++i) {
+     switch (chunks.kinds[i]) {
+     case ct_chunk_kind::literal: {
       auto lit_idx = b.add_literal({chunks.texts[i].data(), chunks.texts[i].size()});
       b.emit(bc_opcode::emit_literal, lit_idx);
       break;
     }
-    case ct_chunk_kind::placeholder: {
-      auto sv = chunks.texts[i];
-      bool raw = (chunks.flags[i] != 0);
+     case ct_chunk_kind::placeholder: {
+       auto sv = chunks.texts[i];
+       bool raw = (chunks.flags[i] != 0);
+       bool has_filters = (chunks.filter_count[i] > 0 || chunks.int_filter_count[i] > 0
+                           || chunks.float_filter_count[i] > 0);
 
-      // @root.field → emit_at_root_field (strip @root. prefix)
-      if (sv.starts_with("@root.")) {
-        auto rest = sv.substr(6);
-        auto vridx = b.add_var_ref({rest.data(), rest.size()},
-                                    static_cast<std::uint32_t>(chunks.field_indices[i]));
-        b.emit(raw ? bc_opcode::emit_at_root_field_raw : bc_opcode::emit_at_root_field, 0, vridx);
-        break;
-      }
+       // @root.field → resolve_filtered or emit_at_root_field
+       if (sv.starts_with("@root.")) {
+         auto rest = sv.substr(6);
+         auto vridx = b.add_var_ref({rest.data(), rest.size()},
+                                     static_cast<std::uint32_t>(chunks.field_indices[i]));
+         if (has_filters) {
+           b.emit(bc_opcode::resolve_filtered, 0, vridx);
+           emit_filter_chain(i);
+           b.emit(raw ? bc_opcode::emit_filtered_raw : bc_opcode::emit_filtered);
+         } else {
+           b.emit(raw ? bc_opcode::emit_at_root_field_raw : bc_opcode::emit_at_root_field, 0, vridx);
+         }
+         break;
+       }
 
-      auto vridx = b.add_var_ref({sv.data(), sv.size()},
-                                  static_cast<std::uint32_t>(chunks.field_indices[i]));
+       auto vridx = b.add_var_ref({sv.data(), sv.size()},
+                                   static_cast<std::uint32_t>(chunks.field_indices[i]));
 
-      // Fusion: preceding emit_literal + no-filters var → emit_litvar
-      if (b.bc.instr_count > 0) {
-        auto& prev = b.bc.instructions[b.bc.instr_count - 1];
-        if (prev.op == bc_opcode::emit_literal) {
-          prev.op = raw ? bc_opcode::emit_litvar_raw : bc_opcode::emit_litvar;
-          prev.operand2 = vridx;
-          break;
-        }
-      }
+       if (has_filters) {
+         b.emit(bc_opcode::resolve_filtered, 0, vridx);
+         emit_filter_chain(i);
+         b.emit(raw ? bc_opcode::emit_filtered_raw : bc_opcode::emit_filtered);
+         break;
+       }
 
-      b.emit(raw ? bc_opcode::emit_var_raw : bc_opcode::emit_var, 0, vridx);
-      break;
-    }
+       // Fusion: preceding emit_literal + no-filters var → emit_litvar
+       if (b.bc.instr_count > 0) {
+         auto& prev = b.bc.instructions[b.bc.instr_count - 1];
+         if (prev.op == bc_opcode::emit_literal) {
+           prev.op = raw ? bc_opcode::emit_litvar_raw : bc_opcode::emit_litvar;
+           prev.operand2 = vridx;
+           break;
+         }
+       }
+
+       b.emit(raw ? bc_opcode::emit_var_raw : bc_opcode::emit_var, 0, vridx);
+       break;
+     }
     case ct_chunk_kind::section: {
       auto vridx = b.add_var_ref({chunks.texts[i].data(), chunks.texts[i].size()},
                                   static_cast<std::uint32_t>(chunks.field_indices[i]));
@@ -248,7 +308,13 @@ consteval void compile_chunk_range(ct_bytecode_builder<N>& b,
       i = skip_to - 1;
       break;
     }
-    default: break;
+     case ct_chunk_kind::ct_break:
+       b.emit(bc_opcode::emit_break);
+       break;
+     case ct_chunk_kind::ct_continue:
+       b.emit(bc_opcode::emit_continue);
+       break;
+     default: break;
     }
   }
   b.emit(bc_opcode::halt);
