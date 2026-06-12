@@ -4,7 +4,7 @@
 #include "escape.hpp"
 #include "filters.hpp"
 #include "serialize_value.hpp"
-#include "resolve.hpp"
+#include "glz_dispatch.hpp"
 #include "../injamm.hpp"
 #include <array>
 #include <charconv>
@@ -799,22 +799,34 @@ public:
       DISPATCH();
     }
 
-    /** @brief フィルタ付き変数解決 */
+    /** @brief フィルタ付き変数解決（フィルタを一括適用し個別命令をスキップ） */
     L_resolve_filtered: {
       auto const& instr = bc_.instructions[pc];
       auto const& var_ref = bc_.var_refs[instr.operand2];
       filtered_value_.clear();
-      loop_state ls{};
-      if (loop_) {
-        ls.index = loop_->index;
-        ls.count = loop_->count;
-        ls.key = loop_->key;
-        ls.in_loop = true;
+      auto r = for_each_field(value_, var_ref.key, var_ref.field_index, [&](auto const& field) {
+        using FT = std::remove_cvref_t<decltype(field)>;
+        if constexpr (serializable_v<FT>) {
+          serialize_value(filtered_value_, field);
+        } else if constexpr (is_std_optional_v<FT>) {
+          if (field.has_value()) {
+            serialize_value(filtered_value_, *field);
+          }
+        }
+      });
+      if (!r) return r;
+      // フィルタを一括適用（dispatch 削減のため）
+      for (auto const& f : var_ref.filters)
+        apply_string_filter(filtered_value_, f);
+      for (auto const& f : var_ref.int_filters) {
+        if (auto err = apply_int_filter(filtered_value_, f); !err)
+          return std::unexpected(err.error());
       }
-      if (!resolve_value(filtered_value_, var_ref.key, value_, loop_ ? &ls : nullptr)) {
-        return std::unexpected(error_ctx{.ec = error_code::unknown_key});
-      }
+      for (auto const& f : var_ref.float_filters)
+        apply_float_filter(filtered_value_, f);
+      // 個別フィルタ命令をスキップ
       ++pc;
+      pc += instr.operand;
       DISPATCH();
     }
 
@@ -1454,17 +1466,29 @@ public:
         case bc_opcode::resolve_filtered: {
           auto const& var_ref = bc_.var_refs[instr.operand2];
           filtered_value_.clear();
-          loop_state ls{};
-          if (loop_) {
-            ls.index = loop_->index;
-            ls.count = loop_->count;
-            ls.key = loop_->key;
-            ls.in_loop = true;
+          auto r = for_each_field(value_, var_ref.key, var_ref.field_index, [&](auto const& field) {
+            using FT = std::remove_cvref_t<decltype(field)>;
+            if constexpr (serializable_v<FT>) {
+              serialize_value(filtered_value_, field);
+            } else if constexpr (is_std_optional_v<FT>) {
+              if (field.has_value()) {
+                serialize_value(filtered_value_, *field);
+              }
+            }
+          });
+          if (!r) return r;
+          // フィルタを一括適用（dispatch 削減のため）
+          for (auto const& f : var_ref.filters)
+            apply_string_filter(filtered_value_, f);
+          for (auto const& f : var_ref.int_filters) {
+            if (auto err = apply_int_filter(filtered_value_, f); !err)
+              return std::unexpected(err.error());
           }
-          if (!resolve_value(filtered_value_, var_ref.key, value_, loop_ ? &ls : nullptr)) {
-            return std::unexpected(error_ctx{.ec = error_code::unknown_key});
-          }
+          for (auto const& f : var_ref.float_filters)
+            apply_float_filter(filtered_value_, f);
+          // 個別フィルタ命令をスキップ
           ++pc;
+          pc += instr.operand;
           break;
         }
 
@@ -1757,13 +1781,32 @@ public:
 template <class T>
 std::expected<std::string, error_ctx> bc_execute(bytecode const& bc, T const& value) {
   std::string out;
-  out.reserve(256);
+  auto estimated = bc.literal_total_size > 256 ? bc.literal_total_size * 2 : 256;
+  out.reserve(estimated);
   bc_executor<T> exec(bc, value, value, nullptr, out);
   auto r = exec.execute();
   if (!r) {
     return std::unexpected(r.error());
   }
   return out;
+}
+
+/**
+ * @brief バイトコードを実行して既存の出力バッファに追記する（バッファ再利用用）
+ * @tparam T コンテキスト値の型
+ * @param bc バイトコード
+ * @param value コンテキスト値
+ * @param out 出力先バッファ（内容はクリアされる）
+ * @return std::expected<void, error_ctx> 実行結果
+ */
+template <class T>
+std::expected<void, error_ctx> bc_execute_into(bytecode const& bc, T const& value, std::string& out) {
+  out.clear();
+  auto estimated = bc.literal_total_size > 256 ? bc.literal_total_size * 2 : 256;
+  if (out.capacity() < estimated)
+    out.reserve(estimated);
+  bc_executor<T> exec(bc, value, value, nullptr, out);
+  return exec.execute();
 }
 
 } // namespace injamm::detail

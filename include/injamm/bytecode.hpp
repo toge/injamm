@@ -295,6 +295,7 @@ struct bytecode {
   std::vector<bc_instruction> instructions;  /**< 命令列 */
   std::vector<std::string> literals;         /**< リテラル文字列テーブル */
   std::vector<bc_var_ref> var_refs;          /**< 変数参照テーブル */
+  std::size_t literal_total_size = 0;        /**< 全リテラルの合計サイズ（出力バッファ事前確保用） */
   error_ctx error{};                         /**< コンパイル時エラー（非ゼロ ec でエラー） */
 
   /**

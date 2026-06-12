@@ -274,6 +274,20 @@ public:
   }
 
   /**
+   * @brief レンダリング結果を既存バッファに書き込む（バッファ再利用用）
+   *
+   * @param value コンテキスト値の const 参照
+   * @param out 出力先バッファ（内容はクリアされる）
+   * @return expected<void> 実行結果、またはエラー
+   */
+  [[nodiscard]] expected<void> render(T const& value, std::string& out) const {
+    if (bc_.error.ec != error_code::none) {
+      return std::unexpected(bc_.error);
+    }
+    return detail::bc_execute_into(bc_, value, out);
+  }
+
+  /**
    * @brief コンパイル済みバイトコードを可読な形式に逆アセンブルする
    *
    * @details デバッグと最適化のために、内部バイトコードを人間に読みやすい形式で

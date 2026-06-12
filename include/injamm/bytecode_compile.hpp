@@ -83,8 +83,9 @@ class bc_compiler {
       }
       bc_.add_instruction(raw ? bc_opcode::emit_var_raw : bc_opcode::emit_var, idx);
     } else {
-      // フィルタ専用パス
-      bc_.add_instruction(bc_opcode::resolve_filtered, 0, idx);
+      // フィルタ専用パス: 後続フィルタ命令数を operand に格納（executor がスキップ用に使用）
+      auto filter_count = static_cast<std::uint32_t>(filters.size() + int_filters.size() + float_filters.size());
+      bc_.add_instruction(bc_opcode::resolve_filtered, filter_count, idx);
       for (auto f : filters) {
         switch (f.filter) {
           case string_filter::upper:      bc_.add_instruction(bc_opcode::filter_upper); break;
@@ -251,7 +252,8 @@ class bc_compiler {
     /** フィルタがある場合は resolve_filtered → filter_* 命令列を発行し、emit_if_filtered を使う */
     bool has_filters = !filters.empty() || !int_filters.empty() || !float_filters.empty();
     if (has_filters) {
-      bc_.add_instruction(bc_opcode::resolve_filtered, 0, idx);
+      auto filter_count = static_cast<std::uint32_t>(filters.size() + int_filters.size() + float_filters.size());
+      bc_.add_instruction(bc_opcode::resolve_filtered, filter_count, idx);
       for (auto f : filters) {
         switch (f.filter) {
           case string_filter::upper:      bc_.add_instruction(bc_opcode::filter_upper); break;
@@ -681,6 +683,8 @@ class bc_compiler {
     pos_ = 0;
     compile_body();
     bc_.add_instruction(bc_opcode::halt);
+    for (auto const& lit : bc_.literals)
+      bc_.literal_total_size += lit.size();
     return std::move(bc_);
   }
 };
