@@ -1,7 +1,6 @@
 #pragma once
 
 #include "ct_chunk.hpp"
-#include "ct_render.hpp"
 #include "glz_dispatch.hpp"
 #include "types.hpp"
 #include "bytecode.hpp"
@@ -86,6 +85,30 @@ bytecode to_bytecode(ct_bytecode<N> const& ct) {
   }
   bc.error = ct.error;
   return bc;
+}
+
+template <class T, std::size_t N>
+constexpr ct_parsed_template<N> resolve_field_indices(ct_parsed_template<N> tmpl) {
+  tmpl.field_indices.fill(-1);
+  if constexpr (glz_reflectable<T>) {
+    constexpr auto count = glz::reflect<T>::size;
+    for (std::size_t i = 0; i < tmpl.size; ++i) {
+      auto& idx = tmpl.field_indices[i];
+      auto kind = tmpl.kinds[i];
+      if (kind != ct_chunk_kind::placeholder && kind != ct_chunk_kind::section &&
+          kind != ct_chunk_kind::inverted && kind != ct_chunk_kind::if_else) {
+        continue;
+      }
+      auto key = tmpl.texts[i];
+      if (key.empty() || key[0] == '@' || key.find('.') != std::string_view::npos) {
+        continue;
+      }
+      [&]<std::size_t... I>(std::index_sequence<I...>) {
+        ((std::string_view{glz::reflect<T>::keys[I]} == key && (idx = static_cast<int>(I), true)) || ...);
+      }(std::make_index_sequence<count>{});
+    }
+  }
+  return tmpl;
 }
 
 template <std::size_t N>
