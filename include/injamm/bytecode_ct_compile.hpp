@@ -221,6 +221,33 @@ consteval void compile_chunk_range(ct_bytecode_builder<N>& b,
       i = chunks.body_ends[i] - 1;
       break;
     }
+    case ct_chunk_kind::if_else: {
+      bool has_else = (chunks.else_starts[i] != 0 || chunks.else_ends[i] != 0);
+      auto sv = chunks.texts[i];
+      auto vridx = b.add_var_ref({sv.data(), sv.size()},
+                                  static_cast<std::uint32_t>(chunks.field_indices[i]));
+
+      auto if_instr = b.current_offset();
+      b.emit(bc_opcode::emit_if, 0, vridx);
+      compile_chunk_range(b, chunks, chunks.body_starts[i], chunks.body_ends[i]);
+
+      if (has_else) {
+        auto else_instr = b.current_offset();
+        b.emit(bc_opcode::emit_else, 0);
+        compile_chunk_range(b, chunks, chunks.else_starts[i], chunks.else_ends[i]);
+        auto endif_addr = b.current_offset();
+        b.emit(bc_opcode::emit_endif);
+        b.patch_jump(else_instr, static_cast<std::uint32_t>(endif_addr + 1));
+        b.patch_jump(if_instr, static_cast<std::uint32_t>(else_instr + 1));
+      } else {
+        auto endif_addr = b.current_offset();
+        b.emit(bc_opcode::emit_endif);
+        b.patch_jump(if_instr, static_cast<std::uint32_t>(endif_addr + 1));
+      }
+      std::size_t skip_to = chunks.else_ends[i] != 0 ? chunks.else_ends[i] : chunks.body_ends[i];
+      i = skip_to - 1;
+      break;
+    }
     default: break;
     }
   }
