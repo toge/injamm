@@ -62,7 +62,7 @@ struct ct_bytecode_builder {
     return idx;
   }
 
-  std::uint32_t add_var_ref(string_ref key, std::uint32_t field_index) {
+  constexpr std::uint32_t add_var_ref(string_ref key, std::uint32_t field_index) {
     auto idx = static_cast<std::uint32_t>(bc.var_ref_count);
     bc.var_refs[bc.var_ref_count] = {key, field_index};
     ++bc.var_ref_count;
@@ -146,6 +146,35 @@ consteval void compile_chunk_range(ct_bytecode_builder<N>& b,
     case ct_chunk_kind::literal: {
       auto lit_idx = b.add_literal({chunks.texts[i].data(), chunks.texts[i].size()});
       b.emit(bc_opcode::emit_literal, lit_idx);
+      break;
+    }
+    case ct_chunk_kind::placeholder: {
+      auto sv = chunks.texts[i];
+      bool raw = (chunks.flags[i] != 0);
+
+      // @root.field → emit_at_root_field (strip @root. prefix)
+      if (sv.starts_with("@root.")) {
+        auto rest = sv.substr(6);
+        auto vridx = b.add_var_ref({rest.data(), rest.size()},
+                                    static_cast<std::uint32_t>(chunks.field_indices[i]));
+        b.emit(raw ? bc_opcode::emit_at_root_field_raw : bc_opcode::emit_at_root_field, 0, vridx);
+        break;
+      }
+
+      auto vridx = b.add_var_ref({sv.data(), sv.size()},
+                                  static_cast<std::uint32_t>(chunks.field_indices[i]));
+
+      // Fusion: preceding emit_literal + no-filters var → emit_litvar
+      if (b.bc.instr_count > 0) {
+        auto& prev = b.bc.instructions[b.bc.instr_count - 1];
+        if (prev.op == bc_opcode::emit_literal) {
+          prev.op = raw ? bc_opcode::emit_litvar_raw : bc_opcode::emit_litvar;
+          prev.operand2 = vridx;
+          break;
+        }
+      }
+
+      b.emit(raw ? bc_opcode::emit_var_raw : bc_opcode::emit_var, 0, vridx);
       break;
     }
     default: break;
