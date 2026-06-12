@@ -3,6 +3,7 @@
 #include "bytecode.hpp"
 #include "chunk.hpp"
 #include "types.hpp"
+#include <array>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -58,10 +59,10 @@ namespace injamm::detail {
   // 引数付きフィルタの処理
   auto paren = name.find('(');
   if (paren != std::string_view::npos && name.back() == ')') {
-    auto fname = name.substr(0, paren);
+    auto fname    = name.substr(0, paren);
     auto args_str = name.substr(paren + 1, name.size() - paren - 2);
-    int arg1 = 0;
-    int arg2 = 0;
+    int  arg1     = 0;
+    int  arg2     = 0;
     // カンマで分割して引数を解析
     auto comma = args_str.find(',');
     if (comma != std::string_view::npos) {
@@ -69,31 +70,46 @@ namespace injamm::detail {
       auto arg1_str = args_str.substr(0, comma);
       auto arg2_str = args_str.substr(comma + 1);
       for (auto c : arg1_str) {
-        if (c >= '0' && c <= '9') arg1 = arg1 * 10 + (c - '0');
+        if (c >= '0' && c <= '9')
+          arg1 = arg1 * 10 + (c - '0');
       }
       for (auto c : arg2_str) {
-        if (c >= '0' && c <= '9') arg2 = arg2 * 10 + (c - '0');
+        if (c >= '0' && c <= '9')
+          arg2 = arg2 * 10 + (c - '0');
       }
     } else {
       // 1引数
       for (auto c : args_str) {
-        if (c >= '0' && c <= '9') arg1 = arg1 * 10 + (c - '0');
+        if (c >= '0' && c <= '9')
+          arg1 = arg1 * 10 + (c - '0');
       }
     }
-    if (fname == "left") return string_filter_entry{string_filter::left, arg1, 0};
-    if (fname == "right") return string_filter_entry{string_filter::right, arg1, 0};
-    if (fname == "center") return string_filter_entry{string_filter::center, arg1, 0};
-    if (fname == "truncate") return string_filter_entry{string_filter::truncate, arg1, 0};
-    if (fname == "substr") return string_filter_entry{string_filter::substr, arg1, arg2};
+    if (fname == "left")
+      return string_filter_entry{string_filter::left, arg1, 0};
+    if (fname == "right")
+      return string_filter_entry{string_filter::right, arg1, 0};
+    if (fname == "center")
+      return string_filter_entry{string_filter::center, arg1, 0};
+    if (fname == "truncate")
+      return string_filter_entry{string_filter::truncate, arg1, 0};
+    if (fname == "substr")
+      return string_filter_entry{string_filter::substr, arg1, arg2};
   }
   // 引数なしフィルタ
-  if (name == "upper") return string_filter_entry{string_filter::upper, 0, 0};
-  if (name == "lower") return string_filter_entry{string_filter::lower, 0, 0};
-  if (name == "capitalize") return string_filter_entry{string_filter::capitalize, 0, 0};
-  if (name == "title") return string_filter_entry{string_filter::title, 0, 0};
-  if (name == "trim") return string_filter_entry{string_filter::trim, 0, 0};
-  if (name == "ltrim") return string_filter_entry{string_filter::ltrim, 0, 0};
-  if (name == "rtrim") return string_filter_entry{string_filter::rtrim, 0, 0};
+  if (name == "upper")
+    return string_filter_entry{string_filter::upper, 0, 0};
+  if (name == "lower")
+    return string_filter_entry{string_filter::lower, 0, 0};
+  if (name == "capitalize")
+    return string_filter_entry{string_filter::capitalize, 0, 0};
+  if (name == "title")
+    return string_filter_entry{string_filter::title, 0, 0};
+  if (name == "trim")
+    return string_filter_entry{string_filter::trim, 0, 0};
+  if (name == "ltrim")
+    return string_filter_entry{string_filter::ltrim, 0, 0};
+  if (name == "rtrim")
+    return string_filter_entry{string_filter::rtrim, 0, 0};
   return std::nullopt;
 }
 
@@ -106,29 +122,45 @@ namespace injamm::detail {
   // 引数付きフィルタの処理
   auto paren = name.find('(');
   if (paren != std::string_view::npos && name.back() == ')') {
-    auto fname = name.substr(0, paren);
+    auto fname   = name.substr(0, paren);
     auto arg_str = name.substr(paren + 1, name.size() - paren - 2);
-    int arg = 0;
+    int  arg     = 0;
     for (auto c : arg_str) {
-      if (c >= '0' && c <= '9') arg = arg * 10 + (c - '0');
+      if (c >= '0' && c <= '9')
+        arg = arg * 10 + (c - '0');
     }
-    if (fname == "mod") return int_filter_entry{int_filter::mod, arg};
-    if (fname == "eq") return int_filter_entry{int_filter::eq, arg};
-    if (fname == "ne") return int_filter_entry{int_filter::ne, arg};
-    if (fname == "gt") return int_filter_entry{int_filter::gt, arg};
-    if (fname == "gte") return int_filter_entry{int_filter::gte, arg};
-    if (fname == "lt") return int_filter_entry{int_filter::lt, arg};
-    if (fname == "lte") return int_filter_entry{int_filter::lte, arg};
-    if (fname == "zerofill") return int_filter_entry{int_filter::zerofill, arg};
+    if (fname == "mod")
+      return int_filter_entry{int_filter::mod, arg};
+    if (fname == "eq")
+      return int_filter_entry{int_filter::eq, arg};
+    if (fname == "ne")
+      return int_filter_entry{int_filter::ne, arg};
+    if (fname == "gt")
+      return int_filter_entry{int_filter::gt, arg};
+    if (fname == "gte")
+      return int_filter_entry{int_filter::gte, arg};
+    if (fname == "lt")
+      return int_filter_entry{int_filter::lt, arg};
+    if (fname == "lte")
+      return int_filter_entry{int_filter::lte, arg};
+    if (fname == "zerofill")
+      return int_filter_entry{int_filter::zerofill, arg};
   }
   // 引数なしフィルタ
-  if (name == "abs")     return int_filter_entry{int_filter::abs, 0};
-  if (name == "hex")     return int_filter_entry{int_filter::hex, 0};
-  if (name == "oct")     return int_filter_entry{int_filter::oct, 0};
-  if (name == "bin")     return int_filter_entry{int_filter::bin, 0};
-  if (name == "neg")     return int_filter_entry{int_filter::neg, 0};
-  if (name == "numify")  return int_filter_entry{int_filter::numify, 0};
-  if (name == "is_neg")  return int_filter_entry{int_filter::is_neg, 0};
+  if (name == "abs")
+    return int_filter_entry{int_filter::abs, 0};
+  if (name == "hex")
+    return int_filter_entry{int_filter::hex, 0};
+  if (name == "oct")
+    return int_filter_entry{int_filter::oct, 0};
+  if (name == "bin")
+    return int_filter_entry{int_filter::bin, 0};
+  if (name == "neg")
+    return int_filter_entry{int_filter::neg, 0};
+  if (name == "numify")
+    return int_filter_entry{int_filter::numify, 0};
+  if (name == "is_neg")
+    return int_filter_entry{int_filter::is_neg, 0};
   return std::nullopt;
 }
 
@@ -140,13 +172,15 @@ namespace injamm::detail {
 [[nodiscard]] constexpr std::optional<float_filter_entry> parse_float_filter(std::string_view name) noexcept {
   auto paren = name.find('(');
   if (paren != std::string_view::npos && name.back() == ')') {
-    auto fname = name.substr(0, paren);
+    auto fname   = name.substr(0, paren);
     auto arg_str = name.substr(paren + 1, name.size() - paren - 2);
-    int arg = 0;
+    int  arg     = 0;
     for (auto c : arg_str) {
-      if (c >= '0' && c <= '9') arg = arg * 10 + (c - '0');
+      if (c >= '0' && c <= '9')
+        arg = arg * 10 + (c - '0');
     }
-    if (fname == "precision") return float_filter_entry{float_filter::precision, arg};
+    if (fname == "precision")
+      return float_filter_entry{float_filter::precision, arg};
   }
   return std::nullopt;
 }
@@ -160,9 +194,9 @@ namespace injamm::detail {
  *          管理し、depth 0 でのみ {{else}} をトップレベルと判定する。
  */
 [[nodiscard]] constexpr std::size_t find_toplevel_else(std::string_view body) noexcept {
-  std::size_t pos = 0;
-  int if_depth = 0;
-  int section_depth = 0;
+  std::size_t pos           = 0;
+  int         if_depth      = 0;
+  int         section_depth = 0;
   while (pos < body.size()) {
     auto tag_pos = body.find("{{", pos);
     if (tag_pos == std::string_view::npos) {
@@ -193,22 +227,33 @@ namespace injamm::detail {
   return std::string_view::npos;
 }
 
+/** @brief split_by_pipe の結果を保持する固定サイズコンテナ（ヒープ割り当てなし） */
+struct pipe_parts {
+  static constexpr std::size_t            max_parts = 8;
+  std::array<std::string_view, max_parts> data{};
+  std::size_t                             count = 0;
+
+  [[nodiscard]] constexpr std::string_view const& operator[](std::size_t i) const noexcept { return data[i]; }
+  [[nodiscard]] constexpr std::size_t             size() const noexcept { return count; }
+  [[nodiscard]] constexpr bool                    empty() const noexcept { return count == 0; }
+};
+
 /**
  * @brief 文字列を '|' で分割し、各パートの前後空白を除去する
  * @param input 入力文字列
- * @return 分割された文字列のベクター
+ * @return 分割された文字列の固定サイズ配列
  */
-[[nodiscard]] constexpr std::vector<std::string_view> split_by_pipe(std::string_view input) {
-  std::vector<std::string_view> result;
+[[nodiscard]] constexpr pipe_parts split_by_pipe(std::string_view input) {
+  pipe_parts  result;
   std::size_t pos = 0;
-  while (pos < input.size()) {
+  while (pos < input.size() && result.count < pipe_parts::max_parts) {
     auto pipe = input.find('|', pos);
     if (pipe == std::string_view::npos) {
-      result.push_back(trim_sv(input.substr(pos)));
+      result.data[result.count++] = trim_sv(input.substr(pos));
       break;
     }
-    result.push_back(trim_sv(input.substr(pos, pipe - pos)));
-    pos = pipe + 1;
+    result.data[result.count++] = trim_sv(input.substr(pos, pipe - pos));
+    pos                         = pipe + 1;
   }
   return result;
 }
@@ -257,12 +302,12 @@ constexpr expected<bool> parse_into(Container& result, std::string_view tmpl) {
         pos = tag_start + 1;
         continue;
       }
-      auto key = trim_sv(tmpl.substr(tag_start + 3, end - tag_start - 3));
-      auto parts = split_by_pipe(key);
-      auto actual_key = parts[0];
+      auto                             key        = trim_sv(tmpl.substr(tag_start + 3, end - tag_start - 3));
+      auto                             parts      = split_by_pipe(key);
+      auto                             actual_key = parts[0];
       std::vector<string_filter_entry> filters;
-      std::vector<int_filter_entry> int_filters;
-      std::vector<float_filter_entry> float_filters;
+      std::vector<int_filter_entry>    int_filters;
+      std::vector<float_filter_entry>  float_filters;
       for (std::size_t fi = 1; fi < parts.size(); ++fi) {
         auto sf = parse_string_filter(parts[fi]);
         if (sf) {
@@ -296,7 +341,7 @@ constexpr expected<bool> parse_into(Container& result, std::string_view tmpl) {
     }
 
     auto inner = trim_sv(tmpl.substr(tag_start + 2, tag_end - tag_start - 2));
-    pos = tag_end + 2;
+    pos        = tag_end + 2;
 
     /** 空タグはスキップ */
     if (inner.empty()) {
@@ -321,11 +366,11 @@ constexpr expected<bool> parse_into(Container& result, std::string_view tmpl) {
         auto expr_raw = key.size() > 2 ? trim_sv(key.substr(3)) : std::string_view{};
 
         /** フィルタチェーンの解析: "age | is_neg" → key="age", filters=[is_neg] */
-        auto parts = split_by_pipe(expr_raw);
-        auto expr = parts.empty() ? std::string_view{} : parts[0];
+        auto                             parts = split_by_pipe(expr_raw);
+        auto                             expr  = parts.empty() ? std::string_view{} : parts[0];
         std::vector<string_filter_entry> if_filters;
-        std::vector<int_filter_entry> if_int_filters;
-        std::vector<float_filter_entry> if_float_filters;
+        std::vector<int_filter_entry>    if_int_filters;
+        std::vector<float_filter_entry>  if_float_filters;
         for (std::size_t fi = 1; fi < parts.size(); ++fi) {
           auto sf = parse_string_filter(parts[fi]);
           if (sf) {
@@ -350,12 +395,12 @@ constexpr expected<bool> parse_into(Container& result, std::string_view tmpl) {
          * ネストされた {{#if}} も正しく扱うため、オープン/クローズの
          * バランスを depth で追跡する。
          */
-        int depth = 1;
+        int         depth      = 1;
         std::size_t search_pos = pos;
-        std::size_t close_pos = std::string_view::npos;
+        std::size_t close_pos  = std::string_view::npos;
 
         while (search_pos < tmpl.size()) {
-          auto next_open = tmpl.find("{{#if", search_pos);
+          auto next_open  = tmpl.find("{{#if", search_pos);
           auto next_close = tmpl.find("{{/if}}", search_pos);
           if (next_close == std::string_view::npos) {
             break;
@@ -376,38 +421,40 @@ constexpr expected<bool> parse_into(Container& result, std::string_view tmpl) {
         std::string_view body;
         if (close_pos != std::string_view::npos) {
           body = tmpl.substr(pos, close_pos - pos);
-          pos = close_pos + 7;
+          pos  = close_pos + 7;
         } else {
           /** 閉じタグなし: 残り全てをボディとする */
           body = tmpl.substr(pos);
-          pos = tmpl.size();
+          pos  = tmpl.size();
         }
 
         /** {{else}} でボディを then / else に分割 */
-        auto else_pos = find_toplevel_else(body);
+        auto             else_pos = find_toplevel_else(body);
         std::string_view then_body, else_body;
         if (else_pos != std::string_view::npos) {
-          then_body = body.substr(0, else_pos);
+          then_body         = body.substr(0, else_pos);
           auto else_tag_end = body.find("}}", else_pos + 2);
-          else_body = (else_tag_end != std::string_view::npos) ? body.substr(else_tag_end + 2) : std::string_view{};
+          else_body         = (else_tag_end != std::string_view::npos) ? body.substr(else_tag_end + 2) : std::string_view{};
         } else {
           then_body = body;
           else_body = {};
         }
 
         chunk_if ci;
-        ci.expr = std::string{expr};
-        ci.filters = std::move(if_filters);
-        ci.int_filters = std::move(if_int_filters);
+        ci.expr          = std::string{expr};
+        ci.filters       = std::move(if_filters);
+        ci.int_filters   = std::move(if_int_filters);
         ci.float_filters = std::move(if_float_filters);
         {
           auto parsed = parse(then_body);
-          if (!parsed) return std::unexpected(parsed.error());
+          if (!parsed)
+            return std::unexpected(parsed.error());
           ci.then_branch = wrap_body_chunks(std::move(*parsed));
         }
         {
           auto parsed = parse(else_body);
-          if (!parsed) return std::unexpected(parsed.error());
+          if (!parsed)
+            return std::unexpected(parsed.error());
           ci.else_branch = wrap_body_chunks(std::move(*parsed));
         }
         result.push_back(std::move(ci));
@@ -416,18 +463,19 @@ constexpr expected<bool> parse_into(Container& result, std::string_view tmpl) {
 
       /** {{#@var}} — @var セクション */
       if (key.starts_with("@")) {
-        auto var_kind = parse_at_kind(key);
+        auto var_kind      = parse_at_kind(key);
         auto close_tag_str = std::string{"{{/"} + std::string{key} + "}}";
-        auto body_start = pos;
-        auto close_pos = tmpl.find(close_tag_str, pos);
+        auto body_start    = pos;
+        auto close_pos     = tmpl.find(close_tag_str, pos);
         if (close_pos != std::string_view::npos) {
           auto body = tmpl.substr(body_start, close_pos - body_start);
-          pos = close_pos + close_tag_str.size();
+          pos       = close_pos + close_tag_str.size();
           chunk_at_section cas;
           cas.var = var_kind;
           {
             auto parsed = parse(body);
-            if (!parsed) return std::unexpected(parsed.error());
+            if (!parsed)
+              return std::unexpected(parsed.error());
             cas.body = wrap_body_chunks(std::move(*parsed));
           }
           cas.inverted = false;
@@ -439,16 +487,16 @@ constexpr expected<bool> parse_into(Container& result, std::string_view tmpl) {
       /** {{#key}} — 通常のセクション */
       {
         auto close_tag_str = std::string{"{{/"} + std::string{key} + "}}";
-        auto open_tag_str = std::string{"{{#"} + std::string{key} + "}}";
-        auto body_start = pos;
+        auto open_tag_str  = std::string{"{{#"} + std::string{key} + "}}";
+        auto body_start    = pos;
 
         /** ネストした同キーのセクションを考慮し深度カウントで閉じタグを検出 */
-        int depth2 = 1;
-        std::size_t search = pos;
+        int         depth2    = 1;
+        std::size_t search    = pos;
         std::size_t close_pos = std::string_view::npos;
 
         while (search < tmpl.size()) {
-          auto next_open = tmpl.find(open_tag_str, search);
+          auto next_open  = tmpl.find(open_tag_str, search);
           auto next_close = tmpl.find(close_tag_str, search);
           if (next_close == std::string_view::npos) {
             break;
@@ -468,24 +516,26 @@ constexpr expected<bool> parse_into(Container& result, std::string_view tmpl) {
 
         if (close_pos != std::string_view::npos) {
           auto body = tmpl.substr(body_start, close_pos - body_start);
-          pos = close_pos + close_tag_str.size();
+          pos       = close_pos + close_tag_str.size();
           {
             auto parsed = parse(body);
-            if (!parsed) return std::unexpected(parsed.error());
+            if (!parsed)
+              return std::unexpected(parsed.error());
             chunk_section cs;
-            cs.key = std::string{key};
+            cs.key  = std::string{key};
             cs.body = wrap_body_chunks(std::move(*parsed));
             result.push_back(std::move(cs));
           }
         } else {
           /** 閉じタグなし: ファイル末尾までをボディとする */
           auto body = tmpl.substr(body_start);
-          pos = tmpl.size();
+          pos       = tmpl.size();
           {
             auto parsed = parse(body);
-            if (!parsed) return std::unexpected(parsed.error());
+            if (!parsed)
+              return std::unexpected(parsed.error());
             chunk_section cs;
-            cs.key = std::string{key};
+            cs.key  = std::string{key};
             cs.body = wrap_body_chunks(std::move(*parsed));
             result.push_back(std::move(cs));
           }
@@ -500,18 +550,19 @@ constexpr expected<bool> parse_into(Container& result, std::string_view tmpl) {
 
       /** {{^@var}} — @var 逆セクション */
       if (key.starts_with("@")) {
-        auto var_kind = parse_at_kind(key);
+        auto var_kind      = parse_at_kind(key);
         auto close_tag_str = std::string{"{{/"} + std::string{key} + "}}";
-        auto body_start = pos;
-        auto close_pos = tmpl.find(close_tag_str, pos);
+        auto body_start    = pos;
+        auto close_pos     = tmpl.find(close_tag_str, pos);
         if (close_pos != std::string_view::npos) {
           auto body = tmpl.substr(body_start, close_pos - body_start);
-          pos = close_pos + close_tag_str.size();
+          pos       = close_pos + close_tag_str.size();
           chunk_at_section cas;
           cas.var = var_kind;
           {
             auto parsed = parse(body);
-            if (!parsed) return std::unexpected(parsed.error());
+            if (!parsed)
+              return std::unexpected(parsed.error());
             cas.body = wrap_body_chunks(std::move(*parsed));
           }
           cas.inverted = true;
@@ -523,15 +574,15 @@ constexpr expected<bool> parse_into(Container& result, std::string_view tmpl) {
       /** {{^key}} — 通常の逆セクション */
       {
         auto close_tag_str = std::string{"{{/"} + std::string{key} + "}}";
-        auto open_tag_str = std::string{"{{^"} + std::string{key} + "}}";
-        auto body_start = pos;
+        auto open_tag_str  = std::string{"{{^"} + std::string{key} + "}}";
+        auto body_start    = pos;
 
-        int depth2 = 1;
-        std::size_t search = pos;
+        int         depth2    = 1;
+        std::size_t search    = pos;
         std::size_t close_pos = std::string_view::npos;
 
         while (search < tmpl.size()) {
-          auto next_open = tmpl.find(open_tag_str, search);
+          auto next_open  = tmpl.find(open_tag_str, search);
           auto next_close = tmpl.find(close_tag_str, search);
           if (next_close == std::string_view::npos) {
             break;
@@ -552,16 +603,17 @@ constexpr expected<bool> parse_into(Container& result, std::string_view tmpl) {
         std::string_view body;
         if (close_pos != std::string_view::npos) {
           body = tmpl.substr(body_start, close_pos - body_start);
-          pos = close_pos + close_tag_str.size();
+          pos  = close_pos + close_tag_str.size();
         } else {
           body = tmpl.substr(body_start);
-          pos = tmpl.size();
+          pos  = tmpl.size();
         }
         {
           auto parsed = parse(body);
-          if (!parsed) return std::unexpected(parsed.error());
+          if (!parsed)
+            return std::unexpected(parsed.error());
           chunk_inverted ci;
-          ci.key = std::string{key};
+          ci.key  = std::string{key};
           ci.body = wrap_body_chunks(std::move(*parsed));
           result.push_back(std::move(ci));
         }
@@ -582,11 +634,11 @@ constexpr expected<bool> parse_into(Container& result, std::string_view tmpl) {
     }
 
     /** 通常のプレースホルダー（フィルタ対応） */
-    auto parts = split_by_pipe(inner);
-    auto filter_key = parts[0];
+    auto                             parts      = split_by_pipe(inner);
+    auto                             filter_key = parts[0];
     std::vector<string_filter_entry> filters;
-    std::vector<int_filter_entry> int_filters;
-    std::vector<float_filter_entry> float_filters;
+    std::vector<int_filter_entry>    int_filters;
+    std::vector<float_filter_entry>  float_filters;
     for (std::size_t fi = 1; fi < parts.size(); ++fi) {
       auto sf = parse_string_filter(parts[fi]);
       if (sf) {
@@ -619,7 +671,7 @@ constexpr expected<bool> parse_into(Container& result, std::string_view tmpl) {
  */
 [[nodiscard]] constexpr auto parse(std::string_view tmpl) -> expected<std::vector<chunk>> {
   std::vector<chunk> result;
-  auto r = parse_into(result, tmpl);
+  auto               r = parse_into(result, tmpl);
   if (!r) {
     return std::unexpected(r.error());
   }
@@ -647,14 +699,14 @@ template <class ConstMap>
     result.append(content.substr(pos, var_start - pos));
 
     auto paren_start = var_start + 5;
-    auto paren_end = content.find(')', paren_start);
+    auto paren_end   = content.find(')', paren_start);
     if (paren_end == std::string_view::npos) {
       result.append(content.substr(var_start));
       break;
     }
 
     auto name = content.substr(paren_start, paren_end - paren_start);
-    auto it = consts.find(name);
+    auto it   = consts.find(name);
     if (it == consts.end()) {
       return std::unexpected(error_ctx{var_start, error_code::unknown_key, "undefined @var constant"});
     }
@@ -692,7 +744,7 @@ template <class ConstMap>
         break;
       }
       auto raw_inner = tmpl.substr(tag_start + 3, raw_end - tag_start - 3);
-      auto expanded = expand_var_refs(raw_inner, consts);
+      auto expanded  = expand_var_refs(raw_inner, consts);
       if (!expanded) {
         return std::unexpected(expanded.error());
       }
@@ -709,7 +761,7 @@ template <class ConstMap>
       break;
     }
 
-    auto inner = tmpl.substr(tag_start + 2, tag_end - tag_start - 2);
+    auto inner    = tmpl.substr(tag_start + 2, tag_end - tag_start - 2);
     auto expanded = expand_var_refs(inner, consts);
     if (!expanded) {
       return std::unexpected(expanded.error());
@@ -725,4 +777,4 @@ template <class ConstMap>
   return result;
 }
 
-} // namespace injamm::detail
+}  // namespace injamm::detail

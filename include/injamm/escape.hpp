@@ -2,8 +2,97 @@
 
 #include <string_view>
 
+#if defined(__SSE2__)
+#include <emmintrin.h>
+#endif
+
 namespace injamm::detail {
 
+#if defined(__SSE2__)
+/** @brief SSE2 を用いた HTML エスケープの高速実装
+ *
+ *  16 バイトずつロードし、特殊文字（< > & " '）が含まれていない場合は
+ *  そのまま一括追記する。特殊文字を含む区間のみスカラー処理にフォールバックする。
+ */
+template <class Buffer>
+inline void html_escape_into(Buffer& out, std::string_view s) {
+  std::size_t i    = 0;
+  std::size_t len  = s.size();
+  auto const* data = s.data();
+
+  auto const process_special = [&](std::size_t start, std::size_t end) {
+    for (std::size_t j = start; j < end; ++j) {
+      switch (data[j]) {
+      case '<':
+        out.append("&lt;");
+        break;
+      case '>':
+        out.append("&gt;");
+        break;
+      case '&':
+        out.append("&amp;");
+        break;
+      case '"':
+        out.append("&quot;");
+        break;
+      case '\'':
+        out.append("&#x27;");
+        break;
+      default:
+        out.push_back(data[j]);
+        break;
+      }
+    }
+  };
+
+  auto const chunk_has_special = [](unsigned mask) -> bool { return mask != 0; };
+
+  auto const find_first_match = [](unsigned mask) -> int {
+#if defined(__GNUC__) || defined(__clang__)
+    return __builtin_ctz(mask);
+#else
+    for (int b = 0; b < 16; ++b) {
+      if (mask & (1u << b))
+        return b;
+    }
+    return 16;
+#endif
+  };
+
+  // SSE2 で 16 バイトずつ処理
+  while (i + 16 <= len) {
+    __m128i chunk = _mm_loadu_si128(reinterpret_cast<const __m128i*>(data + i));
+    __m128i lt    = _mm_cmpeq_epi8(chunk, _mm_set1_epi8('<'));
+    __m128i gt    = _mm_cmpeq_epi8(chunk, _mm_set1_epi8('>'));
+    __m128i amp   = _mm_cmpeq_epi8(chunk, _mm_set1_epi8('&'));
+    __m128i dqt   = _mm_cmpeq_epi8(chunk, _mm_set1_epi8('"'));
+    __m128i sqt   = _mm_cmpeq_epi8(chunk, _mm_set1_epi8('\''));
+
+    __m128i  any  = _mm_or_si128(_mm_or_si128(lt, gt), _mm_or_si128(amp, _mm_or_si128(dqt, sqt)));
+    unsigned mask = static_cast<unsigned>(_mm_movemask_epi8(any));
+
+    if (mask == 0) {
+      // 特殊文字なし: 16 バイトをそのまま追記
+      out.append(data + i, 16);
+      i += 16;
+    } else {
+      // 最初の特殊文字までの安全な区間を一括追記
+      int first = find_first_match(mask);
+      if (first > 0) {
+        out.append(data + i, first);
+      }
+      // 残りの区間をスカラー処理してから 16 バイト進む
+      process_special(i + first, i + 16);
+      i += 16;
+    }
+  }
+
+  // 残りをスカラー処理
+  if (i < len) {
+    process_special(i, len);
+  }
+}
+#else
 /** @brief HTMLエスケープをバッファに書き込む
  *
  *  @tparam Buffer 出力バッファ型（std::string など）
@@ -18,18 +107,32 @@ inline void html_escape_into(Buffer& out, std::string_view s) {
   std::size_t safe = 0;
   for (std::size_t i = 0; i < s.size(); ++i) {
     auto const c = s[i];
-    if (c != '<' && c != '>' && c != '&' && c != '"' && c != '\'') continue;
-    if (i > safe) out.append(s.data() + safe, i - safe);
+    if (c != '<' && c != '>' && c != '&' && c != '"' && c != '\'')
+      continue;
+    if (i > safe)
+      out.append(s.data() + safe, i - safe);
     switch (c) {
-      case '<': out.append("&lt;"); break;
-      case '>': out.append("&gt;"); break;
-      case '&': out.append("&amp;"); break;
-      case '"': out.append("&quot;"); break;
-      case '\'': out.append("&#x27;"); break;
+    case '<':
+      out.append("&lt;");
+      break;
+    case '>':
+      out.append("&gt;");
+      break;
+    case '&':
+      out.append("&amp;");
+      break;
+    case '"':
+      out.append("&quot;");
+      break;
+    case '\'':
+      out.append("&#x27;");
+      break;
     }
     safe = i + 1;
   }
-  if (safe < s.size()) out.append(s.data() + safe, s.size() - safe);
+  if (safe < s.size())
+    out.append(s.data() + safe, s.size() - safe);
 }
+#endif
 
-} // namespace injamm::detail
+}  // namespace injamm::detail
