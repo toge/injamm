@@ -199,6 +199,28 @@ consteval void compile_chunk_range(ct_bytecode_builder<N>& b,
       i = chunks.body_ends[i] - 1;
       break;
     }
+    case ct_chunk_kind::at_var: {
+      auto ak = static_cast<ct_at_var_kind>(chunks.flags[i]);
+      switch (ak) {
+      case ct_at_var_kind::index: b.emit(bc_opcode::emit_at_index); break;
+      case ct_at_var_kind::first: b.emit(bc_opcode::emit_at_first); break;
+      case ct_at_var_kind::last:  b.emit(bc_opcode::emit_at_last); break;
+      case ct_at_var_kind::key:   b.emit(bc_opcode::emit_at_key); break;
+      case ct_at_var_kind::root:  b.emit(bc_opcode::emit_at_root); break;
+      }
+      break;
+    }
+    case ct_chunk_kind::at_section: {
+      bool inverted = (chunks.else_starts[i] != 0);
+      auto body_op = inverted ? bc_opcode::emit_at_inverted : bc_opcode::emit_at_section;
+      auto sec_instr = b.current_offset();
+      b.emit(body_op, static_cast<std::uint32_t>(chunks.flags[i]));
+      compile_chunk_range(b, chunks, chunks.body_starts[i], chunks.body_ends[i]);
+      b.emit(bc_opcode::emit_end, static_cast<std::uint32_t>(sec_instr));
+      b.patch_jump(sec_instr, static_cast<std::uint32_t>(b.current_offset()));
+      i = chunks.body_ends[i] - 1;
+      break;
+    }
     default: break;
     }
   }
