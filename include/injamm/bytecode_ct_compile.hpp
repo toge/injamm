@@ -27,14 +27,21 @@ struct ct_var_ref {
   std::uint32_t field_index = UINT32_MAX;
 };
 
+struct ct_lit_entry {
+  std::size_t offset = 0;
+  std::size_t size = 0;
+};
+
 template <std::size_t N>
 struct ct_bytecode {
   std::array<bc_instruction, N> instructions{};
-  std::array<string_ref, N> literals{};
+  std::array<ct_lit_entry, N> lit_entries{};
   std::array<ct_var_ref, N> var_refs{};
   std::size_t instr_count{};
   std::size_t literal_count{};
   std::size_t var_ref_count{};
+  std::array<char, N * 4> string_pool{};
+  std::size_t string_pool_size{};
   error_ctx error{};
 };
 
@@ -42,9 +49,15 @@ template <std::size_t N>
 struct ct_bytecode_builder {
   ct_bytecode<N>& bc;
 
-  std::uint32_t add_literal(string_ref lit) {
+  constexpr std::uint32_t add_literal(string_ref lit) {
     auto idx = static_cast<std::uint32_t>(bc.literal_count);
-    bc.literals[bc.literal_count] = lit;
+    auto& entry = bc.lit_entries[bc.literal_count];
+    entry.offset = bc.string_pool_size;
+    entry.size = lit.size;
+    auto* dest = bc.string_pool.data() + bc.string_pool_size;
+    for (std::size_t i = 0; i < lit.size; ++i)
+      dest[i] = lit.data[i];
+    bc.string_pool_size += lit.size;
     ++bc.literal_count;
     return idx;
   }
@@ -56,7 +69,7 @@ struct ct_bytecode_builder {
     return idx;
   }
 
-  void emit(bc_opcode op, std::uint32_t operand = 0, std::uint32_t operand2 = 0) {
+  constexpr void emit(bc_opcode op, std::uint32_t operand = 0, std::uint32_t operand2 = 0) {
     bc.instructions[bc.instr_count] = {op, operand, operand2};
     ++bc.instr_count;
   }
@@ -75,7 +88,7 @@ bytecode to_bytecode(ct_bytecode<N> const& ct) {
   bc.instructions.assign(ct.instructions.begin(), ct.instructions.begin() + ct.instr_count);
   bc.literals.reserve(ct.literal_count);
   for (std::size_t i = 0; i < ct.literal_count; ++i)
-    bc.literals.emplace_back(ct.literals[i].data, ct.literals[i].size);
+    bc.literals.emplace_back(ct.string_pool.data() + ct.lit_entries[i].offset, ct.lit_entries[i].size);
   bc.var_refs.reserve(ct.var_ref_count);
   for (std::size_t i = 0; i < ct.var_ref_count; ++i) {
     bc_var_ref ref;
@@ -130,9 +143,15 @@ consteval void compile_chunk_range(ct_bytecode_builder<N>& b,
                                    std::size_t start, std::size_t end) {
   for (std::size_t i = start; i < end; ++i) {
     switch (chunks.kinds[i]) {
+    case ct_chunk_kind::literal: {
+      auto lit_idx = b.add_literal({chunks.texts[i].data(), chunks.texts[i].size()});
+      b.emit(bc_opcode::emit_literal, lit_idx);
+      break;
+    }
     default: break;
     }
   }
+  b.emit(bc_opcode::halt);
 }
 
 } // namespace injamm::detail
