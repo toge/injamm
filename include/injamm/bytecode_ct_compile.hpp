@@ -74,9 +74,9 @@ struct ct_bytecode_builder {
     ++bc.instr_count;
   }
 
-  std::size_t current_offset() const { return bc.instr_count; }
+  constexpr std::size_t current_offset() const { return bc.instr_count; }
 
-  void patch_jump(std::size_t idx, std::uint32_t target) {
+  constexpr void patch_jump(std::size_t idx, std::uint32_t target) {
     bc.instructions[idx].operand = target;
   }
 };
@@ -175,6 +175,28 @@ consteval void compile_chunk_range(ct_bytecode_builder<N>& b,
       }
 
       b.emit(raw ? bc_opcode::emit_var_raw : bc_opcode::emit_var, 0, vridx);
+      break;
+    }
+    case ct_chunk_kind::section: {
+      auto vridx = b.add_var_ref({chunks.texts[i].data(), chunks.texts[i].size()},
+                                  static_cast<std::uint32_t>(chunks.field_indices[i]));
+      auto sec_instr = b.current_offset();
+      b.emit(bc_opcode::emit_section, 0, vridx);
+      compile_chunk_range(b, chunks, chunks.body_starts[i], chunks.body_ends[i]);
+      b.emit(bc_opcode::emit_end, static_cast<std::uint32_t>(sec_instr));
+      b.patch_jump(sec_instr, static_cast<std::uint32_t>(b.current_offset()));
+      i = chunks.body_ends[i] - 1;
+      break;
+    }
+    case ct_chunk_kind::inverted: {
+      auto vridx = b.add_var_ref({chunks.texts[i].data(), chunks.texts[i].size()},
+                                  static_cast<std::uint32_t>(chunks.field_indices[i]));
+      auto inv_instr = b.current_offset();
+      b.emit(bc_opcode::emit_inverted, 0, vridx);
+      compile_chunk_range(b, chunks, chunks.body_starts[i], chunks.body_ends[i]);
+      b.emit(bc_opcode::emit_end, static_cast<std::uint32_t>(inv_instr));
+      b.patch_jump(inv_instr, static_cast<std::uint32_t>(b.current_offset()));
+      i = chunks.body_ends[i] - 1;
       break;
     }
     default: break;
