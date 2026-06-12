@@ -50,6 +50,7 @@ class bc_executor {
   RootT const& root_value_;
   bc_loop_state const* loop_ = nullptr;
   std::string& out_;
+  std::string emit_this_scratch_;
 
   /**
    * @brief ネストされたドット区切りパスを再帰的に解決し visitor を呼び出す
@@ -201,13 +202,17 @@ class bc_executor {
        * キー名と一致するものを探す。
        */
       if constexpr (std::same_as<visitor_t, void>) {
+        bool found = false;
         [&]<std::size_t... I>(std::index_sequence<I...>) {
           (([&] {
             if (std::string_view{glz::reflect<V>::keys[I]} == key) {
               visitor(glz::get<I>(tied));
+              found = true;
             }
           }()), ...);
         }(std::make_index_sequence<sz>{});
+        if (!found && !key.empty() && !key.starts_with('@'))
+          return std::unexpected(error_ctx{.ec = error_code::unknown_key});
         return {};
       } else {
         std::expected<void, error_ctx> result{};
@@ -781,13 +786,15 @@ public:
 
     /** @brief {{this}}: 現在のコンテキスト自体を出力する */
     L_emit_this: {
+      this->emit_this_scratch_.clear();
       if constexpr (serializable_v<T>) {
-        serialize_value(out_, value_);
+        serialize_value(this->emit_this_scratch_, value_);
       } else if constexpr (ct_glz_reflectable<T>) {
-        if (auto ec = glz::write_json(value_, out_)) {
+        if (auto ec = glz::write_json(value_, this->emit_this_scratch_)) {
           return std::unexpected(error_ctx{.position = pc, .ec = error_code::syntax_error});
         }
       }
+      html_escape_into(out_, this->emit_this_scratch_);
       ++pc;
       DISPATCH();
     }
@@ -1430,13 +1437,15 @@ public:
 
         /** @brief {{this}}: 現在のコンテキスト自体を出力する */
         case bc_opcode::emit_this: {
+          std::string tmp;
           if constexpr (serializable_v<T>) {
-            serialize_value(out_, value_);
+            serialize_value(tmp, value_);
           } else if constexpr (ct_glz_reflectable<T>) {
-            if (auto ec = glz::write_json(value_, out_)) {
+            if (auto ec = glz::write_json(value_, tmp)) {
               return std::unexpected(error_ctx{.position = pc, .ec = error_code::syntax_error});
             }
           }
+          html_escape_into(out_, tmp);
           ++pc;
           break;
         }

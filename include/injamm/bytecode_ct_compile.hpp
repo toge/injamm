@@ -134,6 +134,7 @@ consteval ct_bytecode<N> ct_chunks_to_bytecode(ct_parsed_template<N> const& chun
   ct_bytecode<N> bc;
   ct_bytecode_builder<N> b{bc};
   compile_chunk_range(b, chunks, 0, chunks.size);
+  b.emit(bc_opcode::halt);
   return bc;
 }
 
@@ -199,8 +200,14 @@ consteval void compile_chunk_range(ct_bytecode_builder<N>& b,
        bool has_filters = (chunks.filter_count[i] > 0 || chunks.int_filter_count[i] > 0
                            || chunks.float_filter_count[i] > 0);
 
-       // @root.field → resolve_filtered or emit_at_root_field
-       if (sv.starts_with("@root.")) {
+        // {{this}} → emit_this (context serialization)
+        if (sv == "this") {
+          b.emit(bc_opcode::emit_this);
+          break;
+        }
+
+        // @root.field → resolve_filtered or emit_at_root_field
+        if (sv.starts_with("@root.")) {
          auto rest = sv.substr(6);
          auto vridx = b.add_var_ref({rest.data(), rest.size()},
                                      static_cast<std::uint32_t>(chunks.field_indices[i]));
@@ -274,7 +281,7 @@ consteval void compile_chunk_range(ct_bytecode_builder<N>& b,
       bool inverted = (chunks.else_starts[i] != 0);
       auto body_op = inverted ? bc_opcode::emit_at_inverted : bc_opcode::emit_at_section;
       auto sec_instr = b.current_offset();
-      b.emit(body_op, static_cast<std::uint32_t>(chunks.flags[i]));
+      b.emit(body_op, 0, static_cast<std::uint32_t>(chunks.flags[i]));
       compile_chunk_range(b, chunks, chunks.body_starts[i], chunks.body_ends[i]);
       b.emit(bc_opcode::emit_end, static_cast<std::uint32_t>(sec_instr));
       b.patch_jump(sec_instr, static_cast<std::uint32_t>(b.current_offset()));
@@ -317,7 +324,6 @@ consteval void compile_chunk_range(ct_bytecode_builder<N>& b,
      default: break;
     }
   }
-  b.emit(bc_opcode::halt);
 }
 
 } // namespace injamm::detail

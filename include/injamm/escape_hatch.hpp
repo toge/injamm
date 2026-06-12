@@ -199,7 +199,7 @@ template <fixed_string Tmpl, typename T>
   constexpr auto ct_bc = detail::ct_chunks_to_bytecode<T>(resolved);
   if (ct_bc.error.ec != error_code::none)
     return std::unexpected(ct_bc.error);
-  auto bc = detail::to_bytecode(ct_bc);
+  static auto const bc = detail::to_bytecode(ct_bc);
   return detail::bc_execute(bc, value);
 }
 
@@ -229,7 +229,7 @@ template <fixed_string Tmpl, fixed_string... Entries, typename T>
   constexpr auto ct_bc = detail::ct_chunks_to_bytecode<T>(parsed);
   if (ct_bc.error.ec != error_code::none)
     return std::unexpected(ct_bc.error);
-  auto bc = detail::to_bytecode(ct_bc);
+  static auto const bc = detail::to_bytecode(ct_bc);
   return detail::bc_execute(bc, value);
 }
 
