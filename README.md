@@ -4,8 +4,8 @@ Mustache/inja サブセットの高速テンプレートエンジン。
 Glaze でメタプログラミングされた C++ 構造体をコンテキストとして、テンプレートをレンダリングします。
 
 2つのレンダリング API を提供:
-- **バイトコード VM** (`engine<T>`): 実行時コンパイル、全機能対応
-- **NTTP コンパイル時** (`render<fixed_string>`): 簡易変数のみ
+- **NTTP コンパイル時** (`render<fixed_string>`): テンプレート文字列がコンパイル時定数の場合に最適
+- **バイトコード VM** (`engine<T>`): テンプレート文字列が実行時まで決まらない場合に使用
 
 ## 特徴
 
@@ -68,9 +68,36 @@ struct glz::meta<User> {
 };
 ```
 
-### 2. バイトコード VM（推奨）
+### 2. API の選択基準
 
-`engine<T>` にテンプレート文字列を渡し、`.render(value)` でレンダリングします。セクション、if/else、@index/@first/@last、ネストパスに対応。
+**NTTP（`render<fixed_string>`）を選ぶ場合:**
+- テンプレート文字列がコンパイル時定数（リテラル）である
+- 特に理由がなければ常にこちらを推奨
+- パースエラーはコンパイル時に検出される
+- 2回目以降のレンダリングにアロケーションオーバーヘッドがない
+- すべてのテンプレート構文（セクション、if/else、@変数、フィルター）に対応
+
+**Bytecode VM（`engine<T>`）を選ぶ場合:**
+- テンプレート文字列が実行時まで決まらない（ファイル読み込み、ユーザー入力など）
+- 1回だけのレンダリングでも compile 済み engine を保持すれば NTTP と同等の性能
+
+要するに: **テンプレートが固定なら NTTP、動的なら engine。**
+
+### 3. NTTP コンパイル時レンダリング（推奨）
+
+`fixed_string` と `render<kTmpl>(value)` でコンパイル時にテンプレートをパースします。
+テンプレート文字列が固定（コンパイル時定数）の場合は常にこちらを使用してください。
+
+```cpp
+constexpr auto kTmpl = injamm::fixed_string("Hello {{name}}! You are {{age}}.");
+auto r = injamm::render<kTmpl>(User{"Bob", 25});
+// r == "Hello Bob! You are 25."
+```
+
+### 4. バイトコード VM（テンプレートが動的な場合）
+
+`engine<T>` にテンプレート文字列を渡し、`.render(value)` でレンダリングします。
+テンプレート文字列が実行時まで決まらない場合のみ使用してください。
 
 ```cpp
 #include "injamm.hpp"
@@ -80,17 +107,7 @@ auto r = bc.render(User{"Alice", 30});
 // r == "Alice (30)"
 ```
 
-### 3. NTTP コンパイル時レンダリング
-
-`fixed_string` と `render<kTmpl>(value)` でコンパイル時にテンプレートをパースします。簡易変数のみ対応。
-
-```cpp
-constexpr auto kTmpl = injamm::fixed_string("Hello {{name}}! You are {{age}}.");
-auto r = injamm::render<kTmpl>(User{"Bob", 25});
-// r == "Hello Bob! You are 25."
-```
-
-### 4. @var 定数置換（runtime / NTTP）
+### 5. @var 定数置換（runtime / NTTP）
 
 `@var(name)` はテンプレート構文としてではなく、プリプロセッサマクロのようにパース前に展開されます。
 
