@@ -4,7 +4,7 @@
 
 ヘッダオンリー C++23 テンプレートエンジン（Mustache/inja サブセット）。2つのレンダリング API を提供:
 - **Bytecode VM** (`engine<T>`) — 実行時コンパイル、全機能（セクション、if/else、`@index`/`@first`/`@last`、ネストパス）
-- **NTTP コンパイル時** (`render<fixed_string>`) — `{{var}}` のみ、セクション/if 非対応
+- **NTTP コンパイル時** (`render<fixed_string>`) — コンパイル時パース、全機能対応
 
 ## ビルド & テスト
 
@@ -15,7 +15,7 @@ ctest --test-dir build -V
 ./build/injamm_tests           # 直接実行 (Catch2)
 ```
 
-CMake オプション: `INJAMM_ENABLE_THREADED_DISPATCH`（デフォルト ON、GCC のみ）、`INJAMM_BUILD_TESTS`、`INJAMM_BUILD_EXAMPLES`。
+CMake オプション: `ENABLE_THREADED_DISPATCH`（デフォルト ON、GCC のみ）、`BUILD_TEST`、`BUILD_EXAMPLE`。
 
 ## 重要な規約
 
