@@ -1896,3 +1896,31 @@ TEST_CASE("@var inside {{{}}} raw tag in engine", "[injamm][atvar]") {
   CHECK(*result == "Alice");
 }
 
+TEST_CASE("error: unknown_filter on variable", "[error]") {
+  auto bc = injamm::engine<BcUser>("{{name | bogus_filter_xyz}}");
+  BcUser data{"test", 25};
+  auto result = bc.render(data);
+  REQUIRE(!result.has_value());
+  CHECK(result.error().ec == injamm::error_code::unknown_filter);
+}
+
+TEST_CASE("error: unknown_filter on if", "[error]") {
+  auto bc = injamm::engine<BcIfData>("{{#if age | bogus_xyz}}yes{{/if}}");
+  BcIfData data{"test", 25};
+  auto result = bc.render(data);
+  REQUIRE(!result.has_value());
+  CHECK(result.error().ec == injamm::error_code::unknown_filter);
+}
+
+TEST_CASE("error: @var circular reference detected", "[error][atvar]") {
+  AtVarUser ctx{"Alice", 30};
+  std::map<std::string, std::string, std::less<>> consts{
+    {"a", "@var(b)"},
+    {"b", "@var(a)"}
+  };
+  injamm::engine<AtVarUser> eng{"{{@var(a)}}", consts};
+  auto result = eng.render(ctx);
+  REQUIRE(!result.has_value());
+  CHECK(result.error().ec == injamm::error_code::syntax_error);
+}
+

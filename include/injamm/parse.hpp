@@ -681,7 +681,8 @@ constexpr expected<bool> parse_into(Container& result, std::string_view tmpl) {
 constexpr int max_var_depth = 100;
 
 template <class ConstMap>
-[[nodiscard]] expected<std::string> expand_var_refs(std::string_view content, ConstMap const& consts, int depth = 0) {
+[[nodiscard]] expected<std::string> expand_var_refs_cycle_safe(std::string_view content, ConstMap const& consts,
+                                                                std::unordered_set<std::string>& visited, int depth = 0) {
   if (depth > max_var_depth) {
     return std::unexpected(error_ctx{0, error_code::syntax_error, "circular @var reference"});
   }
@@ -705,13 +706,18 @@ template <class ConstMap>
       break;
     }
 
-    auto name = content.substr(paren_start, paren_end - paren_start);
-    auto it   = consts.find(name);
+    auto name = std::string{content.substr(paren_start, paren_end - paren_start)};
+    if (visited.contains(name)) {
+      return std::unexpected(error_ctx{var_start, error_code::syntax_error, "circular @var reference (detected)"});
+    }
+    auto it = consts.find(name);
     if (it == consts.end()) {
       return std::unexpected(error_ctx{var_start, error_code::unknown_key, "undefined @var constant"});
     }
 
-    auto expanded = expand_var_refs(std::string_view{it->second}, consts, depth + 1);
+    visited.insert(name);
+    auto expanded = expand_var_refs_cycle_safe(std::string_view{it->second}, consts, visited, depth + 1);
+    visited.erase(name);
     if (!expanded) {
       return std::unexpected(expanded.error());
     }
@@ -727,6 +733,7 @@ template <class ConstMap>
 [[nodiscard]] expected<std::string> expand_vars_in_template(std::string_view tmpl, ConstMap const& consts) {
   std::string result;
   std::size_t pos = 0;
+  std::unordered_set<std::string> visited;
 
   while (pos < tmpl.size()) {
     auto tag_start = tmpl.find("{{", pos);
@@ -744,7 +751,7 @@ template <class ConstMap>
         break;
       }
       auto raw_inner = tmpl.substr(tag_start + 3, raw_end - tag_start - 3);
-      auto expanded  = expand_var_refs(raw_inner, consts);
+      auto expanded  = expand_var_refs_cycle_safe(raw_inner, consts, visited);
       if (!expanded) {
         return std::unexpected(expanded.error());
       }
@@ -762,7 +769,7 @@ template <class ConstMap>
     }
 
     auto inner    = tmpl.substr(tag_start + 2, tag_end - tag_start - 2);
-    auto expanded = expand_var_refs(inner, consts);
+    auto expanded = expand_var_refs_cycle_safe(inner, consts, visited);
     if (!expanded) {
       return std::unexpected(expanded.error());
     }
