@@ -20,6 +20,11 @@
 #include "bytecode_exec.hpp"
 #include <array>
 
+#if __has_include(<frozenchars.hpp>)
+#include <frozenchars.hpp>
+#define INJAMM_HAS_FROZENCHARS 1
+#endif
+
 namespace injamm {
 
 /**
@@ -48,6 +53,20 @@ struct fixed_string {
     }
   }
 
+#if __has_include(<frozenchars.hpp>)
+  /**
+   * @brief FrozenString から構築する
+   *
+   * @param fs frozenchars のコンパイル時文字列
+   */
+  constexpr fixed_string(frozenchars::FrozenString<N> const& fs) noexcept {
+    for (std::size_t i = 0; i < fs.size(); ++i) {
+      data[i] = fs.data()[i];
+    }
+    data[fs.size()] = '\0';
+  }
+#endif
+
   /**
    * @brief 文字列長を返す（ヌル終端除く）
    *
@@ -56,42 +75,72 @@ struct fixed_string {
   [[nodiscard]] consteval std::size_t size() const noexcept { return N - 1; }
 };
 
+#if __has_include(<frozenchars.hpp>)
+template <std::size_t M>
+fixed_string(frozenchars::FrozenString<M>) -> fixed_string<M>;
+#endif
+
 namespace detail {
+
+template <typename T>
+inline constexpr bool always_false = false;
+
+/**
+ * @brief NTTP 文字列から string_view を取得する
+ *
+ * @details fixed_string (data メンバ) と FrozenString (data() メソッド) の
+ *          両方に対応する。auto NTTP で統一するためのブリッジ関数。
+ *
+ * @tparam S NTTP 文字列型
+ * @param s  NTTP 文字列インスタンス
+ * @return std::string_view 内部バッファを指すビュー
+ */
+template <typename S>
+constexpr std::string_view nttp_string_view(S const& s) noexcept {
+  if constexpr (requires { s.data; }) {
+    return {s.data, s.size()};
+  } else if constexpr (requires { s.data(); }) {
+    return {s.data(), s.size()};
+  } else {
+    static_assert(always_false<S>, "not a supported NTTP string type (needs .data or .data())");
+  }
+}
 
 /**
  * @brief コンパイル時パース実装（SoA 形式）
  *
- * @details fixed_string テンプレート引数から文字列を取り出し、
+ * @details NTTP テンプレート引数から文字列を取り出し、
  *          ct_parse_into で SoA 形式のチャンク配列にパースする。
  *          パース結果は constexpr で確定し、実行時オーバーヘッドはゼロ。
+ *          fixed_string / FrozenString の両方に対応。
  *
- * @tparam Tmpl テンプレート文字列（fixed_string）
+ * @tparam Tmpl テンプレート文字列（NTTP）
  * @return ct_parsed_template<Tmpl.size() + 1> パース済みチャンク配列
  */
-template <fixed_string Tmpl>
+template <auto Tmpl>
 consteval auto parse_fixed_impl() -> ct_parsed_template<Tmpl.size() + 1> {
   ct_parse_context<Tmpl.size() + 1> ctx;
-  std::string_view sv{Tmpl.data, Tmpl.size()};
-  ct_parse_into(ctx, sv);
+  ct_parse_into(ctx, nttp_string_view(Tmpl));
   return ctx.tmpl;
 }
 
 /**
  * @brief コンパイル時キー・バリュー参照テーブル
  *
- * @details fixed_string NTTP のペアをキー・バリューとして格納し、文字列キーから
+ * @details NTTP 文字列のペアをキー・バリューとして格納し、文字列キーから
  *          定数値を O(n) 検索する。偶数の entries が必要（キー・バリューのペア）。
  *          見つからない場合は空の string_view を返す。
+ *          fixed_string / FrozenString の両方に対応。
  *
- * @tparam Entries fixed_string のパラメータパック（キー1, 値1, キー2, 値2, ...）
+ * @tparam Entries NTTP 文字列のパラメータパック（キー1, 値1, キー2, 値2, ...）
  */
-template <fixed_string... Entries>
+template <auto... Entries>
 struct ct_var_table {
   static constexpr std::size_t num = sizeof...(Entries);
   static_assert(num % 2 == 0, "@var entries must be key-value pairs (even count)");
 
   static constexpr std::array<std::string_view, num> entries{
-    std::string_view{Entries.data, Entries.size()}...
+    nttp_string_view(Entries)...
   };
 
   static constexpr std::string_view lookup(std::string_view key) noexcept {
@@ -108,16 +157,17 @@ struct ct_var_table {
  *
  * @details テンプレート文字列中の @var(name) を ct_var_table の定数値に
  *          コンパイル時に展開する。サイズ計算と実データの2段階で動作する。
+ *          fixed_string / FrozenString の両方に対応。
  *
- * @tparam Tmpl    元テンプレート文字列（fixed_string）
- * @tparam Entries キー・バリューペアのパラメータパック
+ * @tparam Tmpl    元テンプレート文字列（NTTP）
+ * @tparam Entries キー・バリューペアのパラメータパック（NTTP）
  */
-template <fixed_string Tmpl, fixed_string... Entries>
+template <auto Tmpl, auto... Entries>
 struct ct_expanded_template {
   using table = ct_var_table<Entries...>;
 
   static constexpr std::size_t compute_size() {
-    auto sv = std::string_view{Tmpl.data, Tmpl.size()};
+    auto sv = nttp_string_view(Tmpl);
     std::size_t sz = 0;
     std::size_t pos = 0;
     while (pos < sv.size()) {
@@ -144,7 +194,7 @@ struct ct_expanded_template {
 
   static constexpr std::array<char, expanded_size + 1> data = []() {
     std::array<char, expanded_size + 1> arr{};
-    auto sv = std::string_view{Tmpl.data, Tmpl.size()};
+    auto sv = nttp_string_view(Tmpl);
     std::size_t out = 0;
     std::size_t pos = 0;
     while (pos < sv.size()) {
