@@ -57,10 +57,10 @@ int main() {
   }
 
   /**
-   * API 2: NTTP コンパイル時レンダリング（単純変数のみ対応）
+   * API 2: NTTP コンパイル時レンダリング（全機能対応）
    * @details render<fixed_string> はテンプレート文字列を NTTP（Non-Type Template Parameter）
    *          として受け取り、コンパイル時にテンプレート解析を行う。
-   *          @note セクションや if/else には非対応。{{var}} と {{{var}}} のみ。
+   *          セクション、if/else、フィルター、break/continue を含む全機能に対応。
    */
   auto constexpr kTmpl = injamm::fixed_string("Hello {{name}}! You are {{age}}.");
   auto r2 = injamm::render<kTmpl>(User{"Bob", 25});
