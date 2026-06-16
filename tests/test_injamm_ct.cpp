@@ -1052,3 +1052,106 @@ TEST_CASE("@var with filter (NTTP)", "[injamm][ct][atvar]") {
   REQUIRE(result.has_value());
   CHECK(*result == "ALICE");
 }
+
+// ---- FrozenString NTTP テスト（frozenchars 利用時のみ）----
+
+#ifdef INJAMM_HAS_FROZENCHARS
+#include <frozenchars/literals.hpp>
+
+TEST_CASE("FrozenString basic placeholder (constexpr variable)", "[injamm][ct][frozen]") {
+  using namespace frozenchars::literals;
+  auto constexpr tmpl = "{{name}}"_fs;
+  CtUser user{"alice", 30};
+  auto r = injamm::render<tmpl>(user);
+  REQUIRE(r.has_value());
+  CHECK(*r == "alice");
+}
+
+TEST_CASE("FrozenString literal NTTP", "[injamm][ct][frozen]") {
+  using namespace frozenchars::literals;
+  auto constexpr tmpl = "Hello {{name}}! You are {{age}}."_fs;
+  CtUser user{"Bob", 25};
+  auto r = injamm::render<tmpl>(user);
+  REQUIRE(r.has_value());
+  CHECK(*r == "Hello Bob! You are 25.");
+}
+
+TEST_CASE("FrozenString HTML escape", "[injamm][ct][frozen]") {
+  using namespace frozenchars::literals;
+  auto constexpr tmpl = "{{name}}"_fs;
+  CtUser user{"<b>alice</b>", 30};
+  auto r = injamm::render<tmpl>(user);
+  REQUIRE(r.has_value());
+  CHECK(*r == "&lt;b&gt;alice&lt;/b&gt;");
+}
+
+TEST_CASE("FrozenString raw output {{{var}}}", "[injamm][ct][frozen]") {
+  using namespace frozenchars::literals;
+  auto constexpr tmpl = "{{{name}}}"_fs;
+  CtUser user{"<b>alice</b>", 30};
+  auto r = injamm::render<tmpl>(user);
+  REQUIRE(r.has_value());
+  CHECK(*r == "<b>alice</b>");
+}
+
+TEST_CASE("FrozenString section", "[injamm][ct][frozen]") {
+  using namespace frozenchars::literals;
+  auto constexpr tmpl = "{{#users}}{{name}}-{{age}}/{{/users}}"_fs;
+  CtUsersData data{{{"a", 1}, {"b", 2}}};
+  auto r = injamm::render<tmpl>(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "a-1/b-2/");
+}
+
+TEST_CASE("FrozenString inverted section", "[injamm][ct][frozen]") {
+  using namespace frozenchars::literals;
+  auto constexpr tmpl = "{{^flag}}no{{/flag}}"_fs;
+  auto r1 = injamm::render<tmpl>(CtBoolData{false});
+  REQUIRE(r1.has_value());
+  CHECK(*r1 == "no");
+  auto r2 = injamm::render<tmpl>(CtBoolData{true});
+  REQUIRE(r2.has_value());
+  CHECK(*r2 == "");
+}
+
+TEST_CASE("FrozenString @index loop", "[injamm][ct][frozen]") {
+  using namespace frozenchars::literals;
+  auto constexpr tmpl = "{{#users}}{{@index}}{{/users}}"_fs;
+  CtUsersData data{{{"a", 1}, {"b", 2}}};
+  auto r = injamm::render<tmpl>(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "01");
+}
+
+TEST_CASE("FrozenString nested path", "[injamm][ct][frozen]") {
+  using namespace frozenchars::literals;
+  auto constexpr tmpl = "{{founder.name}}"_fs;
+  CtCompany ctx{"Acme", {"Alice", {"NYC", "USA"}}};
+  auto r = injamm::render<tmpl>(ctx);
+  REQUIRE(r.has_value());
+  CHECK(*r == "Alice");
+}
+
+TEST_CASE("FrozenString if/else", "[injamm][ct][frozen]") {
+  using namespace frozenchars::literals;
+  auto constexpr tmpl = "{{#if age}}A{{else}}B{{/if}}"_fs;
+  auto r1 = injamm::render<tmpl>(CtIfData{"t", 20});
+  REQUIRE(r1.has_value());
+  CHECK(*r1 == "A");
+  auto r2 = injamm::render<tmpl>(CtIfData{"t", 0});
+  REQUIRE(r2.has_value());
+  CHECK(*r2 == "B");
+}
+
+TEST_CASE("FrozenString @var expansion", "[injamm][ct][frozen][atvar]") {
+  using namespace frozenchars::literals;
+  auto constexpr tmpl = "Hello {{@var(f)}}!"_fs;
+  auto constexpr vk = "f"_fs;
+  auto constexpr vv = "name"_fs;
+  CtUser user{"alice", 30};
+  auto result = injamm::render<tmpl, vk, vv>(user);
+  REQUIRE(result.has_value());
+  CHECK(*result == "Hello alice!");
+}
+
+#endif // INJAMM_HAS_FROZENCHARS
