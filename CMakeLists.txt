@@ -78,6 +78,14 @@ if(BUILD_TEST)
   target_link_libraries(injamm_tests PRIVATE injamm Catch2::Catch2WithMain)
   target_include_directories(injamm_tests PRIVATE include)
   target_compile_features(injamm_tests PRIVATE cxx_std_23)
+
+  # Optional: FrozenString NTTP tests (frozenchars header-only library)
+  find_package(frozenchars CONFIG QUIET)
+  if(frozenchars_FOUND)
+    target_link_libraries(injamm_tests PRIVATE frozenchars::frozenchars)
+    target_compile_definitions(injamm_tests PRIVATE INJAMM_HAS_FROZENCHARS=1)
+  endif()
+
   add_test(NAME injamm_tests COMMAND injamm_tests)
 endif()
 
