@@ -73,6 +73,7 @@ if(BUILD_TEST)
   add_executable(injamm_tests
     tests/test_injamm.cpp
     tests/test_injamm_ct.cpp
+    tests/test_injamm_ja.cpp
   )
   target_link_libraries(injamm_tests PRIVATE injamm Catch2::Catch2WithMain)
   target_include_directories(injamm_tests PRIVATE include)
