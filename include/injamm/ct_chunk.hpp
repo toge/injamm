@@ -1,6 +1,6 @@
 #pragma once
 
-#include "chunk.hpp"
+#include "bytecode.hpp"
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -12,30 +12,19 @@ namespace injamm::detail {
 
 constexpr std::size_t max_filters_per_chunk = 4;
 
-/**
- * @brief コンパイル時チャンク種別
- *
- * @details ct_parsed_template で使用するチャンクの種類を表す列挙型。
- *          実行時の chunk バリアントの全種別をカバーする。
- */
 enum class ct_chunk_kind : std::uint8_t {
-  literal,      /**< リテラルテキスト */
-  placeholder,  /**< プレースホルダ変数 */
-  section,      /**< セクション */
-  inverted,     /**< 逆セクション */
-  at_var,       /**< @変数 */
-  at_section,   /**< @変数セクション */
-  if_else,      /**< if/else */
-  ct_break,     /**< break */
-  ct_continue   /**< continue */
+  literal,
+  placeholder,
+  section,
+  inverted,
+  at_var,
+  at_section,
+  if_else,
+  ct_break,
+  ct_continue
 };
 
-/**
- * @brief @変数の種別（ct_chunk_at_var / ct_chunk_at_section 用）
- *
- * @details ct_parsed_template::flags フィールドに uint8_t として格納される。
- */
-enum class ct_at_var_kind : std::uint8_t { index, first, last, root, key };
+/** @brief @変数種別は types.hpp の at_var_kind を使用 */
 
 /**
  * @brief SoA（Struct of Arrays）形式のコンパイル時パース結果
@@ -159,7 +148,7 @@ struct ct_parsed_template {
    *
    * @param var @変数の種別（index / first / last / root）
    */
-  constexpr void push_at_var(ct_at_var_kind var) {
+  constexpr void push_at_var(at_var_kind var) {
     if (size >= N) {
       throw std::overflow_error("ct_parsed_template: chunk buffer overflow");
     }
@@ -176,7 +165,7 @@ struct ct_parsed_template {
    * @param body_end   本体部分の終了インデックス
    * @param inverted   true の場合は逆セクション（{{^@last}} 相当）
    */
-  constexpr void push_at_section(ct_at_var_kind var, std::size_t body_start, std::size_t body_end,
+  constexpr void push_at_section(at_var_kind var, std::size_t body_start, std::size_t body_end,
                                   bool inverted) {
     if (size >= N) {
       throw std::overflow_error("ct_parsed_template: chunk buffer overflow");

@@ -325,13 +325,13 @@ consteval void compile_chunk_range(ct_bytecode_builder<N>& b,
       break;
     }
     case ct_chunk_kind::at_var: {
-      auto ak = static_cast<ct_at_var_kind>(chunks.flags[i]);
+      auto ak = static_cast<at_var_kind>(chunks.flags[i]);
       switch (ak) {
-      case ct_at_var_kind::index: b.emit(bc_opcode::emit_at_index); break;
-      case ct_at_var_kind::first: b.emit(bc_opcode::emit_at_first); break;
-      case ct_at_var_kind::last:  b.emit(bc_opcode::emit_at_last); break;
-      case ct_at_var_kind::key:   b.emit(bc_opcode::emit_at_key); break;
-      case ct_at_var_kind::root:  b.emit(bc_opcode::emit_at_root); break;
+      case at_var_kind::index: b.emit(bc_opcode::emit_at_index); break;
+      case at_var_kind::first: b.emit(bc_opcode::emit_at_first); break;
+      case at_var_kind::last:  b.emit(bc_opcode::emit_at_last); break;
+      case at_var_kind::key:   b.emit(bc_opcode::emit_at_key); break;
+      case at_var_kind::root:  b.emit(bc_opcode::emit_at_root); break;
       }
       break;
     }

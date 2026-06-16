@@ -1,11 +1,16 @@
 #pragma once
 
 #include <cstddef>
+#include <cstdint>
 #include <expected>
 #include <ostream>
 #include <string_view>
 
 namespace injamm {
+
+/** @brief @変数の種別（@index / @first / @last / @root / @key） */
+enum class at_var_kind : std::uint8_t { index, first, last, root, key };
+
 
 /** @brief エラーコード
  *

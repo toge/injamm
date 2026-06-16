@@ -79,7 +79,7 @@ struct ct_parse_context {
    * @param var @index / @first / @last / @root の種別
    * @return 追加されたチャンクのインデックス
    */
-  constexpr std::size_t push_at_var(ct_at_var_kind var) {
+  constexpr std::size_t push_at_var(at_var_kind var) {
     auto idx = tmpl.size;
     tmpl.push_at_var(var);
     return idx;
@@ -93,7 +93,7 @@ struct ct_parse_context {
    * @param inverted   逆セクションの場合に true
    * @return 追加されたチャンクのインデックス
    */
-  constexpr std::size_t push_at_section(ct_at_var_kind var, std::size_t body_start, std::size_t body_end,
+  constexpr std::size_t push_at_section(at_var_kind var, std::size_t body_start, std::size_t body_end,
                                          bool inverted) {
     auto idx = tmpl.size;
     tmpl.push_at_section(var, body_start, body_end, inverted);
@@ -418,12 +418,13 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
       if (key.starts_with("@")) {
         /** @brief @index / @first / @last / @root の種別を判定 */
         auto k = parse_at_kind(key);
-        ct_at_var_kind var_kind;
+        at_var_kind var_kind;
         switch (k) {
-          case chunk_at_var::kind::index: var_kind = ct_at_var_kind::index; break;
-          case chunk_at_var::kind::first: var_kind = ct_at_var_kind::first; break;
-          case chunk_at_var::kind::last: var_kind = ct_at_var_kind::last; break;
-          case chunk_at_var::kind::root: var_kind = ct_at_var_kind::root; break;
+          case at_var_kind::index: var_kind = at_var_kind::index; break;
+          case at_var_kind::first: var_kind = at_var_kind::first; break;
+          case at_var_kind::last: var_kind = at_var_kind::last; break;
+          case at_var_kind::root: var_kind = at_var_kind::root; break;
+          default: break;
         }
         /** @brief 対応する閉じタグ文字列（例: "{{/@index}}"） */
         auto close_tag_str = std::string{"{{/"} + std::string{key} + "}}";
@@ -515,12 +516,13 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
        */
       if (key.starts_with("@")) {
         auto k = parse_at_kind(key);
-        ct_at_var_kind var_kind;
+        at_var_kind var_kind;
         switch (k) {
-          case chunk_at_var::kind::index: var_kind = ct_at_var_kind::index; break;
-          case chunk_at_var::kind::first: var_kind = ct_at_var_kind::first; break;
-          case chunk_at_var::kind::last: var_kind = ct_at_var_kind::last; break;
-          case chunk_at_var::kind::root: var_kind = ct_at_var_kind::root; break;
+          case at_var_kind::index: var_kind = at_var_kind::index; break;
+          case at_var_kind::first: var_kind = at_var_kind::first; break;
+          case at_var_kind::last: var_kind = at_var_kind::last; break;
+          case at_var_kind::root: var_kind = at_var_kind::root; break;
+          default: break;
         }
         auto close_tag_str = std::string{"{{/"} + std::string{key} + "}}";
         auto body_start_pos = pos;
@@ -607,13 +609,13 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
      */
     if (inner.starts_with("@")) {
       auto k = parse_at_kind(inner);
-      ct_at_var_kind var;
+      at_var_kind var;
       switch (k) {
-        case chunk_at_var::kind::index: var = ct_at_var_kind::index; break;
-        case chunk_at_var::kind::first: var = ct_at_var_kind::first; break;
-        case chunk_at_var::kind::last: var = ct_at_var_kind::last; break;
-        case chunk_at_var::kind::root: var = ct_at_var_kind::root; break;
-        case chunk_at_var::kind::key: var = ct_at_var_kind::key; break;
+        case at_var_kind::index: var = at_var_kind::index; break;
+        case at_var_kind::first: var = at_var_kind::first; break;
+        case at_var_kind::last: var = at_var_kind::last; break;
+        case at_var_kind::root: var = at_var_kind::root; break;
+        case at_var_kind::key: var = at_var_kind::key; break;
       }
       ctx.push_at_var(var);
       continue;
