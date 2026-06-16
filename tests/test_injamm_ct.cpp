@@ -1053,6 +1053,55 @@ TEST_CASE("@var with filter (NTTP)", "[injamm][ct][atvar]") {
   CHECK(*result == "ALICE");
 }
 
+TEST_CASE("ct_comment_basic", "[injamm][ct][comment]") {
+  CtUser user{"Alice", 30};
+  auto r = injamm::render<"Hello {# this is a comment #}{{name}}!">(user);
+  REQUIRE(r.has_value());
+  CHECK(*r == "Hello Alice!");
+}
+
+TEST_CASE("ct_comment_multiline", "[injamm][ct][comment]") {
+  CtUser user{"Alice", 30};
+  auto r = injamm::render<"Hello {# multi\nline\ncomment #}{{name}}!">(user);
+  REQUIRE(r.has_value());
+  CHECK(*r == "Hello Alice!");
+}
+
+TEST_CASE("ct_comment_between_literals", "[injamm][ct][comment]") {
+  CtUser user{"Alice", 30};
+  auto r = injamm::render<"Hello {# comment #}{{name}}!">(user);
+  REQUIRE(r.has_value());
+  CHECK(*r == "Hello Alice!");
+}
+
+TEST_CASE("ct_comment_in_section", "[injamm][ct][comment]") {
+  CtUsersData data{{{"Alice", 30}, {"Bob", 25}}};
+  auto r = injamm::render<"{{#users}}{# comment #}{{name}}{{/users}}">(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "AliceBob");
+}
+
+TEST_CASE("ct_comment_in_if_body", "[injamm][ct][comment]") {
+  CtIfData data{"test", 25};
+  auto r = injamm::render<"{{#if age}}{# age is nonzero #}yes{{/if}}">(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "yes");
+}
+
+TEST_CASE("ct_comment_ignore_inner_tags", "[injamm][ct][comment]") {
+  CtUser user{"Alice", 30};
+  auto r = injamm::render<"{{name}}{# {{age}} should be ignored #}!">(user);
+  REQUIRE(r.has_value());
+  CHECK(*r == "Alice!");
+}
+
+TEST_CASE("ct_comment_multiple", "[injamm][ct][comment]") {
+  CtUser user{"Alice", 30};
+  auto r = injamm::render<"{#c1#}before{{name}}{#c2#}after">(user);
+  REQUIRE(r.has_value());
+  CHECK(*r == "beforeAliceafter");
+}
+
 // ---- FrozenString NTTP テスト（frozenchars 利用時のみ）----
 
 #ifdef INJAMM_HAS_FROZENCHARS

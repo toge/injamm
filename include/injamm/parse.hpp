@@ -362,4 +362,87 @@ template <class ConstMap>
   return result;
 }
 
+[[nodiscard]] inline std::string strip_comments(std::string_view tmpl) {
+  std::string result;
+  result.reserve(tmpl.size());
+  std::size_t pos = 0;
+  while (pos < tmpl.size()) {
+    auto cs = tmpl.find("{#", pos);
+    if (cs == std::string_view::npos) {
+      result.append(tmpl.substr(pos));
+      break;
+    }
+    if (cs > 0 && tmpl[cs - 1] == '{') {
+      result.append(tmpl.substr(pos, cs - pos + 1));
+      pos = cs + 1;
+      continue;
+    }
+    result.append(tmpl.substr(pos, cs - pos));
+    auto ce = tmpl.find("#}", cs + 2);
+    if (ce == std::string_view::npos) {
+      result += '{';
+      pos = cs + 1;
+    } else {
+      pos = ce + 2;
+    }
+  }
+  return result;
+}
+
+constexpr std::size_t stripped_size(std::string_view sv) noexcept {
+  std::size_t sz = 0;
+  std::size_t pos = 0;
+  while (pos < sv.size()) {
+    auto cs = sv.find("{#", pos);
+    if (cs == std::string_view::npos) {
+      sz += sv.size() - pos;
+      break;
+    }
+    if (cs > 0 && sv[cs - 1] == '{') {
+      sz += cs - pos + 1;
+      pos = cs + 1;
+      continue;
+    }
+    sz += cs - pos;
+    auto ce = sv.find("#}", cs + 2);
+    if (ce == std::string_view::npos) {
+      sz += 1;
+      pos = cs + 1;
+    } else {
+      pos = ce + 2;
+    }
+  }
+  return sz;
+}
+
+template <std::size_t N>
+constexpr void copy_stripped(std::string_view src, std::array<char, N>& dst) noexcept {
+  std::size_t out = 0;
+  std::size_t pos = 0;
+  while (pos < src.size()) {
+    auto cs = src.find("{#", pos);
+    if (cs == std::string_view::npos) {
+      for (auto i = pos; i < src.size() && out < N - 1; ++i)
+        dst[out++] = src[i];
+      break;
+    }
+    if (cs > 0 && src[cs - 1] == '{') {
+      for (auto i = pos; i <= cs && out < N - 1; ++i)
+        dst[out++] = src[i];
+      pos = cs + 1;
+      continue;
+    }
+    for (auto i = pos; i < cs && out < N - 1; ++i)
+      dst[out++] = src[i];
+    auto ce = src.find("#}", cs + 2);
+    if (ce == std::string_view::npos) {
+      if (out < N - 1)
+        dst[out++] = '{';
+      pos = cs + 1;
+    } else {
+      pos = ce + 2;
+    }
+  }
+}
+
 }  // namespace injamm::detail

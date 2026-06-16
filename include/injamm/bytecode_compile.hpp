@@ -66,6 +66,8 @@ class bc_compiler {
   bytecode bc_;
   /** @brief コンパイル対象のテンプレート文字列 */
   std::string_view tmpl_;
+  /** @brief コメント除去後のテンプレート文字列（所有権保持用） */
+  std::string clean_tmpl_;
   /** @brief テンプレート文字列上の現在位置 */
   std::size_t pos_ = 0;
 
@@ -659,7 +661,8 @@ class bc_compiler {
    * @return コンパイル済みバイトコード
    */
   bytecode compile(std::string_view tmpl) {
-    tmpl_ = tmpl;
+    clean_tmpl_ = strip_comments(tmpl);
+    tmpl_ = clean_tmpl_;
     pos_ = 0;
     compile_body();
     bc_.add_instruction(bc_opcode::halt);

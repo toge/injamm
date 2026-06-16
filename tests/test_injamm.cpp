@@ -1924,3 +1924,59 @@ TEST_CASE("error: @var circular reference detected", "[error][atvar]") {
   CHECK(result.error().ec == injamm::error_code::syntax_error);
 }
 
+TEST_CASE("comment_basic", "[injamm][comment]") {
+  BcUser data{"Alice", 30};
+  auto bc = injamm::engine<BcUser>("Hello {# this is a comment #}{{name}}!");
+  auto result = bc.render(data);
+  REQUIRE(result.has_value());
+  CHECK(*result == "Hello Alice!");
+}
+
+TEST_CASE("comment_multiline", "[injamm][comment]") {
+  BcUser data{"Alice", 30};
+  auto bc = injamm::engine<BcUser>("Hello {# multi\nline\ncomment #}{{name}}!");
+  auto result = bc.render(data);
+  REQUIRE(result.has_value());
+  CHECK(*result == "Hello Alice!");
+}
+
+TEST_CASE("comment_between_literals", "[injamm][comment]") {
+  BcUser data{"Alice", 30};
+  auto bc = injamm::engine<BcUser>("Hello {# comment #}{{name}}!");
+  auto result = bc.render(data);
+  REQUIRE(result.has_value());
+  CHECK(*result == "Hello Alice!");
+}
+
+TEST_CASE("comment_in_section", "[injamm][comment]") {
+  BcUsersData data{{{"Alice", 30}, {"Bob", 25}}};
+  auto bc = injamm::engine<BcUsersData>("{{#users}}{# comment #}{{name}}{{/users}}");
+  auto result = bc.render(data);
+  REQUIRE(result.has_value());
+  CHECK(*result == "AliceBob");
+}
+
+TEST_CASE("comment_in_if_body", "[injamm][comment]") {
+  BcIfData data{"test", 25};
+  auto bc = injamm::engine<BcIfData>("{{#if age}}{# age is nonzero #}yes{{/if}}");
+  auto result = bc.render(data);
+  REQUIRE(result.has_value());
+  CHECK(*result == "yes");
+}
+
+TEST_CASE("comment_ignore_inner_tags", "[injamm][comment]") {
+  BcUser data{"Alice", 30};
+  auto bc = injamm::engine<BcUser>("{{name}}{# {{age}} should be ignored #}!");
+  auto result = bc.render(data);
+  REQUIRE(result.has_value());
+  CHECK(*result == "Alice!");
+}
+
+TEST_CASE("comment_multiple", "[injamm][comment]") {
+  BcUser data{"Alice", 30};
+  auto bc = injamm::engine<BcUser>("{#c1#}before{{name}}{#c2#}after");
+  auto result = bc.render(data);
+  REQUIRE(result.has_value());
+  CHECK(*result == "beforeAliceafter");
+}
+

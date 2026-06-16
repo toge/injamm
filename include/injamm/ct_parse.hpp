@@ -200,8 +200,24 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
 
   // -- メインループ: テンプレート全体を走査しながらタグを解析する --
   while (pos < tmpl.size()) {
-    /** @brief 次の `{{` 開始位置を検索 */
+    /** @brief {# ... #} コメントをスキップ（{{# はセクション/if タグなので除外） */
+    auto comment_start = tmpl.find("{#", pos);
+    while (comment_start != std::string_view::npos && comment_start > 0 && tmpl[comment_start - 1] == '{') {
+      comment_start = tmpl.find("{#", comment_start + 2);
+    }
     auto tag_start = tmpl.find("{{", pos);
+    if (comment_start != std::string_view::npos && (tag_start == std::string_view::npos || comment_start < tag_start)) {
+      if (comment_start > pos)
+        ctx.push_literal(tmpl.substr(pos, comment_start - pos));
+      auto comment_end = tmpl.find("#}", comment_start + 2);
+      if (comment_end != std::string_view::npos) {
+        pos = comment_end + 2;
+      } else {
+        ctx.push_literal(tmpl.substr(comment_start, 1));
+        pos = comment_start + 1;
+      }
+      continue;
+    }
 
     /** @brief `{{` が見つからない場合は、残り全体をリテラルとして追加して終了 */
     if (tag_start == std::string_view::npos) {
