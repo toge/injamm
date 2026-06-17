@@ -293,6 +293,26 @@ TEST_CASE("ct_at_index", "[injamm][ct]") {
   REQUIRE(*r == "012");
 }
 
+TEST_CASE("ct_at_index1", "[injamm][ct]") {
+  auto constexpr tmpl = injamm::fixed_string("{{#users}}{{@index1}}:{{name}} {{/users}}");
+  CtUsersData data;
+  data.users.push_back(CtUser{"a", 1});
+  data.users.push_back(CtUser{"b", 2});
+  data.users.push_back(CtUser{"c", 3});
+  auto r = injamm::render<tmpl>(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "1:a 2:b 3:c ");
+}
+
+TEST_CASE("ct_at_index1_outside_loop", "[injamm][ct]") {
+  auto constexpr tmpl = injamm::fixed_string("X{{@index1}}Y");
+  CtUsersData data;
+  data.users.push_back(CtUser{"a", 1});
+  auto r = injamm::render<tmpl>(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "XY");
+}
+
 TEST_CASE("ct_at_first", "[injamm][ct]") {
   auto constexpr tmpl = injamm::fixed_string("{{#users}}{{@first}}{{/users}}");
   CtUsersData data;

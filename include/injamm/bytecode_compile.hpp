@@ -168,6 +168,9 @@ class bc_compiler {
       case at_var_kind::index:
         bc_.add_instruction(bc_opcode::emit_at_index);
         break;
+      case at_var_kind::index1:
+        bc_.add_instruction(bc_opcode::emit_at_index1);
+        break;
       case at_var_kind::first:
         bc_.add_instruction(bc_opcode::emit_at_first);
         break;

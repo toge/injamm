@@ -360,7 +360,8 @@ class bc_executor {
         &&L_emit_if_filtered,        // 53
         &&L_emit_break,              // 54
         &&L_emit_continue,           // 55
-        &&L_halt,                    // 56
+        &&L_emit_at_index1,          // 56
+        &&L_halt,                    // 57
     };
 
 /** @brief 現在の命令のオペコードに対応するラベルにジャンプする */
@@ -580,6 +581,19 @@ class bc_executor {
     if (loop_) {
       std::array<char, 16> buf;
       auto [ptr, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), loop_->index);
+      if (ec == std::errc{}) {
+        out_.append(buf.data(), ptr);
+      }
+    }
+    ++pc;
+    DISPATCH();
+  }
+
+  /** @brief ループの @index1 を 1 始まりの数値として出力する */
+  L_emit_at_index1: {
+    if (loop_) {
+      std::array<char, 16> buf;
+      auto [ptr, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), loop_->index + 1);
       if (ec == std::errc{}) {
         out_.append(buf.data(), ptr);
       }
@@ -1780,6 +1794,18 @@ class bc_executor {
           loop_->continue_flag = true;
         }
         return {};
+      }
+
+      /** @brief ループの @index1 を 1 始まりの数値として出力する */
+      case bc_opcode::emit_at_index1: {
+        if (loop_) {
+          std::array<char, 16> buf;
+          auto [ptr, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), loop_->index + 1);
+          if (ec == std::errc{}) {
+            out_.append(buf.data(), ptr);
+          }
+        }
+        break;
       }
 
       /** @brief プログラム終端 */

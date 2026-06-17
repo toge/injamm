@@ -270,6 +270,34 @@ TEST_CASE("bc_at_index", "[injamm]") {
 }
 
 /**
+ * @brief @index1 特殊変数のテスト
+ * @details セクション内で {{@index1}} が 1 から始まる連番を出力することを確認する。
+ */
+TEST_CASE("bc_at_index1", "[injamm]") {
+  BcUsersData data;
+  data.users.push_back(BcUser{"a", 1});
+  data.users.push_back(BcUser{"b", 2});
+  data.users.push_back(BcUser{"c", 3});
+  auto bc = injamm::engine<BcUsersData>("{{#users}}{{@index1}}:{{name}} {{/users}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "1:a 2:b 3:c ");
+}
+
+/**
+ * @brief @index1 のセクション外（@root コンテキスト外）テスト
+ * @details ループ外で @index1 が出力されないことを確認する。
+ */
+TEST_CASE("bc_at_index1_outside_loop", "[injamm]") {
+  BcUsersData data;
+  data.users.push_back(BcUser{"a", 1});
+  auto bc = injamm::engine<BcUsersData>("X{{@index1}}Y");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "XY");
+}
+
+/**
  * @brief @first 特殊変数のテスト
  * @details セクション内で {{@first}} が先頭要素のみ "true"、
  *          それ以外は "false" を出力することを確認する。

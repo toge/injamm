@@ -42,6 +42,9 @@ namespace injamm::detail {
   if (key == "@index") {
     return at_var_kind::index;
   }
+  if (key == "@index1") {
+    return at_var_kind::index1;
+  }
   if (key == "@key") {
     return at_var_kind::key;
   }

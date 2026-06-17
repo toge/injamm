@@ -72,6 +72,7 @@ enum class bc_opcode : std::uint8_t {
   emit_if_filtered,           /**< フィルタ適用済み値での if 分岐 */
   emit_break,         /**< ループ脱出 */
   emit_continue,      /**< 次のイテレーションへスキップ */
+  emit_at_index1,     /**< ループ1始まりインデックス ({{@index1}}) */
   halt                /**< プログラム終了 */
 };
 
@@ -133,6 +134,7 @@ enum class bc_opcode : std::uint8_t {
   case bc_opcode::emit_if_filtered:        return "emit_if_filtered";
   case bc_opcode::emit_break:              return "emit_break";
   case bc_opcode::emit_continue:           return "emit_continue";
+  case bc_opcode::emit_at_index1:          return "emit_at_index1";
   case bc_opcode::halt:                    return "halt";
   }
   return "unknown";
@@ -423,12 +425,26 @@ struct bytecode {
             char buf[16];
             auto [p, ec] = std::to_chars(buf, buf + sizeof(buf), instr.operand);
             append(std::string_view{buf, static_cast<std::size_t>(p - buf)});
+          } else {
+            append("  loop#");
+            char buf[16];
+            auto [p, ec] = std::to_chars(buf, buf + sizeof(buf), instr.operand2);
+            append(std::string_view{buf, static_cast<std::size_t>(p - buf)});
           }
+          break;
         } else {
           char buf[16];
           auto [p, ec] = std::to_chars(buf, buf + sizeof(buf), instr.operand2);
           append(std::string_view{buf, static_cast<std::size_t>(p - buf)});
         }
+        break;
+      }
+      case bc_opcode::emit_at_index1: {
+        char buf[16];
+        auto [p, ec] = std::to_chars(buf, buf + sizeof(buf), instr.operand2);
+        append("@index1 (loop#");
+        append(std::string_view{buf, static_cast<std::size_t>(p - buf)});
+        append(")");
         break;
       }
       case bc_opcode::emit_litvar:

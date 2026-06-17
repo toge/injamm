@@ -8,8 +8,8 @@
 
 namespace injamm {
 
-/** @brief @変数の種別（@index / @first / @last / @root / @key） */
-enum class at_var_kind : std::uint8_t { index, first, last, root, key };
+/** @brief @変数の種別（@index / @index1 / @first / @last / @root / @key） */
+enum class at_var_kind : std::uint8_t { index, index1, first, last, root, key };
 
 
 /** @brief エラーコード
