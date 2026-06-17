@@ -298,6 +298,46 @@ TEST_CASE("bc_at_index1_outside_loop", "[injamm]") {
 }
 
 /**
+ * @brief @size 特殊変数のテスト
+ * @details セクション内で {{@size}} がループ総要素数を出力することを確認する。
+ */
+TEST_CASE("bc_at_size", "[injamm]") {
+  BcUsersData data;
+  data.users.push_back(BcUser{"a", 1});
+  data.users.push_back(BcUser{"b", 2});
+  data.users.push_back(BcUser{"c", 3});
+  auto bc = injamm::engine<BcUsersData>("{{#users}}{{@index}}/{{@size}} {{/users}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "0/3 1/3 2/3 ");
+}
+
+/**
+ * @brief @size のセクション外テスト
+ * @details ループ外で @size が出力されないことを確認する。
+ */
+TEST_CASE("bc_at_size_outside_loop", "[injamm]") {
+  BcUsersData data;
+  data.users.push_back(BcUser{"a", 1});
+  auto bc = injamm::engine<BcUsersData>("X{{@size}}Y");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "XY");
+}
+
+/**
+ * @brief @size の空ループテスト
+ * @details 空のループで @size が "0" を出力することを確認する。
+ */
+TEST_CASE("bc_at_size_empty_loop", "[injamm]") {
+  BcUsersData data;
+  auto bc = injamm::engine<BcUsersData>("{{#users}}{{@size}}|{{/users}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "");
+}
+
+/**
  * @brief @first 特殊変数のテスト
  * @details セクション内で {{@first}} が先頭要素のみ "true"、
  *          それ以外は "false" を出力することを確認する。
@@ -2059,6 +2099,132 @@ TEST_CASE("comment_basic", "[injamm][comment]") {
   auto result = bc.render(data);
   REQUIRE(result.has_value());
   CHECK(*result == "Hello Alice!");
+}
+
+TEST_CASE("bang_comment_basic", "[injamm][comment]") {
+  BcUser data{"Alice", 30};
+  auto bc = injamm::engine<BcUser>("Hello {{! this is a comment }}{{name}}!");
+  auto result = bc.render(data);
+  REQUIRE(result.has_value());
+  CHECK(*result == "Hello Alice!");
+}
+
+TEST_CASE("bang_comment_with_hash_inside", "[injamm][comment]") {
+  BcUser data{"Alice", 30};
+  auto bc = injamm::engine<BcUser>("Hello {{! has {# and #} inside }}{{name}}!");
+  auto result = bc.render(data);
+  REQUIRE(result.has_value());
+  CHECK(*result == "Hello Alice!");
+}
+
+TEST_CASE("bang_comment_in_section", "[injamm][comment]") {
+  BcUsersData data;
+  data.users.push_back(BcUser{"a", 1});
+  data.users.push_back(BcUser{"b", 2});
+  auto bc = injamm::engine<BcUsersData>("{{#users}}{{! skip }}{{name}} {{/users}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "a b ");
+}
+
+TEST_CASE("exists_section_present", "[injamm][exists]") {
+  BcUsersData data;
+  data.users.push_back(BcUser{"Alice", 30});
+  auto bc = injamm::engine<BcUsersData>("{{#exists users}}yes{{/exists}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "yes");
+}
+
+TEST_CASE("exists_section_missing", "[injamm][exists]") {
+  BcUsersData data;
+  auto bc = injamm::engine<BcUsersData>("{{#exists users}}yes{{/exists}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "");
+}
+
+TEST_CASE("exists_inverted_present", "[injamm][exists]") {
+  BcUsersData data;
+  data.users.push_back(BcUser{"Alice", 30});
+  auto bc = injamm::engine<BcUsersData>("{{^exists users}}no{{/exists}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "");
+}
+
+TEST_CASE("exists_inverted_missing", "[injamm][exists]") {
+  BcUsersData data;
+  auto bc = injamm::engine<BcUsersData>("{{^exists users}}no{{/exists}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "no");
+}
+
+TEST_CASE("if_eq_true", "[injamm][compare]") {
+  BcUser data{"Alice", 30};
+  auto bc = injamm::engine<BcUser>("{{#if age == 30}}match{{/if}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "match");
+}
+
+TEST_CASE("if_eq_false", "[injamm][compare]") {
+  BcUser data{"Alice", 30};
+  auto bc = injamm::engine<BcUser>("{{#if age == 31}}match{{/if}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "");
+}
+
+TEST_CASE("if_ne_true", "[injamm][compare]") {
+  BcUser data{"Alice", 30};
+  auto bc = injamm::engine<BcUser>("{{#if age != 31}}diff{{/if}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "diff");
+}
+
+TEST_CASE("if_ne_false", "[injamm][compare]") {
+  BcUser data{"Alice", 30};
+  auto bc = injamm::engine<BcUser>("{{#if age != 30}}diff{{/if}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "");
+}
+
+TEST_CASE("if_eq_with_else", "[injamm][compare]") {
+  BcUser data{"Alice", 30};
+  auto bc = injamm::engine<BcUser>("{{#if age == 30}}A{{else}}B{{/if}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "A");
+}
+
+TEST_CASE("tilde_whitespace_trim_var", "[injamm][tilde]") {
+  BcUser data{"Alice", 30};
+  auto bc = injamm::engine<BcUser>("Hello {{~ name ~}}!");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "Hello Alice!");
+}
+
+TEST_CASE("tilde_whitespace_trim_section", "[injamm][tilde]") {
+  BcUsersData data;
+  data.users.push_back(BcUser{"a", 1});
+  data.users.push_back(BcUser{"b", 2});
+  auto bc = injamm::engine<BcUsersData>("{{~#users~}}{{name}} {{~/users~}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "a b ");
+}
+
+TEST_CASE("filter_replace_newlines", "[injamm][filter]") {
+  BcUser data{"line1\nline2\nline3", 30};
+  auto bc = injamm::engine<BcUser>("{{name|replace}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "line1 line2 line3");
 }
 
 TEST_CASE("comment_multiline", "[injamm][comment]") {

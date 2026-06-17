@@ -122,6 +122,7 @@ bytecode to_bytecode(ct_bytecode<N> const& ct) {
           case bc_opcode::filter_center:     ref.filters.push_back({.filter = string_filter::center, .arg1 = static_cast<int>(fi.operand)}); break;
           case bc_opcode::filter_truncate:   ref.filters.push_back({.filter = string_filter::truncate, .arg1 = static_cast<int>(fi.operand)}); break;
           case bc_opcode::filter_substr:     ref.filters.push_back({.filter = string_filter::substr, .arg1 = static_cast<int>(fi.operand), .arg2 = static_cast<int>(fi.operand2)}); break;
+          case bc_opcode::filter_replace:   ref.filters.push_back({.filter = string_filter::replace}); break;
           default: break;
           }
           ++j;
@@ -214,6 +215,7 @@ consteval void compile_chunk_range(ct_bytecode_builder<N>& b,
        case string_filter::center:     b.emit(bc_opcode::filter_center, sf.arg1); break;
        case string_filter::truncate:   b.emit(bc_opcode::filter_truncate, sf.arg1); break;
        case string_filter::substr:     b.emit(bc_opcode::filter_substr, sf.arg1, sf.arg2); break;
+       case string_filter::replace:    b.emit(bc_opcode::filter_replace); break;
        }
      }
      for (std::uint8_t f = 0; f < chunks.int_filter_count[idx]; ++f) {
@@ -329,6 +331,7 @@ consteval void compile_chunk_range(ct_bytecode_builder<N>& b,
       switch (ak) {
       case at_var_kind::index: b.emit(bc_opcode::emit_at_index); break;
       case at_var_kind::index1: b.emit(bc_opcode::emit_at_index1); break;
+      case at_var_kind::size: b.emit(bc_opcode::emit_at_size); break;
       case at_var_kind::first: b.emit(bc_opcode::emit_at_first); break;
       case at_var_kind::last:  b.emit(bc_opcode::emit_at_last); break;
       case at_var_kind::key:   b.emit(bc_opcode::emit_at_key); break;

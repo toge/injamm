@@ -45,6 +45,9 @@ namespace injamm::detail {
   if (key == "@index1") {
     return at_var_kind::index1;
   }
+  if (key == "@size") {
+    return at_var_kind::size;
+  }
   if (key == "@key") {
     return at_var_kind::key;
   }
@@ -111,6 +114,8 @@ namespace injamm::detail {
     return string_filter_entry{string_filter::ltrim, 0, 0};
   if (name == "rtrim")
     return string_filter_entry{string_filter::rtrim, 0, 0};
+  if (name == "replace")
+    return string_filter_entry{string_filter::replace, 0, 0};
   return std::nullopt;
 }
 
@@ -362,6 +367,117 @@ template <class ConstMap>
     pos = tag_end + 2;
   }
 
+  return result;
+}
+
+[[nodiscard]] inline std::string strip_standalone_whitespace_tildes(std::string_view tmpl) {
+  std::string result;
+  result.reserve(tmpl.size());
+  std::size_t pos = 0;
+  while (pos < tmpl.size()) {
+    auto tag = tmpl.find("{{", pos);
+    if (tag == std::string_view::npos) {
+      result.append(tmpl.substr(pos));
+      break;
+    }
+    if (tag > 0 && tmpl[tag - 1] == '{') {
+      result.append(tmpl.substr(pos, tag - pos + 1));
+      pos = tag + 1;
+      continue;
+    }
+    result.append(tmpl.substr(pos, tag - pos));
+    auto end = tmpl.find("}}", tag + 2);
+    if (end == std::string_view::npos) {
+      result.append(tmpl.substr(tag));
+      break;
+    }
+    std::size_t inner_start = tag + 2;
+    std::size_t inner_end = end;
+    bool leading_tilde = (inner_start < inner_end && tmpl[inner_start] == '~');
+    bool trailing_tilde = (inner_end > inner_start && tmpl[inner_end - 1] == '~');
+    if (leading_tilde) ++inner_start;
+    if (trailing_tilde && inner_end > inner_start) --inner_end;
+    auto inner = tmpl.substr(inner_start, inner_end - inner_start);
+    auto trimmed = trim_sv(inner);
+    result += "{{";
+    result += trimmed;
+    result += "}}";
+    pos = end + 2;
+  }
+  return result;
+}
+
+[[nodiscard]] inline std::string transform_exists_sections(std::string_view tmpl) {
+  std::string result;
+  result.reserve(tmpl.size());
+  std::size_t pos = 0;
+  while (pos < tmpl.size()) {
+    auto tag = tmpl.find("{{", pos);
+    if (tag == std::string_view::npos) {
+      result.append(tmpl.substr(pos));
+      break;
+    }
+    result.append(tmpl.substr(pos, tag - pos));
+    auto end = tmpl.find("}}", tag + 2);
+    if (end == std::string_view::npos) {
+      result.append(tmpl.substr(tag));
+      break;
+    }
+    auto inner = tmpl.substr(tag + 2, end - tag - 2);
+    auto trimmed = trim_sv(inner);
+    if (trimmed == "#exists" || trimmed.starts_with("#exists ")) {
+      auto rest = trimmed.substr(7);
+      result += "{{#";
+      if (!rest.empty()) {
+        result += rest;
+        result += " ";
+      }
+      result += "}}";
+      pos = end + 2;
+      continue;
+    } else if (trimmed == "^exists" || trimmed.starts_with("^exists ")) {
+      auto rest = trimmed.substr(8);
+      result += "{{^";
+      if (!rest.empty()) {
+        result += rest;
+        result += " ";
+      }
+      result += "}}";
+      pos = end + 2;
+      continue;
+    } else {
+      result.append(tmpl.substr(tag, end - tag + 2));
+      pos = end + 2;
+      continue;
+    }
+  }
+  return result;
+}
+
+[[nodiscard]] inline std::string strip_bang_comments(std::string_view tmpl) {
+  std::string result;
+  result.reserve(tmpl.size());
+  std::size_t pos = 0;
+  while (pos < tmpl.size()) {
+    auto cs = tmpl.find("{{!", pos);
+    if (cs == std::string_view::npos) {
+      result.append(tmpl.substr(pos));
+      break;
+    }
+    if (cs > 0 && tmpl[cs - 1] == '{') {
+      result.append(tmpl.substr(pos, cs - pos + 1));
+      pos = cs + 1;
+      continue;
+    }
+    result.append(tmpl.substr(pos, cs - pos));
+    auto ce = tmpl.find("}}", cs + 3);
+    if (ce == std::string_view::npos) {
+      result += '{';
+      pos = cs + 1;
+    } else {
+      pos = ce + 2;
+    }
+  }
   return result;
 }
 

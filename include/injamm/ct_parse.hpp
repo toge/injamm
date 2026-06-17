@@ -451,6 +451,7 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
         switch (k) {
           case at_var_kind::index: var_kind = at_var_kind::index; break;
           case at_var_kind::index1: var_kind = at_var_kind::index1; break;
+          case at_var_kind::size: var_kind = at_var_kind::size; break;
           case at_var_kind::first: var_kind = at_var_kind::first; break;
           case at_var_kind::last: var_kind = at_var_kind::last; break;
           case at_var_kind::root: var_kind = at_var_kind::root; break;
@@ -554,6 +555,7 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
         switch (k) {
           case at_var_kind::index: var_kind = at_var_kind::index; break;
           case at_var_kind::index1: var_kind = at_var_kind::index1; break;
+          case at_var_kind::size: var_kind = at_var_kind::size; break;
           case at_var_kind::first: var_kind = at_var_kind::first; break;
           case at_var_kind::last: var_kind = at_var_kind::last; break;
           case at_var_kind::root: var_kind = at_var_kind::root; break;
@@ -652,6 +654,7 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
       switch (k) {
         case at_var_kind::index: var = at_var_kind::index; break;
         case at_var_kind::index1: var = at_var_kind::index1; break;
+        case at_var_kind::size: var = at_var_kind::size; break;
         case at_var_kind::first: var = at_var_kind::first; break;
         case at_var_kind::last: var = at_var_kind::last; break;
         case at_var_kind::root: var = at_var_kind::root; break;

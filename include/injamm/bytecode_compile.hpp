@@ -24,6 +24,7 @@ void emit_filter_chain(Emitter&& emit, std::vector<string_filter_entry> const& f
       case string_filter::center:     emit(bc_opcode::filter_center, f.arg1); break;
       case string_filter::truncate:   emit(bc_opcode::filter_truncate, f.arg1); break;
       case string_filter::substr:     emit(bc_opcode::filter_substr, f.arg1, f.arg2); break;
+      case string_filter::replace:    emit(bc_opcode::filter_replace); break;
     }
   }
   for (auto f : int_filters) {
@@ -175,6 +176,9 @@ class bc_compiler {
       case at_var_kind::index1:
         bc_.add_instruction(bc_opcode::emit_at_index1);
         break;
+      case at_var_kind::size:
+        bc_.add_instruction(bc_opcode::emit_at_size);
+        break;
       case at_var_kind::first:
         bc_.add_instruction(bc_opcode::emit_at_first);
         break;
@@ -271,17 +275,56 @@ class bc_compiler {
     bc_.var_refs[idx].int_filters = int_filters;
     bc_.var_refs[idx].float_filters = float_filters;
 
-    /** フィルタがある場合は resolve_filtered → filter_* 命令列を発行し、emit_if_filtered を使う */
-    bool has_filters = !filters.empty() || !int_filters.empty() || !float_filters.empty();
-    if (has_filters) {
-      auto filter_count = static_cast<std::uint32_t>(filters.size() + int_filters.size() + float_filters.size());
-      bc_.add_instruction(bc_opcode::resolve_filtered, filter_count, idx);
-      emit_filter_chain([this](bc_opcode op, std::uint32_t a = 0, std::uint32_t a2 = 0) {
-        bc_.add_instruction(op, a, a2);
-      }, filters, int_filters, float_filters);
-      bc_.add_instruction(bc_opcode::emit_if_filtered, 0, idx);
+    /** {{#if x == N}} / {{#if x != N}} の比較演算子検出 */
+    bc_opcode compare_op = bc_opcode::emit_if;
+    std::uint32_t compare_lit = 0;
+    bool has_filters_local = !filters.empty() || !int_filters.empty() || !float_filters.empty();
+    if (has_filters_local) {
+      /* フィルタがある場合は比較演算子は使えない */
     } else {
-      bc_.add_instruction(bc_opcode::emit_if, 0, idx);
+      auto eq_pos = expr.find("==");
+      auto ne_pos = expr.find("!=");
+      if (eq_pos != std::string_view::npos || ne_pos != std::string_view::npos) {
+        auto op_pos = (eq_pos != std::string_view::npos) ? eq_pos : ne_pos;
+        bool is_eq = (eq_pos != std::string_view::npos);
+        auto lhs = trim_sv(expr.substr(0, op_pos));
+        auto rhs = trim_sv(expr.substr(op_pos + 2));
+        /** 右辺を整数リテラルとして解釈 */
+        bool is_int = !rhs.empty();
+        int lit_val = 0;
+        for (auto c : rhs) {
+          if (c < '0' || c > '9') { is_int = false; break; }
+          lit_val = lit_val * 10 + (c - '0');
+        }
+        if (is_int && !lhs.empty()) {
+          /** 左辺の変数参照を作り直す */
+          auto cmp_idx = bc_.add_var_ref(lhs);
+          auto cmp_field_idx = resolve_field_index<T>(lhs);
+          if (cmp_field_idx != UINT32_MAX) {
+            bc_.set_field_index(cmp_idx, cmp_field_idx);
+          }
+          /** rhs は var_ref.int_filters[0].arg として保持 */
+          bc_.var_refs[cmp_idx].int_filters.push_back({int_filter::eq, lit_val});
+          bc_.add_instruction(is_eq ? bc_opcode::emit_if_eq : bc_opcode::emit_if_ne,
+                              0, cmp_idx);
+          compare_op = bc_opcode::halt; /* dummy: do not emit emit_if below */
+        }
+      }
+    }
+
+    /** フィルタがある場合は resolve_filtered → filter_* 命令列を発行し、emit_if_filtered を使う */
+    bool has_filters_actual = !filters.empty() || !int_filters.empty() || !float_filters.empty();
+    if (compare_op == bc_opcode::emit_if) {
+      if (has_filters_actual) {
+        auto filter_count = static_cast<std::uint32_t>(filters.size() + int_filters.size() + float_filters.size());
+        bc_.add_instruction(bc_opcode::resolve_filtered, filter_count, idx);
+        emit_filter_chain([this](bc_opcode op, std::uint32_t a = 0, std::uint32_t a2 = 0) {
+          bc_.add_instruction(op, a, a2);
+        }, filters, int_filters, float_filters);
+        bc_.add_instruction(bc_opcode::emit_if_filtered, 0, idx);
+      } else {
+        bc_.add_instruction(bc_opcode::emit_if, 0, idx);
+      }
     }
 
     auto if_instr_idx = bc_.current_offset() - 1;
@@ -690,7 +733,7 @@ class bc_compiler {
   bytecode compile(std::string_view tmpl, bool trim_blocks = false, bool lstrip_blocks = false) {
     trim_blocks_ = trim_blocks;
     lstrip_blocks_ = lstrip_blocks;
-    clean_tmpl_ = strip_comments(tmpl);
+    clean_tmpl_ = transform_exists_sections(strip_bang_comments(strip_comments(strip_standalone_whitespace_tildes(tmpl))));
     tmpl_ = clean_tmpl_;
     pos_ = 0;
     compile_body();

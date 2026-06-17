@@ -125,6 +125,13 @@ constexpr void apply_string_filter(std::string& str, string_filter_entry entry) 
     }
     break;
   }
+  case string_filter::replace: {
+    /** 単一文字置換: str 中の全 '\n' を ' ' に置換（シンプル実装） */
+    for (auto& c : str) {
+      if (c == '\n') c = ' ';
+    }
+    break;
+  }
   }
 }
 

@@ -27,6 +27,8 @@ enum class bc_opcode : std::uint8_t {
   emit_at_first,      /**< @first 出力（ループの先頭要素か） */
   emit_at_last,       /**< @last 出力（ループの末尾要素か） */
   emit_if,            /**< if 条件分岐 */
+  emit_if_eq,         /**< if (var == int_literal) 分岐 */
+  emit_if_ne,         /**< if (var != int_literal) 分岐 */
   emit_else,          /**< else ジャンプ先 */
   emit_endif,         /**< endif（ifブロック終了） */
   emit_at_section,    /**< @first/@last/@index によるセクション制御 */
@@ -51,6 +53,7 @@ enum class bc_opcode : std::uint8_t {
   filter_center,      /**< 中央寄せ（引数: 幅） */
   filter_truncate,    /**< 文字列切り詰め（引数: 最大文字数） */
   filter_substr,      /**< 部分文字列（引数1: 開始位置, 引数2: 文字数） */
+  filter_replace,     /**< 部分文字列置換 */
   emit_filtered,      /**< フィルタ後の文字列出力（エスケープあり） */
   emit_filtered_raw,  /**< フィルタ後の文字列出力（生出力） */
   filter_int_abs,     /**< 整数絶対値変換 */
@@ -73,6 +76,7 @@ enum class bc_opcode : std::uint8_t {
   emit_break,         /**< ループ脱出 */
   emit_continue,      /**< 次のイテレーションへスキップ */
   emit_at_index1,     /**< ループ1始まりインデックス ({{@index1}}) */
+  emit_at_size,       /**< ループ総要素数 ({{@size}}) */
   halt                /**< プログラム終了 */
 };
 
@@ -89,6 +93,8 @@ enum class bc_opcode : std::uint8_t {
   case bc_opcode::emit_at_first:           return "emit_at_first";
   case bc_opcode::emit_at_last:            return "emit_at_last";
   case bc_opcode::emit_if:                 return "emit_if";
+  case bc_opcode::emit_if_eq:              return "emit_if_eq";
+  case bc_opcode::emit_if_ne:              return "emit_if_ne";
   case bc_opcode::emit_else:               return "emit_else";
   case bc_opcode::emit_endif:              return "emit_endif";
   case bc_opcode::emit_at_section:         return "emit_at_section";
@@ -113,6 +119,7 @@ enum class bc_opcode : std::uint8_t {
   case bc_opcode::filter_center:           return "filter_center";
   case bc_opcode::filter_truncate:         return "filter_truncate";
   case bc_opcode::filter_substr:           return "filter_substr";
+  case bc_opcode::filter_replace:          return "filter_replace";
   case bc_opcode::emit_filtered:           return "emit_filtered";
   case bc_opcode::emit_filtered_raw:       return "emit_filtered_raw";
   case bc_opcode::filter_int_abs:          return "filter_int_abs";
@@ -135,6 +142,7 @@ enum class bc_opcode : std::uint8_t {
   case bc_opcode::emit_break:              return "emit_break";
   case bc_opcode::emit_continue:           return "emit_continue";
   case bc_opcode::emit_at_index1:          return "emit_at_index1";
+  case bc_opcode::emit_at_size:            return "emit_at_size";
   case bc_opcode::halt:                    return "halt";
   }
   return "unknown";
@@ -156,7 +164,8 @@ enum class string_filter : std::uint8_t {
   right,       /**< 右寄せ（引数: 幅） */
   center,      /**< 中央寄せ（引数: 幅） */
   truncate,    /**< 文字列切り詰め（引数: 最大文字数） */
-  substr       /**< 部分文字列（引数1: 開始位置, 引数2: 文字数） */
+  substr,      /**< 部分文字列（引数1: 開始位置, 引数2: 文字数） */
+  replace      /**< 部分文字列置換 */
 };
 
 [[nodiscard]] inline std::string_view string_filter_name(string_filter f) noexcept {
@@ -173,6 +182,7 @@ enum class string_filter : std::uint8_t {
   case string_filter::center:     return "center";
   case string_filter::truncate:   return "truncate";
   case string_filter::substr:     return "substr";
+  case string_filter::replace:    return "replace";
   }
   return "unknown";
 }

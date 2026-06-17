@@ -327,53 +327,57 @@ class bc_executor {
         &&L_emit_at_first,           // 8
         &&L_emit_at_last,            // 9
         &&L_emit_if,                 // 10
-        &&L_emit_else,               // 11
-        &&L_emit_endif,              // 12
-        &&L_emit_at_section,         // 13
-        &&L_emit_at_inverted,        // 14
-        &&L_emit_litvar,             // 15
-        &&L_emit_litvar_raw,         // 16
-        &&L_emit_at_root,            // 17
-        &&L_emit_at_root_field,      // 18
-        &&L_emit_at_root_field_raw,  // 19
-        &&L_emit_at_key,             // 20
-        &&L_emit_this,               // 21
-        &&L_resolve_filtered,        // 22
-        &&L_filter_upper,            // 23
-        &&L_filter_lower,            // 24
-        &&L_filter_capitalize,       // 25
-        &&L_filter_title,            // 26
-        &&L_filter_trim,             // 27
-        &&L_filter_ltrim,            // 28
-        &&L_filter_rtrim,            // 29
-        &&L_filter_left,             // 30
-        &&L_filter_right,            // 31
-        &&L_filter_center,           // 32
-        &&L_filter_truncate,         // 33
-        &&L_filter_substr,           // 34
-        &&L_emit_filtered,           // 35
-        &&L_emit_filtered_raw,       // 36
-        &&L_filter_int_abs,          // 37
-        &&L_filter_int_hex,          // 38
-        &&L_filter_int_oct,          // 39
-        &&L_filter_int_bin,          // 40
-        &&L_filter_int_neg,          // 41
-        &&L_filter_int_mod,          // 42
-        &&L_filter_int_numify,       // 43
-        &&L_filter_int_is_neg,       // 44
-        &&L_filter_int_eq,           // 45
-        &&L_filter_int_ne,           // 46
-        &&L_filter_int_gt,           // 47
-        &&L_filter_int_gte,          // 48
-        &&L_filter_int_lt,           // 49
-        &&L_filter_int_lte,          // 50
-        &&L_filter_int_zerofill,     // 51
-        &&L_filter_float_precision,  // 52
-        &&L_emit_if_filtered,        // 53
-        &&L_emit_break,              // 54
-        &&L_emit_continue,           // 55
-        &&L_emit_at_index1,          // 56
-        &&L_halt,                    // 57
+        &&L_emit_if_eq,              // 11
+        &&L_emit_if_ne,              // 12
+        &&L_emit_else,               // 13
+        &&L_emit_endif,              // 14
+        &&L_emit_at_section,         // 15
+        &&L_emit_at_inverted,        // 16
+        &&L_emit_litvar,             // 17
+        &&L_emit_litvar_raw,         // 18
+        &&L_emit_at_root,            // 19
+        &&L_emit_at_root_field,      // 20
+        &&L_emit_at_root_field_raw,  // 21
+        &&L_emit_at_key,             // 22
+        &&L_emit_this,               // 23
+        &&L_resolve_filtered,        // 24
+        &&L_filter_upper,            // 25
+        &&L_filter_lower,            // 26
+        &&L_filter_capitalize,       // 27
+        &&L_filter_title,            // 28
+        &&L_filter_trim,             // 29
+        &&L_filter_ltrim,            // 30
+        &&L_filter_rtrim,            // 31
+        &&L_filter_left,             // 32
+        &&L_filter_right,            // 33
+        &&L_filter_center,           // 34
+        &&L_filter_truncate,         // 35
+        &&L_filter_substr,           // 36
+        &&L_filter_replace,          // 37
+        &&L_emit_filtered,           // 38
+        &&L_emit_filtered_raw,       // 39
+        &&L_filter_int_abs,          // 40
+        &&L_filter_int_hex,          // 41
+        &&L_filter_int_oct,          // 42
+        &&L_filter_int_bin,          // 43
+        &&L_filter_int_neg,          // 44
+        &&L_filter_int_mod,          // 45
+        &&L_filter_int_numify,       // 46
+        &&L_filter_int_is_neg,       // 47
+        &&L_filter_int_eq,           // 48
+        &&L_filter_int_ne,           // 49
+        &&L_filter_int_gt,           // 50
+        &&L_filter_int_gte,          // 51
+        &&L_filter_int_lt,           // 52
+        &&L_filter_int_lte,          // 53
+        &&L_filter_int_zerofill,     // 54
+        &&L_filter_float_precision,  // 55
+        &&L_emit_if_filtered,        // 56
+        &&L_emit_break,              // 57
+        &&L_emit_continue,           // 58
+        &&L_emit_at_index1,          // 59
+        &&L_emit_at_size,            // 60
+        &&L_halt,                    // 61
     };
 
 /** @brief 現在の命令のオペコードに対応するラベルにジャンプする */
@@ -614,6 +618,19 @@ class bc_executor {
     DISPATCH();
   }
 
+  /** @brief ループの @size を総要素数として出力する */
+  L_emit_at_size: {
+    if (loop_) {
+      std::array<char, 16> buf;
+      auto [ptr, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), loop_->count);
+      if (ec == std::errc{}) {
+        out_.append(buf.data(), ptr);
+      }
+    }
+    ++pc;
+    DISPATCH();
+  }
+
   /** @brief ループ先頭なら "true" を出力する */
   L_emit_at_first: {
     if (loop_ && loop_->index == 0) {
@@ -686,6 +703,52 @@ class bc_executor {
       pc = instr.operand;
     } else {
       /** 条件真: 次の命令（then ブロック）に進む */
+      ++pc;
+    }
+    DISPATCH();
+  }
+
+  /** @brief if (var == int_literal): 整数フィールドがオペランド値と等しいとき真 */
+  L_emit_if_eq: {
+    auto const& instr = bc_.instructions[pc];
+    auto const& ref   = bc_.var_refs[instr.operand2];
+    int rhs = 0;
+    if (!ref.int_filters.empty()) {
+      rhs = ref.int_filters[0].arg;
+    }
+    bool cond = false;
+    (void)for_each_field(value_, ref.key, ref.field_index, [&](auto const& field) {
+      using FT = std::remove_cvref_t<decltype(field)>;
+      if constexpr (std::is_arithmetic_v<FT>) {
+        cond = (static_cast<long long>(field) == static_cast<long long>(rhs));
+      }
+    });
+    if (!cond) {
+      pc = instr.operand;
+    } else {
+      ++pc;
+    }
+    DISPATCH();
+  }
+
+  /** @brief if (var != int_literal): 整数フィールドがオペランド値と異なるとき真 */
+  L_emit_if_ne: {
+    auto const& instr = bc_.instructions[pc];
+    auto const& ref   = bc_.var_refs[instr.operand2];
+    int rhs = 0;
+    if (!ref.int_filters.empty()) {
+      rhs = ref.int_filters[0].arg;
+    }
+    bool cond = false;
+    (void)for_each_field(value_, ref.key, ref.field_index, [&](auto const& field) {
+      using FT = std::remove_cvref_t<decltype(field)>;
+      if constexpr (std::is_arithmetic_v<FT>) {
+        cond = (static_cast<long long>(field) != static_cast<long long>(rhs));
+      }
+    });
+    if (!cond) {
+      pc = instr.operand;
+    } else {
       ++pc;
     }
     DISPATCH();
@@ -950,6 +1013,13 @@ class bc_executor {
   /** @brief 部分文字列（引数1: 開始位置, 引数2: 文字数） */
   L_filter_substr: {
     apply_string_filter(filtered_value_, {.filter = string_filter::substr, .arg1 = static_cast<int>(bc_.instructions[pc].operand), .arg2 = static_cast<int>(bc_.instructions[pc].operand2)});
+    ++pc;
+    DISPATCH();
+  }
+
+  /** @brief 部分文字列置換（デフォルト: 改行→空白） */
+  L_filter_replace: {
+    apply_string_filter(filtered_value_, {.filter = string_filter::replace});
     ++pc;
     DISPATCH();
   }
@@ -1434,6 +1504,50 @@ class bc_executor {
         break;
       }
 
+      /** @brief if (var == int_literal) */
+      case bc_opcode::emit_if_eq: {
+        auto const& ref  = bc_.var_refs[instr.operand2];
+        int rhs = 0;
+        if (!ref.int_filters.empty()) {
+          rhs = ref.int_filters[0].arg;
+        }
+        bool cond = false;
+        (void)for_each_field(value_, ref.key, ref.field_index, [&](auto const& field) {
+          using FT = std::remove_cvref_t<decltype(field)>;
+          if constexpr (std::is_arithmetic_v<FT>) {
+            cond = (static_cast<long long>(field) == static_cast<long long>(rhs));
+          }
+        });
+        if (!cond) {
+          pc = instr.operand;
+        } else {
+          ++pc;
+        }
+        break;
+      }
+
+      /** @brief if (var != int_literal) */
+      case bc_opcode::emit_if_ne: {
+        auto const& ref  = bc_.var_refs[instr.operand2];
+        int rhs = 0;
+        if (!ref.int_filters.empty()) {
+          rhs = ref.int_filters[0].arg;
+        }
+        bool cond = false;
+        (void)for_each_field(value_, ref.key, ref.field_index, [&](auto const& field) {
+          using FT = std::remove_cvref_t<decltype(field)>;
+          if constexpr (std::is_arithmetic_v<FT>) {
+            cond = (static_cast<long long>(field) != static_cast<long long>(rhs));
+          }
+        });
+        if (!cond) {
+          pc = instr.operand;
+        } else {
+          ++pc;
+        }
+        break;
+      }
+
       /** @brief else ブランチ */
       case bc_opcode::emit_else: {
         pc = instr.operand;
@@ -1621,6 +1735,13 @@ class bc_executor {
       /** @brief 部分文字列（引数1: 開始位置, 引数2: 文字数） */
       case bc_opcode::filter_substr: {
         apply_string_filter(filtered_value_, {.filter = string_filter::substr, .arg1 = static_cast<int>(instr.operand), .arg2 = static_cast<int>(instr.operand2)});
+        ++pc;
+        break;
+      }
+
+      /** @brief 部分文字列置換 */
+      case bc_opcode::filter_replace: {
+        apply_string_filter(filtered_value_, {.filter = string_filter::replace});
         ++pc;
         break;
       }
@@ -1813,6 +1934,18 @@ class bc_executor {
         if (loop_) {
           std::array<char, 16> buf;
           auto [ptr, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), loop_->index + 1);
+          if (ec == std::errc{}) {
+            out_.append(buf.data(), ptr);
+          }
+        }
+        break;
+      }
+
+      /** @brief ループの @size を総要素数として出力する */
+      case bc_opcode::emit_at_size: {
+        if (loop_) {
+          std::array<char, 16> buf;
+          auto [ptr, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), loop_->count);
           if (ec == std::errc{}) {
             out_.append(buf.data(), ptr);
           }
