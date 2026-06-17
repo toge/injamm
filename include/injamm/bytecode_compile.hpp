@@ -70,6 +70,10 @@ class bc_compiler {
   std::string clean_tmpl_;
   /** @brief テンプレート文字列上の現在位置 */
   std::size_t pos_ = 0;
+  /** @brief 閉じタグ後の改行を除去する */
+  bool trim_blocks_ = false;
+  /** @brief ブロックタグ前の空白を除去する */
+  bool lstrip_blocks_ = false;
 
   /**
    * @brief glaze リフレクションを用いてフィールドインデックスを解決する
@@ -206,6 +210,7 @@ class bc_compiler {
     auto section_instr_idx = bc_.current_offset() - 1;
 
     compile_body();
+    if (trim_blocks_ && pos_ < tmpl_.size() && tmpl_[pos_] == '\n') ++pos_;
 
     bc_.add_instruction(bc_opcode::emit_end);
     bc_.patch_jump(section_instr_idx, static_cast<std::uint32_t>(bc_.current_offset()));
@@ -227,6 +232,7 @@ class bc_compiler {
     auto section_instr_idx = bc_.current_offset() - 1;
 
     compile_body();
+    if (trim_blocks_ && pos_ < tmpl_.size() && tmpl_[pos_] == '\n') ++pos_;
 
     bc_.add_instruction(bc_opcode::emit_end);
     bc_.patch_jump(section_instr_idx, static_cast<std::uint32_t>(bc_.current_offset()));
@@ -282,6 +288,7 @@ class bc_compiler {
 
     std::uint32_t else_instr_idx = 0;
     bool has_else = compile_body_with_else(else_instr_idx);
+    if (trim_blocks_ && pos_ < tmpl_.size() && tmpl_[pos_] == '\n') ++pos_;
 
     if (has_else) {
       bc_.add_instruction(bc_opcode::emit_endif);
@@ -314,6 +321,7 @@ class bc_compiler {
     auto instr_idx = bc_.current_offset() - 1;
 
     compile_body();
+    if (trim_blocks_ && pos_ < tmpl_.size() && tmpl_[pos_] == '\n') ++pos_;
 
     bc_.add_instruction(bc_opcode::emit_end);
     bc_.patch_jump(instr_idx, static_cast<std::uint32_t>(bc_.current_offset()));
@@ -339,6 +347,7 @@ class bc_compiler {
     auto instr_idx = bc_.current_offset() - 1;
 
     compile_body();
+    if (trim_blocks_ && pos_ < tmpl_.size() && tmpl_[pos_] == '\n') ++pos_;
 
     bc_.add_instruction(bc_opcode::emit_end);
     bc_.patch_jump(instr_idx, static_cast<std::uint32_t>(bc_.current_offset()));
@@ -370,7 +379,13 @@ class bc_compiler {
 
       /** @brief タグ前のリテラルを出力 */
       if (tag_start > pos_) {
-        emit_literal(tmpl_.substr(pos_, tag_start - pos_));
+        auto literal = tmpl_.substr(pos_, tag_start - pos_);
+        if (lstrip_blocks_ && is_block_tag_start(tmpl_, tag_start)) {
+          literal = trim_tail_whitespace_for_lstrip(literal);
+        }
+        if (!literal.empty()) {
+          emit_literal(literal);
+        }
       }
 
       /** @brief {{{ raw プレースホルダの検出 */
@@ -412,6 +427,7 @@ class bc_compiler {
           emit_var(actual_key, true, std::move(filters), std::move(int_filters), std::move(float_filters));
         }
         pos_ = end + 3;
+        if (trim_blocks_ && pos_ < tmpl_.size() && tmpl_[pos_] == '\n') ++pos_;
         continue;
       }
 
@@ -425,6 +441,7 @@ class bc_compiler {
 
       auto inner = trim_sv(tmpl_.substr(tag_start + 2, tag_end - tag_start - 2));
       pos_ = tag_end + 2;
+      if (trim_blocks_ && pos_ < tmpl_.size() && tmpl_[pos_] == '\n') ++pos_;
 
       if (inner.empty()) continue;
 
@@ -544,7 +561,13 @@ class bc_compiler {
       }
 
       if (tag_start > pos_) {
-        emit_literal(tmpl_.substr(pos_, tag_start - pos_));
+        auto literal = tmpl_.substr(pos_, tag_start - pos_);
+        if (lstrip_blocks_ && is_block_tag_start(tmpl_, tag_start)) {
+          literal = trim_tail_whitespace_for_lstrip(literal);
+        }
+        if (!literal.empty()) {
+          emit_literal(literal);
+        }
       }
 
       auto tag_end = tmpl_.find("}}", tag_start + 2);
@@ -556,6 +579,7 @@ class bc_compiler {
 
       auto inner = trim_sv(tmpl_.substr(tag_start + 2, tag_end - tag_start - 2));
       pos_ = tag_end + 2;
+      if (trim_blocks_ && pos_ < tmpl_.size() && tmpl_[pos_] == '\n') ++pos_;
 
       if (inner.empty()) continue;
 
@@ -663,7 +687,9 @@ class bc_compiler {
    * @param tmpl Mustache 形式のテンプレート文字列
    * @return コンパイル済みバイトコード
    */
-  bytecode compile(std::string_view tmpl) {
+  bytecode compile(std::string_view tmpl, bool trim_blocks = false, bool lstrip_blocks = false) {
+    trim_blocks_ = trim_blocks;
+    lstrip_blocks_ = lstrip_blocks;
     clean_tmpl_ = strip_comments(tmpl);
     tmpl_ = clean_tmpl_;
     pos_ = 0;
@@ -682,20 +708,20 @@ class bc_compiler {
  * @return コンパイル済みバイトコード
  */
 template <class T>
-bytecode bc_compile(std::string_view tmpl) {
+bytecode bc_compile(std::string_view tmpl, bool trim_blocks = false, bool lstrip_blocks = false) {
   bc_compiler<T> compiler;
-  return compiler.compile(tmpl);
+  return compiler.compile(tmpl, trim_blocks, lstrip_blocks);
 }
 
 template <class T, class ConstMap>
-bytecode bc_compile(std::string_view tmpl, ConstMap const& consts) {
+bytecode bc_compile(std::string_view tmpl, ConstMap const& consts, bool trim_blocks = false, bool lstrip_blocks = false) {
   auto expanded = expand_vars_in_template(tmpl, consts);
   if (!expanded) {
     bytecode err_bc;
     err_bc.error = expanded.error();
     return err_bc;
   }
-  return bc_compile<T>(*expanded);
+  return bc_compile<T>(*expanded, trim_blocks, lstrip_blocks);
 }
 
 } // namespace injamm::detail

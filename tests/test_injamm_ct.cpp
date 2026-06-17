@@ -1122,6 +1122,57 @@ TEST_CASE("ct_comment_multiple", "[injamm][ct][comment]") {
   CHECK(*r == "beforeAliceafter");
 }
 
+// ---- trim_blocks / lstrip_blocks tests (CT) ----
+
+TEST_CASE("ct_trim_blocks removes newline after }}", "[injamm][ct][whitespace]") {
+  CtUser user{"Alice", 30};
+  auto r = injamm::render<"a{{name}}\nb", true>(user);
+  REQUIRE(r.has_value());
+  CHECK(*r == "aAliceb");
+}
+
+TEST_CASE("ct_trim_blocks does nothing when no newline follows", "[injamm][ct][whitespace]") {
+  CtUser user{"Alice", 30};
+  auto r = injamm::render<"{{name}}{{age}}", true>(user);
+  REQUIRE(r.has_value());
+  CHECK(*r == "Alice30");
+}
+
+TEST_CASE("ct_trim_blocks with section open/close", "[injamm][ct][whitespace]") {
+  CtBoolData data{true};
+  auto r = injamm::render<"x{{#flag}}\ny\n{{/flag}}z", true>(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "xy\nz");
+}
+
+TEST_CASE("ct_lstrip_blocks strips whitespace before section open", "[injamm][ct][whitespace]") {
+  CtBoolData data{true};
+  auto r = injamm::render<"a\n  {{#flag}}y{{/flag}}", false, true>(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "a\ny");
+}
+
+TEST_CASE("ct_lstrip_blocks strips whitespace before section close", "[injamm][ct][whitespace]") {
+  CtBoolData data{true};
+  auto r = injamm::render<"{{#flag}}y\n  {{/flag}}", false, true>(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "y\n");
+}
+
+TEST_CASE("ct_lstrip_blocks does not affect expression tags", "[injamm][ct][whitespace]") {
+  CtUser user{"Alice", 30};
+  auto r = injamm::render<"  {{name}}  {{age}}", false, true>(user);
+  REQUIRE(r.has_value());
+  CHECK(*r == "  Alice  30");
+}
+
+TEST_CASE("ct_trim_lstrip_blocks combined", "[injamm][ct][whitespace]") {
+  CtBoolData data{true};
+  auto r = injamm::render<"{{#flag}}\n  y\n{{/flag}}", true, true>(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "  y\n");
+}
+
 // ---- FrozenString NTTP テスト（frozenchars 利用時のみ）----
 
 #ifdef INJAMM_HAS_FROZENCHARS
@@ -1224,3 +1275,27 @@ TEST_CASE("FrozenString @var expansion", "[injamm][ct][frozen][atvar]") {
 }
 
 #endif // INJAMM_HAS_FROZENCHARS
+
+TEST_CASE("ct_trim_blocks single var with no newline", "[injamm][ct][whitespace]") {
+  CtUser user{"Alice", 30};
+  SECTION("single var only") {
+    auto r = injamm::render<"{{name}}", true>(user);
+    REQUIRE(r.has_value());
+    CHECK(*r == "Alice");
+  }
+  SECTION("two vars with no newlines, explicit false flags") {
+    auto r = injamm::render<"{{name}}{{age}}", false, false>(user);
+    REQUIRE(r.has_value());
+    CHECK(*r == "Alice30");
+  }
+  SECTION("two vars with trim_blocks=true") {
+    auto r = injamm::render<"{{name}}{{age}}", true>(user);
+    REQUIRE(r.has_value());
+    CHECK(*r == "Alice30");
+  }
+  SECTION("two vars with trim_blocks=true, explicit false lstrip") {
+    auto r = injamm::render<"{{name}}{{age}}", true, false>(user);
+    REQUIRE(r.has_value());
+    CHECK(*r == "Alice30");
+  }
+}

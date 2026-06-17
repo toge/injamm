@@ -117,10 +117,10 @@ constexpr std::string_view nttp_string_view(S const& s) noexcept {
  * @tparam Tmpl テンプレート文字列（NTTP）
  * @return ct_parsed_template<Tmpl.size() + 1> パース済みチャンク配列
  */
-template <auto Tmpl>
+template <auto Tmpl, bool TrimBlocks = false, bool LstripBlocks = false>
 consteval auto parse_fixed_impl() -> ct_parsed_template<Tmpl.size() + 1> {
   ct_parse_context<Tmpl.size() + 1> ctx;
-  ct_parse_into(ctx, nttp_string_view(Tmpl));
+  ct_parse_into(ctx, nttp_string_view(Tmpl), TrimBlocks, LstripBlocks);
   return ctx.tmpl;
 }
 
@@ -242,9 +242,9 @@ struct ct_expanded_template {
  * @param value コンテキスト値の const 参照
  * @return expected<std::string> レンダリング結果、またはエラー（error_ctx）
  */
-template <fixed_string Tmpl, typename T>
+template <fixed_string Tmpl, bool TrimBlocks = false, bool LstripBlocks = false, typename T>
 [[nodiscard]] expected<std::string> render(T const& value) {
-  constexpr auto parsed = detail::parse_fixed_impl<Tmpl>();
+  constexpr auto parsed = detail::parse_fixed_impl<Tmpl, TrimBlocks, LstripBlocks>();
   constexpr auto resolved = detail::resolve_field_indices<T>(parsed);
   constexpr auto ct_bc = detail::ct_chunks_to_bytecode<T>(resolved);
   if (ct_bc.error.ec != error_code::none)
@@ -304,11 +304,15 @@ public:
    * @brief テンプレート文字列から構築（実行時コンパイル）
    *
    * @param tmpl テンプレート文字列（std::string_view）
+   * @param trim_blocks 閉じタグ後の改行を除去する（デフォルト false）
+   * @param lstrip_blocks ブロックタグ前の空白を除去する（デフォルト false）
    */
-  explicit engine(std::string_view tmpl) : bc_(detail::bc_compile<T>(tmpl)) {}
+  explicit engine(std::string_view tmpl, bool trim_blocks = false, bool lstrip_blocks = false)
+    : bc_(detail::bc_compile<T>(tmpl, trim_blocks, lstrip_blocks)) {}
 
   template <class ConstMap>
-  explicit engine(std::string_view tmpl, ConstMap const& consts) : bc_(detail::bc_compile<T>(tmpl, consts)) {}
+  explicit engine(std::string_view tmpl, ConstMap const& consts, bool trim_blocks = false, bool lstrip_blocks = false)
+    : bc_(detail::bc_compile<T>(tmpl, consts, trim_blocks, lstrip_blocks)) {}
 
   /**
    * @brief レンダリングを実行する

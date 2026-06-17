@@ -1952,6 +1952,107 @@ TEST_CASE("error: @var circular reference detected", "[error][atvar]") {
   CHECK(result.error().ec == injamm::error_code::syntax_error);
 }
 
+// ---- trim_blocks / lstrip_blocks tests ----
+
+TEST_CASE("trim_blocks removes newline after }}", "[injamm][whitespace]") {
+  BcUser data{"Alice", 30};
+  auto eng = injamm::engine<BcUser>("a{{name}}\nb", true);
+  auto r = eng.render(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "aAliceb");
+}
+
+TEST_CASE("trim_blocks does nothing when no newline follows", "[injamm][whitespace]") {
+  BcUser data{"Alice", 30};
+  auto eng = injamm::engine<BcUser>("{{name}}{{age}}", true);
+  auto r = eng.render(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "Alice30");
+}
+
+TEST_CASE("trim_blocks with section open/close", "[injamm][whitespace]") {
+  BcBoolData data{true};
+  auto eng = injamm::engine<BcBoolData>("x{{#flag}}\ny\n{{/flag}}z", true);
+  auto r = eng.render(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "xy\nz");
+  // After {{#flag}}: \n removed. Body: "y\n". After {{/flag}}: no \n (next char is z).
+}
+
+TEST_CASE("trim_blocks with if/else", "[injamm][whitespace]") {
+  SECTION("truthy age renders then body") {
+    BcIfData data{"test", 25};
+    auto eng = injamm::engine<BcIfData>("{{#if age}}\ny\n{{else}}\nn\n{{/if}}", true);
+    auto r = eng.render(data);
+    REQUIRE(r.has_value());
+    CHECK(*r == "y\n");
+  }
+  SECTION("falsy age renders else body") {
+    BcIfData data{"test", 0};
+    auto eng = injamm::engine<BcIfData>("{{#if age}}\ny\n{{else}}\nn\n{{/if}}", true);
+    auto r = eng.render(data);
+    REQUIRE(r.has_value());
+    CHECK(*r == "n\n");
+  }
+}
+
+TEST_CASE("lstrip_blocks strips whitespace before section open", "[injamm][whitespace]") {
+  BcBoolData data{true};
+  auto eng = injamm::engine<BcBoolData>("a\n  {{#flag}}y{{/flag}}", false, true);
+  auto r = eng.render(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "a\ny");
+}
+
+TEST_CASE("lstrip_blocks strips whitespace before section close", "[injamm][whitespace]") {
+  BcBoolData data{true};
+  auto eng = injamm::engine<BcBoolData>("{{#flag}}y\n  {{/flag}}", false, true);
+  auto r = eng.render(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "y\n");
+}
+
+TEST_CASE("lstrip_blocks does not strip whitespace before expression tags", "[injamm][whitespace]") {
+  BcUser data{"Alice", 30};
+  auto eng = injamm::engine<BcUser>("  {{name}}  {{age}}", false, true);
+  auto r = eng.render(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "  Alice  30");
+}
+
+TEST_CASE("lstrip_blocks with if/else", "[injamm][whitespace]") {
+  SECTION("truthy age renders then body") {
+    BcIfData data{"test", 25};
+    auto eng = injamm::engine<BcIfData>("a\n  {{#if age}}\nyes\n  {{else}}\nno\n  {{/if}}", false, true);
+    auto r = eng.render(data);
+    REQUIRE(r.has_value());
+    CHECK(*r == "a\n\nyes\n");
+  }
+  SECTION("falsy age renders else body") {
+    BcIfData data{"test", 0};
+    auto eng = injamm::engine<BcIfData>("a\n  {{#if age}}\nyes\n  {{else}}\nno\n  {{/if}}", false, true);
+    auto r = eng.render(data);
+    REQUIRE(r.has_value());
+    CHECK(*r == "a\n\nno\n");
+  }
+}
+
+TEST_CASE("trim_blocks + lstrip_blocks combined", "[injamm][whitespace]") {
+  BcBoolData data{true};
+  auto eng = injamm::engine<BcBoolData>("{{#flag}}\n  y\n{{/flag}}", true, true);
+  auto r = eng.render(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "  y\n");
+}
+
+TEST_CASE("trim_blocks with nested sections", "[injamm][whitespace]") {
+  BcOuter data{{{"a"}, {"b"}}};
+  auto eng = injamm::engine<BcOuter>("{{#items}}\n{{inner}}\n{{/items}}", true);
+  auto r = eng.render(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "ab");
+}
+
 TEST_CASE("comment_basic", "[injamm][comment]") {
   BcUser data{"Alice", 30};
   auto bc = injamm::engine<BcUser>("Hello {# this is a comment #}{{name}}!");

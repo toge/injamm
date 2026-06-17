@@ -272,9 +272,9 @@ consteval void compile_chunk_range(ct_bytecode_builder<N>& b,
            b.emit(bc_opcode::resolve_filtered, filter_count, vridx);
            emit_filter_chain(i);
            b.emit(raw ? bc_opcode::emit_filtered_raw : bc_opcode::emit_filtered);
-         } else {
-           b.emit(raw ? bc_opcode::emit_at_root_field_raw : bc_opcode::emit_at_root_field, 0, vridx);
-         }
+          } else {
+            b.emit(raw ? bc_opcode::emit_at_root_field_raw : bc_opcode::emit_at_root_field, vridx);
+          }
          break;
        }
 
@@ -299,7 +299,7 @@ consteval void compile_chunk_range(ct_bytecode_builder<N>& b,
          }
        }
 
-       b.emit(raw ? bc_opcode::emit_var_raw : bc_opcode::emit_var, 0, vridx);
+        b.emit(raw ? bc_opcode::emit_var_raw : bc_opcode::emit_var, vridx);
        break;
      }
     case ct_chunk_kind::section: {

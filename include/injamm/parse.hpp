@@ -448,4 +448,29 @@ constexpr void copy_stripped(std::string_view src, std::array<char, N>& dst) noe
   }
 }
 
+[[nodiscard]] constexpr std::string_view trim_tail_whitespace_for_lstrip(std::string_view sv) noexcept {
+  auto nl = sv.rfind('\n');
+  if (nl == std::string_view::npos) {
+    for (auto c : sv) {
+      if (c != ' ' && c != '\t') return sv;
+    }
+    return {};
+  }
+  for (std::size_t i = nl + 1; i < sv.size(); ++i) {
+    if (sv[i] != ' ' && sv[i] != '\t') return sv;
+  }
+  return sv.substr(0, nl + 1);
+}
+
+[[nodiscard]] constexpr bool is_block_tag_start(std::string_view tmpl, std::size_t tag_start) noexcept {
+  if (tag_start + 3 >= tmpl.size()) return false;
+  auto c = tmpl[tag_start + 2];
+  if (c == '#' || c == '^' || c == '/') return true;
+  if (c == 'e' && tag_start + 6 <= tmpl.size()) {
+    return tmpl[tag_start + 2] == 'e' && tmpl[tag_start + 3] == 'l' &&
+           tmpl[tag_start + 4] == 's' && tmpl[tag_start + 5] == 'e';
+  }
+  return false;
+}
+
 }  // namespace injamm::detail
