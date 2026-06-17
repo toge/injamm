@@ -24,10 +24,14 @@ target_include_directories(injamm INTERFACE
 target_link_libraries(injamm INTERFACE glaze::glaze)
 target_compile_features(injamm INTERFACE cxx_std_23)
 
-# 高速化のためのGCCスレッデッドディスパッチ
+# GCC スレッデッドディスパッチ制御
+# ヘッダ側でも自動有効化されるが、CMake から明示的に制御できるよう残す。
+# ENABLE_THREADED_DISPATCH=OFF にすると INJAMM_NO_THREADED_DISPATCH を定義して無効化する。
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-  if(ENABLE_THREADED_DISPATCH)
-    target_compile_definitions(injamm INTERFACE INJAMM_THREADED_DISPATCH)
+  if(NOT ENABLE_THREADED_DISPATCH)
+    target_compile_definitions(injamm INTERFACE INJAMM_NO_THREADED_DISPATCH)
+  else()
+    # ヘッダ側の自動検出を補完: gnu++23 拡張を明示的に有効化する
     target_compile_options(injamm INTERFACE -std=gnu++23)
   endif()
 endif()

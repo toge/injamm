@@ -1,5 +1,17 @@
 #pragma once
 
+/**
+ * @brief GCC + C++23 以上の環境では computed goto ディスパッチを自動有効化する。
+ * @details CMake 経由でビルドした場合は INJAMM_THREADED_DISPATCH が定義済みのため
+ *          このブロックは実質 no-op となる。ヘッダオンリーで直接インクルードする
+ *          ユーザー（vcpkg 取得後に直接 include する場合など）でも自動的に
+ *          computed goto の恩恵を受けられるようにする。
+ *          無効化したい場合は INJAMM_NO_THREADED_DISPATCH を定義する。
+ */
+#if defined(__GNUC__) && !defined(__clang__) && !defined(INJAMM_NO_THREADED_DISPATCH) && !defined(INJAMM_THREADED_DISPATCH)
+#define INJAMM_THREADED_DISPATCH 1
+#endif
+
 #include "../injamm.hpp"
 #include "bytecode.hpp"
 #include "escape.hpp"
