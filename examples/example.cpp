@@ -44,11 +44,11 @@ int main() {
   /**
    * API 1: Bytecode VM（実行時テンプレートコンパイル、全機能対応）
    * @details engine はテンプレート文字列をバイトコードにコンパイルし、
-   *          任意のコンテキストデータで描画する。セクション、if/else、@index/@first/@last、
+   *          任意のコンテキストデータで描画する。セクション、if/else、loop.is_first/loop.is_last、
    *          ネストパスなどの全機能が利用可能。
    */
   auto bc = injamm::engine<Data>("Users: {{#users}}{{name}} ({{age}})"
-                                       "{{#if @last}}.{{else}}, {{/if}}{{/users}}");
+                                       "{{#if loop.is_last}}.{{else}}, {{/if}}{{/users}}");
   auto r1 = bc.render(data);
   if (r1) {
     std::cout << "Bytecode VM: " << *r1 << "\n";

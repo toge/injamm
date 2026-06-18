@@ -170,7 +170,7 @@ constexpr ct_parsed_template<N> resolve_field_indices(ct_parsed_template<N> tmpl
         continue;
       }
       auto key = tmpl.texts[i];
-      if (key.empty() || key[0] == '@' || key.find('.') != std::string_view::npos) {
+      if (key.empty() || key.starts_with("loop.") || key == "root" || key.find('.') != std::string_view::npos) {
         continue;
       }
       [&]<std::size_t... I>(std::index_sequence<I...>) {
@@ -264,9 +264,9 @@ consteval void compile_chunk_range(ct_bytecode_builder<N>& b,
           break;
         }
 
-        // @root.field → resolve_filtered or emit_at_root_field
-        if (sv.starts_with("@root.")) {
-         auto rest = sv.substr(6);
+        // root.field → resolve_filtered or emit_at_root_field
+        if (sv.starts_with("root.")) {
+         auto rest = sv.substr(5);
          auto vridx = b.add_var_ref({rest.data(), rest.size()},
                                      static_cast<std::uint32_t>(chunks.field_indices[i]));
          if (has_filters) {
@@ -335,7 +335,6 @@ consteval void compile_chunk_range(ct_bytecode_builder<N>& b,
       case at_var_kind::first: b.emit(bc_opcode::emit_at_first); break;
       case at_var_kind::last:  b.emit(bc_opcode::emit_at_last); break;
       case at_var_kind::key:   b.emit(bc_opcode::emit_at_key); break;
-      case at_var_kind::root:  b.emit(bc_opcode::emit_at_root); break;
       }
       break;
     }

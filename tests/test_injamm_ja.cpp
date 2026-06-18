@@ -187,7 +187,7 @@ TEST_CASE("ja_section_complex", "[ja]") {
   data.users.push_back(JaUser{"田中", 35});
   data.users.push_back(JaUser{"佐藤", 28});
   data.users.push_back(JaUser{"鈴木", 42});
-  auto bc = injamm::engine<JaUsersData>("{{#users}}{{name}}（{{age}}歳）{{#if @last}}。{{else}}、{{/if}}{{/users}}");
+  auto bc = injamm::engine<JaUsersData>("{{#users}}{{name}}（{{age}}歳）{{#if loop.is_last}}。{{else}}、{{/if}}{{/users}}");
   auto r = bc.render(data);
   REQUIRE(r.has_value());
   REQUIRE(*r == "田中（35歳）、佐藤（28歳）、鈴木（42歳）。");
@@ -368,7 +368,7 @@ TEST_CASE("ja_at_index", "[ja]") {
   data.users.push_back(JaUser{"一郎", 1});
   data.users.push_back(JaUser{"二郎", 2});
   data.users.push_back(JaUser{"三郎", 3});
-  auto bc = injamm::engine<JaUsersData>("{{#users}}{{@index}}:{{name}} {{/users}}");
+  auto bc = injamm::engine<JaUsersData>("{{#users}}{{loop.index}}:{{name}} {{/users}}");
   auto r = bc.render(data);
   REQUIRE(r.has_value());
   REQUIRE(*r == "0:一郎 1:二郎 2:三郎 ");
@@ -379,7 +379,7 @@ TEST_CASE("ja_at_first_last", "[ja]") {
   data.users.push_back(JaUser{"最初", 1});
   data.users.push_back(JaUser{"中間", 2});
   data.users.push_back(JaUser{"最後", 3});
-  auto bc = injamm::engine<JaUsersData>("{{#users}}{{#if @first}}【{{name}}】{{/if}}{{#if @last}}（{{name}}）{{/if}}{{/users}}");
+  auto bc = injamm::engine<JaUsersData>("{{#users}}{{#if loop.is_first}}【{{name}}】{{/if}}{{#if loop.is_last}}（{{name}}）{{/if}}{{/users}}");
   auto r = bc.render(data);
   REQUIRE(r.has_value());
   REQUIRE(*r == "【最初】（最後）");
@@ -429,7 +429,7 @@ TEST_CASE("ja_only_variables", "[ja]") {
 
 TEST_CASE("ja_struct_iteration", "[ja]") {
   JaMapWrapper data;
-  auto bc = injamm::engine<JaMapWrapper>("{{#config}}{{@key}}={{this}};{{/config}}");
+  auto bc = injamm::engine<JaMapWrapper>("{{#config}}{{loop.key}}={{this}};{{/config}}");
   auto r = bc.render(data);
   REQUIRE(r.has_value());
   REQUIRE(*r == "host=localhost;port=8080;");
@@ -535,7 +535,7 @@ TEST_CASE("ct_ja_raw", "[ja][ct]") {
 }
 
 TEST_CASE("ct_ja_at_index", "[ja][ct]") {
-  auto constexpr tmpl = injamm::fixed_string("{{#users}}{{@index}}:{{name}} {{/users}}");
+  auto constexpr tmpl = injamm::fixed_string("{{#users}}{{loop.index}}:{{name}} {{/users}}");
   JaUsersData data;
   data.users.push_back(JaUser{"一郎", 1});
   data.users.push_back(JaUser{"二郎", 2});
@@ -545,7 +545,7 @@ TEST_CASE("ct_ja_at_index", "[ja][ct]") {
 }
 
 TEST_CASE("ct_ja_at_first_last", "[ja][ct]") {
-  auto constexpr tmpl = injamm::fixed_string("{{#users}}{{#if @first}}【{{name}}】{{/if}}{{#if @last}}（{{name}}）{{/if}}{{/users}}");
+  auto constexpr tmpl = injamm::fixed_string("{{#users}}{{#if loop.is_first}}【{{name}}】{{/if}}{{#if loop.is_last}}（{{name}}）{{/if}}{{/users}}");
   JaUsersData data;
   data.users.push_back(JaUser{"最初", 1});
   data.users.push_back(JaUser{"最後", 2});

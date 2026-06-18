@@ -438,26 +438,15 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
         continue;
       }
 
-      // -- {{#@var}} セクションの処理 --
+      // -- {{#loop.X}} セクションの処理 --
       /**
-       * @brief @var 条件セクションの解析
-       * @details `{{#@first}}...{{/@first}}` のように記述し、
+       * @brief loop.* 条件セクションの解析
+       * @details `{{#loop.is_first}}...{{/loop.is_first}}` のように記述し、
        *          ループの先頭要素などの条件に応じて本体が描画される。
        */
-      if (key.starts_with("@")) {
-        /** @brief @index / @first / @last / @root の種別を判定 */
-        auto k = parse_at_kind(key);
-        at_var_kind var_kind;
-        switch (k) {
-          case at_var_kind::index: var_kind = at_var_kind::index; break;
-          case at_var_kind::index1: var_kind = at_var_kind::index1; break;
-          case at_var_kind::size: var_kind = at_var_kind::size; break;
-          case at_var_kind::first: var_kind = at_var_kind::first; break;
-          case at_var_kind::last: var_kind = at_var_kind::last; break;
-          case at_var_kind::root: var_kind = at_var_kind::root; break;
-          default: break;
-        }
-        /** @brief 対応する閉じタグ文字列（例: "{{/@index}}"） */
+      if (auto k = parse_loop_kind(key); k) {
+        at_var_kind var_kind = *k;
+        /** @brief 対応する閉じタグ文字列（例: "{{/loop.is_first}}"） */
         auto close_tag_str = std::string{"{{/"} + std::string{key} + "}}";
         auto body_start = pos;
         auto close_pos = tmpl.find(close_tag_str, pos);
@@ -467,7 +456,7 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
           pos = close_pos + close_tag_str.size();
           if (trim_blocks && pos < tmpl.size() && tmpl[pos] == '\n') ++pos;
 
-          /** @brief @var セクションチャンクを追加し、本体を再帰パース */
+          /** @brief loop.* セクションチャンクを追加し、本体を再帰パース */
           auto chunk_idx = ctx.push_at_section(var_kind, 0, 0, false);
           auto body_start_idx = ctx.tmpl.size;
           ct_parse_into(ctx, body, trim_blocks, lstrip_blocks);
@@ -543,24 +532,14 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
       /** @brief `^` 以降のキー部分 */
       auto key = trim_sv(inner.substr(1));
 
-      // -- {{^@var}} 逆セクションの処理 --
+      // -- {{^loop.X}} 逆セクションの処理 --
       /**
-       * @brief @var 逆セクションの解析
-       * @details `{{^@first}}...{{/@first}}` のように記述し、
-       *          条件が偽の場合に本体が描画される（{{#@var}} の逆）。
+       * @brief loop.* 逆セクションの解析
+       * @details `{{^loop.is_first}}...{{/loop.is_first}}` のように記述し、
+       *          条件が偽の場合に本体が描画される（{{#loop.*}} の逆）。
        */
-      if (key.starts_with("@")) {
-        auto k = parse_at_kind(key);
-        at_var_kind var_kind;
-        switch (k) {
-          case at_var_kind::index: var_kind = at_var_kind::index; break;
-          case at_var_kind::index1: var_kind = at_var_kind::index1; break;
-          case at_var_kind::size: var_kind = at_var_kind::size; break;
-          case at_var_kind::first: var_kind = at_var_kind::first; break;
-          case at_var_kind::last: var_kind = at_var_kind::last; break;
-          case at_var_kind::root: var_kind = at_var_kind::root; break;
-          default: break;
-        }
+      if (auto k = parse_loop_kind(key); k) {
+        at_var_kind var_kind = *k;
         auto close_tag_str = std::string{"{{/"} + std::string{key} + "}}";
         auto body_start_pos = pos;
         auto close_pos = tmpl.find(close_tag_str, pos);
@@ -636,33 +615,25 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
       continue;
     }
 
-    // -- @root.field（パス情報を保持するためプレースホルダとして扱う） --
-    if (inner.starts_with("@root.")) {
+    // -- root.field（パス情報を保持するためプレースホルダとして扱う） --
+    if (inner.starts_with("root.")) {
       ctx.push_placeholder(inner, false);
       continue;
     }
 
-    // -- @var（単体）の処理 --
+    // -- loop.X（単体）の処理 --
     /**
-     * @brief @var タグの解析
-     * @details `{{@index}}` / `{{@first}}` / `{{@last}}` / `{{@root}}` の形式を解析する。
+     * @brief loop.X タグの解析
+     * @details `{{loop.index}}` / `{{loop.is_first}}` / `{{loop.is_last}}` の形式を解析する。
      *          セクションではなく単一の値としてレンダリングされる。
      */
-    if (inner.starts_with("@")) {
-      auto k = parse_at_kind(inner);
-      at_var_kind var;
-      switch (k) {
-        case at_var_kind::index: var = at_var_kind::index; break;
-        case at_var_kind::index1: var = at_var_kind::index1; break;
-        case at_var_kind::size: var = at_var_kind::size; break;
-        case at_var_kind::first: var = at_var_kind::first; break;
-        case at_var_kind::last: var = at_var_kind::last; break;
-        case at_var_kind::root: var = at_var_kind::root; break;
-        case at_var_kind::key: var = at_var_kind::key; break;
-      }
-      ctx.push_at_var(var);
+    if (auto k = parse_loop_kind(inner); k) {
+      ctx.push_at_var(*k);
       continue;
     }
+
+    // -- {{root}} — ルートコンテキスト全体は NTTP 経路では非対応（バイトコード VM のみ） --
+    // -- {{root.X}} — ルートコンテキストフィールド参照（後段の @root. 分岐で処理） --
 
     // -- 通常のプレースホルダ --
     {

@@ -256,14 +256,14 @@ TEST_CASE("bc_inverted_false", "[injamm]") {
 
 /**
  * @brief @index 特殊変数のテスト
- * @details セクション内で {{@index}} が 0 から始まる連番を出力することを確認する。
+ * @details セクション内で {{loop.index}} が 0 から始まる連番を出力することを確認する。
  */
 TEST_CASE("bc_at_index", "[injamm]") {
   BcUsersData data;
   data.users.push_back(BcUser{"a", 1});
   data.users.push_back(BcUser{"b", 2});
   data.users.push_back(BcUser{"c", 3});
-  auto bc = injamm::engine<BcUsersData>("{{#users}}{{@index}}{{/users}}");
+  auto bc = injamm::engine<BcUsersData>("{{#users}}{{loop.index}}{{/users}}");
   auto r = bc.render(data);
   REQUIRE(r.has_value());
   REQUIRE(*r == "012");
@@ -271,14 +271,14 @@ TEST_CASE("bc_at_index", "[injamm]") {
 
 /**
  * @brief @index1 特殊変数のテスト
- * @details セクション内で {{@index1}} が 1 から始まる連番を出力することを確認する。
+ * @details セクション内で {{loop.index1}} が 1 から始まる連番を出力することを確認する。
  */
 TEST_CASE("bc_at_index1", "[injamm]") {
   BcUsersData data;
   data.users.push_back(BcUser{"a", 1});
   data.users.push_back(BcUser{"b", 2});
   data.users.push_back(BcUser{"c", 3});
-  auto bc = injamm::engine<BcUsersData>("{{#users}}{{@index1}}:{{name}} {{/users}}");
+  auto bc = injamm::engine<BcUsersData>("{{#users}}{{loop.index1}}:{{name}} {{/users}}");
   auto r = bc.render(data);
   REQUIRE(r.has_value());
   REQUIRE(*r == "1:a 2:b 3:c ");
@@ -291,7 +291,7 @@ TEST_CASE("bc_at_index1", "[injamm]") {
 TEST_CASE("bc_at_index1_outside_loop", "[injamm]") {
   BcUsersData data;
   data.users.push_back(BcUser{"a", 1});
-  auto bc = injamm::engine<BcUsersData>("X{{@index1}}Y");
+  auto bc = injamm::engine<BcUsersData>("X{{loop.index1}}Y");
   auto r = bc.render(data);
   REQUIRE(r.has_value());
   REQUIRE(*r == "XY");
@@ -299,14 +299,14 @@ TEST_CASE("bc_at_index1_outside_loop", "[injamm]") {
 
 /**
  * @brief @size 特殊変数のテスト
- * @details セクション内で {{@size}} がループ総要素数を出力することを確認する。
+ * @details セクション内で {{loop.size}} がループ総要素数を出力することを確認する。
  */
 TEST_CASE("bc_at_size", "[injamm]") {
   BcUsersData data;
   data.users.push_back(BcUser{"a", 1});
   data.users.push_back(BcUser{"b", 2});
   data.users.push_back(BcUser{"c", 3});
-  auto bc = injamm::engine<BcUsersData>("{{#users}}{{@index}}/{{@size}} {{/users}}");
+  auto bc = injamm::engine<BcUsersData>("{{#users}}{{loop.index}}/{{loop.size}} {{/users}}");
   auto r = bc.render(data);
   REQUIRE(r.has_value());
   REQUIRE(*r == "0/3 1/3 2/3 ");
@@ -319,7 +319,7 @@ TEST_CASE("bc_at_size", "[injamm]") {
 TEST_CASE("bc_at_size_outside_loop", "[injamm]") {
   BcUsersData data;
   data.users.push_back(BcUser{"a", 1});
-  auto bc = injamm::engine<BcUsersData>("X{{@size}}Y");
+  auto bc = injamm::engine<BcUsersData>("X{{loop.size}}Y");
   auto r = bc.render(data);
   REQUIRE(r.has_value());
   REQUIRE(*r == "XY");
@@ -331,7 +331,7 @@ TEST_CASE("bc_at_size_outside_loop", "[injamm]") {
  */
 TEST_CASE("bc_at_size_empty_loop", "[injamm]") {
   BcUsersData data;
-  auto bc = injamm::engine<BcUsersData>("{{#users}}{{@size}}|{{/users}}");
+  auto bc = injamm::engine<BcUsersData>("{{#users}}{{loop.size}}|{{/users}}");
   auto r = bc.render(data);
   REQUIRE(r.has_value());
   REQUIRE(*r == "");
@@ -339,14 +339,14 @@ TEST_CASE("bc_at_size_empty_loop", "[injamm]") {
 
 /**
  * @brief @first 特殊変数のテスト
- * @details セクション内で {{@first}} が先頭要素のみ "true"、
+ * @details セクション内で {{loop.is_first}} が先頭要素のみ "true"、
  *          それ以外は "false" を出力することを確認する。
  */
 TEST_CASE("bc_at_first", "[injamm]") {
   BcUsersData data;
   data.users.push_back(BcUser{"a", 1});
   data.users.push_back(BcUser{"b", 2});
-  auto bc = injamm::engine<BcUsersData>("{{#users}}{{@first}}{{/users}}");
+  auto bc = injamm::engine<BcUsersData>("{{#users}}{{loop.is_first}}{{/users}}");
   auto r = bc.render(data);
   REQUIRE(r.has_value());
   REQUIRE(*r == "truefalse");
@@ -354,72 +354,72 @@ TEST_CASE("bc_at_first", "[injamm]") {
 
 /**
  * @brief @last 特殊変数のテスト
- * @details セクション内で {{@last}} が末尾要素のみ "true"、
+ * @details セクション内で {{loop.is_last}} が末尾要素のみ "true"、
  *          それ以外は "false" を出力することを確認する。
  */
 TEST_CASE("bc_at_last", "[injamm]") {
   BcUsersData data;
   data.users.push_back(BcUser{"a", 1});
   data.users.push_back(BcUser{"b", 2});
-  auto bc = injamm::engine<BcUsersData>("{{#users}}{{@last}}{{/users}}");
+  auto bc = injamm::engine<BcUsersData>("{{#users}}{{loop.is_last}}{{/users}}");
   auto r = bc.render(data);
   REQUIRE(r.has_value());
   REQUIRE(*r == "falsetrue");
 }
 
 /**
- * @brief {{#@first}} セクション構文のテスト
- * @details {{#@first}}...{{/@first}} で先頭要素のみ描画されることを確認する。
+ * @brief {{#loop.is_first}} セクション構文のテスト
+ * @details {{#loop.is_first}}...{{/loop.is_first}} で先頭要素のみ描画されることを確認する。
  */
 TEST_CASE("bc_at_first_section", "[injamm]") {
   BcUsersData data;
   data.users.push_back(BcUser{"a", 1});
   data.users.push_back(BcUser{"b", 2});
   data.users.push_back(BcUser{"c", 3});
-  auto bc = injamm::engine<BcUsersData>("{{#users}}{{#@first}}<{{name}}>{{/@first}}{{/users}}");
+  auto bc = injamm::engine<BcUsersData>("{{#users}}{{#loop.is_first}}<{{name}}>{{/loop.is_first}}{{/users}}");
   auto r = bc.render(data);
   REQUIRE(r.has_value());
   REQUIRE(*r == "<a>");
 }
 
 /**
- * @brief {{#@last}} セクション構文のテスト
- * @details {{#@last}}...{{/@last}} で末尾要素のみ描画されることを確認する。
+ * @brief {{#loop.is_last}} セクション構文のテスト
+ * @details {{#loop.is_last}}...{{/loop.is_last}} で末尾要素のみ描画されることを確認する。
  */
 TEST_CASE("bc_at_last_section", "[injamm]") {
   BcUsersData data;
   data.users.push_back(BcUser{"a", 1});
   data.users.push_back(BcUser{"b", 2});
-  auto bc = injamm::engine<BcUsersData>("{{#users}}{{#@last}}<{{name}}>{{/@last}}{{/users}}");
+  auto bc = injamm::engine<BcUsersData>("{{#users}}{{#loop.is_last}}<{{name}}>{{/loop.is_last}}{{/users}}");
   auto r = bc.render(data);
   REQUIRE(r.has_value());
   REQUIRE(*r == "<b>");
 }
 
 /**
- * @brief {{^@first}} 逆セクション構文のテスト
- * @details {{^@first}}...{{/@first}} で先頭要素以外を描画することを確認する。
+ * @brief {{^loop.is_first}} 逆セクション構文のテスト
+ * @details {{^loop.is_first}}...{{/loop.is_first}} で先頭要素以外を描画することを確認する。
  */
 TEST_CASE("bc_at_first_inverted_section", "[injamm]") {
   BcUsersData data;
   data.users.push_back(BcUser{"a", 1});
   data.users.push_back(BcUser{"b", 2});
   data.users.push_back(BcUser{"c", 3});
-  auto bc = injamm::engine<BcUsersData>("{{#users}}{{^@first}}<{{name}}>{{/@first}}{{/users}}");
+  auto bc = injamm::engine<BcUsersData>("{{#users}}{{^loop.is_first}}<{{name}}>{{/loop.is_first}}{{/users}}");
   auto r = bc.render(data);
   REQUIRE(r.has_value());
   REQUIRE(*r == "<b><c>");
 }
 
 /**
- * @brief {{^@last}} 逆セクション構文のテスト
- * @details {{^@last}}...{{/@last}} で末尾要素以外を描画することを確認する。
+ * @brief {{^loop.is_last}} 逆セクション構文のテスト
+ * @details {{^loop.is_last}}...{{/loop.is_last}} で末尾要素以外を描画することを確認する。
  */
 TEST_CASE("bc_at_last_inverted_section", "[injamm]") {
   BcUsersData data;
   data.users.push_back(BcUser{"a", 1});
   data.users.push_back(BcUser{"b", 2});
-  auto bc = injamm::engine<BcUsersData>("{{#users}}{{^@last}}<{{name}}>{{/@last}}{{/users}}");
+  auto bc = injamm::engine<BcUsersData>("{{#users}}{{^loop.is_last}}<{{name}}>{{/loop.is_last}}{{/users}}");
   auto r = bc.render(data);
   REQUIRE(r.has_value());
   REQUIRE(*r == "<a>");
@@ -487,7 +487,7 @@ TEST_CASE("bc_complex_template", "[injamm]") {
   data.users.push_back(BcUser{"alice", 30});
   data.users.push_back(BcUser{"bob", 25});
   auto bc = injamm::engine<BcUsersData>(
-    "users: {{#users}}{{name}} ({{age}}){{#if @last}}.{{else}}, {{/if}}{{/users}}");
+    "users: {{#users}}{{name}} ({{age}}){{#if loop.is_last}}.{{else}}, {{/if}}{{/users}}");
   auto r = bc.render(data);
   REQUIRE(r.has_value());
   REQUIRE(*r == "users: alice (30), bob (25).");
@@ -643,10 +643,10 @@ TEST_CASE("bc_if_else_false", "[injamm]") {
 
 /**
  * @brief if 文と @last の組み合わせテスト
- * @details セクション内で {{@last}} を if 条件に使用し、末尾要素のみドットを追記する動作を確認する。
+ * @details セクション内で {{loop.is_last}} を if 条件に使用し、末尾要素のみドットを追記する動作を確認する。
  */
 TEST_CASE("bc_if_with_at_last", "[injamm]") {
-  auto bc = injamm::engine<BcUsersData>("{{#users}}{{name}}{{#if @last}}.{{/if}}{{/users}}");
+  auto bc = injamm::engine<BcUsersData>("{{#users}}{{name}}{{#if loop.is_last}}.{{/if}}{{/users}}");
   BcUsersData data{.users = {{"a", 1}, {"b", 2}}};
   auto r = bc.render(data);
   REQUIRE(r.has_value());
@@ -659,7 +659,7 @@ TEST_CASE("bc_if_with_at_last", "[injamm]") {
  *          カンマ区切りと末尾のピリオドが正しく出力されることを確認する。
  */
 TEST_CASE("bc_if_else_with_section", "[injamm]") {
-  auto bc = injamm::engine<BcUsersData>("{{#users}}{{name}}{{#if @last}}.{{else}},{{/if}}{{/users}}");
+  auto bc = injamm::engine<BcUsersData>("{{#users}}{{name}}{{#if loop.is_last}}.{{else}},{{/if}}{{/users}}");
   BcUsersData data{.users = {{"a", 1}, {"b", 2}, {"c", 3}}};
   auto r = bc.render(data);
   REQUIRE(r.has_value());
@@ -668,7 +668,7 @@ TEST_CASE("bc_if_else_with_section", "[injamm]") {
 
 TEST_CASE("bc_at_root", "[injamm]") {
   BcRootData data;
-  auto bc = injamm::engine<BcRootData>("app: {{@root}}");
+  auto bc = injamm::engine<BcRootData>("app: {{root}}");
   auto r = bc.render(data);
   REQUIRE(r.has_value());
   REQUIRE(*r == "app: ");
@@ -676,7 +676,7 @@ TEST_CASE("bc_at_root", "[injamm]") {
 
 TEST_CASE("bc_at_root_field_simple", "[injamm]") {
   BcRootData data;
-  auto bc = injamm::engine<BcRootData>("{{@root.app_name}}");
+  auto bc = injamm::engine<BcRootData>("{{root.app_name}}");
   auto r = bc.render(data);
   REQUIRE(r.has_value());
   REQUIRE(*r == "injamm");
@@ -684,7 +684,7 @@ TEST_CASE("bc_at_root_field_simple", "[injamm]") {
 
 TEST_CASE("bc_at_root_field_nested", "[injamm]") {
   BcRootData data;
-  auto bc = injamm::engine<BcRootData>("{{@root.info.version}}");
+  auto bc = injamm::engine<BcRootData>("{{root.info.version}}");
   auto r = bc.render(data);
   REQUIRE(r.has_value());
   REQUIRE(*r == "1.0");
@@ -694,7 +694,7 @@ TEST_CASE("bc_at_key_array", "[injamm]") {
   BcUsersData data;
   data.users.push_back(BcUser{"a", 1});
   data.users.push_back(BcUser{"b", 2});
-  auto bc = injamm::engine<BcUsersData>("{{#users}}{{@key}}:{{name}},{{/users}}");
+  auto bc = injamm::engine<BcUsersData>("{{#users}}{{loop.key}}:{{name}},{{/users}}");
   auto r = bc.render(data);
   REQUIRE(r.has_value());
   REQUIRE(*r == "0:a,1:b,");
@@ -702,7 +702,7 @@ TEST_CASE("bc_at_key_array", "[injamm]") {
 
 TEST_CASE("bc_at_key_struct", "[injamm]") {
   BcMapWrapper data;
-  auto bc = injamm::engine<BcMapWrapper>("{{#config}}{{@key}}={{this}};{{/config}}");
+  auto bc = injamm::engine<BcMapWrapper>("{{#config}}{{loop.key}}={{this}};{{/config}}");
   auto r = bc.render(data);
   REQUIRE(r.has_value());
   REQUIRE(*r == "host=localhost;port=8080;");
@@ -710,7 +710,7 @@ TEST_CASE("bc_at_key_struct", "[injamm]") {
 
 TEST_CASE("bc_struct_iteration_nested", "[injamm]") {
   BcMapWrapper data;
-  auto bc = injamm::engine<BcMapWrapper>("{{#config}}{{#if @key}}k{{/if}}{{/config}}");
+  auto bc = injamm::engine<BcMapWrapper>("{{#config}}{{#if loop.key}}k{{/if}}{{/config}}");
   auto r = bc.render(data);
   REQUIRE(r.has_value());
   REQUIRE(*r == "kk");
@@ -1332,7 +1332,7 @@ TEST_CASE("deeply nested: if inside section", "[if][section]") {
   BcUsersData data{{{"Alice", 30}, {"Bob", 25}}};
   auto bc = injamm::engine<BcUsersData>(
     "{{#users}}"
-    "{{#if @first}}"
+    "{{#if loop.is_first}}"
     "First: {{name}}"
     "{{else}}"
     "Other: {{name}}"
@@ -1551,7 +1551,7 @@ TEST_CASE("bc_continue_basic", "[continue]") {
 
 TEST_CASE("bc_continue_skip_second", "[continue]") {
   BcUsersData data{.users = {{"Alice", 30}, {"Bob", 25}, {"Charlie", 35}}};
-  auto bc = injamm::engine<BcUsersData>("{{#users}}{{#if @first}}skip{{/if}}{{#if @last}}last{{/if}}{{name}}|{{/users}}");
+  auto bc = injamm::engine<BcUsersData>("{{#users}}{{#if loop.is_first}}skip{{/if}}{{#if loop.is_last}}last{{/if}}{{name}}|{{/users}}");
   auto r = bc.render(data);
   REQUIRE(r.has_value());
   REQUIRE(*r == "skipAlice|Bob|lastCharlie|");
@@ -1559,7 +1559,7 @@ TEST_CASE("bc_continue_skip_second", "[continue]") {
 
 TEST_CASE("bc_break_with_if", "[break]") {
   BcUsersData data{.users = {{"Alice", 30}, {"Bob", 25}, {"Charlie", 35}, {"Dave", 40}}};
-  auto bc = injamm::engine<BcUsersData>("{{#users}}{{#if @last}}{{#break}}{{/if}}{{name}}|{{/users}}");
+  auto bc = injamm::engine<BcUsersData>("{{#users}}{{#if loop.is_last}}{{#break}}{{/if}}{{name}}|{{/users}}");
   auto r = bc.render(data);
   REQUIRE(r.has_value());
   REQUIRE(*r == "Alice|Bob|Charlie|");
@@ -1567,7 +1567,7 @@ TEST_CASE("bc_break_with_if", "[break]") {
 
 TEST_CASE("bc_continue_with_if", "[continue]") {
   BcUsersData data{.users = {{"Alice", 30}, {"Bob", 25}, {"Charlie", 35}, {"Dave", 40}}};
-  auto bc = injamm::engine<BcUsersData>("{{#users}}{{#if @first}}{{#continue}}{{/if}}{{name}}|{{/users}}");
+  auto bc = injamm::engine<BcUsersData>("{{#users}}{{#if loop.is_first}}{{#continue}}{{/if}}{{name}}|{{/users}}");
   auto r = bc.render(data);
   REQUIRE(r.has_value());
   REQUIRE(*r == "Bob|Charlie|Dave|");
@@ -1720,7 +1720,7 @@ struct glz::meta<BcMapMixedData> {
 // ---- std::map セクション反復テスト ----
 
 TEST_CASE("bc_map_section_basic", "[injamm][bc][map]") {
-  auto bc = injamm::engine<BcMapIntData>("{{#values}}{{@key}}={{this}} {{/values}}");
+  auto bc = injamm::engine<BcMapIntData>("{{#values}}{{loop.key}}={{this}} {{/values}}");
   BcMapIntData data{{ {"a", 1}, {"b", 2}, {"c", 3} }};
   auto r = bc.render(data);
   REQUIRE(r.has_value());
@@ -1728,7 +1728,7 @@ TEST_CASE("bc_map_section_basic", "[injamm][bc][map]") {
 }
 
 TEST_CASE("bc_map_section_string_values", "[injamm][bc][map]") {
-  auto bc = injamm::engine<BcMapStrData>("{{#labels}}{{@key}}:{{this}} {{/labels}}");
+  auto bc = injamm::engine<BcMapStrData>("{{#labels}}{{loop.key}}:{{this}} {{/labels}}");
   BcMapStrData data{{ {"color", "red"}, {"size", "large"} }};
   auto r = bc.render(data);
   REQUIRE(r.has_value());
@@ -1736,7 +1736,7 @@ TEST_CASE("bc_map_section_string_values", "[injamm][bc][map]") {
 }
 
 TEST_CASE("bc_map_section_struct_values", "[injamm][bc][map]") {
-  auto bc = injamm::engine<BcMapStructData>("{{#items}}{{@key}}:{{name}}={{score}} {{/items}}");
+  auto bc = injamm::engine<BcMapStructData>("{{#items}}{{loop.key}}:{{name}}={{score}} {{/items}}");
   BcMapStructData data{{ {"alice", {.name = "Alice", .score = 100}}, {"bob", {.name = "Bob", .score = 85}} }};
   auto r = bc.render(data);
   REQUIRE(r.has_value());
@@ -1784,7 +1784,7 @@ TEST_CASE("bc_map_if_false", "[injamm][bc][map]") {
 }
 
 TEST_CASE("bc_map_unordered", "[injamm][bc][map]") {
-  auto bc = injamm::engine<BcMapUmapData>("{{#counts}}{{@key}}={{this}} {{/counts}}");
+  auto bc = injamm::engine<BcMapUmapData>("{{#counts}}{{loop.key}}={{this}} {{/counts}}");
   BcMapUmapData data{{ {"x", 10}, {"y", 20} }};
   auto r = bc.render(data);
   REQUIRE(r.has_value());
@@ -1794,7 +1794,7 @@ TEST_CASE("bc_map_unordered", "[injamm][bc][map]") {
 }
 
 TEST_CASE("bc_map_with_prefix", "[injamm][bc][map]") {
-  auto bc = injamm::engine<BcMapMixedData>("{{prefix}}: {{#values}}{{@key}}={{this}} {{/values}}");
+  auto bc = injamm::engine<BcMapMixedData>("{{prefix}}: {{#values}}{{loop.key}}={{this}} {{/values}}");
   BcMapMixedData data{.prefix = "data", .values = {{"k", 42}}};
   auto r = bc.render(data);
   REQUIRE(r.has_value());
@@ -1802,7 +1802,7 @@ TEST_CASE("bc_map_with_prefix", "[injamm][bc][map]") {
 }
 
 TEST_CASE("bc_map_disassemble", "[injamm][bc][map]") {
-  auto bc = injamm::engine<BcMapIntData>("{{#values}}{{@key}}={{this}}{{/values}}");
+  auto bc = injamm::engine<BcMapIntData>("{{#values}}{{loop.key}}={{this}}{{/values}}");
   auto asm_str = bc.disassemble();
   REQUIRE(asm_str.contains("emit_section"));
   REQUIRE(asm_str.contains("emit_at_key"));
@@ -1811,7 +1811,7 @@ TEST_CASE("bc_map_disassemble", "[injamm][bc][map]") {
 }
 
 TEST_CASE("bc_map_single_entry", "[injamm][bc][map]") {
-  auto bc = injamm::engine<BcMapIntData>("{{#values}}{{@key}}={{this}}{{/values}}");
+  auto bc = injamm::engine<BcMapIntData>("{{#values}}{{loop.key}}={{this}}{{/values}}");
   BcMapIntData data{{ {"only", 99} }};
   auto r = bc.render(data);
   REQUIRE(r.has_value());
@@ -1819,7 +1819,7 @@ TEST_CASE("bc_map_single_entry", "[injamm][bc][map]") {
 }
 
 TEST_CASE("bc_map_many_entries", "[injamm][bc][map]") {
-  auto bc = injamm::engine<BcMapIntData>("{{#values}}{{@key}}={{this}} {{/values}}");
+  auto bc = injamm::engine<BcMapIntData>("{{#values}}{{loop.key}}={{this}} {{/values}}");
   BcMapIntData data;
   for (int i = 0; i < 10; ++i) {
     data.values[std::string(1, 'a' + i)] = i;
@@ -1990,6 +1990,47 @@ TEST_CASE("error: @var circular reference detected", "[error][atvar]") {
   auto result = eng.render(ctx);
   REQUIRE(!result.has_value());
   CHECK(result.error().ec == injamm::error_code::syntax_error);
+}
+
+// ---- loop.X 旧 @var 構文の互換性破棄確認 ----
+
+TEST_CASE("legacy @index is rejected", "[injamm][loop][legacy]") {
+  BcUsersData data;
+  data.users.push_back(BcUser{"a", 1});
+  auto eng = injamm::engine<BcUsersData>("{{#users}}{{@index}}{{/users}}");
+  auto r = eng.render(data);
+  // loop.index に置換されず、空文字として描画されるか、エラーになる。
+  // 現状: ループ外フィールド扱いとして空出力（r.has_value() == true, 値 == ""）
+  REQUIRE(r.has_value());
+  CHECK(*r == "");
+}
+
+TEST_CASE("legacy @first is rejected", "[injamm][loop][legacy]") {
+  BcUsersData data;
+  data.users.push_back(BcUser{"a", 1});
+  auto eng = injamm::engine<BcUsersData>("{{#users}}{{@first}}{{/users}}");
+  auto r = eng.render(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "");
+}
+
+TEST_CASE("legacy @last is rejected", "[injamm][loop][legacy]") {
+  BcUsersData data;
+  data.users.push_back(BcUser{"a", 1});
+  auto eng = injamm::engine<BcUsersData>("{{#users}}{{@last}}{{/users}}");
+  auto r = eng.render(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "");
+}
+
+TEST_CASE("legacy @root.X is rejected (engine path)", "[injamm][loop][legacy]") {
+  BcRootData data;
+  auto eng = injamm::engine<BcRootData>("{{@root.app_name}}");
+  auto r = eng.render(data);
+  // @root.app_name は root プレフィックスが消えたただの "app_name" として扱われる
+  // BcRootData のフィールドではないため空出力
+  REQUIRE(r.has_value());
+  CHECK(*r == "");
 }
 
 // ---- trim_blocks / lstrip_blocks tests ----

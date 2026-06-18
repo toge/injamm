@@ -26,32 +26,33 @@ namespace injamm::detail {
 }
 
 /**
- * @brief @変数の種別を判定する
- * @param key "@last" / "@first" / "@index" のいずれか
- * @return 対応する at_var_kind 列挙値
- * @details 該当しない場合は at_var_kind::root を返す。
- *          root は @prefix なしのプレースホルダーを表す。
+ * @brief loop.X 予約語の有無を判定する
+ * @param key プレースホルダーキー ("loop.index" / "loop.is_first" 等)
+ * @return 該当する場合は対応する at_var_kind 列挙値、該当しない場合は std::nullopt
+ * @details inja 互換の loop.* 予約語を判定する。
+ *          "loop" 単体の参照は予約語ではない（オブジェクトとして存在しない）。
+ *          "root" 単体の参照はフィールド参照として処理されるためここでは扱わない。
  */
-[[nodiscard]] constexpr at_var_kind parse_at_kind(std::string_view key) noexcept {
-  if (key == "@last") {
-    return at_var_kind::last;
-  }
-  if (key == "@first") {
-    return at_var_kind::first;
-  }
-  if (key == "@index") {
+[[nodiscard]] constexpr std::optional<at_var_kind> parse_loop_kind(std::string_view key) noexcept {
+  if (key == "loop.index") {
     return at_var_kind::index;
   }
-  if (key == "@index1") {
+  if (key == "loop.index1") {
     return at_var_kind::index1;
   }
-  if (key == "@size") {
+  if (key == "loop.size") {
     return at_var_kind::size;
   }
-  if (key == "@key") {
+  if (key == "loop.is_first") {
+    return at_var_kind::first;
+  }
+  if (key == "loop.is_last") {
+    return at_var_kind::last;
+  }
+  if (key == "loop.key") {
     return at_var_kind::key;
   }
-  return at_var_kind::root;
+  return std::nullopt;
 }
 
 /**

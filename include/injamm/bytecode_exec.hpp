@@ -663,18 +663,18 @@ class bc_executor {
     auto const& ref   = bc_.var_refs[instr.operand2];
     bool        cond  = false;
 
-    /** @last, @first, @index の場合は loop 変数を直接参照 */
-    if (ref.key.starts_with("@")) {
+    /** loop.is_last, loop.is_first, loop.index の場合は loop 変数を直接参照 */
+    if (ref.key.starts_with("loop.")) {
       if (loop_) {
-        if (ref.key == "@last") {
+        if (ref.key == "loop.is_last") {
           cond = (loop_->index + 1 == loop_->count);
-        } else if (ref.key == "@first") {
+        } else if (ref.key == "loop.is_first") {
           cond = (loop_->index == 0);
-        } else if (ref.key == "@index") {
-          /** @index は 0 以外で真（0 は偽扱い） */
+        } else if (ref.key == "loop.index") {
+          /** loop.index は 0 以外で真（0 は偽扱い） */
           cond = (loop_->index != 0);
-        } else if (ref.key == "@key") {
-          /** @key は空でなければ真 */
+        } else if (ref.key == "loop.key") {
+          /** loop.key は空でなければ真 */
           cond = !loop_->key.empty();
         }
       }
@@ -1467,13 +1467,13 @@ class bc_executor {
         auto const& ref  = bc_.var_refs[instr.operand2];
         bool        cond = false;
 
-        if (ref.key.starts_with("@")) {
+        if (ref.key.starts_with("loop.")) {
           if (loop_) {
-            if (ref.key == "@last") {
+            if (ref.key == "loop.is_last") {
               cond = (loop_->index + 1 == loop_->count);
-            } else if (ref.key == "@first") {
+            } else if (ref.key == "loop.is_first") {
               cond = (loop_->index == 0);
-            } else if (ref.key == "@index") {
+            } else if (ref.key == "loop.index") {
               cond = (loop_->index != 0);
             }
           }

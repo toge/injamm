@@ -1,0 +1,19 @@
+=== Baseline (before loop.X migration) ===
+
+Run 1 / 2 / 3, median values:
+
+filter_chain           :   0.1 ns/call (7-8 us total / 50000)
+buffer_prealloc        : 17126 ns/call
+buffer_reuse new       :   64.0 ns/call
+buffer_reuse reuse     :   52.4 ns/call
+section_loop           :  191.9 ns/call   <-- key metric
+no_filter              :   32.4 ns/call
+with_filter            :   43.8 ns/call
+multi_filter           :   0.1 ns/call
+ct_render              :   80.5 ns/call
+wide_first(idx=0)      :   24.6 ns/call
+wide_mid(idx=10)       :   24.8 ns/call
+wide_last(idx=19)      :   24.2 ns/call
+wide_all(5 refs)       :   58.2 ns/call
+
+Tests: 815 assertions / 389 test cases (all passed)

@@ -147,14 +147,14 @@ class bc_compiler {
   }
 
   /**
-   * @brief @root.field 参照命令を発行する
-   * @param key @root.xxx 形式のキー全体
+   * @brief root.field 参照命令を発行する
+   * @param key root.xxx 形式のキー全体
    * @param raw 生出力フラグ
-   * @details プレフィックス @root. を除去し、残りのパスを var_ref として登録して
+   * @details プレフィックス root. を除去し、残りのパスを var_ref として登録して
    *          emit_at_root_field 命令を発行する。
    */
   void emit_root_field(std::string_view key, bool raw) {
-    auto rest = key.substr(6);
+    auto rest = key.substr(5);
     auto idx = bc_.add_var_ref(rest);
     auto field_idx = resolve_field_index<T>(rest);
     if (field_idx != UINT32_MAX) {
@@ -164,12 +164,15 @@ class bc_compiler {
   }
 
   /**
-   * @brief @index/@first/@last/@root/@key 参照命令を発行する
-   * @param key @index / @first / @last / @root のいずれか
+   * @brief loop.index/loop.is_first/loop.is_last/loop.key 参照命令を発行する
+   * @param key loop.index / loop.is_first / loop.is_last / loop.key のいずれか
    */
   void emit_at_var(std::string_view key) {
-    auto k = parse_at_kind(key);
-    switch (k) {
+    auto k = parse_loop_kind(key);
+    if (!k) {
+      return;
+    }
+    switch (*k) {
       case at_var_kind::index:
         bc_.add_instruction(bc_opcode::emit_at_index);
         break;
@@ -185,13 +188,8 @@ class bc_compiler {
       case at_var_kind::last:
         bc_.add_instruction(bc_opcode::emit_at_last);
         break;
-      case at_var_kind::root:
-        bc_.add_instruction(bc_opcode::emit_at_root);
-        break;
       case at_var_kind::key:
         bc_.add_instruction(bc_opcode::emit_at_key);
-        break;
-      default:
         break;
     }
   }
@@ -344,16 +342,17 @@ class bc_compiler {
   }
 
   /**
-   * @brief ループ状態を用いた反転セクション（{{^@var}}）をコンパイルする
-   * @param key @index / @first / @last のいずれか
+   * @brief ループ状態を用いた反転セクション（{{^loop.is_first}}）をコンパイルする
+   * @param key loop.index / loop.is_first / loop.is_last のいずれか
    * @details ループ状態の値を用いて真偽判定を行う反転セクションをコンパイルする。
-   *          kind フィールドに @index=0 / @first=1 / @last=2 をエンコードする。
+   *          kind フィールドに index=0 / is_first=1 / is_last=2 をエンコードする。
    */
   void compile_at_inverted(std::string_view key) {
-    auto k = parse_at_kind(key);
+    auto k = parse_loop_kind(key);
+    if (!k) return;
     /** @brief ループ状態の種類を数値でエンコード（0=index, 1=first, 2=last） */
     std::uint32_t kind;
-    switch (k) {
+    switch (*k) {
       case at_var_kind::index: kind = 0; break;
       case at_var_kind::first: kind = 1; break;
       case at_var_kind::last: kind = 2; break;
@@ -371,15 +370,16 @@ class bc_compiler {
   }
 
   /**
-   * @brief ループ状態を用いた@varセクション（{{#@var}}）をコンパイルする
-   * @param key @index / @first / @last のいずれか
+   * @brief ループ状態を用いたloopセクション（{{#loop.is_first}}）をコンパイルする
+   * @param key loop.index / loop.is_first / loop.is_last のいずれか
    * @details ループ状態の値に応じて本体を条件描画するセクションをコンパイルする。
-   *          kind フィールドに @index=0 / @first=1 / @last=2 をエンコードする。
+   *          kind フィールドに index=0 / is_first=1 / is_last=2 をエンコードする。
    */
   void compile_at_section(std::string_view key) {
-    auto k = parse_at_kind(key);
+    auto k = parse_loop_kind(key);
+    if (!k) return;
     std::uint32_t kind;
-    switch (k) {
+    switch (*k) {
       case at_var_kind::index: kind = 0; break;
       case at_var_kind::first: kind = 1; break;
       case at_var_kind::last: kind = 2; break;
@@ -464,7 +464,7 @@ class bc_compiler {
           bc_.error = error_ctx{tag_start, error_code::unknown_filter, parts[fi]};
           return;
         }
-        if (actual_key.starts_with("@root.")) {
+        if (actual_key.starts_with("root.")) {
           emit_root_field(actual_key, true);
         } else {
           emit_var(actual_key, true, std::move(filters), std::move(int_filters), std::move(float_filters));
@@ -519,7 +519,7 @@ class bc_compiler {
           continue;
         }
 
-        if (key.starts_with("@")) {
+        if (parse_loop_kind(key)) {
           compile_at_section(key);
           continue;
         }
@@ -528,10 +528,10 @@ class bc_compiler {
         continue;
       }
 
-      /** @brief {{^section}} または {{^@var}} */
+      /** @brief {{^section}} または {{^loop.is_first}} */
       if (inner.starts_with("^")) {
         auto key = trim_sv(inner.substr(1));
-        if (key.starts_with("@")) {
+        if (parse_loop_kind(key)) {
           compile_at_inverted(key);
         } else {
           compile_inverted(key);
@@ -539,8 +539,8 @@ class bc_compiler {
         continue;
       }
 
-      /** @brief {{@root.field}} — ルートコンテキストフィールド参照 */
-      if (inner.starts_with("@root.")) {
+      /** @brief {{root.field}} — ルートコンテキストフィールド参照 */
+      if (inner.starts_with("root.")) {
         emit_root_field(inner, false);
         continue;
       }
@@ -551,8 +551,14 @@ class bc_compiler {
         continue;
       }
 
-      /** @brief {{@index}} / {{@first}} / {{@last}} / {{@root}} */
-      if (inner.starts_with("@")) {
+      /** @brief {{root}} — ルートコンテキスト全体 */
+      if (inner == "root") {
+        bc_.add_instruction(bc_opcode::emit_at_root);
+        continue;
+      }
+
+      /** @brief {{loop.index}} / {{loop.is_first}} / {{loop.is_last}} / {{loop.key}} */
+      if (parse_loop_kind(inner)) {
         emit_at_var(inner);
         continue;
       }
@@ -655,7 +661,7 @@ class bc_compiler {
           compile_if(expr);
           continue;
         }
-        if (key.starts_with("@")) {
+        if (parse_loop_kind(key)) {
           compile_at_section(key);
           continue;
         }
@@ -663,10 +669,10 @@ class bc_compiler {
         continue;
       }
 
-      /** @brief 入れ子の {{^section}} / {{^@var}} */
+      /** @brief 入れ子の {{^section}} / {{^loop.is_first}} */
       if (inner.starts_with("^")) {
         auto key = trim_sv(inner.substr(1));
-        if (key.starts_with("@")) {
+        if (parse_loop_kind(key)) {
           compile_at_inverted(key);
         } else {
           compile_inverted(key);
@@ -674,8 +680,8 @@ class bc_compiler {
         continue;
       }
 
-      /** @brief {{@root.field}} — ルートコンテキストフィールド参照 */
-      if (inner.starts_with("@root.")) {
+      /** @brief {{root.field}} — ルートコンテキストフィールド参照 */
+      if (inner.starts_with("root.")) {
         emit_root_field(inner, false);
         continue;
       }
@@ -686,8 +692,14 @@ class bc_compiler {
         continue;
       }
 
-      /** @brief {{@index}} / {{@first}} / {{@last}} / {{@root}} */
-      if (inner.starts_with("@")) {
+      /** @brief {{root}} — ルートコンテキスト全体 */
+      if (inner == "root") {
+        bc_.add_instruction(bc_opcode::emit_at_root);
+        continue;
+      }
+
+      /** @brief {{loop.index}} / {{loop.is_first}} / {{loop.is_last}} / {{loop.key}} */
+      if (parse_loop_kind(inner)) {
         emit_at_var(inner);
         continue;
       }

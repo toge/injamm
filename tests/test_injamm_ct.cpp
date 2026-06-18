@@ -283,7 +283,7 @@ TEST_CASE("ct_inverted_false", "[injamm][ct]") {
 // ---- @変数 ----
 
 TEST_CASE("ct_at_index", "[injamm][ct]") {
-  auto constexpr tmpl = injamm::fixed_string("{{#users}}{{@index}}{{/users}}");
+  auto constexpr tmpl = injamm::fixed_string("{{#users}}{{loop.index}}{{/users}}");
   CtUsersData data;
   data.users.push_back(CtUser{"a", 1});
   data.users.push_back(CtUser{"b", 2});
@@ -294,7 +294,7 @@ TEST_CASE("ct_at_index", "[injamm][ct]") {
 }
 
 TEST_CASE("ct_at_index1", "[injamm][ct]") {
-  auto constexpr tmpl = injamm::fixed_string("{{#users}}{{@index1}}:{{name}} {{/users}}");
+  auto constexpr tmpl = injamm::fixed_string("{{#users}}{{loop.index1}}:{{name}} {{/users}}");
   CtUsersData data;
   data.users.push_back(CtUser{"a", 1});
   data.users.push_back(CtUser{"b", 2});
@@ -305,7 +305,7 @@ TEST_CASE("ct_at_index1", "[injamm][ct]") {
 }
 
 TEST_CASE("ct_at_index1_outside_loop", "[injamm][ct]") {
-  auto constexpr tmpl = injamm::fixed_string("X{{@index1}}Y");
+  auto constexpr tmpl = injamm::fixed_string("X{{loop.index1}}Y");
   CtUsersData data;
   data.users.push_back(CtUser{"a", 1});
   auto r = injamm::render<tmpl>(data);
@@ -314,7 +314,7 @@ TEST_CASE("ct_at_index1_outside_loop", "[injamm][ct]") {
 }
 
 TEST_CASE("ct_at_first", "[injamm][ct]") {
-  auto constexpr tmpl = injamm::fixed_string("{{#users}}{{@first}}{{/users}}");
+  auto constexpr tmpl = injamm::fixed_string("{{#users}}{{loop.is_first}}{{/users}}");
   CtUsersData data;
   data.users.push_back(CtUser{"a", 1});
   data.users.push_back(CtUser{"b", 2});
@@ -324,7 +324,7 @@ TEST_CASE("ct_at_first", "[injamm][ct]") {
 }
 
 TEST_CASE("ct_at_last", "[injamm][ct]") {
-  auto constexpr tmpl = injamm::fixed_string("{{#users}}{{@last}}{{/users}}");
+  auto constexpr tmpl = injamm::fixed_string("{{#users}}{{loop.is_last}}{{/users}}");
   CtUsersData data;
   data.users.push_back(CtUser{"a", 1});
   data.users.push_back(CtUser{"b", 2});
@@ -334,7 +334,7 @@ TEST_CASE("ct_at_last", "[injamm][ct]") {
 }
 
 TEST_CASE("ct_at_key_array", "[injamm][ct]") {
-  auto constexpr tmpl = injamm::fixed_string("{{#users}}{{@key}}:{{name}},{{/users}}");
+  auto constexpr tmpl = injamm::fixed_string("{{#users}}{{loop.key}}:{{name}},{{/users}}");
   CtUsersData data;
   data.users.push_back(CtUser{"a", 1});
   data.users.push_back(CtUser{"b", 2});
@@ -344,7 +344,7 @@ TEST_CASE("ct_at_key_array", "[injamm][ct]") {
 }
 
 TEST_CASE("ct_at_key_struct", "[injamm][ct]") {
-  auto constexpr tmpl = injamm::fixed_string("{{#config}}{{@key}}={{this}};{{/config}}");
+  auto constexpr tmpl = injamm::fixed_string("{{#config}}{{loop.key}}={{this}};{{/config}}");
   CtMapWrapper data;
   auto r = injamm::render<tmpl>(data);
   REQUIRE(r.has_value());
@@ -354,7 +354,7 @@ TEST_CASE("ct_at_key_struct", "[injamm][ct]") {
 // ---- @var セクション ----
 
 TEST_CASE("ct_at_first_section", "[injamm][ct]") {
-  auto constexpr tmpl = injamm::fixed_string("{{#users}}{{#@first}}<{{name}}>{{/@first}}{{/users}}");
+  auto constexpr tmpl = injamm::fixed_string("{{#users}}{{#loop.is_first}}<{{name}}>{{/loop.is_first}}{{/users}}");
   CtUsersData data;
   data.users.push_back(CtUser{"a", 1});
   data.users.push_back(CtUser{"b", 2});
@@ -365,7 +365,7 @@ TEST_CASE("ct_at_first_section", "[injamm][ct]") {
 }
 
 TEST_CASE("ct_at_last_section", "[injamm][ct]") {
-  auto constexpr tmpl = injamm::fixed_string("{{#users}}{{#@last}}<{{name}}>{{/@last}}{{/users}}");
+  auto constexpr tmpl = injamm::fixed_string("{{#users}}{{#loop.is_last}}<{{name}}>{{/loop.is_last}}{{/users}}");
   CtUsersData data;
   data.users.push_back(CtUser{"a", 1});
   data.users.push_back(CtUser{"b", 2});
@@ -375,7 +375,7 @@ TEST_CASE("ct_at_last_section", "[injamm][ct]") {
 }
 
 TEST_CASE("ct_at_first_inverted", "[injamm][ct]") {
-  auto constexpr tmpl = injamm::fixed_string("{{#users}}{{^@first}}<{{name}}>{{/@first}}{{/users}}");
+  auto constexpr tmpl = injamm::fixed_string("{{#users}}{{^loop.is_first}}<{{name}}>{{/loop.is_first}}{{/users}}");
   CtUsersData data;
   data.users.push_back(CtUser{"a", 1});
   data.users.push_back(CtUser{"b", 2});
@@ -386,7 +386,7 @@ TEST_CASE("ct_at_first_inverted", "[injamm][ct]") {
 }
 
 TEST_CASE("ct_at_last_inverted", "[injamm][ct]") {
-  auto constexpr tmpl = injamm::fixed_string("{{#users}}{{^@last}}<{{name}}>{{/@last}}{{/users}}");
+  auto constexpr tmpl = injamm::fixed_string("{{#users}}{{^loop.is_last}}<{{name}}>{{/loop.is_last}}{{/users}}");
   CtUsersData data;
   data.users.push_back(CtUser{"a", 1});
   data.users.push_back(CtUser{"b", 2});
@@ -428,7 +428,7 @@ TEST_CASE("ct_nested_path_deep", "[injamm][ct]") {
 // ---- @root ----
 
 TEST_CASE("ct_at_root_field_simple", "[injamm][ct]") {
-  auto constexpr tmpl = injamm::fixed_string("{{@root.app_name}}");
+  auto constexpr tmpl = injamm::fixed_string("{{root.app_name}}");
   CtRootData data;
   auto r = injamm::render<tmpl>(data);
   REQUIRE(r.has_value());
@@ -436,7 +436,7 @@ TEST_CASE("ct_at_root_field_simple", "[injamm][ct]") {
 }
 
 TEST_CASE("ct_at_root_field_nested", "[injamm][ct]") {
-  auto constexpr tmpl = injamm::fixed_string("{{@root.info.version}}");
+  auto constexpr tmpl = injamm::fixed_string("{{root.info.version}}");
   CtRootData data;
   auto r = injamm::render<tmpl>(data);
   REQUIRE(r.has_value());
@@ -474,14 +474,14 @@ TEST_CASE("ct_if_else_false", "[injamm][ct]") {
 }
 
 TEST_CASE("ct_if_with_at_last", "[injamm][ct]") {
-  auto constexpr tmpl = injamm::fixed_string("{{#users}}{{name}}{{#if @last}}.{{/if}}{{/users}}");
+  auto constexpr tmpl = injamm::fixed_string("{{#users}}{{name}}{{#if loop.is_last}}.{{/if}}{{/users}}");
   auto r = injamm::render<tmpl>(CtUsersData{.users = {{"a", 1}, {"b", 2}}});
   REQUIRE(r.has_value());
   REQUIRE(*r == "ab.");
 }
 
 TEST_CASE("ct_if_else_with_section", "[injamm][ct]") {
-  auto constexpr tmpl = injamm::fixed_string("{{#users}}{{name}}{{#if @last}}.{{else}},{{/if}}{{/users}}");
+  auto constexpr tmpl = injamm::fixed_string("{{#users}}{{name}}{{#if loop.is_last}}.{{else}},{{/if}}{{/users}}");
   auto r = injamm::render<tmpl>(CtUsersData{.users = {{"a", 1}, {"b", 2}, {"c", 3}}});
   REQUIRE(r.has_value());
   REQUIRE(*r == "a,b,c.");
@@ -812,7 +812,7 @@ TEST_CASE("ct_if_filter_chain_ne", "[injamm][ct]") {
 // ---- break / continue ----
 
 TEST_CASE("ct_break", "[injamm][ct]") {
-  auto constexpr tmpl = injamm::fixed_string("{{#users}}{{name}}{{#if @last}}.{{else}}{{#break}}{{/if}}{{/users}}");
+  auto constexpr tmpl = injamm::fixed_string("{{#users}}{{name}}{{#if loop.is_last}}.{{else}}{{#break}}{{/if}}{{/users}}");
   CtUsersData data;
   data.users.push_back(CtUser{"a", 1});
   data.users.push_back(CtUser{"b", 2});
@@ -823,7 +823,7 @@ TEST_CASE("ct_break", "[injamm][ct]") {
 }
 
 TEST_CASE("ct_continue", "[injamm][ct]") {
-  auto constexpr tmpl = injamm::fixed_string("{{#users}}{{#if @index}}{{#continue}}{{/if}}{{name}}{{/users}}");
+  auto constexpr tmpl = injamm::fixed_string("{{#users}}{{#if loop.index}}{{#continue}}{{/if}}{{name}}{{/users}}");
   CtUsersData data;
   data.users.push_back(CtUser{"a", 1});
   data.users.push_back(CtUser{"b", 2});
@@ -848,7 +848,7 @@ TEST_CASE("ct_nested_if_section", "[injamm][ct]") {
 // ---- 構造体イテレーション ----
 
 TEST_CASE("ct_struct_iteration", "[injamm][ct]") {
-  auto constexpr tmpl = injamm::fixed_string("{{#config}}{{@key}}={{this}};{{/config}}");
+  auto constexpr tmpl = injamm::fixed_string("{{#config}}{{loop.key}}={{this}};{{/config}}");
   CtMapWrapper data;
   auto r = injamm::render<tmpl>(data);
   REQUIRE(r.has_value());
@@ -907,7 +907,7 @@ struct glz::meta<CtMapStructData> {
 // ---- std::map CT レンダリング テスト ----
 
 TEST_CASE("ct_map_section_basic", "[injamm][ct][map]") {
-  auto constexpr tmpl = injamm::fixed_string("{{#values}}{{@key}}={{this}} {{/values}}");
+  auto constexpr tmpl = injamm::fixed_string("{{#values}}{{loop.key}}={{this}} {{/values}}");
   CtMapIntData data{{ {"a", 1}, {"b", 2}, {"c", 3} }};
   auto r = injamm::render<tmpl>(data);
   REQUIRE(r.has_value());
@@ -915,7 +915,7 @@ TEST_CASE("ct_map_section_basic", "[injamm][ct][map]") {
 }
 
 TEST_CASE("ct_map_section_string_values", "[injamm][ct][map]") {
-  auto constexpr tmpl = injamm::fixed_string("{{#labels}}{{@key}}:{{this}} {{/labels}}");
+  auto constexpr tmpl = injamm::fixed_string("{{#labels}}{{loop.key}}:{{this}} {{/labels}}");
   CtMapStrData data{{ {"color", "red"}, {"size", "large"} }};
   auto r = injamm::render<tmpl>(data);
   REQUIRE(r.has_value());
@@ -923,7 +923,7 @@ TEST_CASE("ct_map_section_string_values", "[injamm][ct][map]") {
 }
 
 TEST_CASE("ct_map_section_struct_values", "[injamm][ct][map]") {
-  auto constexpr tmpl = injamm::fixed_string("{{#items}}{{@key}}:{{name}}={{score}} {{/items}}");
+  auto constexpr tmpl = injamm::fixed_string("{{#items}}{{loop.key}}:{{name}}={{score}} {{/items}}");
   CtMapStructData data{{ {"alice", {.name = "Alice", .score = 100}}, {"bob", {.name = "Bob", .score = 85}} }};
   auto r = injamm::render<tmpl>(data);
   REQUIRE(r.has_value());
@@ -955,7 +955,7 @@ TEST_CASE("ct_map_inverted_nonempty", "[injamm][ct][map]") {
 }
 
 TEST_CASE("ct_map_single_entry", "[injamm][ct][map]") {
-  auto constexpr tmpl = injamm::fixed_string("{{#values}}{{@key}}={{this}}{{/values}}");
+  auto constexpr tmpl = injamm::fixed_string("{{#values}}{{loop.key}}={{this}}{{/values}}");
   CtMapIntData data{{ {"only", 99} }};
   auto r = injamm::render<tmpl>(data);
   REQUIRE(r.has_value());
@@ -1236,7 +1236,7 @@ TEST_CASE("FrozenString inverted section", "[injamm][ct][frozen]") {
 
 TEST_CASE("FrozenString @index loop", "[injamm][ct][frozen]") {
   using namespace frozenchars::literals;
-  auto constexpr tmpl = "{{#users}}{{@index}}{{/users}}"_fs;
+  auto constexpr tmpl = "{{#users}}{{loop.index}}{{/users}}"_fs;
   CtUsersData data{{{"a", 1}, {"b", 2}}};
   auto r = injamm::render<tmpl>(data);
   REQUIRE(r.has_value());

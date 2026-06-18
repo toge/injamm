@@ -156,7 +156,7 @@ int main() {
   // バイトコード VM
   auto bc = injamm::engine<Data>(
     "{{#users}}{{name}} ({{age}})"
-    "{{#if @last}}.{{else}}, {{/if}}{{/users}}");
+    "{{#if loop.is_last}}.{{else}}, {{/if}}{{/users}}");
   std::cout << *bc.render(data) << "\n";
   // "Alice (30), Bob (25), Charlie (35)."
 
@@ -182,11 +182,11 @@ int main() {
 | `{{#if cond}}...{{/if}}`            | 条件分岐（0/空/偽は偽、それ以外は真） |
 | `{{#if cond}}...{{else}}...{{/if}}` | if/else                               |
 | `{{#if x == N}}...{{/if}}`          | 整数比較（`==` / `!=`、右辺は整数リテラル） |
-| `{{@index}}`                        | ループインデックス（0 始まり）        |
-| `{{@index1}}`                       | ループインデックス（1 始まり）        |
-| `{{@size}}`                         | ループ総要素数                        |
-| `{{@first}}`                        | 最初の要素なら `true`                 |
-| `{{@last}}`                         | 最後の要素なら `true`                 |
+| `{{loop.index}}`                    | ループインデックス（0 始まり、inja 互換）|
+| `{{loop.index1}}`                   | ループインデックス（1 始まり、inja 互換）|
+| `{{loop.size}}`                     | ループ総要素数（inja 互換）            |
+| `{{loop.is_first}}`                 | 最初の要素なら `true`（inja 互換）     |
+| `{{loop.is_last}}`                  | 最後の要素なら `true`（inja 互換）     |
 | `{{foo.bar.baz}}`                   | ネストパス                            |
 | `{{! ... }}`                        | コメント（Mustache 標準構文）         |
 | `{{~ var ~}}`                       | タグ前後の空白をトリム                |
@@ -304,4 +304,6 @@ auto bc2 = injamm::engine<User>("{{@var(f)}}", c);
 ## 注意事項
 
 - `render<fixed_string>` の戻り値型 `expected<std::string>` は、GCC 16 の `[[nodiscard]] expected<void, error_ctx>` と衝突する可能性があります。必要に応じて `void` 特殊化を無視してください。
+- GCC 以外のコンパイラでは `ENABLE_THREADED_DISPATCH` を OFF にしてください。
+tx>` と衝突する可能性があります。必要に応じて `void` 特殊化を無視してください。
 - GCC 以外のコンパイラでは `ENABLE_THREADED_DISPATCH` を OFF にしてください。

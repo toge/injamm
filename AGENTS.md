@@ -3,7 +3,7 @@
 ## これは何か
 
 ヘッダオンリー C++23 テンプレートエンジン（Mustache/inja サブセット）。2つのレンダリング API を提供:
-- **Bytecode VM** (`engine<T>`) — 実行時コンパイル、全機能（セクション、if/else、`@index`/`@first`/`@last`、ネストパス）
+- **Bytecode VM** (`engine<T>`) — 実行時コンパイル、全機能（セクション、if/else、`loop.index`/`loop.is_first`/`loop.is_last`、ネストパス）
 - **NTTP コンパイル時** (`render<fixed_string>`) — コンパイル時パース、全機能対応
 
 ## ビルド & テスト
