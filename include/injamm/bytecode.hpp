@@ -281,6 +281,7 @@ struct float_filter_entry {
 struct bc_var_ref {
   std::string key;                         /**< 変数名 */
   std::uint32_t field_index = UINT32_MAX;  /**< コンパイル時解決済みフィールドインデックス */
+  bool has_dot = false;                    /**< ドット区切りパス（ネスト）を持つか */
   std::vector<string_filter_entry> filters; /**< 文字列フィルタチェーン */
   std::vector<int_filter_entry> int_filters; /**< 整数フィルタチェーン */
   std::vector<float_filter_entry> float_filters; /**< 実数フィルタチェーン */
@@ -341,6 +342,7 @@ struct bytecode {
     bc_var_ref ref;
     ref.key = std::string{key};
     ref.field_index = UINT32_MAX;
+    ref.has_dot = (key.find('.') != std::string_view::npos);
     var_refs.push_back(std::move(ref));
     return idx;
   }

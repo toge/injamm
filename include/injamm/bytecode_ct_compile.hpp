@@ -94,6 +94,7 @@ bytecode to_bytecode(ct_bytecode<N> const& ct) {
     bc_var_ref ref;
     ref.key.assign(ct.var_refs[i].key.data, ct.var_refs[i].key.size);
     ref.field_index = ct.var_refs[i].field_index;
+    ref.has_dot = (ref.key.find('.') != std::string::npos);
     bc.var_refs.push_back(std::move(ref));
   }
   // Compute total literal size for buffer pre-allocation

@@ -173,9 +173,9 @@ class bc_executor {
    *          キーにドットが含まれる場合は resolve_nested_path に委譲する。
    */
   template <class V, class F>
-  auto for_each_field(V const& v, std::string_view key, std::uint32_t field_index, F&& visitor) const -> std::expected<void, error_ctx> {
+  auto for_each_field(V const& v, std::string_view key, std::uint32_t field_index, bool has_dot, F&& visitor) const -> std::expected<void, error_ctx> {
     /** ネストパスが含まれている場合は再帰解決に委譲 */
-    if (key.find('.') != std::string_view::npos) {
+    if (has_dot) {
       return resolve_nested_path(v, key, std::forward<F>(visitor));
     }
 
@@ -186,8 +186,8 @@ class bc_executor {
 
       /**
        * O(1) アクセス: field_index が有効な場合
-       * if-else チェーンで実行時の field_index 値をコンパイル時定数に変換し、
-       * 該当フィールドに直接アクセスする。
+       * if constexpr チェーンで実行時の field_index 値をコンパイル時定数に変換し、
+       * 該当フィールドに直接アクセスする。コンパイラが二分探索的ジャンプテーブルを生成。
        */
       if (field_index != UINT32_MAX && field_index < sz) {
         auto visit_by_index = [&]<std::size_t... I>(std::index_sequence<I...>) -> std::expected<void, error_ctx> {
@@ -262,21 +262,25 @@ class bc_executor {
     using FT = std::remove_cvref_t<decltype(field)>;
     if constexpr (std::same_as<FT, bool>) {
       if (field) {
-        out_.append("true");
+        out_.append("true", 4);
       } else {
-        out_.append("false");
+        out_.append("false", 5);
       }
     } else if constexpr (std::same_as<FT, std::string> || std::same_as<FT, std::string_view>) {
       if (raw) {
-        out_.append(field);
+        out_.append(field.data(), field.size());
       } else {
         html_escape_into(out_, field);
       }
     } else if constexpr (std::is_arithmetic_v<FT> && !std::same_as<FT, bool>) {
+      /** 整数/浮動小数の高速 append: traits::copy 経由の memmove を避けて push_back ループで書き出す */
       std::array<char, 32> buf;
       auto [ptr, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), field);
       if (ec == std::errc{}) {
-        out_.append(buf.data(), ptr);
+        auto const n = static_cast<std::size_t>(ptr - buf.data());
+        auto const* p = buf.data();
+        for (std::size_t i = 0; i < n; ++i)
+          out_.push_back(p[i]);
       }
     } else if constexpr (is_std_optional_v<FT>) {
       if (field.has_value()) {
@@ -399,7 +403,7 @@ class bc_executor {
   L_emit_var_raw: {
     auto const& ref = bc_.var_refs[bc_.instructions[pc].operand];
     bool        raw = (bc_.instructions[pc].op == bc_opcode::emit_var_raw);
-    auto        r   = for_each_field(value_, ref.key, ref.field_index, [&](auto const& field) { emit_var_value(field, raw); });
+    auto        r   = for_each_field(value_, ref.key, ref.field_index, ref.has_dot, [&](auto const& field) { emit_var_value(field, raw); });
     if (!r)
       return r;
     ++pc;
@@ -420,7 +424,7 @@ class bc_executor {
       return std::unexpected(error_ctx{.position = pc, .ec = error_code::syntax_error});
     }
 
-    auto r = for_each_field(value_, ref.key, ref.field_index, [&](auto const& field) -> std::expected<void, error_ctx> {
+    auto r = for_each_field(value_, ref.key, ref.field_index, ref.has_dot, [&](auto const& field) -> std::expected<void, error_ctx> {
       using FT = std::remove_cvref_t<decltype(field)>;
       if constexpr (ct_is_vector_like<FT>) {
         /** 配列の場合: 各要素をループ */
@@ -534,7 +538,7 @@ class bc_executor {
       return std::unexpected(error_ctx{.position = pc, .ec = error_code::syntax_error});
     }
 
-    auto r = for_each_field(value_, ref.key, ref.field_index, [&](auto const& field) -> std::expected<void, error_ctx> {
+    auto r = for_each_field(value_, ref.key, ref.field_index, ref.has_dot, [&](auto const& field) -> std::expected<void, error_ctx> {
       using FT = std::remove_cvref_t<decltype(field)>;
       if constexpr (std::same_as<FT, bool>) {
         if (field) {
@@ -563,7 +567,7 @@ class bc_executor {
     auto const& instr = bc_.instructions[pc];
     auto const& ref   = bc_.var_refs[instr.operand2];
     bool        empty = true;
-    (void)for_each_field(value_, ref.key, ref.field_index, [&](auto const& field) {
+    (void)for_each_field(value_, ref.key, ref.field_index, ref.has_dot, [&](auto const& field) {
       using FT = std::remove_cvref_t<decltype(field)>;
       if constexpr (ct_is_vector_like<FT>) {
         empty = field.empty();
@@ -680,7 +684,7 @@ class bc_executor {
       }
     } else {
       /** 通常のフィールド参照による truthiness 判定 */
-      (void)for_each_field(value_, ref.key, ref.field_index, [&](auto const& field) {
+      (void)for_each_field(value_, ref.key, ref.field_index, ref.has_dot, [&](auto const& field) {
         using FT = std::remove_cvref_t<decltype(field)>;
         if constexpr (std::same_as<FT, bool>) {
           cond = field;
@@ -717,7 +721,7 @@ class bc_executor {
       rhs = ref.int_filters[0].arg;
     }
     bool cond = false;
-    (void)for_each_field(value_, ref.key, ref.field_index, [&](auto const& field) {
+    (void)for_each_field(value_, ref.key, ref.field_index, ref.has_dot, [&](auto const& field) {
       using FT = std::remove_cvref_t<decltype(field)>;
       if constexpr (std::is_arithmetic_v<FT>) {
         cond = (static_cast<long long>(field) == static_cast<long long>(rhs));
@@ -740,7 +744,7 @@ class bc_executor {
       rhs = ref.int_filters[0].arg;
     }
     bool cond = false;
-    (void)for_each_field(value_, ref.key, ref.field_index, [&](auto const& field) {
+    (void)for_each_field(value_, ref.key, ref.field_index, ref.has_dot, [&](auto const& field) {
       using FT = std::remove_cvref_t<decltype(field)>;
       if constexpr (std::is_arithmetic_v<FT>) {
         cond = (static_cast<long long>(field) != static_cast<long long>(rhs));
@@ -840,7 +844,7 @@ class bc_executor {
     /** 変数部分を出力 */
     auto const& ref = bc_.var_refs[instr.operand2];
     bool        raw = (instr.op == bc_opcode::emit_litvar_raw);
-    auto        r   = for_each_field(value_, ref.key, ref.field_index, [&](auto const& field) { emit_var_value(field, raw); });
+    auto        r   = for_each_field(value_, ref.key, ref.field_index, ref.has_dot, [&](auto const& field) { emit_var_value(field, raw); });
     if (!r)
       return r;
     ++pc;
@@ -861,7 +865,7 @@ class bc_executor {
   L_emit_at_root_field_raw: {
     auto const& ref = bc_.var_refs[bc_.instructions[pc].operand];
     bool        raw = (bc_.instructions[pc].op == bc_opcode::emit_at_root_field_raw);
-    auto        r   = for_each_field(root_value_, ref.key, ref.field_index, [&](auto const& field) { emit_var_value(field, raw); });
+    auto        r   = for_each_field(root_value_, ref.key, ref.field_index, ref.has_dot, [&](auto const& field) { emit_var_value(field, raw); });
     if (!r)
       return r;
     ++pc;
@@ -906,7 +910,7 @@ class bc_executor {
     auto const& instr   = bc_.instructions[pc];
     auto const& var_ref = bc_.var_refs[instr.operand2];
     filtered_value_.clear();
-    auto r = for_each_field(value_, var_ref.key, var_ref.field_index, [&](auto const& field) {
+    auto r = for_each_field(value_, var_ref.key, var_ref.field_index, var_ref.has_dot, [&](auto const& field) {
       using FT = std::remove_cvref_t<decltype(field)>;
       if constexpr (serializable_v<FT>) {
         serialize_value(filtered_value_, field);
@@ -1234,7 +1238,7 @@ class bc_executor {
       case bc_opcode::emit_var:
       case bc_opcode::emit_var_raw: {
         auto const& ref = bc_.var_refs[instr.operand];
-        auto        r   = for_each_field(value_, ref.key, ref.field_index, [&](auto const& field) { emit_var_value(field, instr.op == bc_opcode::emit_var_raw); });
+        auto        r   = for_each_field(value_, ref.key, ref.field_index, ref.has_dot, [&](auto const& field) { emit_var_value(field, instr.op == bc_opcode::emit_var_raw); });
         if (!r)
           return r;
         ++pc;
@@ -1246,7 +1250,7 @@ class bc_executor {
         auto const& ref      = bc_.var_refs[instr.operand2];
         auto        body_end = instr.operand;
 
-        auto r = for_each_field(value_, ref.key, ref.field_index, [&](auto const& field) -> std::expected<void, error_ctx> {
+        auto r = for_each_field(value_, ref.key, ref.field_index, ref.has_dot, [&](auto const& field) -> std::expected<void, error_ctx> {
           using FT = std::remove_cvref_t<decltype(field)>;
           if constexpr (ct_is_vector_like<FT>) {
             using elem_t = typename FT::value_type;
@@ -1351,7 +1355,7 @@ class bc_executor {
       case bc_opcode::emit_inverted: {
         auto const& ref   = bc_.var_refs[instr.operand2];
         bool        empty = true;
-        (void)for_each_field(value_, ref.key, ref.field_index, [&](auto const& field) {
+        (void)for_each_field(value_, ref.key, ref.field_index, ref.has_dot, [&](auto const& field) {
           using FT = std::remove_cvref_t<decltype(field)>;
           if constexpr (ct_is_vector_like<FT>) {
             empty = field.empty();
@@ -1478,7 +1482,7 @@ class bc_executor {
             }
           }
         } else {
-          (void)for_each_field(value_, ref.key, ref.field_index, [&](auto const& field) {
+          (void)for_each_field(value_, ref.key, ref.field_index, ref.has_dot, [&](auto const& field) {
             using FT = std::remove_cvref_t<decltype(field)>;
             if constexpr (std::same_as<FT, bool>) {
               cond = field;
@@ -1512,7 +1516,7 @@ class bc_executor {
           rhs = ref.int_filters[0].arg;
         }
         bool cond = false;
-        (void)for_each_field(value_, ref.key, ref.field_index, [&](auto const& field) {
+        (void)for_each_field(value_, ref.key, ref.field_index, ref.has_dot, [&](auto const& field) {
           using FT = std::remove_cvref_t<decltype(field)>;
           if constexpr (std::is_arithmetic_v<FT>) {
             cond = (static_cast<long long>(field) == static_cast<long long>(rhs));
@@ -1534,7 +1538,7 @@ class bc_executor {
           rhs = ref.int_filters[0].arg;
         }
         bool cond = false;
-        (void)for_each_field(value_, ref.key, ref.field_index, [&](auto const& field) {
+        (void)for_each_field(value_, ref.key, ref.field_index, ref.has_dot, [&](auto const& field) {
           using FT = std::remove_cvref_t<decltype(field)>;
           if constexpr (std::is_arithmetic_v<FT>) {
             cond = (static_cast<long long>(field) != static_cast<long long>(rhs));
@@ -1565,7 +1569,7 @@ class bc_executor {
       case bc_opcode::emit_litvar_raw: {
         out_.append(bc_.literals[instr.operand]);
         auto const& ref = bc_.var_refs[instr.operand2];
-        auto        r   = for_each_field(value_, ref.key, ref.field_index, [&](auto const& field) { emit_var_value(field, instr.op == bc_opcode::emit_litvar_raw); });
+        auto        r   = for_each_field(value_, ref.key, ref.field_index, ref.has_dot, [&](auto const& field) { emit_var_value(field, instr.op == bc_opcode::emit_litvar_raw); });
         if (!r)
           return r;
         ++pc;
@@ -1585,7 +1589,7 @@ class bc_executor {
       case bc_opcode::emit_at_root_field:
       case bc_opcode::emit_at_root_field_raw: {
         auto const& ref = bc_.var_refs[instr.operand];
-        auto        r   = for_each_field(root_value_, ref.key, ref.field_index, [&](auto const& field) { emit_var_value(field, instr.op == bc_opcode::emit_at_root_field_raw); });
+        auto        r   = for_each_field(root_value_, ref.key, ref.field_index, ref.has_dot, [&](auto const& field) { emit_var_value(field, instr.op == bc_opcode::emit_at_root_field_raw); });
         if (!r)
           return r;
         ++pc;
@@ -1628,7 +1632,7 @@ class bc_executor {
       case bc_opcode::resolve_filtered: {
         auto const& var_ref = bc_.var_refs[instr.operand2];
         filtered_value_.clear();
-        auto r = for_each_field(value_, var_ref.key, var_ref.field_index, [&](auto const& field) {
+        auto r = for_each_field(value_, var_ref.key, var_ref.field_index, var_ref.has_dot, [&](auto const& field) {
           using FT = std::remove_cvref_t<decltype(field)>;
           if constexpr (serializable_v<FT>) {
             serialize_value(filtered_value_, field);
@@ -1975,7 +1979,7 @@ class bc_executor {
 template <class T>
 std::expected<std::string, error_ctx> bc_execute(bytecode const& bc, T const& value) {
   std::string out;
-  auto        estimated = bc.literal_total_size > 256 ? bc.literal_total_size * 2 : 256;
+  auto        estimated = bc.literal_total_size > 32 ? bc.literal_total_size * 4 : 256;
   out.reserve(estimated);
   bc_executor<T> exec(bc, value, value, nullptr, out);
   auto           r = exec.execute();
@@ -1996,7 +2000,7 @@ std::expected<std::string, error_ctx> bc_execute(bytecode const& bc, T const& va
 template <class T>
 std::expected<void, error_ctx> bc_execute_into(bytecode const& bc, T const& value, std::string& out) {
   out.clear();
-  auto estimated = bc.literal_total_size > 256 ? bc.literal_total_size * 2 : 256;
+  auto estimated = bc.literal_total_size > 64 ? bc.literal_total_size * 4 : 256;
   if (out.capacity() < estimated)
     out.reserve(estimated);
   bc_executor<T> exec(bc, value, value, nullptr, out);
