@@ -108,3 +108,8 @@ if(BUILD_EXAMPLE)
   target_include_directories(injamm_benchmark PRIVATE include)
   target_compile_features(injamm_benchmark PRIVATE cxx_std_23)
 endif()
+
+option(BUILD_INJAMM_SQLITE3 "Build injamm-sqlite3 extension" ON)
+if(BUILD_INJAMM_SQLITE3)
+  add_subdirectory(ext/injamm-sqlite3)
+endif()
