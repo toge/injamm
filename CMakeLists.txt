@@ -9,6 +9,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 option(ENABLE_THREADED_DISPATCH "GCC computed goto dispatch (GCC only)" ON)
 option(BUILD_TEST "Build tests" ON)
 option(BUILD_EXAMPLE "Build examples" ON)
+option(ENABLE_EXT_SQLITE3 "Build injamm-sqlite3 extension" ON)
 
 # ---- 依存 ----
 find_package(glaze CONFIG REQUIRED)
@@ -109,7 +110,6 @@ if(BUILD_EXAMPLE)
   target_compile_features(injamm_benchmark PRIVATE cxx_std_23)
 endif()
 
-option(BUILD_INJAMM_SQLITE3 "Build injamm-sqlite3 extension" ON)
-if(BUILD_INJAMM_SQLITE3)
+if(ENABLE_EXT_SQLITE3)
   add_subdirectory(ext/injamm-sqlite3)
 endif()
