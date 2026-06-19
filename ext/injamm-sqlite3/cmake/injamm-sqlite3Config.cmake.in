@@ -1,0 +1,8 @@
+@PACKAGE_INIT@
+
+include("${CMAKE_CURRENT_LIST_DIR}/injamm-sqlite3Targets.cmake")
+
+check_required_file_exists(
+  "${CMAKE_CURRENT_LIST_DIR}/injamm-sqlite3Targets.cmake"
+  "injamm-sqlite3 targets"
+)
