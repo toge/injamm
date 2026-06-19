@@ -14,6 +14,7 @@ struct sqlite3_row_view {
   explicit sqlite3_row_view(sqlite3_stmt* stmt) : stmt_(stmt) {}
 
   std::string find(std::string_view key) const {
+    if (!stmt_) return "";
     int n = sqlite3_column_count(stmt_);
     for (int i = 0; i < n; ++i) {
       if (key == sqlite3_column_name(stmt_, i)) {
@@ -60,6 +61,7 @@ struct sqlite3_result {
     sqlite3_row_view current_;
 
     iterator& operator++() {
+      if (!stmt_) { rc_ = SQLITE_DONE; return *this; }
       rc_ = sqlite3_step(stmt_);
       current_ = sqlite3_row_view{stmt_};
       return *this;

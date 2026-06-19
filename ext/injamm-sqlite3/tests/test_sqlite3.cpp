@@ -65,6 +65,18 @@ TEST_CASE("sqlite3 adapter", "[sqlite3]") {
     sqlite3_finalize(stmt);
   }
 
+  SECTION("NULL column renders empty") {
+    test_db db;
+    sqlite3_stmt* stmt = prepare(db, "SELECT NULL AS val");
+    REQUIRE(sqlite3_step(stmt) == SQLITE_ROW);
+    auto row = injamm::sqlite3::sqlite3_row_view{stmt};
+    auto eng = injamm::sqlite3::runtime_engine<injamm::sqlite3::sqlite3_row_view>("[{{val}}]");
+    auto result = eng.render(row);
+    REQUIRE(result.has_value());
+    CHECK(*result == "[]");
+    sqlite3_finalize(stmt);
+  }
+
   SECTION("empty result set") {
     test_db db;
     sqlite3_stmt* stmt = prepare(db, "SELECT name FROM users WHERE id = 999");

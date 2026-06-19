@@ -11,7 +11,7 @@
 namespace injamm::sqlite3 {
 
 template <class T>
-  requires runtime_field_accessible<T> || forward_iterable<T>
+  requires runtime_field_accessible<T> || (forward_iterable<T> && runtime_field_accessible<typename T::value_type>)
 class runtime_engine {
   injamm::detail::bytecode bc_;
 
