@@ -10,6 +10,27 @@
 namespace injamm::detail {
 
 /**
+ * @brief 文字列から整数をパースする（負数対応）
+ * @param s 入力文字列
+ * @return パース結果（負の符号対応）
+ * @note 数字のみを処理し、先頭の '-' を負号として解釈する。非数字は無視。
+ */
+[[nodiscard]] constexpr int parse_int_arg(std::string_view s) noexcept {
+  int  arg      = 0;
+  bool negative = false;
+  std::size_t i = 0;
+  if (i < s.size() && s[i] == '-') {
+    negative = true;
+    ++i;
+  }
+  for (; i < s.size(); ++i) {
+    if (s[i] >= '0' && s[i] <= '9')
+      arg = arg * 10 + (s[i] - '0');
+  }
+  return negative ? -arg : arg;
+}
+
+/**
  * @brief 文字列の前後から空白（スペース・タブ）を取り除いた view を返す
  * @param s 入力文字列
  * @return トリム後の string_view
@@ -72,22 +93,11 @@ namespace injamm::detail {
     auto comma = args_str.find(',');
     if (comma != std::string_view::npos) {
       // 2引数
-      auto arg1_str = args_str.substr(0, comma);
-      auto arg2_str = args_str.substr(comma + 1);
-      for (auto c : arg1_str) {
-        if (c >= '0' && c <= '9')
-          arg1 = arg1 * 10 + (c - '0');
-      }
-      for (auto c : arg2_str) {
-        if (c >= '0' && c <= '9')
-          arg2 = arg2 * 10 + (c - '0');
-      }
+      arg1 = parse_int_arg(args_str.substr(0, comma));
+      arg2 = parse_int_arg(args_str.substr(comma + 1));
     } else {
       // 1引数
-      for (auto c : args_str) {
-        if (c >= '0' && c <= '9')
-          arg1 = arg1 * 10 + (c - '0');
-      }
+      arg1 = parse_int_arg(args_str);
     }
     if (fname == "left")
       return string_filter_entry{string_filter::left, arg1, 0};
@@ -99,6 +109,15 @@ namespace injamm::detail {
       return string_filter_entry{string_filter::truncate, arg1, 0};
     if (fname == "substr")
       return string_filter_entry{string_filter::substr, arg1, arg2};
+    if (fname == "replace") {
+      /** replace(old,new): カンマで分割して文字列引数を保持 */
+      if (comma != std::string_view::npos) {
+        auto old_str = trim_sv(args_str.substr(0, comma));
+        auto new_str = trim_sv(args_str.substr(comma + 1));
+        return string_filter_entry{string_filter::replace, 0, 0, old_str, new_str};
+      }
+      return string_filter_entry{string_filter::replace, 0, 0};
+    }
   }
   // 引数なしフィルタ
   if (name == "upper")
@@ -131,11 +150,7 @@ namespace injamm::detail {
   if (paren != std::string_view::npos && name.back() == ')') {
     auto fname   = name.substr(0, paren);
     auto arg_str = name.substr(paren + 1, name.size() - paren - 2);
-    int  arg     = 0;
-    for (auto c : arg_str) {
-      if (c >= '0' && c <= '9')
-        arg = arg * 10 + (c - '0');
-    }
+    int  arg     = parse_int_arg(arg_str);
     if (fname == "mod")
       return int_filter_entry{int_filter::mod, arg};
     if (fname == "eq")
@@ -181,11 +196,7 @@ namespace injamm::detail {
   if (paren != std::string_view::npos && name.back() == ')') {
     auto fname   = name.substr(0, paren);
     auto arg_str = name.substr(paren + 1, name.size() - paren - 2);
-    int  arg     = 0;
-    for (auto c : arg_str) {
-      if (c >= '0' && c <= '9')
-        arg = arg * 10 + (c - '0');
-    }
+    int  arg     = parse_int_arg(arg_str);
     if (fname == "precision")
       return float_filter_entry{float_filter::precision, arg};
   }
@@ -236,7 +247,7 @@ namespace injamm::detail {
 
 /** @brief split_by_pipe の結果を保持する固定サイズコンテナ（ヒープ割り当てなし） */
 struct pipe_parts {
-  static constexpr std::size_t            max_parts = 8;
+  static constexpr std::size_t            max_parts = 5; /**< 変数名 + 最大4フィルタ */
   std::array<std::string_view, max_parts> data{};
   std::size_t                             count = 0;
 

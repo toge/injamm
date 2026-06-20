@@ -131,9 +131,26 @@ constexpr void apply_string_filter(std::string& str, string_filter_entry entry) 
     break;
   }
   case string_filter::replace: {
-    /** 単一文字置換: str 中の全 '\n' を ' ' に置換（シンプル実装） */
-    for (auto& c : str) {
-      if (c == '\n') c = ' ';
+    if (!entry.str_arg1.empty()) {
+      /** replace(old,new): str 中の str_arg1 を str_arg2 に置換 */
+      std::string result;
+      std::size_t pos = 0;
+      while (pos < str.size()) {
+        auto found = str.find(entry.str_arg1, pos);
+        if (found == std::string::npos) {
+          result.append(str, pos, std::string::npos);
+          break;
+        }
+        result.append(str, pos, found - pos);
+        result.append(entry.str_arg2);
+        pos = found + entry.str_arg1.size();
+      }
+      str = std::move(result);
+    } else {
+      /** 引数なし replace: str 中の全 '\n' を ' ' に置換（後方互換） */
+      for (auto& c : str) {
+        if (c == '\n') c = ' ';
+      }
     }
     break;
   }

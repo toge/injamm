@@ -20,7 +20,6 @@ enum class bc_opcode : std::uint8_t {
   emit_var,           /**< 変数参照（HTMLエスケープあり） */
   emit_var_raw,       /**< 変数参照（生出力、エスケープなし） */
   emit_section,       /**< セクション開始（配列ループ） */
-  emit_section_bool,  /**< セクション開始（真偽値） */
   emit_end,           /**< セクション終了 */
   emit_inverted,      /**< 反転セクション開始（^section） */
   emit_at_index,      /**< @index 出力（ループ内の現在インデックス） */
@@ -85,9 +84,8 @@ enum class bc_opcode : std::uint8_t {
   case bc_opcode::emit_literal:            return "emit_literal";
   case bc_opcode::emit_var:                return "emit_var";
   case bc_opcode::emit_var_raw:            return "emit_var_raw";
-  case bc_opcode::emit_section:            return "emit_section";
-  case bc_opcode::emit_section_bool:       return "emit_section_bool";
-  case bc_opcode::emit_end:                return "emit_end";
+  case bc_opcode::emit_section:                return "emit_section";
+  case bc_opcode::emit_end:                    return "emit_end";
   case bc_opcode::emit_inverted:           return "emit_inverted";
   case bc_opcode::emit_at_index:           return "emit_at_index";
   case bc_opcode::emit_at_first:           return "emit_at_first";
@@ -192,9 +190,11 @@ enum class string_filter : std::uint8_t {
  * @details フィルタの種別と、引数を必要とするフィルタの幅/最大文字数を保持する
  */
 struct string_filter_entry {
-  string_filter filter; /**< フィルタの種別 */
-  int arg1 = 0;         /**< 第1引数（left/right/center/truncate/substr の幅/開始位置） */
-  int arg2 = 0;         /**< 第2引数（substr の文字数） */
+  string_filter filter;       /**< フィルタの種別 */
+  int arg1 = 0;               /**< 第1引数（left/right/center/truncate/substr の幅/開始位置） */
+  int arg2 = 0;               /**< 第2引数（substr の文字数） */
+  std::string_view str_arg1;  /**< 文字列引数1（replace の old 文字列） */
+  std::string_view str_arg2;  /**< 文字列引数2（replace の new 文字列） */
 };
 
 /**
@@ -310,6 +310,7 @@ struct bytecode {
   std::vector<bc_var_ref> var_refs;          /**< 変数参照テーブル */
   std::size_t literal_total_size = 0;        /**< 全リテラルの合計サイズ（出力バッファ事前確保用） */
   error_ctx error{};                         /**< コンパイル時エラー（非ゼロ ec でエラー） */
+  std::string template_storage;              /**< テンプレート文字列（string_view の生存期間保証用） */
 
   /**
    * @brief 命令を追加する
@@ -419,7 +420,6 @@ struct bytecode {
       case bc_opcode::emit_var:
       case bc_opcode::emit_var_raw:
       case bc_opcode::emit_section:
-      case bc_opcode::emit_section_bool:
       case bc_opcode::emit_inverted:
       case bc_opcode::emit_at_index:
       case bc_opcode::emit_at_first:
@@ -432,7 +432,7 @@ struct bytecode {
       case bc_opcode::emit_continue: {
         if (instr.operand2 < var_refs.size()) {
           append(var_refs[instr.operand2].key);
-          if (instr.op == bc_opcode::emit_section || instr.op == bc_opcode::emit_section_bool || instr.op == bc_opcode::emit_inverted || instr.op == bc_opcode::emit_at_section || instr.op == bc_opcode::emit_at_inverted) {
+          if (instr.op == bc_opcode::emit_section || instr.op == bc_opcode::emit_inverted || instr.op == bc_opcode::emit_at_section || instr.op == bc_opcode::emit_at_inverted) {
             append("  -> ");
             char buf[16];
             auto [p, ec] = std::to_chars(buf, buf + sizeof(buf), instr.operand);
