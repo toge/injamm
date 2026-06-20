@@ -277,6 +277,54 @@ TEST_CASE("bc_inverted_false", "[injamm]") {
 }
 
 /**
+ * @brief 逆セクション（非空文字列）の描画テスト
+ * @details {{^name}} は文字列が非空の場合に内容を出力しないことを確認する。
+ */
+TEST_CASE("bc_inverted_string_nonempty", "[injamm]") {
+  BcUser data{"Alice", 30};
+  auto bc = injamm::engine<BcUser>("{{^name}}empty{{/name}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "");
+}
+
+/**
+ * @brief 逆セクション（空文字列）の描画テスト
+ * @details {{^name}} は文字列が空の場合に内容を出力することを確認する。
+ */
+TEST_CASE("bc_inverted_string_empty", "[injamm]") {
+  BcUser data{"", 30};
+  auto bc = injamm::engine<BcUser>("{{^name}}empty{{/name}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "empty");
+}
+
+/**
+ * @brief 逆セクション（非ゼロ数値）の描画テスト
+ * @details {{^age}} は数値が非ゼロの場合に内容を出力しないことを確認する。
+ */
+TEST_CASE("bc_inverted_int_nonzero", "[injamm]") {
+  BcUser data{"Alice", 30};
+  auto bc = injamm::engine<BcUser>("{{^age}}zero{{/age}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "");
+}
+
+/**
+ * @brief 逆セクション（ゼロ数値）の描画テスト
+ * @details {{^age}} は数値がゼロの場合に内容を出力することを確認する。
+ */
+TEST_CASE("bc_inverted_int_zero", "[injamm]") {
+  BcUser data{"Alice", 0};
+  auto bc = injamm::engine<BcUser>("{{^age}}zero{{/age}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "zero");
+}
+
+/**
  * @brief @index 特殊変数のテスト
  * @details セクション内で {{loop.index}} が 0 から始まる連番を出力することを確認する。
  */
@@ -442,6 +490,21 @@ TEST_CASE("bc_at_last_inverted_section", "[injamm]") {
   data.users.push_back(BcUser{"a", 1});
   data.users.push_back(BcUser{"b", 2});
   auto bc = injamm::engine<BcUsersData>("{{#users}}{{^loop.is_last}}<{{name}}>{{/loop.is_last}}{{/users}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "<a>");
+}
+
+/**
+ * @brief {{^loop.index}} 逆セクション構文のテスト
+ * @details {{^loop.index}} は index==0（先頭要素）のときに描画し、index>0 ではスキップすることを確認する。
+ */
+TEST_CASE("bc_at_index_inverted_section", "[injamm]") {
+  BcUsersData data;
+  data.users.push_back(BcUser{"a", 1});
+  data.users.push_back(BcUser{"b", 2});
+  data.users.push_back(BcUser{"c", 3});
+  auto bc = injamm::engine<BcUsersData>("{{#users}}{{^loop.index}}<{{name}}>{{/loop.index}}{{/users}}");
   auto r = bc.render(data);
   REQUIRE(r.has_value());
   REQUIRE(*r == "<a>");
@@ -1016,6 +1079,30 @@ TEST_CASE("int_filter: zerofill zero", "[int_filter]") {
   auto result = bc.render(data);
   REQUIRE(result);
   REQUIRE(*result == "0000");
+}
+
+TEST_CASE("int_filter: eq negative arg", "[int_filter]") {
+  BcIfData data{"test", -5};
+  auto bc = injamm::engine<BcIfData>("{{age | eq(-5)}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "true");
+}
+
+TEST_CASE("int_filter: gt negative arg", "[int_filter]") {
+  BcIfData data{"test", -3};
+  auto bc = injamm::engine<BcIfData>("{{age | gt(-5)}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "true");
+}
+
+TEST_CASE("int_filter: mod negative arg", "[int_filter]") {
+  BcLlData data{-7};
+  auto bc = injamm::engine<BcLlData>("{{val | mod(-3)}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "-1");
 }
 
 // ---- LLONG_MIN UB 回避テスト ----
@@ -2014,6 +2101,46 @@ TEST_CASE("error: @var circular reference detected", "[error][atvar]") {
   CHECK(result.error().ec == injamm::error_code::syntax_error);
 }
 
+TEST_CASE("error: unclosed section", "[error]") {
+  auto bc = injamm::engine<BcUsersData>("{{#users}}hello");
+  BcUsersData data;
+  data.users.push_back(BcUser{"a", 1});
+  auto result = bc.render(data);
+  REQUIRE(!result.has_value());
+  CHECK(result.error().ec == injamm::error_code::unexpected_end);
+}
+
+TEST_CASE("error: unclosed inverted section", "[error]") {
+  auto bc = injamm::engine<BcBoolData>("{{^flag}}hello");
+  auto result = bc.render(BcBoolData{false});
+  REQUIRE(!result.has_value());
+  CHECK(result.error().ec == injamm::error_code::unexpected_end);
+}
+
+TEST_CASE("error: unclosed if", "[error]") {
+  auto bc = injamm::engine<BcIfData>("{{#if age}}hello");
+  BcIfData data{"test", 25};
+  auto result = bc.render(data);
+  REQUIRE(!result.has_value());
+  CHECK(result.error().ec == injamm::error_code::unexpected_end);
+}
+
+TEST_CASE("error: unclosed if with else", "[error]") {
+  auto bc = injamm::engine<BcIfData>("{{#if age}}yes{{else}}no");
+  BcIfData data{"test", 25};
+  auto result = bc.render(data);
+  REQUIRE(!result.has_value());
+  CHECK(result.error().ec == injamm::error_code::unexpected_end);
+}
+
+TEST_CASE("error: stray closing tag", "[error]") {
+  auto bc = injamm::engine<BcUsersData>("hello{{/users}}");
+  BcUsersData data;
+  auto result = bc.render(data);
+  REQUIRE(!result.has_value());
+  CHECK(result.error().ec == injamm::error_code::syntax_error);
+}
+
 // ---- loop.X 旧 @var 構文の互換性破棄確認 ----
 
 TEST_CASE("legacy @index is rejected", "[injamm][loop][legacy]") {
@@ -2288,6 +2415,22 @@ TEST_CASE("filter_replace_newlines", "[injamm][filter]") {
   auto r = bc.render(data);
   REQUIRE(r.has_value());
   CHECK(*r == "line1 line2 line3");
+}
+
+TEST_CASE("filter_replace_args", "[injamm][filter]") {
+  BcUser data{"hello world foo bar", 30};
+  auto bc = injamm::engine<BcUser>("{{name | replace(hello, hi)}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "hi world foo bar");
+}
+
+TEST_CASE("filter_replace_args_twice", "[injamm][filter]") {
+  BcUser data{"xoxo", 30};
+  auto bc = injamm::engine<BcUser>("{{name | replace(x, y)}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "yoyo");
 }
 
 TEST_CASE("comment_multiline", "[injamm][comment]") {

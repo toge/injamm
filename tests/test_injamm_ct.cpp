@@ -280,6 +280,34 @@ TEST_CASE("ct_inverted_false", "[injamm][ct]") {
   REQUIRE(*r == "no");
 }
 
+TEST_CASE("ct_inverted_string_nonempty", "[injamm][ct]") {
+  auto constexpr tmpl = injamm::fixed_string("{{^name}}empty{{/name}}");
+  auto r = injamm::render<tmpl>(CtUser{"Alice", 30});
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "");
+}
+
+TEST_CASE("ct_inverted_string_empty", "[injamm][ct]") {
+  auto constexpr tmpl = injamm::fixed_string("{{^name}}empty{{/name}}");
+  auto r = injamm::render<tmpl>(CtUser{"", 30});
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "empty");
+}
+
+TEST_CASE("ct_inverted_int_nonzero", "[injamm][ct]") {
+  auto constexpr tmpl = injamm::fixed_string("{{^age}}zero{{/age}}");
+  auto r = injamm::render<tmpl>(CtUser{"Alice", 30});
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "");
+}
+
+TEST_CASE("ct_inverted_int_zero", "[injamm][ct]") {
+  auto constexpr tmpl = injamm::fixed_string("{{^age}}zero{{/age}}");
+  auto r = injamm::render<tmpl>(CtUser{"Alice", 0});
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "zero");
+}
+
 // ---- @変数 ----
 
 TEST_CASE("ct_at_index", "[injamm][ct]") {
@@ -390,6 +418,17 @@ TEST_CASE("ct_at_last_inverted", "[injamm][ct]") {
   CtUsersData data;
   data.users.push_back(CtUser{"a", 1});
   data.users.push_back(CtUser{"b", 2});
+  auto r = injamm::render<tmpl>(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "<a>");
+}
+
+TEST_CASE("ct_at_index_inverted", "[injamm][ct]") {
+  auto constexpr tmpl = injamm::fixed_string("{{#users}}{{^loop.index}}<{{name}}>{{/loop.index}}{{/users}}");
+  CtUsersData data;
+  data.users.push_back(CtUser{"a", 1});
+  data.users.push_back(CtUser{"b", 2});
+  data.users.push_back(CtUser{"c", 3});
   auto r = injamm::render<tmpl>(data);
   REQUIRE(r.has_value());
   REQUIRE(*r == "<a>");
@@ -587,6 +626,22 @@ TEST_CASE("ct_filter_raw_output", "[injamm][ct]") {
   auto r = injamm::render<tmpl>(CtUser{"  <script>  ", 0});
   REQUIRE(r.has_value());
   REQUIRE(*r == "<script>");
+}
+
+TEST_CASE("ct_filter_replace_newlines", "[injamm][ct]") {
+  auto constexpr tmpl = injamm::fixed_string("{{name | replace}}");
+  CtUser data{"line1\nline2\nline3", 0};
+  auto r = injamm::render<tmpl>(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "line1 line2 line3");
+}
+
+TEST_CASE("ct_filter_replace_args", "[injamm][ct]") {
+  auto constexpr tmpl = injamm::fixed_string("{{name | replace(world, injamm)}}");
+  CtUser data{"hello world!", 0};
+  auto r = injamm::render<tmpl>(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "hello injamm!");
 }
 
 // ---- 整数フィルタ ----
