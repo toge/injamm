@@ -18,9 +18,10 @@
 #include "bytecode.hpp"
 #include "bytecode_compile.hpp"
 #include "bytecode_exec.hpp"
+#include <memory>
 #include <array>
 
-#if __has_include(<frozenchars.hpp>)
+#if __has_include(<frozenchars.hpp>) && !defined(INJAMM_NO_FROZENCHARS)
 #include <frozenchars.hpp>
 #define INJAMM_HAS_FROZENCHARS 1
 #endif
@@ -53,7 +54,7 @@ struct fixed_string {
     }
   }
 
-#if __has_include(<frozenchars.hpp>)
+#if __has_include(<frozenchars.hpp>) && !defined(INJAMM_NO_FROZENCHARS)
   /**
    * @brief FrozenString から構築する
    *
@@ -75,7 +76,7 @@ struct fixed_string {
   [[nodiscard]] consteval std::size_t size() const noexcept { return N - 1; }
 };
 
-#if __has_include(<frozenchars.hpp>)
+#if __has_include(<frozenchars.hpp>) && !defined(INJAMM_NO_FROZENCHARS)
 template <std::size_t M>
 fixed_string(frozenchars::FrozenString<M>) -> fixed_string<M>;
 #endif
@@ -249,8 +250,8 @@ template <fixed_string Tmpl, bool TrimBlocks = false, bool LstripBlocks = false,
   constexpr auto ct_bc = detail::ct_chunks_to_bytecode<T>(resolved);
   if (ct_bc.error.ec != error_code::none)
     return std::unexpected(ct_bc.error);
-  static auto const bc = detail::to_bytecode(ct_bc);
-  return detail::bc_execute(bc, value);
+  static auto const bc_ptr = std::make_unique<detail::bytecode>(detail::to_bytecode(ct_bc));
+  return detail::bc_execute(*bc_ptr, value);
 }
 
 /**
@@ -279,8 +280,8 @@ template <fixed_string Tmpl, fixed_string... Entries, typename T>
   constexpr auto ct_bc = detail::ct_chunks_to_bytecode<T>(parsed);
   if (ct_bc.error.ec != error_code::none)
     return std::unexpected(ct_bc.error);
-  static auto const bc = detail::to_bytecode(ct_bc);
-  return detail::bc_execute(bc, value);
+  static auto const bc_ptr = std::make_unique<detail::bytecode>(detail::to_bytecode(ct_bc));
+  return detail::bc_execute(*bc_ptr, value);
 }
 
 /**
