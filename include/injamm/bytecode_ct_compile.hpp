@@ -109,7 +109,7 @@ bytecode to_bytecode(ct_bytecode<N> const& ct) {
       while (j < bc.instructions.size()) {
         auto op = bc.instructions[j].op;
         auto const& fi = bc.instructions[j];
-        if (op >= bc_opcode::filter_upper && op <= bc_opcode::filter_substr) {
+        if (op >= bc_opcode::filter_upper && op <= bc_opcode::filter_replace) {
           switch (op) {
           case bc_opcode::filter_upper:      ref.filters.push_back({.filter = string_filter::upper}); break;
           case bc_opcode::filter_lower:      ref.filters.push_back({.filter = string_filter::lower}); break;
@@ -123,7 +123,14 @@ bytecode to_bytecode(ct_bytecode<N> const& ct) {
           case bc_opcode::filter_center:     ref.filters.push_back({.filter = string_filter::center, .arg1 = static_cast<int>(fi.operand)}); break;
           case bc_opcode::filter_truncate:   ref.filters.push_back({.filter = string_filter::truncate, .arg1 = static_cast<int>(fi.operand)}); break;
           case bc_opcode::filter_substr:     ref.filters.push_back({.filter = string_filter::substr, .arg1 = static_cast<int>(fi.operand), .arg2 = static_cast<int>(fi.operand2)}); break;
-          case bc_opcode::filter_replace:   ref.filters.push_back({.filter = string_filter::replace}); break;
+          case bc_opcode::filter_replace: {
+            if (fi.operand != fi.operand2) {
+              ref.filters.push_back({.filter = string_filter::replace, .str_arg1 = bc.literals[fi.operand], .str_arg2 = bc.literals[fi.operand2]});
+            } else {
+              ref.filters.push_back({.filter = string_filter::replace});
+            }
+            break;
+          }
           default: break;
           }
           ++j;
@@ -216,7 +223,16 @@ consteval void compile_chunk_range(ct_bytecode_builder<N>& b,
        case string_filter::center:     b.emit(bc_opcode::filter_center, sf.arg1); break;
        case string_filter::truncate:   b.emit(bc_opcode::filter_truncate, sf.arg1); break;
        case string_filter::substr:     b.emit(bc_opcode::filter_substr, sf.arg1, sf.arg2); break;
-       case string_filter::replace:    b.emit(bc_opcode::filter_replace); break;
+        case string_filter::replace: {
+          if (sf.str_arg1.empty()) {
+            b.emit(bc_opcode::filter_replace);
+          } else {
+            auto old_idx = b.add_literal({sf.str_arg1.data(), sf.str_arg1.size()});
+            auto new_idx = b.add_literal({sf.str_arg2.data(), sf.str_arg2.size()});
+            b.emit(bc_opcode::filter_replace, old_idx, new_idx);
+          }
+          break;
+        }
        }
      }
      for (std::uint8_t f = 0; f < chunks.int_filter_count[idx]; ++f) {

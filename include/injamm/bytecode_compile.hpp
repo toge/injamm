@@ -211,7 +211,11 @@ class bc_compiler {
     /** @brief 後でジャンプ先を書き込むための命令位置を記録 */
     auto section_instr_idx = bc_.current_offset() - 1;
 
-    compile_body();
+    bool found_close = compile_body();
+    if (bc_.error.ec == error_code::none && !found_close) {
+      bc_.error = error_ctx{section_instr_idx, error_code::unexpected_end, key};
+      return;
+    }
     if (trim_blocks_ && pos_ < tmpl_.size() && tmpl_[pos_] == '\n') ++pos_;
 
     bc_.add_instruction(bc_opcode::emit_end);
@@ -233,7 +237,11 @@ class bc_compiler {
 
     auto section_instr_idx = bc_.current_offset() - 1;
 
-    compile_body();
+    bool found_close = compile_body();
+    if (bc_.error.ec == error_code::none && !found_close) {
+      bc_.error = error_ctx{section_instr_idx, error_code::unexpected_end, key};
+      return;
+    }
     if (trim_blocks_ && pos_ < tmpl_.size() && tmpl_[pos_] == '\n') ++pos_;
 
     bc_.add_instruction(bc_opcode::emit_end);
@@ -328,7 +336,12 @@ class bc_compiler {
     auto if_instr_idx = bc_.current_offset() - 1;
 
     std::uint32_t else_instr_idx = 0;
-    bool has_else = compile_body_with_else(else_instr_idx);
+    bool reached_end = false;
+    bool has_else = compile_body_with_else(else_instr_idx, reached_end);
+    if (bc_.error.ec == error_code::none && reached_end) {
+      bc_.error = error_ctx{if_instr_idx, error_code::unexpected_end, "if"};
+      return;
+    }
     if (trim_blocks_ && pos_ < tmpl_.size() && tmpl_[pos_] == '\n') ++pos_;
 
     if (has_else) {
@@ -362,7 +375,11 @@ class bc_compiler {
     bc_.add_instruction(bc_opcode::emit_at_inverted, 0, kind);
     auto instr_idx = bc_.current_offset() - 1;
 
-    compile_body();
+    bool found_close = compile_body();
+    if (bc_.error.ec == error_code::none && !found_close) {
+      bc_.error = error_ctx{instr_idx, error_code::unexpected_end, key};
+      return;
+    }
     if (trim_blocks_ && pos_ < tmpl_.size() && tmpl_[pos_] == '\n') ++pos_;
 
     bc_.add_instruction(bc_opcode::emit_end);
@@ -389,7 +406,11 @@ class bc_compiler {
     bc_.add_instruction(bc_opcode::emit_at_section, 0, kind);
     auto instr_idx = bc_.current_offset() - 1;
 
-    compile_body();
+    bool found_close = compile_body();
+    if (bc_.error.ec == error_code::none && !found_close) {
+      bc_.error = error_ctx{instr_idx, error_code::unexpected_end, key};
+      return;
+    }
     if (trim_blocks_ && pos_ < tmpl_.size() && tmpl_[pos_] == '\n') ++pos_;
 
     bc_.add_instruction(bc_opcode::emit_end);
@@ -411,13 +432,20 @@ class bc_compiler {
    *          - {{/xxx}}  : セクション終了（return）
    *          - {{else}}  : else 節（return）
    */
-  void compile_body() {
+  /**
+   * @brief テンプレート本体をコンパイルする
+   * @return true = {{/xxx}} または {{else}} を検出して復帰、false = テンプレート終端に到達
+   * @details テンプレート文字列を先頭から走査し、リテラル・変数・セクション・if などを
+   *          バイトコード命令に変換する。{{/xxx}} や {{else}} に遭遇すると true を返して戻る。
+   *          セクション/if の本体コンパイルに使用され、呼び出し元が終了タグの有無を判定する。
+   */
+  bool compile_body() {
     while (pos_ < tmpl_.size()) {
       /** @brief 次の {{ タグを検索 */
       auto tag_start = tmpl_.find("{{", pos_);
       if (tag_start == std::string_view::npos) {
         emit_literal(tmpl_.substr(pos_));
-        break;
+        return false;
       }
 
       /** @brief タグ前のリテラルを出力 */
@@ -462,7 +490,7 @@ class bc_compiler {
             continue;
           }
           bc_.error = error_ctx{tag_start, error_code::unknown_filter, parts[fi]};
-          return;
+          return false;
         }
         if (actual_key.starts_with("root.")) {
           emit_root_field(actual_key, true);
@@ -490,13 +518,13 @@ class bc_compiler {
 
       /** @brief {{/xxx}} 終了タグ */
       if (inner.starts_with("/")) {
-        return;
+        return true;
       }
 
       /** @brief {{else}} */
       if (inner == "else") {
         bc_.add_instruction(bc_opcode::emit_else);
-        return;
+        return true;
       }
 
       /** @brief {{#section}} または {{#if}} */
@@ -587,26 +615,30 @@ class bc_compiler {
             continue;
           }
           bc_.error = error_ctx{pos_, error_code::unknown_filter, parts[fi]};
-          return;
+          return false;
         }
         emit_var(key, false, std::move(filters), std::move(int_filters), std::move(float_filters));
       }
     }
+    return false;
   }
 
   /**
    * @brief else 節の有無を考慮して本体をコンパイルする
    * @param[out] else_instr_idx else 命令のインデックス（else がある場合に設定）
+   * @param[out] reached_end テンプレート終端に到達した場合に true を設定
    * @return else がある場合は true、ない場合は false
    * @details compile_body とほぼ同じロジックだが、{{else}} を検出した場合に
    *          else_instr_idx を設定して true を返す。入れ子のセクション/if も適切に処理する。
    */
-  bool compile_body_with_else(std::uint32_t& else_instr_idx) {
+  bool compile_body_with_else(std::uint32_t& else_instr_idx, bool& reached_end) {
+    reached_end = false;
     while (pos_ < tmpl_.size()) {
       auto tag_start = tmpl_.find("{{", pos_);
       if (tag_start == std::string_view::npos) {
         emit_literal(tmpl_.substr(pos_));
-        break;
+        reached_end = true;
+        return false;
       }
 
       if (tag_start > pos_) {
@@ -641,7 +673,10 @@ class bc_compiler {
       if (inner == "else") {
         else_instr_idx = static_cast<std::uint32_t>(bc_.current_offset());
         bc_.add_instruction(bc_opcode::emit_else, 0, 0);
-        compile_body();
+        bool else_found_close = compile_body();
+        if (bc_.error.ec == error_code::none && !else_found_close) {
+          reached_end = true;
+        }
         return true;
       }
 
@@ -733,6 +768,7 @@ class bc_compiler {
         emit_var(key, false, std::move(filters), std::move(int_filters), std::move(float_filters));
       }
     }
+    reached_end = true;
     return false;
   }
 
@@ -746,9 +782,14 @@ class bc_compiler {
     trim_blocks_ = trim_blocks;
     lstrip_blocks_ = lstrip_blocks;
     clean_tmpl_ = transform_exists_sections(strip_bang_comments(strip_comments(strip_standalone_whitespace_tildes(tmpl))));
-    tmpl_ = clean_tmpl_;
+    bc_.template_storage = clean_tmpl_;
+    tmpl_ = bc_.template_storage;
     pos_ = 0;
-    compile_body();
+    bool found_close = compile_body();
+    if (bc_.error.ec == error_code::none && found_close) {
+      bc_.error = error_ctx{pos_, error_code::syntax_error, "stray closing tag"};
+      return std::move(bc_);
+    }
     bc_.add_instruction(bc_opcode::halt);
     for (auto const& lit : bc_.literals)
       bc_.literal_total_size += lit.size();
