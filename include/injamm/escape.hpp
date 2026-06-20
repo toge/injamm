@@ -8,12 +8,7 @@
 
 namespace injamm::detail {
 
-#if defined(__SSE2__)
-/** @brief SSE2 を用いた HTML エスケープの高速実装
- *
- *  16 バイトずつロードし、特殊文字（< > & " '）が含まれていない場合は
- *  そのまま一括追記する。特殊文字を含む区間のみスカラー処理にフォールバックする。
- */
+#if defined(__AVX2__)
 template <class Buffer>
 inline void html_escape_into(Buffer& out, std::string_view s) {
   std::size_t i    = 0;
@@ -45,7 +40,76 @@ inline void html_escape_into(Buffer& out, std::string_view s) {
     }
   };
 
-  auto const chunk_has_special = [](unsigned mask) -> bool { return mask != 0; };
+  auto const find_first_match = [](unsigned mask) -> int {
+#if defined(__GNUC__) || defined(__clang__)
+    return __builtin_ctz(mask);
+#else
+    unsigned long index;
+    if (_BitScanForward(&index, mask)) return static_cast<int>(index);
+    return 32;
+#endif
+  };
+
+  while (i + 32 <= len) {
+    __m256i chunk = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(data + i));
+    __m256i lt    = _mm256_cmpeq_epi8(chunk, _mm256_set1_epi8('<'));
+    __m256i gt    = _mm256_cmpeq_epi8(chunk, _mm256_set1_epi8('>'));
+    __m256i amp   = _mm256_cmpeq_epi8(chunk, _mm256_set1_epi8('&'));
+    __m256i dqt   = _mm256_cmpeq_epi8(chunk, _mm256_set1_epi8('"'));
+    __m256i sqt   = _mm256_cmpeq_epi8(chunk, _mm256_set1_epi8('\''));
+
+    __m256i any   = _mm256_or_si256(_mm256_or_si256(lt, gt), _mm256_or_si256(amp, _mm256_or_si256(dqt, sqt)));
+    unsigned mask = static_cast<unsigned>(_mm256_movemask_epi8(any));
+
+    if (mask == 0) {
+      out.append(data + i, 32);
+      i += 32;
+    } else {
+      int first = find_first_match(mask);
+      if (first > 0) {
+        out.append(data + i, first);
+      }
+      process_special(i + first, i + 32);
+      i += 32;
+    }
+  }
+
+  // 残りをスカラー処理
+  if (i < len) {
+    process_special(i, len);
+  }
+}
+#elif defined(__SSE2__)
+template <class Buffer>
+inline void html_escape_into(Buffer& out, std::string_view s) {
+  std::size_t i    = 0;
+  std::size_t len  = s.size();
+  auto const* data = s.data();
+
+  auto const process_special = [&](std::size_t start, std::size_t end) {
+    for (std::size_t j = start; j < end; ++j) {
+      switch (data[j]) {
+      case '<':
+        out.append("&lt;");
+        break;
+      case '>':
+        out.append("&gt;");
+        break;
+      case '&':
+        out.append("&amp;");
+        break;
+      case '"':
+        out.append("&quot;");
+        break;
+      case '\'':
+        out.append("&#x27;");
+        break;
+      default:
+        out.push_back(data[j]);
+        break;
+      }
+    }
+  };
 
   auto const find_first_match = [](unsigned mask) -> int {
 #if defined(__GNUC__) || defined(__clang__)

@@ -4,6 +4,8 @@
 #include "types.hpp"
 #include <array>
 #include <charconv>
+#include <fast_float/fast_float.h>
+#include <fmt/format.h>
 #include <cmath>
 #include <expected>
 #include <string>
@@ -54,7 +56,8 @@ constexpr void apply_string_filter(std::string& str, string_filter_entry entry) 
       str.clear();
     } else {
       auto end = str.find_last_not_of(" \t");
-      str      = str.substr(start, end - start + 1);
+      str.erase(end + 1);
+      str.erase(0, start);
     }
     break;
   }
@@ -63,7 +66,7 @@ constexpr void apply_string_filter(std::string& str, string_filter_entry entry) 
     if (start == std::string::npos) {
       str.clear();
     } else {
-      str = str.substr(start);
+      str.erase(0, start);
     }
     break;
   }
@@ -72,7 +75,7 @@ constexpr void apply_string_filter(std::string& str, string_filter_entry entry) 
     if (end == std::string::npos) {
       str.clear();
     } else {
-      str = str.substr(0, end + 1);
+      str.erase(end + 1);
     }
     break;
   }
@@ -105,9 +108,10 @@ constexpr void apply_string_filter(std::string& str, string_filter_entry entry) 
   case string_filter::truncate: {
     auto max_len = entry.arg1;
     if (str.size() > static_cast<std::size_t>(max_len) && max_len >= 3) {
-      str = str.substr(0, max_len - 3) + "...";
+      str.erase(max_len - 3);
+      str.append("...");
     } else if (str.size() > static_cast<std::size_t>(max_len)) {
-      str = str.substr(0, max_len);
+      str.erase(max_len);
     }
     break;
   }
@@ -115,10 +119,11 @@ constexpr void apply_string_filter(std::string& str, string_filter_entry entry) 
     auto start  = entry.arg1;
     auto length = entry.arg2;
     if (start >= 0 && static_cast<std::size_t>(start) < str.size()) {
-      if (length > 0) {
-        str = str.substr(start, length);
-      } else {
-        str = str.substr(start);
+      if (length > 0 && static_cast<std::size_t>(start + length) < str.size()) {
+        str.erase(start + length);
+      }
+      if (start > 0) {
+        str.erase(0, start);
       }
     } else {
       str.clear();
@@ -147,7 +152,7 @@ constexpr void apply_string_filter(std::string& str, string_filter_entry entry) 
     auto size = str.size();
     if (str.find('.') != std::string::npos || str.find('e') != std::string::npos || str.find('E') != std::string::npos) {
       double val{};
-      if (auto [p, ec] = std::from_chars(data, data + size, val); ec == std::errc()) {
+      if (auto [p, ec] = fast_float::from_chars(data, data + size, val); ec == std::errc()) {
         std::array<char, 64> buf;
         if (auto [tp, tec] = std::to_chars(buf.data(), buf.data() + buf.size(), std::abs(val)); tec == std::errc()) {
           str.assign(buf.data(), tp - buf.data());
@@ -201,7 +206,7 @@ constexpr void apply_string_filter(std::string& str, string_filter_entry entry) 
     auto size = str.size();
     if (str.find('.') != std::string::npos || str.find('e') != std::string::npos || str.find('E') != std::string::npos) {
       double val{};
-      if (auto [p, ec] = std::from_chars(data, data + size, val); ec == std::errc()) {
+      if (auto [p, ec] = fast_float::from_chars(data, data + size, val); ec == std::errc()) {
         std::array<char, 64> buf;
         if (auto [tp, tec] = std::to_chars(buf.data(), buf.data() + buf.size(), -val); tec == std::errc()) {
           str.assign(buf.data(), tp - buf.data());
@@ -244,7 +249,7 @@ constexpr void apply_string_filter(std::string& str, string_filter_entry entry) 
     auto size = str.size();
     if (str.find('.') != std::string::npos || str.find('e') != std::string::npos || str.find('E') != std::string::npos) {
       double val{};
-      if (auto [p, ec] = std::from_chars(data, data + size, val); ec == std::errc()) {
+      if (auto [p, ec] = fast_float::from_chars(data, data + size, val); ec == std::errc()) {
         bool negative = val < 0;
         if (negative)
           val = -val;
@@ -320,7 +325,7 @@ constexpr void apply_string_filter(std::string& str, string_filter_entry entry) 
     auto size = str.size();
     if (str.find('.') != std::string::npos || str.find('e') != std::string::npos || str.find('E') != std::string::npos) {
       double val{};
-      if (auto [p, ec] = std::from_chars(data, data + size, val); ec == std::errc()) {
+      if (auto [p, ec] = fast_float::from_chars(data, data + size, val); ec == std::errc()) {
         str = val < 0 ? "true" : "false";
       } else {
         long long val2{};
@@ -346,7 +351,7 @@ constexpr void apply_string_filter(std::string& str, string_filter_entry entry) 
     auto size   = str.size();
     if (str.find('.') != std::string::npos || str.find('e') != std::string::npos || str.find('E') != std::string::npos) {
       double val{};
-      if (auto [p, ec] = std::from_chars(data, data + size, val); ec == std::errc()) {
+      if (auto [p, ec] = fast_float::from_chars(data, data + size, val); ec == std::errc()) {
         str = (static_cast<long long>(val) == target) ? "true" : "false";
       } else {
         long long val2{};
@@ -378,7 +383,7 @@ constexpr void apply_string_filter(std::string& str, string_filter_entry entry) 
     bool result = false;
     if (str.find('.') != std::string::npos || str.find('e') != std::string::npos || str.find('E') != std::string::npos) {
       double val{};
-      if (auto [p, ec] = std::from_chars(data, data + size, val); ec == std::errc()) {
+      if (auto [p, ec] = fast_float::from_chars(data, data + size, val); ec == std::errc()) {
         double ftarget = static_cast<double>(entry.arg);
         switch (entry.filter) {
         case int_filter::ne:
@@ -484,7 +489,7 @@ constexpr void apply_float_filter(std::string& str, float_filter_entry entry) {
   switch (entry.filter) {
   case float_filter::precision: {
     double val{};
-    if (auto [p, ec] = std::from_chars(str.data(), str.data() + str.size(), val); ec == std::errc()) {
+    if (auto [p, ec] = fast_float::from_chars(str.data(), str.data() + str.size(), val); ec == std::errc()) {
       std::array<char, 64> buf;
       auto [ptr, ec2] = std::to_chars(buf.data(), buf.data() + buf.size(), val, std::chars_format::fixed, static_cast<int>(entry.arg));
       if (ec2 == std::errc()) {

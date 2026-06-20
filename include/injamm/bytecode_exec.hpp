@@ -278,9 +278,7 @@ class bc_executor {
       auto [ptr, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), field);
       if (ec == std::errc{}) {
         auto const n = static_cast<std::size_t>(ptr - buf.data());
-        auto const* p = buf.data();
-        for (std::size_t i = 0; i < n; ++i)
-          out_.push_back(p[i]);
+        out_.append(buf.data(), n);
       }
     } else if constexpr (is_std_optional_v<FT>) {
       if (field.has_value()) {

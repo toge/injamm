@@ -3,6 +3,8 @@
   "dependencies": [
     "glaze",
     "catch2",
-    "frozenchars"
+    "frozenchars",
+    "fast-float",
+    "fmt"
   ]
 }
