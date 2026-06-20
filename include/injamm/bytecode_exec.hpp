@@ -354,8 +354,7 @@ class bc_executor {
         &&L_emit_var,                // 1
         &&L_emit_var_raw,            // 2
         &&L_emit_section,            // 3
-        &&L_emit_section_bool,       // 4
-        &&L_emit_end,                // 5
+        &&L_emit_end,                // 4
         &&L_emit_inverted,           // 6
         &&L_emit_at_index,           // 7
         &&L_emit_at_first,           // 8
@@ -554,37 +553,6 @@ class bc_executor {
     DISPATCH();
   }
 
-  /**
-   * @brief bool 専用セクションブロック（最適化用）
-   * @details パーサーが配列ではないことが確定している場合に emit_section の
-   *          代わりに発行される。ベクター分岐を省略できる。
-   */
-  L_emit_section_bool: {
-    auto const& instr    = bc_.instructions[pc];
-    auto const& ref      = bc_.var_refs[instr.operand2];
-    auto        body_end = instr.operand;
-
-    if (body_end <= pc + 1 || body_end > bc_.instructions.size()) {
-      return std::unexpected(error_ctx{.position = pc, .ec = error_code::syntax_error});
-    }
-
-    auto r = for_each_field(value_, ref.key, ref.field_index, ref.has_dot, [&](auto const& field) -> std::expected<void, error_ctx> {
-      using FT = std::remove_cvref_t<decltype(field)>;
-      if constexpr (std::same_as<FT, bool>) {
-        if (field) {
-          auto r2 = execute_impl(pc + 1, body_end - 1);
-          if (!r2)
-            return r2;
-        }
-      }
-      return {};
-    });
-    if (!r)
-      return r;
-    pc = body_end;
-    DISPATCH();
-  }
-
   /** @brief 実行終端（通常到達しない） */
   L_emit_end: { return {}; }
 
@@ -609,6 +577,12 @@ class bc_executor {
         empty = field.empty();
       } else if constexpr (ct_is_set_like<FT>) {
         empty = field.empty();
+      } else if constexpr (std::same_as<FT, std::string> || std::same_as<FT, std::string_view>) {
+        empty = field.empty();
+      } else if constexpr (std::is_arithmetic_v<FT>) {
+        empty = (field == 0);
+      } else if constexpr (ct_glz_reflectable<FT>) {
+        empty = false;
       }
     });
     if (empty) {
@@ -803,7 +777,7 @@ class bc_executor {
     DISPATCH();
   }
 
-  /** @brief @var セクション（現在未使用、将来拡張用） */
+  /** @brief @var セクション: @index/@first/@last に基づく条件付き描画 */
   L_emit_at_section: {
     auto const& instr = bc_.instructions[pc];
     bool        cond  = false;
@@ -840,7 +814,8 @@ class bc_executor {
     if (loop_) {
       auto kind = instr.operand2;
       if (kind == 0) {
-        cond = loop_->index == 0;
+        /** @index: index != 0 のとき逆セクションをスキップ（index == 0 で描画） */
+        cond = loop_->index != 0;
       } else if (kind == 1) {
         /** @first: 先頭要素の場合は逆セクションをスキップ */
         cond = loop_->index == 0;
@@ -1399,6 +1374,12 @@ class bc_executor {
             empty = field.empty();
           } else if constexpr (ct_is_set_like<FT>) {
             empty = field.empty();
+          } else if constexpr (std::same_as<FT, std::string> || std::same_as<FT, std::string_view>) {
+            empty = field.empty();
+          } else if constexpr (std::is_arithmetic_v<FT>) {
+            empty = (field == 0);
+          } else if constexpr (ct_glz_reflectable<FT>) {
+            empty = false;
           }
         });
         if (empty) {
@@ -1444,7 +1425,8 @@ class bc_executor {
         if (loop_) {
           auto kind = instr.operand2;
           if (kind == 0) {
-            cond = loop_->index == 0;
+            /** @index: index != 0 のとき逆セクションをスキップ（index == 0 で描画） */
+            cond = loop_->index != 0;
           } else if (kind == 1) {
             cond = loop_->index == 0;
           } else if (kind == 2) {
@@ -1511,6 +1493,8 @@ class bc_executor {
               cond = (loop_->index == 0);
             } else if (ref.key == "loop.index") {
               cond = (loop_->index != 0);
+            } else if (ref.key == "loop.key") {
+              cond = !loop_->key.empty();
             }
           }
         } else {
@@ -1976,6 +1960,7 @@ class bc_executor {
             out_.append(buf.data(), ptr);
           }
         }
+        ++pc;
         break;
       }
 
@@ -1988,6 +1973,7 @@ class bc_executor {
             out_.append(buf.data(), ptr);
           }
         }
+        ++pc;
         break;
       }
 

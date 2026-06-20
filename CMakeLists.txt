@@ -37,6 +37,11 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
     # ヘッダ側の自動検出を補完: gnu++23 拡張を明示的に有効化する
     target_compile_options(injamm INTERFACE -std=gnu++23)
   endif()
+else()
+  # Clang/MSVC: computed goto 非対応のため switch fallback を使用
+  target_compile_definitions(injamm INTERFACE INJAMM_NO_THREADED_DISPATCH)
+  # frozenchars に Clang 互換性問題があるため無効化
+  target_compile_definitions(injamm INTERFACE INJAMM_NO_FROZENCHARS)
 endif()
 
 # ---- Install ----
@@ -81,16 +86,20 @@ if(BUILD_TEST)
     tests/test_injamm.cpp
     tests/test_injamm_ct.cpp
     tests/test_injamm_ja.cpp
+    tests/test_ct_overload.cpp
   )
   target_link_libraries(injamm_tests PRIVATE injamm Catch2::Catch2WithMain)
   target_include_directories(injamm_tests PRIVATE include)
   target_compile_features(injamm_tests PRIVATE cxx_std_23)
 
   # Optional: FrozenString NTTP tests (frozenchars header-only library)
-  find_package(frozenchars CONFIG QUIET)
-  if(frozenchars_FOUND)
-    target_link_libraries(injamm_tests PRIVATE frozenchars::frozenchars)
-    target_compile_definitions(injamm_tests PRIVATE INJAMM_HAS_FROZENCHARS=1)
+  # Clang 互換性問題があるため非 GCC コンパイラではスキップ
+  if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+    find_package(frozenchars CONFIG QUIET)
+    if(frozenchars_FOUND)
+      target_link_libraries(injamm_tests PRIVATE frozenchars::frozenchars)
+      target_compile_definitions(injamm_tests PRIVATE INJAMM_HAS_FROZENCHARS=1)
+    endif()
   endif()
 
   add_test(NAME injamm_tests COMMAND injamm_tests)

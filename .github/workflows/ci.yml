@@ -10,39 +10,57 @@ jobs:
   build:
     runs-on: ubuntu-latest
 
-    # 1. 複数のFedoraバージョンをマトリクスとして定義
     strategy:
-      fail-fast: false # 1つのバージョンが失敗しても、他のバージョンの検証を最後まで継続する
+      fail-fast: false
       matrix:
-        # gcc 16 : Fedora 44
-        # gcc 15 : Fedora 43
-        # gcc 14 : Fedora 41
-        fedora_version: ["44", "43", "41"]
+        include:
+          # GCC マトリクス (従来通り)
+          # gcc 16 : Fedora 44
+          # gcc 15 : Fedora 43
+          # gcc 14 : Fedora 41
+          - fedora_version: "44"
+            compiler: gcc
+          - fedora_version: "43"
+            compiler: gcc
+          - fedora_version: "41"
+            compiler: gcc
+          # Clang マトリクス (switch fallback ディスパッチの回帰検出用)
+          - fedora_version: "44"
+            compiler: clang
 
-    # 2. 定義したバージョンを動的にコンテナへ割り当て
     container: fedora:${{ matrix.fedora_version }}
+
+    env:
+      CC: ${{ matrix.compiler == 'gcc' && 'gcc' || 'clang' }}
+      CXX: ${{ matrix.compiler == 'gcc' && 'g++' || 'clang++' }}
 
     steps:
       - uses: actions/checkout@v4
 
       - name: Install build tools
-        run: dnf install -y gcc-c++ cmake ninja-build git curl zip unzip tar
-
-      - name: Check GCC version
         run: |
-          g++ --version
-          g++ -dumpversion | grep -E "^(1[4-9]|[2-9][0-9])(\.|\$)" || { echo "ERROR: GCC 14+ required, found $(g++ -dumpversion)"; exit 1; }
+          if [ "${{ matrix.compiler }}" = "clang" ]; then
+            dnf install -y clang cmake ninja-build git curl zip unzip tar
+          else
+            dnf install -y gcc-c++ cmake ninja-build git curl zip unzip tar
+          fi
 
-      # 3. キャッシュキーにもFedoraのバージョンを混ぜてコンフリクトを防ぐ
+      - name: Check compiler version
+        run: |
+          $CXX --version
+          if [ "${{ matrix.compiler }}" = "gcc" ]; then
+            $CXX -dumpversion | grep -E "^(1[4-9]|[2-9][0-9])(\.|\$)" || { echo "ERROR: GCC 14+ required, found $($CXX -dumpversion)"; exit 1; }
+          fi
+
       - name: Restore vcpkg cache
         uses: actions/cache@v4
         with:
           path: |
             ~/vcpkg
             build/vcpkg_installed
-          key: ${{ runner.os }}-fedora-${{ matrix.fedora_version }}-vcpkg-${{ hashFiles('vcpkg.json') }}
+          key: ${{ runner.os }}-fedora-${{ matrix.fedora_version }}-${{ matrix.compiler }}-vcpkg-${{ hashFiles('vcpkg.json') }}
           restore-keys: |
-            ${{ runner.os }}-fedora-${{ matrix.fedora_version }}-vcpkg-
+            ${{ runner.os }}-fedora-${{ matrix.fedora_version }}-${{ matrix.compiler }}-vcpkg-
 
       - name: Install vcpkg
         run: |
@@ -55,6 +73,55 @@ jobs:
         run: |
           cmake -B build -S . -G Ninja \
             -DCMAKE_TOOLCHAIN_FILE=$HOME/vcpkg/scripts/buildsystems/vcpkg.cmake
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Test
+        run: ctest --test-dir build -V
+
+  sanitizer:
+    runs-on: ubuntu-latest
+    container: fedora:44
+
+    env:
+      CC: gcc
+      CXX: g++
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build tools
+        run: dnf install -y gcc-c++ libasan libubsan cmake ninja-build git curl zip unzip tar
+
+      - name: Check GCC version
+        run: |
+          g++ --version
+          g++ -dumpversion | grep -E "^(1[4-9]|[2-9][0-9])(\.|\$)" || { echo "ERROR: GCC 14+ required, found $(g++ -dumpversion)"; exit 1; }
+
+      - name: Restore vcpkg cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/vcpkg
+            build/vcpkg_installed
+          key: ${{ runner.os }}-fedora-44-sanitizer-vcpkg-${{ hashFiles('vcpkg.json') }}
+          restore-keys: |
+            ${{ runner.os }}-fedora-44-sanitizer-vcpkg-
+
+      - name: Install vcpkg
+        run: |
+          if [ ! -d ~/vcpkg ]; then
+            git clone https://github.com/microsoft/vcpkg.git ~/vcpkg
+            ~/vcpkg/bootstrap-vcpkg.sh
+          fi
+
+      - name: Configure with sanitizers
+        run: |
+          cmake -B build -S . -G Ninja \
+            -DCMAKE_TOOLCHAIN_FILE=$HOME/vcpkg/scripts/buildsystems/vcpkg.cmake \
+            -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer" \
+            -DENABLE_THREADED_DISPATCH=OFF
 
       - name: Build
         run: cmake --build build
