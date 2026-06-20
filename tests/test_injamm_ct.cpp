@@ -1276,6 +1276,116 @@ TEST_CASE("FrozenString @var expansion", "[injamm][ct][frozen][atvar]") {
 
 #endif // INJAMM_HAS_FROZENCHARS
 
+// ---- CT 配列インデックステスト用データ型 ----
+
+struct CtGuest {
+  std::string name;
+};
+
+struct CtParty {
+  std::vector<std::string> guests;
+  std::vector<CtGuest> members;
+  std::string title;
+};
+
+template <>
+struct glz::meta<CtGuest> {
+  static constexpr auto value = glz::object("name", &CtGuest::name);
+};
+
+template <>
+struct glz::meta<CtParty> {
+  static constexpr auto value = glz::object("guests", &CtParty::guests, "members", &CtParty::members, "title", &CtParty::title);
+};
+
+TEST_CASE("ct_array_index_first", "[injamm][ct][array_index]") {
+  auto constexpr tmpl = injamm::fixed_string("{{guests.0}}");
+  CtParty data{{"Jeff", "Tom", "Patrick"}, {}, "Party"};
+  auto r = injamm::render<tmpl>(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "Jeff");
+}
+
+TEST_CASE("ct_array_index_mid", "[injamm][ct][array_index]") {
+  auto constexpr tmpl = injamm::fixed_string("{{guests.1}}");
+  CtParty data{{"Jeff", "Tom", "Patrick"}, {}, "Party"};
+  auto r = injamm::render<tmpl>(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "Tom");
+}
+
+TEST_CASE("ct_array_index_last", "[injamm][ct][array_index]") {
+  auto constexpr tmpl = injamm::fixed_string("{{guests.2}}");
+  CtParty data{{"Jeff", "Tom", "Patrick"}, {}, "Party"};
+  auto r = injamm::render<tmpl>(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "Patrick");
+}
+
+TEST_CASE("ct_array_index_out_of_bounds", "[injamm][ct][array_index]") {
+  auto constexpr tmpl = injamm::fixed_string("{{guests.99}}");
+  CtParty data{{"Jeff", "Tom", "Patrick"}, {}, "Party"};
+  auto r = injamm::render<tmpl>(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "");
+}
+
+TEST_CASE("ct_array_index_nested_field", "[injamm][ct][array_index]") {
+  auto constexpr tmpl = injamm::fixed_string("{{members.1.name}}");
+  CtParty data{{}, {{"Alice"}, {"Bob"}, {"Charlie"}}, ""};
+  auto r = injamm::render<tmpl>(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "Bob");
+}
+
+TEST_CASE("ct_array_index_raw", "[injamm][ct][array_index]") {
+  auto constexpr tmpl = injamm::fixed_string("{{{guests.0}}}");
+  CtParty data{{"<Jeff>", "<Tom>"}, {}, ""};
+  auto r = injamm::render<tmpl>(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "<Jeff>");
+}
+
+TEST_CASE("ct_array_index_with_literal", "[injamm][ct][array_index]") {
+  auto constexpr tmpl = injamm::fixed_string("Hello {{guests.1}}!");
+  CtParty data{{"Jeff", "Tom", "Patrick"}, {}, "Party"};
+  auto r = injamm::render<tmpl>(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "Hello Tom!");
+}
+
+TEST_CASE("ct_array_index_empty_vec", "[injamm][ct][array_index]") {
+  auto constexpr tmpl = injamm::fixed_string("{{guests.0}}");
+  CtParty data{{}, {}, ""};
+  auto r = injamm::render<tmpl>(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "");
+}
+
+TEST_CASE("ct_array_index_nested_deep", "[injamm][ct][array_index]") {
+  auto constexpr tmpl = injamm::fixed_string("{{members.0.name}}-{{members.1.name}}");
+  CtParty data{{}, {{"Alice"}, {"Bob"}}, ""};
+  auto r = injamm::render<tmpl>(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "Alice-Bob");
+}
+
+TEST_CASE("ct_array_index_in_if", "[injamm][ct][array_index]") {
+  auto constexpr tmpl = injamm::fixed_string("{{#if guests.1}}has_second{{/if}}");
+  CtParty data{{"Jeff", "Tom", "Patrick"}, {}, "Party"};
+  auto r = injamm::render<tmpl>(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "has_second");
+}
+
+TEST_CASE("ct_array_index_in_if_empty", "[injamm][ct][array_index]") {
+  auto constexpr tmpl = injamm::fixed_string("{{#if guests.0}}has_first{{/if}}");
+  CtParty data{{}, {}, ""};
+  auto r = injamm::render<tmpl>(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "");
+}
+
 TEST_CASE("ct_trim_blocks single var with no newline", "[injamm][ct][whitespace]") {
   CtUser user{"Alice", 30};
   SECTION("single var only") {

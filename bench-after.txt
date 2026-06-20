@@ -1,34 +1,36 @@
-=== After loop.X migration ===
+=== After array-index feature ===
 
-Run 1 / 2 / 3, median values:
+Run 1:
 
-filter_chain           :    0.2 ns/call  (display rounding; actual ~7-12 us / 50000)
-buffer_prealloc        : 16123 ns/call
-buffer_reuse new       :   59.4 ns/call
-buffer_reuse reuse     :   48.0 ns/call
-section_loop           :  178.3 ns/call   <-- key metric (-7.1% vs baseline)
-no_filter              :  ~30 ns/call
-with_filter            :   ~42 ns/call
-multi_filter           :   ~0.1 ns/call
-ct_render              :   76.6 ns/call   (-4.8% vs baseline)
-wide_first(idx=0)      :   22.8 ns/call   (-7.3%)
-wide_mid(idx=10)       :   23.1 ns/call   (-6.9%)
-wide_last(idx=19)      :   23.6 ns/call   (-2.5%)
-wide_all(5 refs)       :   58.5 ns/call   (+0.5%, noise)
+=== Benchmark ===
 
-Comparison vs baseline (median values, %):
-- section_loop : 191.9 → 178.3 (-7.1%)
-- ct_render    :  80.5 →  76.6 (-4.8%)
-- buffer_reuse new : 64.0 → 59.4 (-7.2%)
-- buffer_reuse reuse : 52.4 → 48.0 (-8.4%)
-- wide_first   : 24.6 → 22.8 (-7.3%)
-- wide_mid     : 24.8 → 23.1 (-6.9%)
-- wide_last    : 24.2 → 23.6 (-2.5%)
-- wide_all     : 58.2 → 58.5 (+0.5%, noise)
+--- filter chain ---
+  filter_chain x 50000: 12 us  (0.2 ns/call)
 
-All deltas within ±10% budget (taste: "performance budget of ±10% from baseline").
-All within system-load noise range.
+--- buffer pre-allocation ---
+  buffer_prealloc (%d vars) x 5000: 83737 us  (16747.4 ns/call)
 
-Tests: 823 assertions / 393 test cases (all passed)
-- Original: 815 assertions / 389 test cases
-- Added:   4 legacy-@var rejection tests + 4 loop.X positive tests already existed
+--- buffer reuse ---
+  buffer_reuse new_string x 50000: 2685 us  (53.7 ns/call)
+  buffer_reuse reuse_buffer x 50000: 2523 us  (50.5 ns/call)
+
+--- section loop ---
+  section_loop x 20000: 3307 us  (165.3 ns/call)
+
+--- filter dispatch micro-benchmark ---
+  no_filter x 100000: 3259 us  (32.6 ns/call)
+  with_filter x 100000: 4614 us  (46.1 ns/call)
+  multi_filter x 100000: 13 us  (0.1 ns/call)
+
+--- CT render ---
+  ct_render x 50000: 4048 us  (81.0 ns/call)
+
+--- wide struct (P3 field-index dispatch) ---
+  wide_first(idx=0)  x 100000: 3351 us  (33.5 ns/call)
+  wide_mid(idx=10)   x 100000: 3894 us  (38.9 ns/call)
+  wide_last(idx=19)  x 100000: 4033 us  (40.3 ns/call)
+  wide_all(5 refs)   x 100000: 7908 us  (79.1 ns/call)
+
+=== done ===
+
+Tests: 867 assertions / 415 test cases (all passed)

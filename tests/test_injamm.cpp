@@ -46,6 +46,28 @@ struct glz::meta<BcMapWrapper> {
   static constexpr auto value = glz::object("config", &BcMapWrapper::config);
 };
 
+// ---- 配列インデックステスト用データ型 ----
+
+struct BcGuest {
+  std::string name;
+};
+
+struct BcParty {
+  std::vector<std::string> guests;
+  std::vector<BcGuest> members;
+  std::string title;
+};
+
+template <>
+struct glz::meta<BcGuest> {
+  static constexpr auto value = glz::object("name", &BcGuest::name);
+};
+
+template <>
+struct glz::meta<BcParty> {
+  static constexpr auto value = glz::object("guests", &BcParty::guests, "members", &BcParty::members, "title", &BcParty::title);
+};
+
 struct BcLlData {
   long long val{};
 };
@@ -2314,5 +2336,95 @@ TEST_CASE("comment_multiple", "[injamm][comment]") {
   auto result = bc.render(data);
   REQUIRE(result.has_value());
   CHECK(*result == "beforeAliceafter");
+}
+
+// ---- 配列インデックステスト ----
+
+TEST_CASE("bc_array_index_first", "[injamm][array_index]") {
+  BcParty data{{"Jeff", "Tom", "Patrick"}, {}, "Party"};
+  auto bc = injamm::engine<BcParty>("{{guests.0}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "Jeff");
+}
+
+TEST_CASE("bc_array_index_mid", "[injamm][array_index]") {
+  BcParty data{{"Jeff", "Tom", "Patrick"}, {}, "Party"};
+  auto bc = injamm::engine<BcParty>("{{guests.1}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "Tom");
+}
+
+TEST_CASE("bc_array_index_last", "[injamm][array_index]") {
+  BcParty data{{"Jeff", "Tom", "Patrick"}, {}, "Party"};
+  auto bc = injamm::engine<BcParty>("{{guests.2}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "Patrick");
+}
+
+TEST_CASE("bc_array_index_out_of_bounds", "[injamm][array_index]") {
+  BcParty data{{"Jeff", "Tom", "Patrick"}, {}, "Party"};
+  auto bc = injamm::engine<BcParty>("{{guests.99}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "");
+}
+
+TEST_CASE("bc_array_index_nested_field", "[injamm][array_index]") {
+  BcParty data{{}, {{"Alice"}, {"Bob"}, {"Charlie"}}, ""};
+  auto bc = injamm::engine<BcParty>("{{members.1.name}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "Bob");
+}
+
+TEST_CASE("bc_array_index_raw", "[injamm][array_index]") {
+  BcParty data{{"<Jeff>", "<Tom>"}, {}, ""};
+  auto bc = injamm::engine<BcParty>("{{{guests.0}}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "<Jeff>");
+}
+
+TEST_CASE("bc_array_index_with_literal", "[injamm][array_index]") {
+  BcParty data{{"Jeff", "Tom", "Patrick"}, {}, "Party"};
+  auto bc = injamm::engine<BcParty>("Hello {{guests.1}}!");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "Hello Tom!");
+}
+
+TEST_CASE("bc_array_index_nested_deep", "[injamm][array_index]") {
+  BcParty data{{}, {{"Alice"}, {"Bob"}}, ""};
+  auto bc = injamm::engine<BcParty>("{{members.0.name}}-{{members.1.name}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "Alice-Bob");
+}
+
+TEST_CASE("bc_array_index_in_if", "[injamm][array_index]") {
+  BcParty data{{"Jeff", "Tom", "Patrick"}, {}, "Party"};
+  auto bc = injamm::engine<BcParty>("{{#if guests.1}}has_second{{/if}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "has_second");
+}
+
+TEST_CASE("bc_array_index_in_if_empty", "[injamm][array_index]") {
+  BcParty data{{}, {}, ""};
+  auto bc = injamm::engine<BcParty>("{{#if guests.0}}has_first{{/if}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "");
+}
+
+TEST_CASE("bc_array_index_empty_vec", "[injamm][array_index]") {
+  BcParty data{{}, {}, ""};
+  auto bc = injamm::engine<BcParty>("{{guests.0}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "");
 }
 

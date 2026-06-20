@@ -130,12 +130,28 @@ class bc_executor {
              if (std::string_view{glz::reflect<V>::keys[I]} == first_key) {
                auto const& field = glz::get<I>(tied);
                using FT          = std::remove_cvref_t<decltype(field)>;
-               if constexpr (ct_glz_reflectable<FT>) {
-                 (void)resolve_nested_path(field, rest_path, std::forward<F>(visitor));
-               }
-             }
-           }()),
-           ...);
+                if constexpr (ct_glz_reflectable<FT>) {
+                  (void)resolve_nested_path(field, rest_path, std::forward<F>(visitor));
+                } else if constexpr (ct_is_vector_like<FT>) {
+                  auto idx_dot = rest_path.find('.');
+                  auto idx_str = rest_path.substr(0, idx_dot);
+                  if (!idx_str.empty() && idx_str.find_first_not_of("0123456789") == std::string_view::npos) {
+                    std::size_t idx = 0;
+                    auto [ptr, ec] = std::from_chars(idx_str.data(), idx_str.data() + idx_str.size(), idx);
+                    if (ec == std::errc{} && idx < field.size()) {
+                      auto const& elem = field[idx];
+                      using ET = std::remove_cvref_t<decltype(elem)>;
+                      if (idx_dot == std::string_view::npos) {
+                        visitor(elem);
+                      } else if constexpr (ct_glz_reflectable<ET>) {
+                        (void)resolve_nested_path(elem, rest_path.substr(idx_dot + 1), std::forward<F>(visitor));
+                      }
+                    }
+                  }
+                }
+              }
+            }()),
+            ...);
         }(std::make_index_sequence<sz>{});
       } else {
         /** visitor が expected を返す場合: エラーを伝搬しながら再帰 */
@@ -149,6 +165,22 @@ class bc_executor {
                using FT          = std::remove_cvref_t<decltype(field)>;
                if constexpr (ct_glz_reflectable<FT>) {
                  result = resolve_nested_path(field, rest_path, std::forward<F>(visitor));
+               } else if constexpr (ct_is_vector_like<FT>) {
+                 auto idx_dot = rest_path.find('.');
+                 auto idx_str = rest_path.substr(0, idx_dot);
+                 if (!idx_str.empty() && idx_str.find_first_not_of("0123456789") == std::string_view::npos) {
+                   std::size_t idx = 0;
+                   auto [ptr, ec] = std::from_chars(idx_str.data(), idx_str.data() + idx_str.size(), idx);
+                   if (ec == std::errc{} && idx < field.size()) {
+                     auto const& elem = field[idx];
+                     using ET = std::remove_cvref_t<decltype(elem)>;
+                     if (idx_dot == std::string_view::npos) {
+                       result = visitor(elem);
+                     } else if constexpr (ct_glz_reflectable<ET>) {
+                       result = resolve_nested_path(elem, rest_path.substr(idx_dot + 1), std::forward<F>(visitor));
+                     }
+                   }
+                 }
                }
              }
            }()),
@@ -687,6 +719,8 @@ class bc_executor {
         if constexpr (std::same_as<FT, bool>) {
           cond = field;
         } else if constexpr (ct_is_vector_like<FT>) {
+          cond = !field.empty();
+        } else if constexpr (std::same_as<FT, std::string> || std::same_as<FT, std::string_view>) {
           cond = !field.empty();
         } else if constexpr (std::is_arithmetic_v<FT>) {
           cond = (field != 0);
@@ -1485,6 +1519,8 @@ class bc_executor {
             if constexpr (std::same_as<FT, bool>) {
               cond = field;
             } else if constexpr (ct_is_vector_like<FT>) {
+              cond = !field.empty();
+            } else if constexpr (std::same_as<FT, std::string> || std::same_as<FT, std::string_view>) {
               cond = !field.empty();
             } else if constexpr (std::is_arithmetic_v<FT>) {
               cond = (field != 0);
