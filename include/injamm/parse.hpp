@@ -47,6 +47,49 @@ namespace injamm::detail {
 }
 
 /**
+ * @brief GCC 16 constexpr ワークアラウンド用 find
+ */
+constexpr std::size_t constexpr_find(std::string_view haystack, std::string_view needle, std::size_t pos = 0) noexcept {
+  if (pos >= haystack.size()) return std::string_view::npos;
+  auto const* data = haystack.data();
+  auto hsize = haystack.size();
+  auto nsize = needle.size();
+  if (nsize == 0) return pos;
+  if (nsize > hsize - pos) return std::string_view::npos;
+  auto const* ndata = needle.data();
+  for (std::size_t i = pos; i + nsize <= hsize; ++i) {
+    bool match = true;
+    for (std::size_t j = 0; j < nsize; ++j) {
+      if (data[i + j] != ndata[j]) { match = false; break; }
+    }
+    if (match) return i;
+  }
+  return std::string_view::npos;
+}
+
+constexpr std::size_t constexpr_find(std::string_view haystack, char needle, std::size_t pos = 0) noexcept {
+  auto hsize = haystack.size();
+  if (pos >= hsize) return std::string_view::npos;
+  auto const* data = haystack.data();
+  for (std::size_t i = pos; i < hsize; ++i) {
+    if (data[i] == needle) return i;
+  }
+  return std::string_view::npos;
+}
+
+constexpr std::size_t constexpr_rfind(std::string_view haystack, char needle, std::size_t pos = std::string_view::npos) noexcept {
+  auto hsize = haystack.size();
+  if (hsize == 0) return std::string_view::npos;
+  auto const* data = haystack.data();
+  auto start = (pos >= hsize) ? hsize - 1 : pos;
+  for (std::size_t i = start;; --i) {
+    if (data[i] == needle) return i;
+    if (i == 0) break;
+  }
+  return std::string_view::npos;
+}
+
+/**
  * @brief loop.X 予約語の有無を判定する
  * @param key プレースホルダーキー ("loop.index" / "loop.is_first" 等)
  * @return 該当する場合は対応する at_var_kind 列挙値、該当しない場合は std::nullopt
@@ -83,14 +126,14 @@ namespace injamm::detail {
  */
 [[nodiscard]] constexpr std::optional<string_filter_entry> parse_string_filter(std::string_view name) noexcept {
   // 引数付きフィルタの処理
-  auto paren = name.find('(');
+  auto paren = constexpr_find(name, '(');
   if (paren != std::string_view::npos && name.back() == ')') {
     auto fname    = name.substr(0, paren);
     auto args_str = name.substr(paren + 1, name.size() - paren - 2);
     int  arg1     = 0;
     int  arg2     = 0;
     // カンマで分割して引数を解析
-    auto comma = args_str.find(',');
+    auto comma = constexpr_find(args_str, ',');
     if (comma != std::string_view::npos) {
       // 2引数
       arg1 = parse_int_arg(args_str.substr(0, comma));
@@ -146,7 +189,7 @@ namespace injamm::detail {
  */
 [[nodiscard]] constexpr std::optional<int_filter_entry> parse_int_filter(std::string_view name) noexcept {
   // 引数付きフィルタの処理
-  auto paren = name.find('(');
+  auto paren = constexpr_find(name, '(');
   if (paren != std::string_view::npos && name.back() == ')') {
     auto fname   = name.substr(0, paren);
     auto arg_str = name.substr(paren + 1, name.size() - paren - 2);
@@ -192,7 +235,7 @@ namespace injamm::detail {
  * @return 対応する float_filter 列挙値、未知の場合は std::nullopt
  */
 [[nodiscard]] constexpr std::optional<float_filter_entry> parse_float_filter(std::string_view name) noexcept {
-  auto paren = name.find('(');
+  auto paren = constexpr_find(name, '(');
   if (paren != std::string_view::npos && name.back() == ')') {
     auto fname   = name.substr(0, paren);
     auto arg_str = name.substr(paren + 1, name.size() - paren - 2);
@@ -211,27 +254,6 @@ namespace injamm::detail {
  *          深度カウントにより無視する。{{#if}} と {{#section}} は別カウンタで
  *          管理し、depth 0 でのみ {{else}} をトップレベルと判定する。
  */
-/**
- * @brief GCC 16 constexpr ワークアラウンド用 find
- */
-constexpr std::size_t constexpr_find(std::string_view haystack, std::string_view needle, std::size_t pos = 0) noexcept {
-  if (pos >= haystack.size()) return std::string_view::npos;
-  auto const* data = haystack.data();
-  auto hsize = haystack.size();
-  auto nsize = needle.size();
-  if (nsize == 0) return pos;
-  if (nsize > hsize - pos) return std::string_view::npos;
-  auto const* ndata = needle.data();
-  for (std::size_t i = pos; i + nsize <= hsize; ++i) {
-    bool match = true;
-    for (std::size_t j = 0; j < nsize; ++j) {
-      if (data[i + j] != ndata[j]) { match = false; break; }
-    }
-    if (match) return i;
-  }
-  return std::string_view::npos;
-}
-
 [[nodiscard]] constexpr std::size_t find_toplevel_else(std::string_view body) noexcept {
   std::size_t pos           = 0;
   int         if_depth      = 0;
@@ -286,7 +308,7 @@ struct pipe_parts {
   pipe_parts  result;
   std::size_t pos = 0;
   while (pos < input.size() && result.count < pipe_parts::max_parts) {
-    auto pipe = input.find('|', pos);
+    auto pipe = constexpr_find(input, '|', pos);
     if (pipe == std::string_view::npos) {
       result.data[result.count++] = trim_sv(input.substr(pos));
       break;
@@ -598,7 +620,7 @@ constexpr void copy_stripped(std::string_view src, std::array<char, N>& dst) noe
 }
 
 [[nodiscard]] constexpr std::string_view trim_tail_whitespace_for_lstrip(std::string_view sv) noexcept {
-  auto nl = sv.rfind('\n');
+  auto nl = constexpr_rfind(sv, '\n');
   if (nl == std::string_view::npos) {
     for (auto c : sv) {
       if (c != ' ' && c != '\t') return sv;
