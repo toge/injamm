@@ -211,16 +211,37 @@ namespace injamm::detail {
  *          深度カウントにより無視する。{{#if}} と {{#section}} は別カウンタで
  *          管理し、depth 0 でのみ {{else}} をトップレベルと判定する。
  */
+/**
+ * @brief GCC 16 constexpr ワークアラウンド用 find
+ */
+constexpr std::size_t constexpr_find(std::string_view haystack, std::string_view needle, std::size_t pos = 0) noexcept {
+  if (pos >= haystack.size()) return std::string_view::npos;
+  auto const* data = haystack.data();
+  auto hsize = haystack.size();
+  auto nsize = needle.size();
+  if (nsize == 0) return pos;
+  if (nsize > hsize - pos) return std::string_view::npos;
+  auto const* ndata = needle.data();
+  for (std::size_t i = pos; i + nsize <= hsize; ++i) {
+    bool match = true;
+    for (std::size_t j = 0; j < nsize; ++j) {
+      if (data[i + j] != ndata[j]) { match = false; break; }
+    }
+    if (match) return i;
+  }
+  return std::string_view::npos;
+}
+
 [[nodiscard]] constexpr std::size_t find_toplevel_else(std::string_view body) noexcept {
   std::size_t pos           = 0;
   int         if_depth      = 0;
   int         section_depth = 0;
   while (pos < body.size()) {
-    auto tag_pos = body.find("{{", pos);
+    auto tag_pos = constexpr_find(body, "{{", pos);
     if (tag_pos == std::string_view::npos) {
       break;
     }
-    auto end = body.find("}}", tag_pos + 2);
+    auto end = constexpr_find(body, "}}", tag_pos + 2);
     if (end == std::string_view::npos) {
       break;
     }

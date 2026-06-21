@@ -202,15 +202,15 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
   // -- メインループ: テンプレート全体を走査しながらタグを解析する --
   while (pos < tmpl.size()) {
     /** @brief {# ... #} コメントをスキップ（{{# はセクション/if タグなので除外） */
-    auto comment_start = tmpl.find("{#", pos);
+    auto comment_start = constexpr_find(tmpl, "{#", pos);
     while (comment_start != std::string_view::npos && comment_start > 0 && tmpl[comment_start - 1] == '{') {
-      comment_start = tmpl.find("{#", comment_start + 2);
+      comment_start = constexpr_find(tmpl, "{#", comment_start + 2);
     }
-    auto tag_start = tmpl.find("{{", pos);
+    auto tag_start = constexpr_find(tmpl, "{{", pos);
     if (comment_start != std::string_view::npos && (tag_start == std::string_view::npos || comment_start < tag_start)) {
       if (comment_start > pos)
         ctx.push_literal(tmpl.substr(pos, comment_start - pos));
-      auto comment_end = tmpl.find("#}", comment_start + 2);
+      auto comment_end = constexpr_find(tmpl, "#}", comment_start + 2);
       if (comment_end != std::string_view::npos) {
         pos = comment_end + 2;
       } else {
@@ -245,7 +245,7 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
      */
     if (tag_start + 2 < tmpl.size() && tmpl[tag_start + 2] == '{') {
       /** @brief `}}}` 終了タグを検索 */
-      auto end = tmpl.find("}}}", tag_start + 3);
+      auto end = constexpr_find(tmpl, "}}}", tag_start + 3);
       if (end == std::string_view::npos) {
         /* 閉じタグがない場合は `{` をリテラルとして扱い 1 バイト進める */
         ctx.push_literal(tmpl.substr(tag_start, 1));
@@ -284,7 +284,7 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
 
     // -- `}}` 終了タグの検索 --
     /** @brief 対応する `}}` の位置 */
-    auto tag_end = tmpl.find("}}", tag_start + 2);
+    auto tag_end = constexpr_find(tmpl, "}}", tag_start + 2);
     if (tag_end == std::string_view::npos) {
       /* 閉じタグがない場合は `{` をリテラルとして扱い 1 バイト進める */
       ctx.push_literal(tmpl.substr(tag_start, 1));
@@ -372,8 +372,8 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
          *          開きタグに出会うたびに depth を増やし、閉じタグに出会うたびに減らす。
          */
         while (search_pos < tmpl.size()) {
-          auto next_open = tmpl.find("{{#if", search_pos);
-          auto next_close = tmpl.find("{{/if}}", search_pos);
+          auto next_open = constexpr_find(tmpl, "{{#if", search_pos);
+          auto next_close = constexpr_find(tmpl, "{{/if}}", search_pos);
           if (next_close == std::string_view::npos) {
             break;
           }
@@ -411,7 +411,7 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
         if (else_pos != std::string_view::npos) {
           then_body = body.substr(0, else_pos);
           if (lstrip_blocks) then_body = trim_tail_whitespace_for_lstrip(then_body);
-          auto else_tag_end = body.find("}}", else_pos + 2);
+          auto else_tag_end = constexpr_find(body, "}}", else_pos + 2);
           else_body = (else_tag_end != std::string_view::npos) ? body.substr(else_tag_end + 2) : std::string_view{};
           if (lstrip_blocks) else_body = trim_tail_whitespace_for_lstrip(else_body);
         } else {
@@ -449,7 +449,7 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
         /** @brief 対応する閉じタグ文字列（例: "{{/loop.is_first}}"） */
         auto close_tag_str = std::string{"{{/"} + std::string{key} + "}}";
         auto body_start = pos;
-        auto close_pos = tmpl.find(close_tag_str, pos);
+        auto close_pos = constexpr_find(tmpl, close_tag_str, pos);
         if (close_pos != std::string_view::npos) {
           auto body = tmpl.substr(body_start, close_pos - body_start);
           if (lstrip_blocks) body = trim_tail_whitespace_for_lstrip(body);
@@ -486,8 +486,8 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
         std::size_t close_pos = std::string_view::npos;
 
         while (search < tmpl.size()) {
-          auto next_open = tmpl.find(open_tag_str, search);
-          auto next_close = tmpl.find(close_tag_str, search);
+          auto next_open = constexpr_find(tmpl, open_tag_str, search);
+          auto next_close = constexpr_find(tmpl, close_tag_str, search);
           if (next_close == std::string_view::npos) {
             break;
           }
@@ -542,7 +542,7 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
         at_var_kind var_kind = *k;
         auto close_tag_str = std::string{"{{/"} + std::string{key} + "}}";
         auto body_start_pos = pos;
-        auto close_pos = tmpl.find(close_tag_str, pos);
+        auto close_pos = constexpr_find(tmpl, close_tag_str, pos);
         if (close_pos != std::string_view::npos) {
           auto body = tmpl.substr(body_start_pos, close_pos - body_start_pos);
           if (lstrip_blocks) body = trim_tail_whitespace_for_lstrip(body);
@@ -576,8 +576,8 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
         std::size_t close_pos = std::string_view::npos;
 
         while (search < tmpl.size()) {
-          auto next_open = tmpl.find(open_tag_str, search);
-          auto next_close = tmpl.find(close_tag_str, search);
+          auto next_open = constexpr_find(tmpl, open_tag_str, search);
+          auto next_close = constexpr_find(tmpl, close_tag_str, search);
           if (next_close == std::string_view::npos) {
             break;
           }
