@@ -90,6 +90,37 @@ constexpr std::size_t constexpr_rfind(std::string_view haystack, char needle, st
 }
 
 /**
+ * @brief タグパターン探索（std::string 構築を避ける GCC 16 ワークアラウンド）
+ *
+ * @details "{{/" + key + "}}" のようなタグ文字列を探索する。
+ *          std::string に string_view を渡すと GCC 16 の constexpr 評価で
+ *          nullptr チェックに引っかかるため、std::string の一時オブジェクトを
+ *          生成せずに 3 パートのタグを直接マッチする。
+ */
+constexpr std::size_t constexpr_find_tag(std::string_view haystack, std::string_view prefix, std::string_view key, std::string_view suffix, std::size_t pos) noexcept {
+  auto hsize = haystack.size();
+  auto plen = prefix.size();
+  auto klen = key.size();
+  auto slen = suffix.size();
+  auto total = plen + klen + slen;
+  if (pos + total > hsize) return std::string_view::npos;
+  auto const* data = haystack.data();
+  auto const* pdata = prefix.data();
+  auto const* kdata = key.data();
+  auto const* sdata = suffix.data();
+  for (std::size_t i = pos; i + total <= hsize; ++i) {
+    bool ok = true;
+    for (std::size_t j = 0; j < plen; ++j) if (data[i + j] != pdata[j]) { ok = false; break; }
+    if (!ok) continue;
+    for (std::size_t j = 0; j < klen; ++j) if (data[i + plen + j] != kdata[j]) { ok = false; break; }
+    if (!ok) continue;
+    for (std::size_t j = 0; j < slen; ++j) if (data[i + plen + klen + j] != sdata[j]) { ok = false; break; }
+    if (ok) return i;
+  }
+  return std::string_view::npos;
+}
+
+/**
  * @brief loop.X 予約語の有無を判定する
  * @param key プレースホルダーキー ("loop.index" / "loop.is_first" 等)
  * @return 該当する場合は対応する at_var_kind 列挙値、該当しない場合は std::nullopt

@@ -446,14 +446,13 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
        */
       if (auto k = parse_loop_kind(key); k) {
         at_var_kind var_kind = *k;
-        /** @brief 対応する閉じタグ文字列（例: "{{/loop.is_first}}"） */
-        auto close_tag_str = std::string{"{{/"} + std::string{key} + "}}";
+        /** @brief 対応する閉じタグ位置（例: "{{/loop.is_first}}"） */
         auto body_start = pos;
-        auto close_pos = constexpr_find(tmpl, close_tag_str, pos);
+        auto close_pos = constexpr_find_tag(tmpl, "{{/", key, "}}", pos);
         if (close_pos != std::string_view::npos) {
           auto body = tmpl.substr(body_start, close_pos - body_start);
           if (lstrip_blocks) body = trim_tail_whitespace_for_lstrip(body);
-          pos = close_pos + close_tag_str.size();
+          pos = close_pos + 5 + key.size();
           if (trim_blocks && pos < tmpl.size() && tmpl[pos] == '\n') ++pos;
 
           /** @brief loop.* セクションチャンクを追加し、本体を再帰パース */
@@ -475,9 +474,8 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
        *          セクション本体は再帰的にパースされる。
        */
       {
-        /** @brief 閉じタグと同一キーの開きタグの文字列を構築 */
-        auto close_tag_str = std::string{"{{/"} + std::string{key} + "}}";
-        auto open_tag_str = std::string{"{{#"} + std::string{key} + "}}";
+        /** @brief 閉じタグと同一キーの開きタグの位置を直接探索 */
+        auto const tag_size = 5 + key.size();
         auto body_start_pos = pos;
 
         /** @brief ネストした同一キーのセクションを考慮して深さをカウント */
@@ -486,21 +484,21 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
         std::size_t close_pos = std::string_view::npos;
 
         while (search < tmpl.size()) {
-          auto next_open = constexpr_find(tmpl, open_tag_str, search);
-          auto next_close = constexpr_find(tmpl, close_tag_str, search);
+          auto next_open = constexpr_find_tag(tmpl, "{{#", key, "}}", search);
+          auto next_close = constexpr_find_tag(tmpl, "{{/", key, "}}", search);
           if (next_close == std::string_view::npos) {
             break;
           }
           if (next_open != std::string_view::npos && next_open < next_close) {
             ++depth2;
-            search = next_open + open_tag_str.size();
+            search = next_open + tag_size;
           } else {
             --depth2;
             if (depth2 == 0) {
               close_pos = next_close;
               break;
             }
-            search = next_close + close_tag_str.size();
+            search = next_close + tag_size;
           }
         }
 
@@ -509,7 +507,7 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
         if (close_pos != std::string_view::npos) {
           body = tmpl.substr(body_start_pos, close_pos - body_start_pos);
           if (lstrip_blocks) body = trim_tail_whitespace_for_lstrip(body);
-          pos = close_pos + close_tag_str.size();
+          pos = close_pos + tag_size;
           if (trim_blocks && pos < tmpl.size() && tmpl[pos] == '\n') ++pos;
         } else {
           body = tmpl.substr(body_start_pos);
@@ -540,13 +538,12 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
        */
       if (auto k = parse_loop_kind(key); k) {
         at_var_kind var_kind = *k;
-        auto close_tag_str = std::string{"{{/"} + std::string{key} + "}}";
         auto body_start_pos = pos;
-        auto close_pos = constexpr_find(tmpl, close_tag_str, pos);
+        auto close_pos = constexpr_find_tag(tmpl, "{{/", key, "}}", pos);
         if (close_pos != std::string_view::npos) {
           auto body = tmpl.substr(body_start_pos, close_pos - body_start_pos);
           if (lstrip_blocks) body = trim_tail_whitespace_for_lstrip(body);
-          pos = close_pos + close_tag_str.size();
+          pos = close_pos + 5 + key.size();
           if (trim_blocks && pos < tmpl.size() && tmpl[pos] == '\n') ++pos;
 
           auto chunk_idx = ctx.push_at_section(var_kind, 0, 0, true);
@@ -567,8 +564,7 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
        *          ネスト対応のため depth カウントを行う。
        */
       {
-        auto close_tag_str = std::string{"{{/"} + std::string{key} + "}}";
-        auto open_tag_str = std::string{"{{^"} + std::string{key} + "}}";
+        auto const tag_size = 5 + key.size();
         auto body_start_pos = pos;
 
         int depth2 = 1;
@@ -576,21 +572,21 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
         std::size_t close_pos = std::string_view::npos;
 
         while (search < tmpl.size()) {
-          auto next_open = constexpr_find(tmpl, open_tag_str, search);
-          auto next_close = constexpr_find(tmpl, close_tag_str, search);
+          auto next_open = constexpr_find_tag(tmpl, "{{^", key, "}}", search);
+          auto next_close = constexpr_find_tag(tmpl, "{{/", key, "}}", search);
           if (next_close == std::string_view::npos) {
             break;
           }
           if (next_open != std::string_view::npos && next_open < next_close) {
             ++depth2;
-            search = next_open + open_tag_str.size();
+            search = next_open + tag_size;
           } else {
             --depth2;
             if (depth2 == 0) {
               close_pos = next_close;
               break;
             }
-            search = next_close + close_tag_str.size();
+            search = next_close + tag_size;
           }
         }
 
@@ -598,7 +594,7 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
         if (close_pos != std::string_view::npos) {
           body = tmpl.substr(body_start_pos, close_pos - body_start_pos);
           if (lstrip_blocks) body = trim_tail_whitespace_for_lstrip(body);
-          pos = close_pos + close_tag_str.size();
+          pos = close_pos + tag_size;
           if (trim_blocks && pos < tmpl.size() && tmpl[pos] == '\n') ++pos;
         } else {
           body = tmpl.substr(body_start_pos);
