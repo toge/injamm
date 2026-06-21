@@ -5,6 +5,7 @@
     "catch2",
     "frozenchars",
     "fast-float",
-    "fmt"
+    "fmt",
+    "sqlite3"
   ]
 }

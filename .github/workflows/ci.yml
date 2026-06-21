@@ -40,9 +40,9 @@ jobs:
       - name: Install build tools
         run: |
           if [ "${{ matrix.compiler }}" = "clang" ]; then
-            dnf install -y clang cmake ninja-build git curl zip unzip tar
+            dnf install -y clang cmake ninja-build git curl zip unzip tar nodejs
           else
-            dnf install -y gcc-c++ cmake ninja-build git curl zip unzip tar
+            dnf install -y gcc-c++ cmake ninja-build git curl zip unzip tar nodejs
           fi
 
       - name: Check compiler version
@@ -92,7 +92,7 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install build tools
-        run: dnf install -y gcc-c++ libasan libubsan cmake ninja-build git curl zip unzip tar
+        run: dnf install -y gcc-c++ libasan libubsan cmake ninja-build git curl zip unzip tar nodejs
 
       - name: Check GCC version
         run: |

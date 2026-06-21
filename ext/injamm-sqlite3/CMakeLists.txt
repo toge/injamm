@@ -5,6 +5,8 @@ set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+find_package(unofficial-sqlite3 CONFIG REQUIRED)
+
 add_library(injamm-sqlite3 INTERFACE)
 add_library(injamm::sqlite3 ALIAS injamm-sqlite3)
 
@@ -12,7 +14,7 @@ target_include_directories(injamm-sqlite3 INTERFACE
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>
 )
-target_link_libraries(injamm-sqlite3 INTERFACE injamm)
+target_link_libraries(injamm-sqlite3 INTERFACE injamm unofficial::sqlite3::sqlite3)
 
 # ---- Install ----
 include(GNUInstallDirs)
