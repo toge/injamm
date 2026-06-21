@@ -21,6 +21,7 @@
 #include <array>
 #include <charconv>
 #include <cmath>
+#include <cstdint>
 #include <expected>
 #include <string>
 
@@ -319,7 +320,452 @@ class bc_executor {
     }
   }
 
-  public:
+  // -- handler functions (shared by both dispatch paths) --
+
+  static std::expected<void, error_ctx> handle_emit_literal(bc_executor& ex, std::size_t& pc, std::string&) {
+    ex.out_.append(ex.bc_.literals[ex.bc_.instructions[pc].operand]);
+    ++pc;
+    return {};
+  }
+
+  static std::expected<void, error_ctx> handle_emit_var(bc_executor& ex, std::size_t& pc, std::string&) {
+    bool raw = ex.bc_.instructions[pc].op == bc_opcode::emit_var_raw;
+    auto const& ref = ex.bc_.var_refs[ex.bc_.instructions[pc].operand];
+    auto r = ex.for_each_field(ex.value_, ref.key, ref.field_index, ref.has_dot, [&](auto const& field) { ex.emit_var_value(field, raw); });
+    if (!r) return std::unexpected(r.error());
+    ++pc;
+    return {};
+  }
+
+  static std::expected<void, error_ctx> handle_emit_litvar(bc_executor& ex, std::size_t& pc, std::string&) {
+    bool raw = ex.bc_.instructions[pc].op == bc_opcode::emit_litvar_raw;
+    ex.out_.append(ex.bc_.literals[ex.bc_.instructions[pc].operand]);
+    auto const& ref = ex.bc_.var_refs[ex.bc_.instructions[pc].operand2];
+    auto r = ex.for_each_field(ex.value_, ref.key, ref.field_index, ref.has_dot, [&](auto const& field) { ex.emit_var_value(field, raw); });
+    if (!r) return std::unexpected(r.error());
+    ++pc;
+    return {};
+  }
+
+  static std::expected<void, error_ctx> handle_emit_at_root(bc_executor& ex, std::size_t& pc, std::string&) {
+    if constexpr (serializable_v<RootT>) {
+      serialize_value(ex.out_, ex.root_value_);
+    }
+    ++pc;
+    return {};
+  }
+
+  static std::expected<void, error_ctx> handle_emit_at_root_field(bc_executor& ex, std::size_t& pc, std::string&) {
+    bool raw = ex.bc_.instructions[pc].op == bc_opcode::emit_at_root_field_raw;
+    auto const& ref = ex.bc_.var_refs[ex.bc_.instructions[pc].operand];
+    auto r = ex.for_each_field(ex.root_value_, ref.key, ref.field_index, ref.has_dot, [&](auto const& field) { ex.emit_var_value(field, raw); });
+    if (!r) return std::unexpected(r.error());
+    ++pc;
+    return {};
+  }
+
+  static std::expected<void, error_ctx> handle_emit_this(bc_executor& ex, std::size_t& pc, std::string&) {
+    ex.emit_this_scratch_.clear();
+    if constexpr (serializable_v<T>) {
+      serialize_value(ex.emit_this_scratch_, ex.value_);
+    } else if constexpr (ct_glz_reflectable<T>) {
+      if (auto ec = glz::write_json(ex.value_, ex.emit_this_scratch_)) {
+        return std::unexpected(error_ctx{.position = pc, .ec = error_code::syntax_error});
+      }
+    }
+    html_escape_into(ex.out_, ex.emit_this_scratch_);
+    ++pc;
+    return {};
+  }
+
+  static std::expected<void, error_ctx> handle_emit_break(bc_executor& ex, std::size_t& pc, std::string&) {
+    if (ex.loop_) ex.loop_->break_flag = true;
+    pc = SIZE_MAX;
+    return {};
+  }
+
+  static std::expected<void, error_ctx> handle_emit_continue(bc_executor& ex, std::size_t& pc, std::string&) {
+    if (ex.loop_) ex.loop_->continue_flag = true;
+    pc = SIZE_MAX;
+    return {};
+  }
+
+  static std::expected<void, error_ctx> handle_emit_at_index(bc_executor& ex, std::size_t& pc, std::string&) {
+    if (ex.loop_) {
+      std::array<char, 16> buf;
+      auto [ptr, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), ex.loop_->index);
+      if (ec == std::errc{}) ex.out_.append(buf.data(), ptr);
+    }
+    ++pc;
+    return {};
+  }
+
+  static std::expected<void, error_ctx> handle_emit_at_index1(bc_executor& ex, std::size_t& pc, std::string&) {
+    if (ex.loop_) {
+      std::array<char, 16> buf;
+      auto [ptr, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), ex.loop_->index + 1);
+      if (ec == std::errc{}) ex.out_.append(buf.data(), ptr);
+    }
+    ++pc;
+    return {};
+  }
+
+  static std::expected<void, error_ctx> handle_emit_at_size(bc_executor& ex, std::size_t& pc, std::string&) {
+    if (ex.loop_) {
+      std::array<char, 16> buf;
+      auto [ptr, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), ex.loop_->count);
+      if (ec == std::errc{}) ex.out_.append(buf.data(), ptr);
+    }
+    ++pc;
+    return {};
+  }
+
+  static std::expected<void, error_ctx> handle_emit_at_first(bc_executor& ex, std::size_t& pc, std::string&) {
+    if (ex.loop_ && ex.loop_->index == 0) { ex.out_.append("true"); } else { ex.out_.append("false"); }
+    ++pc;
+    return {};
+  }
+
+  static std::expected<void, error_ctx> handle_emit_at_last(bc_executor& ex, std::size_t& pc, std::string&) {
+    if (ex.loop_ && ex.loop_->index + 1 == ex.loop_->count) { ex.out_.append("true"); } else { ex.out_.append("false"); }
+    ++pc;
+    return {};
+  }
+
+  static std::expected<void, error_ctx> handle_emit_at_key(bc_executor& ex, std::size_t& pc, std::string&) {
+    if (ex.loop_) {
+      if (!ex.loop_->key.empty()) {
+        ex.out_.append(ex.loop_->key);
+      } else {
+        std::array<char, 16> buf;
+        auto [ptr, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), ex.loop_->index);
+        if (ec == std::errc{}) ex.out_.append(buf.data(), ptr);
+      }
+    }
+    ++pc;
+    return {};
+  }
+
+  /** @brief ディスパッチテーブル用: filter_upper / lower / capitalize / title / trim / ltrim / rtrim / replace */
+  static std::expected<void, error_ctx> handle_string_filter(bc_executor& ex, std::size_t& pc, std::string& filtered) {
+    auto op = ex.bc_.instructions[pc].op;
+    switch (op) {
+    case bc_opcode::filter_upper:      apply_string_filter(filtered, {.filter = string_filter::upper}); break;
+    case bc_opcode::filter_lower:      apply_string_filter(filtered, {.filter = string_filter::lower}); break;
+    case bc_opcode::filter_capitalize: apply_string_filter(filtered, {.filter = string_filter::capitalize}); break;
+    case bc_opcode::filter_title:      apply_string_filter(filtered, {.filter = string_filter::title}); break;
+    case bc_opcode::filter_trim:       apply_string_filter(filtered, {.filter = string_filter::trim}); break;
+    case bc_opcode::filter_ltrim:      apply_string_filter(filtered, {.filter = string_filter::ltrim}); break;
+    case bc_opcode::filter_rtrim:      apply_string_filter(filtered, {.filter = string_filter::rtrim}); break;
+    case bc_opcode::filter_replace:    apply_string_filter(filtered, {.filter = string_filter::replace}); break;
+    default: return std::unexpected(error_ctx{.position = pc, .ec = error_code::syntax_error});
+    }
+    ++pc;
+    return {};
+  }
+
+  /** @brief ディスパッチテーブル用: filter_left / right / center / truncate（1引数） */
+  static std::expected<void, error_ctx> handle_string_filter_arg(bc_executor& ex, std::size_t& pc, std::string& filtered) {
+    auto op  = ex.bc_.instructions[pc].op;
+    auto arg = static_cast<int>(ex.bc_.instructions[pc].operand);
+    switch (op) {
+    case bc_opcode::filter_left:     apply_string_filter(filtered, {.filter = string_filter::left, .arg1 = arg}); break;
+    case bc_opcode::filter_right:    apply_string_filter(filtered, {.filter = string_filter::right, .arg1 = arg}); break;
+    case bc_opcode::filter_center:   apply_string_filter(filtered, {.filter = string_filter::center, .arg1 = arg}); break;
+    case bc_opcode::filter_truncate: apply_string_filter(filtered, {.filter = string_filter::truncate, .arg1 = arg}); break;
+    default: return std::unexpected(error_ctx{.position = pc, .ec = error_code::syntax_error});
+    }
+    ++pc;
+    return {};
+  }
+
+  /** @brief ディスパッチテーブル用: filter_substr（2引数） */
+  static std::expected<void, error_ctx> handle_string_filter_arg2(bc_executor& ex, std::size_t& pc, std::string& filtered) {
+    apply_string_filter(filtered, {.filter = string_filter::substr, .arg1 = static_cast<int>(ex.bc_.instructions[pc].operand), .arg2 = static_cast<int>(ex.bc_.instructions[pc].operand2)});
+    ++pc;
+    return {};
+  }
+
+  /** @brief ディスパッチテーブル用: 全整数フィルタ */
+  static std::expected<void, error_ctx> handle_int_filter(bc_executor& ex, std::size_t& pc, std::string& filtered) {
+    auto op  = ex.bc_.instructions[pc].op;
+    auto arg = static_cast<int>(ex.bc_.instructions[pc].operand);
+    switch (op) {
+    case bc_opcode::filter_int_abs:      { auto r = apply_int_filter(filtered, {.filter = int_filter::abs}); if (!r) return std::unexpected(r.error()); } break;
+    case bc_opcode::filter_int_hex:      { auto r = apply_int_filter(filtered, {.filter = int_filter::hex}); if (!r) return std::unexpected(r.error()); } break;
+    case bc_opcode::filter_int_oct:      { auto r = apply_int_filter(filtered, {.filter = int_filter::oct}); if (!r) return std::unexpected(r.error()); } break;
+    case bc_opcode::filter_int_bin:      { auto r = apply_int_filter(filtered, {.filter = int_filter::bin}); if (!r) return std::unexpected(r.error()); } break;
+    case bc_opcode::filter_int_neg:      { auto r = apply_int_filter(filtered, {.filter = int_filter::neg}); if (!r) return std::unexpected(r.error()); } break;
+    case bc_opcode::filter_int_mod:      { auto r = apply_int_filter(filtered, {.filter = int_filter::mod, .arg = arg}); if (!r) return std::unexpected(r.error()); } break;
+    case bc_opcode::filter_int_numify:   { auto r = apply_int_filter(filtered, {.filter = int_filter::numify}); if (!r) return std::unexpected(r.error()); } break;
+    case bc_opcode::filter_int_is_neg:   { auto r = apply_int_filter(filtered, {.filter = int_filter::is_neg}); if (!r) return std::unexpected(r.error()); } break;
+    case bc_opcode::filter_int_eq:       { auto r = apply_int_filter(filtered, {.filter = int_filter::eq, .arg = arg}); if (!r) return std::unexpected(r.error()); } break;
+    case bc_opcode::filter_int_ne:       { auto r = apply_int_filter(filtered, {.filter = int_filter::ne, .arg = arg}); if (!r) return std::unexpected(r.error()); } break;
+    case bc_opcode::filter_int_gt:       { auto r = apply_int_filter(filtered, {.filter = int_filter::gt, .arg = arg}); if (!r) return std::unexpected(r.error()); } break;
+    case bc_opcode::filter_int_gte:      { auto r = apply_int_filter(filtered, {.filter = int_filter::gte, .arg = arg}); if (!r) return std::unexpected(r.error()); } break;
+    case bc_opcode::filter_int_lt:       { auto r = apply_int_filter(filtered, {.filter = int_filter::lt, .arg = arg}); if (!r) return std::unexpected(r.error()); } break;
+    case bc_opcode::filter_int_lte:      { auto r = apply_int_filter(filtered, {.filter = int_filter::lte, .arg = arg}); if (!r) return std::unexpected(r.error()); } break;
+    case bc_opcode::filter_int_zerofill: { auto r = apply_int_filter(filtered, {.filter = int_filter::zerofill, .arg = arg}); if (!r) return std::unexpected(r.error()); } break;
+    default: return std::unexpected(error_ctx{.position = pc, .ec = error_code::syntax_error});
+    }
+    ++pc;
+    return {};
+  }
+
+  /** @brief ディスパッチテーブル用: filter_float_precision */
+  static std::expected<void, error_ctx> handle_float_filter(bc_executor& ex, std::size_t& pc, std::string& filtered) {
+    apply_float_filter(filtered, {.filter = float_filter::precision, .arg = static_cast<int>(ex.bc_.instructions[pc].operand)});
+    ++pc;
+    return {};
+  }
+
+  static std::expected<void, error_ctx> handle_resolve_filtered(bc_executor& ex, std::size_t& pc, std::string& filtered) {
+    auto const& instr  = ex.bc_.instructions[pc];
+    auto const& var_ref = ex.bc_.var_refs[instr.operand2];
+    filtered.clear();
+    auto r = ex.for_each_field(ex.value_, var_ref.key, var_ref.field_index, var_ref.has_dot, [&](auto const& field) {
+      using FT = std::remove_cvref_t<decltype(field)>;
+      if constexpr (serializable_v<FT>) {
+        serialize_value(filtered, field);
+      } else if constexpr (is_std_optional_v<FT>) {
+        if (field.has_value()) serialize_value(filtered, *field);
+      }
+    });
+    if (!r) return std::unexpected(r.error());
+    for (auto const& f : var_ref.filters) apply_string_filter(filtered, f);
+    for (auto const& f : var_ref.int_filters) {
+      if (auto err = apply_int_filter(filtered, f); !err) return std::unexpected(err.error());
+    }
+    for (auto const& f : var_ref.float_filters) apply_float_filter(filtered, f);
+    ++pc;
+    pc += instr.operand;
+    return {};
+  }
+
+  static std::expected<void, error_ctx> handle_emit_filtered(bc_executor& ex, std::size_t& pc, std::string& filtered) {
+    bool raw = ex.bc_.instructions[pc].op == bc_opcode::emit_filtered_raw;
+    if (raw) { ex.out_.append(filtered); } else { html_escape_into(ex.out_, std::string_view{filtered}); }
+    ++pc;
+    return {};
+  }
+
+  static std::expected<void, error_ctx> handle_emit_end(bc_executor&, std::size_t& pc, std::string&) {
+    ++pc;
+    return {};
+  }
+
+  static std::expected<void, error_ctx> handle_emit_halt(bc_executor&, std::size_t& pc, std::string&) {
+    ++pc;
+    return {};
+  }
+
+  static std::expected<void, error_ctx> handle_emit_section(bc_executor& ex, std::size_t& pc, std::string&) {
+    auto const& instr = ex.bc_.instructions[pc];
+    auto const& ref   = ex.bc_.var_refs[instr.operand2];
+    auto        body_end = instr.operand;
+    if (body_end <= pc + 1 || body_end > ex.bc_.instructions.size())
+      return std::unexpected(error_ctx{.position = pc, .ec = error_code::syntax_error});
+    auto r = ex.for_each_field(ex.value_, ref.key, ref.field_index, ref.has_dot, [&](auto const& field) -> std::expected<void, error_ctx> {
+      using FT = std::remove_cvref_t<decltype(field)>;
+      if constexpr (ct_is_vector_like<FT>) {
+        using elem_t = typename FT::value_type;
+        bc_loop_state ls;
+        ls.count = static_cast<std::uint32_t>(field.size());
+        for (ls.index = 0; ls.index < static_cast<std::uint32_t>(field.size()); ++ls.index) {
+          ls.continue_flag = false;
+          bc_executor<elem_t, RootT> child_exec(ex.bc_, field[ls.index], ex.root_value_, &ls, ex.out_);
+          auto r2 = child_exec.execute_impl(pc + 1, body_end - 1);
+          if (!r2) return r2;
+          if (ls.continue_flag) { ls.continue_flag = false; continue; }
+          if (ls.break_flag) break;
+        }
+      } else if constexpr (std::same_as<FT, bool>) {
+        if (field) { auto r2 = ex.execute_impl(pc + 1, body_end - 1); if (!r2) return r2; }
+      } else if constexpr (is_std_optional_v<FT>) {
+        if (field.has_value()) {
+          using inner_t = typename FT::value_type;
+          bc_executor<inner_t, RootT> child_exec(ex.bc_, *field, ex.root_value_, nullptr, ex.out_);
+          auto r2 = child_exec.execute_impl(pc + 1, body_end - 1);
+          if (!r2) return r2;
+        }
+      } else if constexpr (ct_is_map_like<FT>) {
+        bc_loop_state ls;
+        ls.count = static_cast<std::uint32_t>(field.size());
+        for (auto const& [k, v] : field) {
+          ls.key = std::string_view{k};
+          using val_t = std::remove_cvref_t<decltype(v)>;
+          bc_executor<val_t, RootT> child_exec(ex.bc_, v, ex.root_value_, &ls, ex.out_);
+          auto r2 = child_exec.execute_impl(pc + 1, body_end - 1);
+          if (!r2) return r2;
+          if (ls.break_flag) break;
+          ++ls.index;
+        }
+      } else if constexpr (ct_is_set_like<FT>) {
+        using elem_t = typename FT::value_type;
+        bc_loop_state ls;
+        ls.count = static_cast<std::uint32_t>(field.size());
+        for (auto const& elem : field) {
+          ls.continue_flag = false;
+          bc_executor<elem_t, RootT> child_exec(ex.bc_, elem, ex.root_value_, &ls, ex.out_);
+          auto r2 = child_exec.execute_impl(pc + 1, body_end - 1);
+          if (!r2) return r2;
+          if (ls.continue_flag) { ls.continue_flag = false; continue; }
+          if (ls.break_flag) break;
+          ++ls.index;
+        }
+      } else if constexpr (ct_glz_reflectable<FT>) {
+        constexpr auto sz = glz::reflect<FT>::size;
+        auto tied = glz::to_tie(field);
+        std::expected<void, error_ctx> res{};
+        [&]<std::size_t... I>(std::index_sequence<I...>) {
+          (([&] {
+            if (!res) return;
+            bc_loop_state ls;
+            ls.count = sz; ls.index = I; ls.key = glz::reflect<FT>::keys[I];
+            using elem_t = std::remove_cvref_t<decltype(glz::get<I>(tied))>;
+            bc_executor<elem_t, RootT> child_exec(ex.bc_, glz::get<I>(tied), ex.root_value_, &ls, ex.out_);
+            res = child_exec.execute_impl(pc + 1, body_end - 1);
+          }()), ...);
+        }(std::make_index_sequence<sz>{});
+        return res;
+      }
+      return {};
+    });
+    if (!r) return std::unexpected(r.error());
+    pc = body_end;
+    return {};
+  }
+
+  static std::expected<void, error_ctx> handle_emit_inverted(bc_executor& ex, std::size_t& pc, std::string&) {
+    auto const& instr = ex.bc_.instructions[pc];
+    auto const& ref   = ex.bc_.var_refs[instr.operand2];
+    bool empty = true;
+    (void)ex.for_each_field(ex.value_, ref.key, ref.field_index, ref.has_dot, [&](auto const& field) {
+      using FT = std::remove_cvref_t<decltype(field)>;
+      if constexpr (ct_is_vector_like<FT>) { empty = field.empty(); }
+      else if constexpr (std::same_as<FT, bool>) { empty = !field; }
+      else if constexpr (is_std_optional_v<FT>) { empty = !field.has_value(); }
+      else if constexpr (ct_is_map_like<FT>) { empty = field.empty(); }
+      else if constexpr (ct_is_set_like<FT>) { empty = field.empty(); }
+      else if constexpr (std::same_as<FT, std::string> || std::same_as<FT, std::string_view>) { empty = field.empty(); }
+      else if constexpr (std::is_arithmetic_v<FT>) { empty = (field == 0); }
+      else if constexpr (ct_glz_reflectable<FT>) { empty = false; }
+    });
+    if (empty) {
+      auto body_end = instr.operand;
+      if (body_end <= pc + 1 || body_end > ex.bc_.instructions.size())
+        return std::unexpected(error_ctx{.position = pc, .ec = error_code::syntax_error});
+      auto r = ex.execute_impl(pc + 1, body_end - 1);
+      if (!r) return std::unexpected(r.error());
+      pc = body_end;
+    } else {
+      pc = instr.operand;
+    }
+    return {};
+  }
+
+  static std::expected<void, error_ctx> handle_emit_if(bc_executor& ex, std::size_t& pc, std::string&) {
+    auto const& instr = ex.bc_.instructions[pc];
+    auto const& ref   = ex.bc_.var_refs[instr.operand2];
+    bool cond = false;
+    if (ref.key.starts_with("loop.")) {
+      if (ex.loop_) {
+        if (ref.key == "loop.is_last") { cond = (ex.loop_->index + 1 == ex.loop_->count); }
+        else if (ref.key == "loop.is_first") { cond = (ex.loop_->index == 0); }
+        else if (ref.key == "loop.index") { cond = (ex.loop_->index != 0); }
+        else if (ref.key == "loop.key") { cond = !ex.loop_->key.empty(); }
+      }
+    } else {
+      (void)ex.for_each_field(ex.value_, ref.key, ref.field_index, ref.has_dot, [&](auto const& field) {
+        using FT = std::remove_cvref_t<decltype(field)>;
+        if constexpr (std::same_as<FT, bool>) { cond = field; }
+        else if constexpr (ct_is_vector_like<FT>) { cond = !field.empty(); }
+        else if constexpr (std::same_as<FT, std::string> || std::same_as<FT, std::string_view>) { cond = !field.empty(); }
+        else if constexpr (std::is_arithmetic_v<FT>) { cond = (field != 0); }
+        else if constexpr (is_std_optional_v<FT>) { cond = field.has_value(); }
+        else if constexpr (ct_is_map_like<FT>) { cond = !field.empty(); }
+        else if constexpr (ct_is_set_like<FT>) { cond = !field.empty(); }
+      });
+    }
+    if (!cond) { pc = instr.operand; } else { ++pc; }
+    return {};
+  }
+
+  static std::expected<void, error_ctx> handle_emit_if_cmp(bc_executor& ex, std::size_t& pc, std::string&) {
+    auto const& instr = ex.bc_.instructions[pc];
+    bool is_eq = instr.op == bc_opcode::emit_if_eq;
+    auto const& ref   = ex.bc_.var_refs[instr.operand2];
+    int rhs = ref.int_filters.empty() ? 0 : ref.int_filters[0].arg;
+    bool cond = false;
+    (void)ex.for_each_field(ex.value_, ref.key, ref.field_index, ref.has_dot, [&](auto const& field) {
+      using FT = std::remove_cvref_t<decltype(field)>;
+      if constexpr (std::is_arithmetic_v<FT>) {
+        cond = is_eq ? (static_cast<long long>(field) == static_cast<long long>(rhs))
+                     : (static_cast<long long>(field) != static_cast<long long>(rhs));
+      }
+    });
+    if (!cond) { pc = instr.operand; } else { ++pc; }
+    return {};
+  }
+
+  static std::expected<void, error_ctx> handle_emit_else(bc_executor& ex, std::size_t& pc, std::string&) {
+    pc = ex.bc_.instructions[pc].operand;
+    return {};
+  }
+
+  static std::expected<void, error_ctx> handle_emit_endif(bc_executor&, std::size_t& pc, std::string&) {
+    ++pc;
+    return {};
+  }
+
+  static std::expected<void, error_ctx> handle_emit_at_section(bc_executor& ex, std::size_t& pc, std::string&) {
+    auto const& instr = ex.bc_.instructions[pc];
+    bool cond = false;
+    if (ex.loop_) {
+      auto kind = instr.operand2;
+      if (kind == 0) { cond = ex.loop_->index > 0; }
+      else if (kind == 1) { cond = ex.loop_->index == 0; }
+      else if (kind == 2) { cond = ex.loop_->index + 1 == ex.loop_->count; }
+    }
+    if (cond) {
+      auto body_end = instr.operand;
+      auto r = ex.execute_impl(pc + 1, body_end - 1);
+      if (!r) return std::unexpected(r.error());
+      pc = body_end;
+    } else {
+      pc = instr.operand;
+    }
+    return {};
+  }
+
+  static std::expected<void, error_ctx> handle_emit_at_inverted(bc_executor& ex, std::size_t& pc, std::string&) {
+    auto const& instr = ex.bc_.instructions[pc];
+    bool cond = false;
+    if (ex.loop_) {
+      auto kind = instr.operand2;
+      if (kind == 0) { cond = ex.loop_->index != 0; }
+      else if (kind == 1) { cond = ex.loop_->index == 0; }
+      else if (kind == 2) { cond = ex.loop_->index + 1 == ex.loop_->count; }
+    }
+    if (cond) {
+      pc = instr.operand;
+    } else {
+      auto body_end = instr.operand;
+      auto r = ex.execute_impl(pc + 1, body_end - 1);
+      if (!r) return std::unexpected(r.error());
+      pc = body_end;
+    }
+    return {};
+  }
+
+  static std::expected<void, error_ctx> handle_emit_if_filtered(bc_executor& ex, std::size_t& pc, std::string& filtered) {
+    auto const& instr = ex.bc_.instructions[pc];
+    bool cond = !filtered.empty() && filtered != "false" && filtered != "0";
+    if (!cond) { pc = instr.operand; } else { ++pc; }
+    return {};
+  }
+
+public:
   bc_executor(bytecode const& bc, T const& value, RootT const& root_value, bc_loop_state const* loop, std::string& out) : bc_(bc), value_(value), root_value_(root_value), loop_(loop), out_(out) {}
 
   /**
@@ -1225,765 +1671,78 @@ class bc_executor {
 #undef DISPATCH
 
 #else
-    /**
-     * フォールバック: switch ベースの分岐
-     * GCC 以外のコンパイラ（Clang, MSVC 等）向けの汎用実装。
-     * computed goto が利用できない環境でも同じ動作を提供する。
-     */
+    using handler_fn = std::expected<void, error_ctx> (*)(bc_executor&, std::size_t&, std::string&);
+    static constexpr handler_fn dispatch_table[] = {
+      &handle_emit_literal,       // 0
+      &handle_emit_var,           // 1
+      &handle_emit_var,           // 2 emit_var_raw
+      &handle_emit_section,       // 3
+      &handle_emit_end,           // 4
+      &handle_emit_inverted,      // 5
+      &handle_emit_at_index,      // 6
+      &handle_emit_at_first,      // 7
+      &handle_emit_at_last,       // 8
+      &handle_emit_if,            // 9
+      &handle_emit_if_cmp,        // 10 emit_if_eq
+      &handle_emit_if_cmp,        // 11 emit_if_ne
+      &handle_emit_else,          // 12
+      &handle_emit_endif,         // 13
+      &handle_emit_at_section,    // 14
+      &handle_emit_at_inverted,   // 15
+      &handle_emit_litvar,        // 16
+      &handle_emit_litvar,        // 17 emit_litvar_raw
+      &handle_emit_at_root,       // 18
+      &handle_emit_at_root_field, // 19
+      &handle_emit_at_root_field, // 20 emit_at_root_field_raw
+      &handle_emit_at_key,        // 21
+      &handle_emit_this,          // 22
+      &handle_resolve_filtered,   // 23
+      &handle_string_filter,      // 24 filter_upper
+      &handle_string_filter,      // 25 filter_lower
+      &handle_string_filter,      // 26 filter_capitalize
+      &handle_string_filter,      // 27 filter_title
+      &handle_string_filter,      // 28 filter_trim
+      &handle_string_filter,      // 29 filter_ltrim
+      &handle_string_filter,      // 30 filter_rtrim
+      &handle_string_filter_arg,  // 31 filter_left
+      &handle_string_filter_arg,  // 32 filter_right
+      &handle_string_filter_arg,  // 33 filter_center
+      &handle_string_filter_arg,  // 34 filter_truncate
+      &handle_string_filter_arg2, // 35 filter_substr
+      &handle_string_filter,      // 36 filter_replace
+      &handle_emit_filtered,      // 37
+      &handle_emit_filtered,      // 38 emit_filtered_raw
+      &handle_int_filter,         // 39 filter_int_abs
+      &handle_int_filter,         // 40 filter_int_hex
+      &handle_int_filter,         // 41 filter_int_oct
+      &handle_int_filter,         // 42 filter_int_bin
+      &handle_int_filter,         // 43 filter_int_neg
+      &handle_int_filter,         // 44 filter_int_mod
+      &handle_int_filter,         // 45 filter_int_numify
+      &handle_int_filter,         // 46 filter_int_is_neg
+      &handle_int_filter,         // 47 filter_int_eq
+      &handle_int_filter,         // 48 filter_int_ne
+      &handle_int_filter,         // 49 filter_int_gt
+      &handle_int_filter,         // 50 filter_int_gte
+      &handle_int_filter,         // 51 filter_int_lt
+      &handle_int_filter,         // 52 filter_int_lte
+      &handle_int_filter,         // 53 filter_int_zerofill
+      &handle_float_filter,       // 54 filter_float_precision
+      &handle_emit_if_filtered,   // 55
+      &handle_emit_break,         // 56
+      &handle_emit_continue,      // 57
+      &handle_emit_at_index1,     // 58
+      &handle_emit_at_size,       // 59
+      &handle_emit_halt,          // 60
+    };
+
     while (pc < end) {
-      auto const& instr = bc_.instructions[pc];
-
-      switch (instr.op) {
-      /** @brief リテラル文字列を出力する */
-      case bc_opcode::emit_literal: {
-        out_.append(bc_.literals[instr.operand]);
-        ++pc;
-        break;
-      }
-
-      /** @brief 変数を出力する（raw / escaped） */
-      case bc_opcode::emit_var:
-      case bc_opcode::emit_var_raw: {
-        auto const& ref = bc_.var_refs[instr.operand];
-        auto        r   = for_each_field(value_, ref.key, ref.field_index, ref.has_dot, [&](auto const& field) { emit_var_value(field, instr.op == bc_opcode::emit_var_raw); });
-        if (!r)
-          return r;
-        ++pc;
-        break;
-      }
-
-      /** @brief セクションブロックの開始 */
-      case bc_opcode::emit_section: {
-        auto const& ref      = bc_.var_refs[instr.operand2];
-        auto        body_end = instr.operand;
-
-        auto r = for_each_field(value_, ref.key, ref.field_index, ref.has_dot, [&](auto const& field) -> std::expected<void, error_ctx> {
-          using FT = std::remove_cvref_t<decltype(field)>;
-          if constexpr (ct_is_vector_like<FT>) {
-            using elem_t = typename FT::value_type;
-            bc_loop_state ls;
-            ls.count = static_cast<std::uint32_t>(field.size());
-
-            for (ls.index = 0; ls.index < static_cast<std::uint32_t>(field.size()); ++ls.index) {
-              ls.continue_flag = false;
-              bc_executor<elem_t, RootT> child_exec(bc_, field[ls.index], root_value_, &ls, out_);
-              auto                       r2 = child_exec.execute_impl(pc + 1, body_end - 1);
-              if (!r2)
-                return r2;
-              if (ls.continue_flag) {
-                ls.continue_flag = false;
-                continue;
-              }
-              if (ls.break_flag)
-                break;
-            }
-          } else if constexpr (std::same_as<FT, bool>) {
-            if (field) {
-              auto r2 = execute_impl(pc + 1, body_end - 1);
-              if (!r2)
-                return r2;
-            }
-          } else if constexpr (is_std_optional_v<FT>) {
-            if (field.has_value()) {
-              using inner_t = typename FT::value_type;
-              bc_executor<inner_t, RootT> child_exec(bc_, *field, root_value_, nullptr, out_);
-              auto                        r2 = child_exec.execute_impl(pc + 1, body_end - 1);
-              if (!r2)
-                return r2;
-            }
-          } else if constexpr (ct_is_map_like<FT>) {
-            /** map の場合: キーを @key として各要素をループ */
-            bc_loop_state ls;
-            ls.count = static_cast<std::uint32_t>(field.size());
-            for (auto const& [k, v] : field) {
-              ls.key      = std::string_view{k};
-              using val_t = std::remove_cvref_t<decltype(v)>;
-              bc_executor<val_t, RootT> child_exec(bc_, v, root_value_, &ls, out_);
-              auto                      r2 = child_exec.execute_impl(pc + 1, body_end - 1);
-              if (!r2)
-                return r2;
-              if (ls.break_flag)
-                break;
-              ++ls.index;
-            }
-          } else if constexpr (ct_is_set_like<FT>) {
-            /** set の場合: 各要素を {{this}} としてイテレータベースでループ */
-            using elem_t = typename FT::value_type;
-            bc_loop_state ls;
-            ls.count = static_cast<std::uint32_t>(field.size());
-            for (auto const& elem : field) {
-              ls.continue_flag = false;
-              bc_executor<elem_t, RootT> child_exec(bc_, elem, root_value_, &ls, out_);
-              auto                       r2 = child_exec.execute_impl(pc + 1, body_end - 1);
-              if (!r2)
-                return r2;
-              if (ls.continue_flag) {
-                ls.continue_flag = false;
-                continue;
-              }
-              if (ls.break_flag)
-                break;
-              ++ls.index;
-            }
-          } else if constexpr (ct_glz_reflectable<FT>) {
-            constexpr auto                 sz   = glz::reflect<FT>::size;
-            auto                           tied = glz::to_tie(field);
-            std::expected<void, error_ctx> res{};
-            [&]<std::size_t... I>(std::index_sequence<I...>) {
-              (([&] {
-                 if (!res)
-                   return;
-                 bc_loop_state ls;
-                 ls.count     = sz;
-                 ls.index     = I;
-                 ls.key       = glz::reflect<FT>::keys[I];
-                 using elem_t = std::remove_cvref_t<decltype(glz::get<I>(tied))>;
-                 bc_executor<elem_t, RootT> child_exec(bc_, glz::get<I>(tied), root_value_, &ls, out_);
-                 res = child_exec.execute_impl(pc + 1, body_end - 1);
-               }()),
-               ...);
-            }(std::make_index_sequence<sz>{});
-            return res;
-          }
-          return {};
-        });
-        if (!r)
-          return r;
-        pc = body_end;
-        break;
-      }
-
-      /** @brief 実行終端 */
-      case bc_opcode::emit_end: {
-        return {};
-      }
-
-      /** @brief 逆セクションの開始 */
-      case bc_opcode::emit_inverted: {
-        auto const& ref   = bc_.var_refs[instr.operand2];
-        bool        empty = true;
-        (void)for_each_field(value_, ref.key, ref.field_index, ref.has_dot, [&](auto const& field) {
-          using FT = std::remove_cvref_t<decltype(field)>;
-          if constexpr (ct_is_vector_like<FT>) {
-            empty = field.empty();
-          } else if constexpr (std::same_as<FT, bool>) {
-            empty = !field;
-          } else if constexpr (is_std_optional_v<FT>) {
-            empty = !field.has_value();
-          } else if constexpr (ct_is_map_like<FT>) {
-            empty = field.empty();
-          } else if constexpr (ct_is_set_like<FT>) {
-            empty = field.empty();
-          } else if constexpr (std::same_as<FT, std::string> || std::same_as<FT, std::string_view>) {
-            empty = field.empty();
-          } else if constexpr (std::is_arithmetic_v<FT>) {
-            empty = (field == 0);
-          } else if constexpr (ct_glz_reflectable<FT>) {
-            empty = false;
-          }
-        });
-        if (empty) {
-          auto body_end = instr.operand;
-          auto r        = execute_impl(pc + 1, body_end - 1);
-          if (!r)
-            return r;
-          pc = body_end;
-        } else {
-          pc = instr.operand;
-        }
-        break;
-      }
-
-      /** @brief @var 条件セクション */
-      case bc_opcode::emit_at_section: {
-        bool cond = false;
-        if (loop_) {
-          auto kind = instr.operand2;
-          if (kind == 0) {
-            cond = loop_->index > 0;
-          } else if (kind == 1) {
-            cond = loop_->index == 0;
-          } else if (kind == 2) {
-            cond = loop_->index + 1 == loop_->count;
-          }
-        }
-        if (cond) {
-          auto body_end = instr.operand;
-          auto r        = execute_impl(pc + 1, body_end - 1);
-          if (!r)
-            return r;
-          pc = body_end;
-        } else {
-          pc = instr.operand;
-        }
-        break;
-      }
-
-      /** @brief @var 逆セクション */
-      case bc_opcode::emit_at_inverted: {
-        bool cond = false;
-        if (loop_) {
-          auto kind = instr.operand2;
-          if (kind == 0) {
-            /** @index: index != 0 のとき逆セクションをスキップ（index == 0 で描画） */
-            cond = loop_->index != 0;
-          } else if (kind == 1) {
-            cond = loop_->index == 0;
-          } else if (kind == 2) {
-            cond = loop_->index + 1 == loop_->count;
-          }
-        }
-        if (cond) {
-          pc = instr.operand;
-        } else {
-          auto body_end = instr.operand;
-          auto r        = execute_impl(pc + 1, body_end - 1);
-          if (!r)
-            return r;
-          pc = body_end;
-        }
-        break;
-      }
-
-      /** @brief ループ @index を出力する */
-      case bc_opcode::emit_at_index: {
-        if (loop_) {
-          std::array<char, 16> buf;
-          auto [ptr, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), loop_->index);
-          if (ec == std::errc{}) {
-            out_.append(buf.data(), ptr);
-          }
-        }
-        ++pc;
-        break;
-      }
-
-      /** @brief ループ先頭なら "true" を出力する */
-      case bc_opcode::emit_at_first: {
-        if (loop_ && loop_->index == 0) {
-          out_.append("true");
-        } else {
-          out_.append("false");
-        }
-        ++pc;
-        break;
-      }
-
-      /** @brief ループ末尾なら "true" を出力する */
-      case bc_opcode::emit_at_last: {
-        if (loop_ && loop_->index + 1 == loop_->count) {
-          out_.append("true");
-        } else {
-          out_.append("false");
-        }
-        ++pc;
-        break;
-      }
-
-      /** @brief if 条件分岐 */
-      case bc_opcode::emit_if: {
-        auto const& ref  = bc_.var_refs[instr.operand2];
-        bool        cond = false;
-
-        if (ref.key.starts_with("loop.")) {
-          if (loop_) {
-            if (ref.key == "loop.is_last") {
-              cond = (loop_->index + 1 == loop_->count);
-            } else if (ref.key == "loop.is_first") {
-              cond = (loop_->index == 0);
-            } else if (ref.key == "loop.index") {
-              cond = (loop_->index != 0);
-            } else if (ref.key == "loop.key") {
-              cond = !loop_->key.empty();
-            }
-          }
-        } else {
-          (void)for_each_field(value_, ref.key, ref.field_index, ref.has_dot, [&](auto const& field) {
-            using FT = std::remove_cvref_t<decltype(field)>;
-            if constexpr (std::same_as<FT, bool>) {
-              cond = field;
-            } else if constexpr (ct_is_vector_like<FT>) {
-              cond = !field.empty();
-            } else if constexpr (std::same_as<FT, std::string> || std::same_as<FT, std::string_view>) {
-              cond = !field.empty();
-            } else if constexpr (std::is_arithmetic_v<FT>) {
-              cond = (field != 0);
-            } else if constexpr (is_std_optional_v<FT>) {
-              cond = field.has_value();
-            } else if constexpr (ct_is_map_like<FT>) {
-              cond = !field.empty();
-            } else if constexpr (ct_is_set_like<FT>) {
-              cond = !field.empty();
-            }
-          });
-        }
-
-        if (!cond) {
-          pc = instr.operand;
-        } else {
-          ++pc;
-        }
-        break;
-      }
-
-      /** @brief if (var == int_literal) */
-      case bc_opcode::emit_if_eq: {
-        auto const& ref  = bc_.var_refs[instr.operand2];
-        int rhs = 0;
-        if (!ref.int_filters.empty()) {
-          rhs = ref.int_filters[0].arg;
-        }
-        bool cond = false;
-        (void)for_each_field(value_, ref.key, ref.field_index, ref.has_dot, [&](auto const& field) {
-          using FT = std::remove_cvref_t<decltype(field)>;
-          if constexpr (std::is_arithmetic_v<FT>) {
-            cond = (static_cast<long long>(field) == static_cast<long long>(rhs));
-          }
-        });
-        if (!cond) {
-          pc = instr.operand;
-        } else {
-          ++pc;
-        }
-        break;
-      }
-
-      /** @brief if (var != int_literal) */
-      case bc_opcode::emit_if_ne: {
-        auto const& ref  = bc_.var_refs[instr.operand2];
-        int rhs = 0;
-        if (!ref.int_filters.empty()) {
-          rhs = ref.int_filters[0].arg;
-        }
-        bool cond = false;
-        (void)for_each_field(value_, ref.key, ref.field_index, ref.has_dot, [&](auto const& field) {
-          using FT = std::remove_cvref_t<decltype(field)>;
-          if constexpr (std::is_arithmetic_v<FT>) {
-            cond = (static_cast<long long>(field) != static_cast<long long>(rhs));
-          }
-        });
-        if (!cond) {
-          pc = instr.operand;
-        } else {
-          ++pc;
-        }
-        break;
-      }
-
-      /** @brief else ブランチ */
-      case bc_opcode::emit_else: {
-        pc = instr.operand;
-        break;
-      }
-
-      /** @brief endif ブロック終端 */
-      case bc_opcode::emit_endif: {
-        ++pc;
-        break;
-      }
-
-      /** @brief 融合命令: リテラル + 変数 */
-      case bc_opcode::emit_litvar:
-      case bc_opcode::emit_litvar_raw: {
-        out_.append(bc_.literals[instr.operand]);
-        auto const& ref = bc_.var_refs[instr.operand2];
-        auto        r   = for_each_field(value_, ref.key, ref.field_index, ref.has_dot, [&](auto const& field) { emit_var_value(field, instr.op == bc_opcode::emit_litvar_raw); });
-        if (!r)
-          return r;
-        ++pc;
-        break;
-      }
-
-      /** @brief @root: ルートコンテキスト全体をシリアライズして出力する */
-      case bc_opcode::emit_at_root: {
-        if constexpr (serializable_v<RootT>) {
-          serialize_value(out_, root_value_);
-        }
-        ++pc;
-        break;
-      }
-
-      /** @brief @root.field: ルートコンテキストのフィールドを解決して出力する */
-      case bc_opcode::emit_at_root_field:
-      case bc_opcode::emit_at_root_field_raw: {
-        auto const& ref = bc_.var_refs[instr.operand];
-        auto        r   = for_each_field(root_value_, ref.key, ref.field_index, ref.has_dot, [&](auto const& field) { emit_var_value(field, instr.op == bc_opcode::emit_at_root_field_raw); });
-        if (!r)
-          return r;
-        ++pc;
-        break;
-      }
-
-      /** @brief @key: ループ内の現在要素キー名を出力する */
-      case bc_opcode::emit_at_key: {
-        if (loop_) {
-          if (!loop_->key.empty()) {
-            out_.append(loop_->key);
-          } else {
-            std::array<char, 16> buf;
-            auto [ptr, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), loop_->index);
-            if (ec == std::errc{}) {
-              out_.append(buf.data(), ptr);
-            }
-          }
-        }
-        ++pc;
-        break;
-      }
-
-      /** @brief {{this}}: 現在のコンテキスト自体を出力する */
-      case bc_opcode::emit_this: {
-        emit_this_scratch_.clear();
-        if constexpr (serializable_v<T>) {
-          serialize_value(emit_this_scratch_, value_);
-        } else if constexpr (ct_glz_reflectable<T>) {
-          if (auto ec = glz::write_json(value_, emit_this_scratch_)) {
-            return std::unexpected(error_ctx{.position = pc, .ec = error_code::syntax_error});
-          }
-        }
-        html_escape_into(out_, emit_this_scratch_);
-        ++pc;
-        break;
-      }
-
-      /** @brief フィルタ付き変数解決 */
-      case bc_opcode::resolve_filtered: {
-        auto const& var_ref = bc_.var_refs[instr.operand2];
-        filtered_value_.clear();
-        auto r = for_each_field(value_, var_ref.key, var_ref.field_index, var_ref.has_dot, [&](auto const& field) {
-          using FT = std::remove_cvref_t<decltype(field)>;
-          if constexpr (serializable_v<FT>) {
-            serialize_value(filtered_value_, field);
-          } else if constexpr (is_std_optional_v<FT>) {
-            if (field.has_value()) {
-              serialize_value(filtered_value_, *field);
-            }
-          }
-        });
-        if (!r)
-          return r;
-        // フィルタを一括適用（dispatch 削減のため）
-        for (auto const& f : var_ref.filters)
-          apply_string_filter(filtered_value_, f);
-        for (auto const& f : var_ref.int_filters) {
-          if (auto err = apply_int_filter(filtered_value_, f); !err)
-            return std::unexpected(err.error());
-        }
-        for (auto const& f : var_ref.float_filters)
-          apply_float_filter(filtered_value_, f);
-        // 個別フィルタ命令をスキップ
-        ++pc;
-        pc += instr.operand;
-        break;
-      }
-
-      /** @brief ASCII大文字変換 */
-      case bc_opcode::filter_upper: {
-        apply_string_filter(filtered_value_, {.filter = string_filter::upper});
-        ++pc;
-        break;
-      }
-
-      /** @brief ASCII小文字変換 */
-      case bc_opcode::filter_lower: {
-        apply_string_filter(filtered_value_, {.filter = string_filter::lower});
-        ++pc;
-        break;
-      }
-
-      /** @brief 先頭の文字を大文字にする */
-      case bc_opcode::filter_capitalize: {
-        apply_string_filter(filtered_value_, {.filter = string_filter::capitalize});
-        ++pc;
-        break;
-      }
-
-      /** @brief 単語の先頭を大文字にする */
-      case bc_opcode::filter_title: {
-        apply_string_filter(filtered_value_, {.filter = string_filter::title});
-        ++pc;
-        break;
-      }
-
-      /** @brief 先頭末尾の空白除去 */
-      case bc_opcode::filter_trim: {
-        apply_string_filter(filtered_value_, {.filter = string_filter::trim});
-        ++pc;
-        break;
-      }
-
-      /** @brief 先頭の空白除去 */
-      case bc_opcode::filter_ltrim: {
-        apply_string_filter(filtered_value_, {.filter = string_filter::ltrim});
-        ++pc;
-        break;
-      }
-
-      /** @brief 末尾の空白除去 */
-      case bc_opcode::filter_rtrim: {
-        apply_string_filter(filtered_value_, {.filter = string_filter::rtrim});
-        ++pc;
-        break;
-      }
-
-      /** @brief 左寄せ（引数: 幅） */
-      case bc_opcode::filter_left: {
-        apply_string_filter(filtered_value_, {.filter = string_filter::left, .arg1 = static_cast<int>(instr.operand)});
-        ++pc;
-        break;
-      }
-
-      /** @brief 右寄せ（引数: 幅） */
-      case bc_opcode::filter_right: {
-        apply_string_filter(filtered_value_, {.filter = string_filter::right, .arg1 = static_cast<int>(instr.operand)});
-        ++pc;
-        break;
-      }
-
-      /** @brief 中央寄せ（引数: 幅） */
-      case bc_opcode::filter_center: {
-        apply_string_filter(filtered_value_, {.filter = string_filter::center, .arg1 = static_cast<int>(instr.operand)});
-        ++pc;
-        break;
-      }
-
-      /** @brief 文字列切り詰め（引数: 最大文字数） */
-      case bc_opcode::filter_truncate: {
-        apply_string_filter(filtered_value_, {.filter = string_filter::truncate, .arg1 = static_cast<int>(instr.operand)});
-        ++pc;
-        break;
-      }
-
-      /** @brief 部分文字列（引数1: 開始位置, 引数2: 文字数） */
-      case bc_opcode::filter_substr: {
-        apply_string_filter(filtered_value_, {.filter = string_filter::substr, .arg1 = static_cast<int>(instr.operand), .arg2 = static_cast<int>(instr.operand2)});
-        ++pc;
-        break;
-      }
-
-      /** @brief 部分文字列置換 */
-      case bc_opcode::filter_replace: {
-        apply_string_filter(filtered_value_, {.filter = string_filter::replace});
-        ++pc;
-        break;
-      }
-
-      /** @brief フィルタ後の文字列出力（エスケープあり） */
-      case bc_opcode::emit_filtered: {
-        html_escape_into(out_, std::string_view{filtered_value_});
-        ++pc;
-        break;
-      }
-
-      /** @brief フィルタ後の文字列出力（生出力） */
-      case bc_opcode::emit_filtered_raw: {
-        out_.append(filtered_value_);
-        ++pc;
-        break;
-      }
-
-      /** @brief 整数絶対値変換 */
-      case bc_opcode::filter_int_abs: {
-        if (auto err = apply_int_filter(filtered_value_, {.filter = int_filter::abs}); !err) {
-          return std::unexpected(err.error());
-        }
-        ++pc;
-        break;
-      }
-
-      /** @brief 整数16進数変換 */
-      case bc_opcode::filter_int_hex: {
-        if (auto err = apply_int_filter(filtered_value_, {.filter = int_filter::hex}); !err) {
-          return std::unexpected(err.error());
-        }
-        ++pc;
-        break;
-      }
-
-      /** @brief 整数8進数変換 */
-      case bc_opcode::filter_int_oct: {
-        if (auto err = apply_int_filter(filtered_value_, {.filter = int_filter::oct}); !err) {
-          return std::unexpected(err.error());
-        }
-        ++pc;
-        break;
-      }
-
-      /** @brief 整数2進数変換 */
-      case bc_opcode::filter_int_bin: {
-        if (auto err = apply_int_filter(filtered_value_, {.filter = int_filter::bin}); !err) {
-          return std::unexpected(err.error());
-        }
-        ++pc;
-        break;
-      }
-
-      /** @brief 整数符号逆転 */
-      case bc_opcode::filter_int_neg: {
-        if (auto err = apply_int_filter(filtered_value_, {.filter = int_filter::neg}); !err) {
-          return std::unexpected(err.error());
-        }
-        ++pc;
-        break;
-      }
-
-      /** @brief 整数余り（引数: 除数） */
-      case bc_opcode::filter_int_mod: {
-        if (auto err = apply_int_filter(filtered_value_, {.filter = int_filter::mod, .arg = static_cast<int>(instr.operand)}); !err) {
-          return std::unexpected(err.error());
-        }
-        ++pc;
-        break;
-      }
-
-      /** @brief 整数3桁カンマ区切り */
-      case bc_opcode::filter_int_numify: {
-        if (auto err = apply_int_filter(filtered_value_, {.filter = int_filter::numify}); !err) {
-          return std::unexpected(err.error());
-        }
-        ++pc;
-        break;
-      }
-
-      /** @brief 実数小数点以下桁数（引数: 桁数） */
-      case bc_opcode::filter_float_precision: {
-        apply_float_filter(filtered_value_, {.filter = float_filter::precision, .arg = static_cast<int>(instr.operand)});
-        ++pc;
-        break;
-      }
-
-      /** @brief 負数判定: "true"/"false" を出力 */
-      case bc_opcode::filter_int_is_neg: {
-        if (auto err = apply_int_filter(filtered_value_, {.filter = int_filter::is_neg}); !err) {
-          return std::unexpected(err.error());
-        }
-        ++pc;
-        break;
-      }
-
-      /** @brief 等価判定: 値と引数が等しければ "true" / "false" */
-      case bc_opcode::filter_int_eq: {
-        if (auto err = apply_int_filter(filtered_value_, {.filter = int_filter::eq, .arg = static_cast<int>(instr.operand)}); !err) {
-          return std::unexpected(err.error());
-        }
-        ++pc;
-        break;
-      }
-
-      /** @brief 不等価判定: 値と引数が異なれば "true" / "false" */
-      case bc_opcode::filter_int_ne: {
-        if (auto err = apply_int_filter(filtered_value_, {.filter = int_filter::ne, .arg = static_cast<int>(instr.operand)}); !err) {
-          return std::unexpected(err.error());
-        }
-        ++pc;
-        break;
-      }
-
-      /** @brief 大なり判定: 値が引数より大きければ "true" / "false" */
-      case bc_opcode::filter_int_gt: {
-        if (auto err = apply_int_filter(filtered_value_, {.filter = int_filter::gt, .arg = static_cast<int>(instr.operand)}); !err) {
-          return std::unexpected(err.error());
-        }
-        ++pc;
-        break;
-      }
-
-      /** @brief 以上判定: 値が引数以上なら "true" / "false" */
-      case bc_opcode::filter_int_gte: {
-        if (auto err = apply_int_filter(filtered_value_, {.filter = int_filter::gte, .arg = static_cast<int>(instr.operand)}); !err) {
-          return std::unexpected(err.error());
-        }
-        ++pc;
-        break;
-      }
-
-      /** @brief 小なり判定: 値が引数未満なら "true" / "false" */
-      case bc_opcode::filter_int_lt: {
-        if (auto err = apply_int_filter(filtered_value_, {.filter = int_filter::lt, .arg = static_cast<int>(instr.operand)}); !err) {
-          return std::unexpected(err.error());
-        }
-        ++pc;
-        break;
-      }
-
-      /** @brief 以下判定: 値が引数以下なら "true" / "false" */
-      case bc_opcode::filter_int_lte: {
-        if (auto err = apply_int_filter(filtered_value_, {.filter = int_filter::lte, .arg = static_cast<int>(instr.operand)}); !err) {
-          return std::unexpected(err.error());
-        }
-        ++pc;
-        break;
-      }
-
-      /** @brief 整数0埋め（引数: 最小桁数） */
-      case bc_opcode::filter_int_zerofill: {
-        if (auto err = apply_int_filter(filtered_value_, {.filter = int_filter::zerofill, .arg = static_cast<int>(instr.operand)}); !err) {
-          return std::unexpected(err.error());
-        }
-        ++pc;
-        break;
-      }
-
-      /** @brief フィルタ適用済み値での if 分岐 */
-      case bc_opcode::emit_if_filtered: {
-        bool cond = !filtered_value_.empty() && filtered_value_ != "false" && filtered_value_ != "0";
-        if (!cond) {
-          pc = instr.operand;
-        } else {
-          ++pc;
-        }
-        break;
-      }
-
-      /** @brief ループ脱出: break_flag をセットして子 executor を終了 */
-      case bc_opcode::emit_break: {
-        if (loop_) {
-          loop_->break_flag = true;
-        }
-        return {};
-      }
-
-      /** @brief 次のイテレーションへスキップ: continue_flag をセットして子 executor を終了 */
-      case bc_opcode::emit_continue: {
-        if (loop_) {
-          loop_->continue_flag = true;
-        }
-        return {};
-      }
-
-      /** @brief ループの @index1 を 1 始まりの数値として出力する */
-      case bc_opcode::emit_at_index1: {
-        if (loop_) {
-          std::array<char, 16> buf;
-          auto [ptr, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), loop_->index + 1);
-          if (ec == std::errc{}) {
-            out_.append(buf.data(), ptr);
-          }
-        }
-        ++pc;
-        break;
-      }
-
-      /** @brief ループの @size を総要素数として出力する */
-      case bc_opcode::emit_at_size: {
-        if (loop_) {
-          std::array<char, 16> buf;
-          auto [ptr, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), loop_->count);
-          if (ec == std::errc{}) {
-            out_.append(buf.data(), ptr);
-          }
-        }
-        ++pc;
-        break;
-      }
-
-      /** @brief プログラム終端 */
-      case bc_opcode::halt: {
-        return {};
-      }
-      }
+      auto op = static_cast<int>(bc_.instructions[pc].op);
+      if (op < 0 || op >= static_cast<int>(std::size(dispatch_table)))
+        return std::unexpected(error_ctx{.position = pc, .ec = error_code::syntax_error});
+      auto r = dispatch_table[op](*this, pc, filtered_value_);
+      if (!r) return std::unexpected(r.error());
     }
-
     return {};
 #endif
   }

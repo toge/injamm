@@ -418,220 +418,15 @@ class bc_compiler {
   }
 
   /**
-   * @brief テンプレート本体をコンパイルする
-   * @details テンプレート文字列を先頭から走査し、リテラル・変数・セクション・if などを
-   *          バイトコード命令に変換する。{{/xxx}} や {{else}} に遭遇すると戻る。
-   *          以下の構文を処理する:
-   *          - {{{var}}} : 生出力変数
-   *          - {{var}}   : エスケープ付き変数
-   *          - {{#section}} : セクション開始
-   *          - {{#if expr}} : 条件分岐
-   *          - {{^section}} : 反転セクション
-   *          - {{#@var}} / {{^@var}} : @var 条件セクション
-   *          - {{@index}} / {{@first}} / {{@last}} : ループ変数
-   *          - {{/xxx}}  : セクション終了（return）
-   *          - {{else}}  : else 節（return）
-   */
-  /**
-   * @brief テンプレート本体をコンパイルする
-   * @return true = {{/xxx}} または {{else}} を検出して復帰、false = テンプレート終端に到達
-   * @details テンプレート文字列を先頭から走査し、リテラル・変数・セクション・if などを
-   *          バイトコード命令に変換する。{{/xxx}} や {{else}} に遭遇すると true を返して戻る。
-   *          セクション/if の本体コンパイルに使用され、呼び出し元が終了タグの有無を判定する。
-   */
-  bool compile_body() {
-    while (pos_ < tmpl_.size()) {
-      /** @brief 次の {{ タグを検索 */
-      auto tag_start = tmpl_.find("{{", pos_);
-      if (tag_start == std::string_view::npos) {
-        emit_literal(tmpl_.substr(pos_));
-        return false;
-      }
-
-      /** @brief タグ前のリテラルを出力 */
-      if (tag_start > pos_) {
-        auto literal = tmpl_.substr(pos_, tag_start - pos_);
-        if (lstrip_blocks_ && is_block_tag_start(tmpl_, tag_start)) {
-          literal = trim_tail_whitespace_for_lstrip(literal);
-        }
-        if (!literal.empty()) {
-          emit_literal(literal);
-        }
-      }
-
-      /** @brief {{{ raw プレースホルダの検出 */
-      if (tag_start + 2 < tmpl_.size() && tmpl_[tag_start + 2] == '{') {
-        auto end = tmpl_.find("}}}", tag_start + 3);
-        if (end == std::string_view::npos) {
-          emit_literal(tmpl_.substr(tag_start, 1));
-          pos_ = tag_start + 1;
-          continue;
-        }
-        auto key = trim_sv(tmpl_.substr(tag_start + 3, end - tag_start - 3));
-        auto parts = split_by_pipe(key);
-        auto actual_key = parts[0];
-        std::vector<string_filter_entry> filters;
-        std::vector<int_filter_entry> int_filters;
-        std::vector<float_filter_entry> float_filters;
-        for (std::size_t fi = 1; fi < parts.size(); ++fi) {
-          auto sf = parse_string_filter(parts[fi]);
-          if (sf) {
-            filters.push_back(*sf);
-            continue;
-          }
-          auto ifl = parse_int_filter(parts[fi]);
-          if (ifl) {
-            int_filters.push_back(*ifl);
-            continue;
-          }
-          auto ffl = parse_float_filter(parts[fi]);
-          if (ffl) {
-            float_filters.push_back(*ffl);
-            continue;
-          }
-          bc_.error = error_ctx{tag_start, error_code::unknown_filter, parts[fi]};
-          return false;
-        }
-        if (actual_key.starts_with("root.")) {
-          emit_root_field(actual_key, true);
-        } else {
-          emit_var(actual_key, true, std::move(filters), std::move(int_filters), std::move(float_filters));
-        }
-        pos_ = end + 3;
-        if (trim_blocks_ && pos_ < tmpl_.size() && tmpl_[pos_] == '\n') ++pos_;
-        continue;
-      }
-
-      /** @brief }} 終端を検索 */
-      auto tag_end = tmpl_.find("}}", tag_start + 2);
-      if (tag_end == std::string_view::npos) {
-        emit_literal(tmpl_.substr(tag_start, 1));
-        pos_ = tag_start + 1;
-        continue;
-      }
-
-      auto inner = trim_sv(tmpl_.substr(tag_start + 2, tag_end - tag_start - 2));
-      pos_ = tag_end + 2;
-      if (trim_blocks_ && pos_ < tmpl_.size() && tmpl_[pos_] == '\n') ++pos_;
-
-      if (inner.empty()) continue;
-
-      /** @brief {{/xxx}} 終了タグ */
-      if (inner.starts_with("/")) {
-        return true;
-      }
-
-      /** @brief {{else}} */
-      if (inner == "else") {
-        bc_.add_instruction(bc_opcode::emit_else);
-        return true;
-      }
-
-      /** @brief {{#section}} または {{#if}} */
-      if (inner.starts_with("#")) {
-        auto key = trim_sv(inner.substr(1));
-
-        if (key == "break") {
-          bc_.add_instruction(bc_opcode::emit_break);
-          continue;
-        }
-
-        if (key == "continue") {
-          bc_.add_instruction(bc_opcode::emit_continue);
-          continue;
-        }
-
-        if (key.starts_with("if") && (key.size() == 2 || key[2] == ' ')) {
-          auto expr = key.size() > 2 ? trim_sv(key.substr(3)) : std::string_view{};
-          compile_if(expr);
-          continue;
-        }
-
-        if (parse_loop_kind(key)) {
-          compile_at_section(key);
-          continue;
-        }
-
-        compile_section(key);
-        continue;
-      }
-
-      /** @brief {{^section}} または {{^loop.is_first}} */
-      if (inner.starts_with("^")) {
-        auto key = trim_sv(inner.substr(1));
-        if (parse_loop_kind(key)) {
-          compile_at_inverted(key);
-        } else {
-          compile_inverted(key);
-        }
-        continue;
-      }
-
-      /** @brief {{root.field}} — ルートコンテキストフィールド参照 */
-      if (inner.starts_with("root.")) {
-        emit_root_field(inner, false);
-        continue;
-      }
-
-      /** @brief {{this}} — 現在のコンテキスト自体の参照 */
-      if (inner == "this") {
-        bc_.add_instruction(bc_opcode::emit_this);
-        continue;
-      }
-
-      /** @brief {{root}} — ルートコンテキスト全体 */
-      if (inner == "root") {
-        bc_.add_instruction(bc_opcode::emit_at_root);
-        continue;
-      }
-
-      /** @brief {{loop.index}} / {{loop.is_first}} / {{loop.is_last}} / {{loop.key}} */
-      if (parse_loop_kind(inner)) {
-        emit_at_var(inner);
-        continue;
-      }
-
-      /** @brief {{var}} 通常変数（フィルタ対応） */
-      {
-        auto parts = split_by_pipe(inner);
-        auto key = parts[0];
-        std::vector<string_filter_entry> filters;
-        std::vector<int_filter_entry> int_filters;
-        std::vector<float_filter_entry> float_filters;
-        for (std::size_t fi = 1; fi < parts.size(); ++fi) {
-          auto sf = parse_string_filter(parts[fi]);
-          if (sf) {
-            filters.push_back(*sf);
-            continue;
-          }
-          auto ifl = parse_int_filter(parts[fi]);
-          if (ifl) {
-            int_filters.push_back(*ifl);
-            continue;
-          }
-          auto ffl = parse_float_filter(parts[fi]);
-          if (ffl) {
-            float_filters.push_back(*ffl);
-            continue;
-          }
-          bc_.error = error_ctx{pos_, error_code::unknown_filter, parts[fi]};
-          return false;
-        }
-        emit_var(key, false, std::move(filters), std::move(int_filters), std::move(float_filters));
-      }
-    }
-    return false;
-  }
-
-  /**
-   * @brief else 節の有無を考慮して本体をコンパイルする
-   * @param[out] else_instr_idx else 命令のインデックス（else がある場合に設定）
+   * @brief テンプレート本体をコンパイルする（統合実装）
+   * @param in_if_context true の場合 {{else}} を if-else 節として特別処理する
+   * @param[out] else_instr_idx in_if_context 時に else 命令のインデックスを設定
    * @param[out] reached_end テンプレート終端に到達した場合に true を設定
-   * @return else がある場合は true、ない場合は false
-   * @details compile_body とほぼ同じロジックだが、{{else}} を検出した場合に
-   *          else_instr_idx を設定して true を返す。入れ子のセクション/if も適切に処理する。
+   * @return {{/xxx}} または {{else}} を検出したら true、終端に達したら false
+   * @details compile_body と compile_body_with_else の共通ロジックを統合。
+   *          {{{var}}} の raw プレースホルダ、セクション、if、@変数、フィルタに対応。
    */
-  bool compile_body_with_else(std::uint32_t& else_instr_idx, bool& reached_end) {
+  bool compile_body_impl(bool in_if_context, std::uint32_t& else_instr_idx, bool& reached_end) {
     reached_end = false;
     while (pos_ < tmpl_.size()) {
       auto tag_start = tmpl_.find("{{", pos_);
@@ -651,6 +446,39 @@ class bc_compiler {
         }
       }
 
+      if (tag_start + 2 < tmpl_.size() && tmpl_[tag_start + 2] == '{') {
+        auto end = tmpl_.find("}}}", tag_start + 3);
+        if (end == std::string_view::npos) {
+          emit_literal(tmpl_.substr(tag_start, 1));
+          pos_ = tag_start + 1;
+          continue;
+        }
+        auto key = trim_sv(tmpl_.substr(tag_start + 3, end - tag_start - 3));
+        auto parts = split_by_pipe(key);
+        auto actual_key = parts[0];
+        std::vector<string_filter_entry> filters;
+        std::vector<int_filter_entry> int_filters;
+        std::vector<float_filter_entry> float_filters;
+        for (std::size_t fi = 1; fi < parts.size(); ++fi) {
+          auto sf = parse_string_filter(parts[fi]);
+          if (sf) { filters.push_back(*sf); continue; }
+          auto ifl = parse_int_filter(parts[fi]);
+          if (ifl) { int_filters.push_back(*ifl); continue; }
+          auto ffl = parse_float_filter(parts[fi]);
+          if (ffl) { float_filters.push_back(*ffl); continue; }
+          bc_.error = error_ctx{tag_start, error_code::unknown_filter, parts[fi]};
+          return false;
+        }
+        if (actual_key.starts_with("root.")) {
+          emit_root_field(actual_key, true);
+        } else {
+          emit_var(actual_key, true, std::move(filters), std::move(int_filters), std::move(float_filters));
+        }
+        pos_ = end + 3;
+        if (trim_blocks_ && pos_ < tmpl_.size() && tmpl_[pos_] == '\n') ++pos_;
+        continue;
+      }
+
       auto tag_end = tmpl_.find("}}", tag_start + 2);
       if (tag_end == std::string_view::npos) {
         emit_literal(tmpl_.substr(tag_start, 1));
@@ -664,23 +492,27 @@ class bc_compiler {
 
       if (inner.empty()) continue;
 
-      /** @brief {{/xxx}} — else なしでブロック終了 */
       if (inner.starts_with("/")) {
-        return false;
-      }
-
-      /** @brief {{else}} を検出 — else 節の開始位置を記録 */
-      if (inner == "else") {
-        else_instr_idx = static_cast<std::uint32_t>(bc_.current_offset());
-        bc_.add_instruction(bc_opcode::emit_else, 0, 0);
-        bool else_found_close = compile_body();
-        if (bc_.error.ec == error_code::none && !else_found_close) {
-          reached_end = true;
+        if (in_if_context) {
+          return false;
         }
         return true;
       }
 
-      /** @brief 入れ子の {{#if}} / {{#section}} */
+      if (inner == "else") {
+        if (in_if_context) {
+          else_instr_idx = static_cast<std::uint32_t>(bc_.current_offset());
+          bc_.add_instruction(bc_opcode::emit_else, 0, 0);
+          bool else_found_close = compile_body_impl(false, else_instr_idx, reached_end);
+          if (bc_.error.ec == error_code::none && !else_found_close) {
+            reached_end = true;
+          }
+          return true;
+        }
+        bc_.add_instruction(bc_opcode::emit_else);
+        return true;
+      }
+
       if (inner.starts_with("#")) {
         auto key = trim_sv(inner.substr(1));
         if (key == "break") {
@@ -704,7 +536,6 @@ class bc_compiler {
         continue;
       }
 
-      /** @brief 入れ子の {{^section}} / {{^loop.is_first}} */
       if (inner.starts_with("^")) {
         auto key = trim_sv(inner.substr(1));
         if (parse_loop_kind(key)) {
@@ -715,31 +546,26 @@ class bc_compiler {
         continue;
       }
 
-      /** @brief {{root.field}} — ルートコンテキストフィールド参照 */
       if (inner.starts_with("root.")) {
         emit_root_field(inner, false);
         continue;
       }
 
-      /** @brief {{this}} — 現在のコンテキスト自体の参照 */
       if (inner == "this") {
         bc_.add_instruction(bc_opcode::emit_this);
         continue;
       }
 
-      /** @brief {{root}} — ルートコンテキスト全体 */
       if (inner == "root") {
         bc_.add_instruction(bc_opcode::emit_at_root);
         continue;
       }
 
-      /** @brief {{loop.index}} / {{loop.is_first}} / {{loop.is_last}} / {{loop.key}} */
       if (parse_loop_kind(inner)) {
         emit_at_var(inner);
         continue;
       }
 
-      /** @brief {{var}} 通常変数（フィルタ対応） */
       {
         auto parts = split_by_pipe(inner);
         auto key = parts[0];
@@ -748,20 +574,11 @@ class bc_compiler {
         std::vector<float_filter_entry> float_filters;
         for (std::size_t fi = 1; fi < parts.size(); ++fi) {
           auto sf = parse_string_filter(parts[fi]);
-          if (sf) {
-            filters.push_back(*sf);
-            continue;
-          }
+          if (sf) { filters.push_back(*sf); continue; }
           auto ifl = parse_int_filter(parts[fi]);
-          if (ifl) {
-            int_filters.push_back(*ifl);
-            continue;
-          }
+          if (ifl) { int_filters.push_back(*ifl); continue; }
           auto ffl = parse_float_filter(parts[fi]);
-          if (ffl) {
-            float_filters.push_back(*ffl);
-            continue;
-          }
+          if (ffl) { float_filters.push_back(*ffl); continue; }
           bc_.error = error_ctx{pos_, error_code::unknown_filter, parts[fi]};
           return false;
         }
@@ -770,6 +587,16 @@ class bc_compiler {
     }
     reached_end = true;
     return false;
+  }
+
+  bool compile_body() {
+    std::uint32_t dummy_idx = 0;
+    bool dummy_end = false;
+    return compile_body_impl(false, dummy_idx, dummy_end);
+  }
+
+  bool compile_body_with_else(std::uint32_t& else_instr_idx, bool& reached_end) {
+    return compile_body_impl(true, else_instr_idx, reached_end);
   }
 
  public:
