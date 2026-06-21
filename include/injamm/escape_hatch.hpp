@@ -172,13 +172,13 @@ struct ct_expanded_template {
     std::size_t sz = 0;
     std::size_t pos = 0;
     while (pos < sv.size()) {
-      auto var_start = sv.find("@var(", pos);
+      auto var_start = constexpr_find(sv, "@var(", pos);
       if (var_start == std::string_view::npos) {
         sz += sv.size() - pos;
         break;
       }
       sz += var_start - pos;
-      auto close = sv.find(")", var_start + 5);
+      auto close = constexpr_find(sv, ')', var_start + 5);
       if (close == std::string_view::npos) {
         sz += sv.size() - var_start;
         break;
@@ -199,7 +199,7 @@ struct ct_expanded_template {
     std::size_t out = 0;
     std::size_t pos = 0;
     while (pos < sv.size()) {
-      auto var_start = sv.find("@var(", pos);
+      auto var_start = constexpr_find(sv, "@var(", pos);
       if (var_start == std::string_view::npos) {
         while (pos < sv.size())
           arr[out++] = sv[pos++];
@@ -207,7 +207,7 @@ struct ct_expanded_template {
       }
       while (pos < var_start)
         arr[out++] = sv[pos++];
-      auto close = sv.find(")", var_start + 5);
+      auto close = constexpr_find(sv, ')', var_start + 5);
       if (close == std::string_view::npos) {
         while (pos < sv.size())
           arr[out++] = sv[pos++];

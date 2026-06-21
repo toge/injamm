@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ct_chunk.hpp"
+#include "parse.hpp"
 #include "glz_dispatch.hpp"
 #include "types.hpp"
 #include "bytecode.hpp"
@@ -178,7 +179,7 @@ constexpr ct_parsed_template<N> resolve_field_indices(ct_parsed_template<N> tmpl
         continue;
       }
       auto key = tmpl.texts[i];
-      if (key.empty() || key.starts_with("loop.") || key == "root" || key.find('.') != std::string_view::npos) {
+      if (key.empty() || key.starts_with("loop.") || key == "root" || constexpr_find(key, '.') != std::string_view::npos) {
         continue;
       }
       [&]<std::size_t... I>(std::index_sequence<I...>) {
