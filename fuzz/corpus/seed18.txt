@@ -1,0 +1,1 @@
+{{#items}}{{#if @first}}{{name}}{{/if}}{{/items}}
