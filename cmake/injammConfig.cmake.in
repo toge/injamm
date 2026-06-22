@@ -6,4 +6,9 @@ include(CMakeFindDependencyMacro)
 find_dependency(glaze CONFIG REQUIRED)
 find_dependency(FastFloat CONFIG REQUIRED)
 
+# sqlite3 拡張が同じプレフィックスにインストールされていれば自動ロードする
+if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/../injamm-sqlite3/injamm-sqlite3Config.cmake")
+  include("${CMAKE_CURRENT_LIST_DIR}/../injamm-sqlite3/injamm-sqlite3Config.cmake")
+endif()
+
 check_required_components(injamm)
