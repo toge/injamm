@@ -24,3 +24,7 @@ compile_commands.json
 # OS
 .DS_Store
 Thumbs.db
+
+.opencode
+build-*
+docs/superpowers
