@@ -7,8 +7,15 @@ find_dependency(glaze CONFIG REQUIRED)
 find_dependency(FastFloat CONFIG REQUIRED)
 
 # sqlite3 拡張が同じプレフィックスにインストールされていれば自動ロードする
-if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/../injamm-sqlite3/injamm-sqlite3Config.cmake")
-  include("${CMAKE_CURRENT_LIST_DIR}/../injamm-sqlite3/injamm-sqlite3Config.cmake")
-endif()
+set(_injamm_sqlite3_config_candidates
+  "${CMAKE_CURRENT_LIST_DIR}/../injamm-sqlite3/injamm-sqlite3Config.cmake"
+  "${CMAKE_CURRENT_LIST_DIR}/../../../share/injamm-sqlite3/injamm-sqlite3Config.cmake"
+)
+foreach(_injamm_sqlite3_config IN LISTS _injamm_sqlite3_config_candidates)
+  if(EXISTS "${_injamm_sqlite3_config}")
+    include("${_injamm_sqlite3_config}")
+    break()
+  endif()
+endforeach()
 
 check_required_components(injamm)

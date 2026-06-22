@@ -51,18 +51,18 @@ install(
   EXPORT injamm-sqlite3Targets
   FILE injamm-sqlite3Targets.cmake
   NAMESPACE injamm::
-  DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/injamm-sqlite3
+  DESTINATION ${CMAKE_INSTALL_DATADIR}/injamm-sqlite3
 )
 
 include(CMakePackageConfigHelpers)
 configure_package_config_file(
   ${CMAKE_CURRENT_SOURCE_DIR}/cmake/injamm-sqlite3Config.cmake.in
   ${CMAKE_CURRENT_BINARY_DIR}/injamm-sqlite3Config.cmake
-  INSTALL_DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/injamm-sqlite3
+  INSTALL_DESTINATION ${CMAKE_INSTALL_DATADIR}/injamm-sqlite3
 )
 install(
   FILES ${CMAKE_CURRENT_BINARY_DIR}/injamm-sqlite3Config.cmake
-  DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/injamm-sqlite3
+  DESTINATION ${CMAKE_INSTALL_DATADIR}/injamm-sqlite3
 )
 
 # ---- Tests ----
