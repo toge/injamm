@@ -41,8 +41,6 @@ if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
 else()
   # Clang/MSVC: computed goto 非対応のため switch fallback を使用
   target_compile_definitions(injamm INTERFACE INJAMM_NO_THREADED_DISPATCH)
-  # frozenchars に Clang 互換性問題があるため無効化
-  target_compile_definitions(injamm INTERFACE INJAMM_NO_FROZENCHARS)
 endif()
 
 # ---- Install ----

@@ -21,7 +21,7 @@
 #include <memory>
 #include <array>
 
-#if __has_include(<frozenchars.hpp>) && !defined(INJAMM_NO_FROZENCHARS)
+#if __has_include(<frozenchars.hpp>)
 #include <frozenchars.hpp>
 #define INJAMM_HAS_FROZENCHARS 1
 #endif
@@ -54,7 +54,7 @@ struct fixed_string {
     }
   }
 
-#if __has_include(<frozenchars.hpp>) && !defined(INJAMM_NO_FROZENCHARS)
+#if __has_include(<frozenchars.hpp>)
   /**
    * @brief FrozenString から構築する
    *
@@ -76,7 +76,7 @@ struct fixed_string {
   [[nodiscard]] consteval std::size_t size() const noexcept { return N - 1; }
 };
 
-#if __has_include(<frozenchars.hpp>) && !defined(INJAMM_NO_FROZENCHARS)
+#if __has_include(<frozenchars.hpp>)
 template <std::size_t M>
 fixed_string(frozenchars::FrozenString<M>) -> fixed_string<M>;
 #endif
