@@ -5,6 +5,11 @@ set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+# CMake 3.30+ tries to find clang-scan-deps for C++20 module support.
+# Not needed for this project (traditional headers), and clang-scan-deps
+# may not be installed on all platforms (e.g. Fedora 41 clang).
+set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
+
 # ---- オプション ----
 option(ENABLE_THREADED_DISPATCH "GCC computed goto dispatch (GCC only)" ON)
 option(BUILD_TEST "Build tests" ON)
