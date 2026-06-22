@@ -19,7 +19,6 @@ option(ENABLE_EXT_SQLITE3 "Build injamm-sqlite3 extension" ON)
 
 # ---- 依存 ----
 find_package(glaze CONFIG REQUIRED)
-find_package(fmt CONFIG REQUIRED)
 find_package(FastFloat CONFIG REQUIRED)
 
 # ---- ライブラリ定義 ----
@@ -30,7 +29,7 @@ target_include_directories(injamm INTERFACE
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>
 )
-target_link_libraries(injamm INTERFACE glaze::glaze fmt::fmt FastFloat::fast_float)
+target_link_libraries(injamm INTERFACE glaze::glaze FastFloat::fast_float)
 target_compile_features(injamm INTERFACE cxx_std_23)
 
 # GCC スレッデッドディスパッチ制御
