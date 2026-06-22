@@ -5,7 +5,6 @@
 #include <array>
 #include <charconv>
 #include <fast_float/fast_float.h>
-#include <fmt/format.h>
 #include <cmath>
 #include <expected>
 #include <string>
