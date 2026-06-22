@@ -243,9 +243,9 @@ struct ct_expanded_template {
  * @param value コンテキスト値の const 参照
  * @return expected<std::string> レンダリング結果、またはエラー（error_ctx）
  */
-template <fixed_string Tmpl, bool TrimBlocks = false, bool LstripBlocks = false, typename T>
+template <fixed_string Tmpl, int TrimBlocks = 0, int LstripBlocks = 0, typename T>
 [[nodiscard]] expected<std::string> render(T const& value) {
-  constexpr auto parsed = detail::parse_fixed_impl<Tmpl, TrimBlocks, LstripBlocks>();
+  constexpr auto parsed = detail::parse_fixed_impl<Tmpl, TrimBlocks != 0, LstripBlocks != 0>();
   constexpr auto resolved = detail::resolve_field_indices<T>(parsed);
   constexpr auto ct_bc = detail::ct_chunks_to_bytecode<T>(resolved);
   if (ct_bc.error.ec != error_code::none)
