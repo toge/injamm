@@ -5,6 +5,21 @@ set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+# Threads must be found before sqlite3 config tries find_dependency(Threads).
+# CMake 3.30 FindThreads has a bug with Clang on Linux (fixed in CMake 3.31+).
+find_package(Threads QUIET)
+if(NOT Threads_FOUND)
+  if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    message(STATUS "Threads not detected by FindThreads (known CMake 3.30 + Clang issue), using fallback")
+  endif()
+  set(Threads_FOUND TRUE)
+  set(CMAKE_THREAD_LIBS_INIT "pthread")
+  add_library(Threads::Threads INTERFACE IMPORTED)
+  set_target_properties(Threads::Threads PROPERTIES
+    INTERFACE_LINK_LIBRARIES "pthread"
+    INTERFACE_COMPILE_OPTIONS "-pthread")
+endif()
+
 find_package(unofficial-sqlite3 CONFIG REQUIRED)
 
 add_library(injamm-sqlite3 INTERFACE)
