@@ -1823,7 +1823,8 @@ public:
       &handle_emit_continue,      // 61
       &handle_emit_at_index1,     // 62
       &handle_emit_at_size,       // 63
-      &handle_emit_halt,          // 64
+      &handle_emit_var_size,      // 64
+      &handle_emit_halt,          // 65
     };
 
     while (pc < end) {
