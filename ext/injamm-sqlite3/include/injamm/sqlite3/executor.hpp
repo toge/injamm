@@ -350,62 +350,66 @@ class bc_executor {
         &&L_emit_var_raw,            // 2
         &&L_emit_section,            // 3
         &&L_emit_end,                // 4
-        &&L_emit_inverted,           // 6
-        &&L_emit_at_index,           // 7
-        &&L_emit_at_first,           // 8
-        &&L_emit_at_last,            // 9
-        &&L_emit_if,                 // 10
-        &&L_emit_if_eq,              // 11
-        &&L_emit_if_ne,              // 12
-        &&L_emit_else,               // 13
-        &&L_emit_endif,              // 14
-        &&L_emit_at_section,         // 15
-        &&L_emit_at_inverted,        // 16
-        &&L_emit_litvar,             // 17
-        &&L_emit_litvar_raw,         // 18
-        &&L_emit_at_root,            // 19
-        &&L_emit_at_root_field,      // 20
-        &&L_emit_at_root_field_raw,  // 21
-        &&L_emit_at_key,             // 22
-        &&L_emit_this,               // 23
-        &&L_resolve_filtered,        // 24
-        &&L_filter_upper,            // 25
-        &&L_filter_lower,            // 26
-        &&L_filter_capitalize,       // 27
-        &&L_filter_title,            // 28
-        &&L_filter_trim,             // 29
-        &&L_filter_ltrim,            // 30
-        &&L_filter_rtrim,            // 31
-        &&L_filter_left,             // 32
-        &&L_filter_right,            // 33
-        &&L_filter_center,           // 34
-        &&L_filter_truncate,         // 35
-        &&L_filter_substr,           // 36
-        &&L_filter_replace,          // 37
-        &&L_emit_filtered,           // 38
-        &&L_emit_filtered_raw,       // 39
-        &&L_filter_int_abs,          // 40
-        &&L_filter_int_hex,          // 41
-        &&L_filter_int_oct,          // 42
-        &&L_filter_int_bin,          // 43
-        &&L_filter_int_neg,          // 44
-        &&L_filter_int_mod,          // 45
-        &&L_filter_int_numify,       // 46
-        &&L_filter_int_is_neg,       // 47
-        &&L_filter_int_eq,           // 48
-        &&L_filter_int_ne,           // 49
-        &&L_filter_int_gt,           // 50
-        &&L_filter_int_gte,          // 51
-        &&L_filter_int_lt,           // 52
-        &&L_filter_int_lte,          // 53
-        &&L_filter_int_zerofill,     // 54
-        &&L_filter_float_precision,  // 55
-        &&L_emit_if_filtered,        // 56
-        &&L_emit_break,              // 57
-        &&L_emit_continue,           // 58
-        &&L_emit_at_index1,          // 59
-        &&L_emit_at_size,            // 60
-        &&L_halt,                    // 61
+        &&L_emit_inverted,           // 5
+        &&L_emit_at_index,           // 6
+        &&L_emit_at_first,           // 7
+        &&L_emit_at_last,            // 8
+        &&L_emit_if,                 // 9
+        &&L_emit_if_eq,              // 10
+        &&L_emit_if_ne,              // 11
+        &&L_emit_else,               // 12
+        &&L_emit_endif,              // 13
+        &&L_emit_at_section,         // 14
+        &&L_emit_at_inverted,        // 15
+        &&L_emit_litvar,             // 16
+        &&L_emit_litvar_raw,         // 17
+        &&L_emit_at_root,            // 18
+        &&L_emit_at_root_field,      // 19
+        &&L_emit_at_root_field_raw,  // 20
+        &&L_emit_at_key,             // 21
+        &&L_emit_this,               // 22
+        &&L_resolve_filtered,        // 23
+        &&L_filter_upper,            // 24
+        &&L_filter_lower,            // 25
+        &&L_filter_capitalize,       // 26
+        &&L_filter_title,            // 27
+        &&L_filter_trim,             // 28
+        &&L_filter_ltrim,            // 29
+        &&L_filter_rtrim,            // 30
+        &&L_filter_left,             // 31
+        &&L_filter_right,            // 32
+        &&L_filter_center,           // 33
+        &&L_filter_truncate,         // 34
+        &&L_filter_substr,           // 35
+        &&L_filter_replace,          // 36
+        &&L_emit_filtered,           // 37
+        &&L_emit_filtered_raw,       // 38
+        &&L_filter_int_abs,          // 39
+        &&L_filter_int_hex,          // 40
+        &&L_filter_int_oct,          // 41
+        &&L_filter_int_bin,          // 42
+        &&L_filter_int_neg,          // 43
+        &&L_filter_int_mod,          // 44
+        &&L_filter_int_numify,       // 45
+        &&L_filter_int_is_neg,       // 46
+        &&L_filter_int_eq,           // 47
+        &&L_filter_int_ne,           // 48
+        &&L_filter_int_gt,           // 49
+        &&L_filter_int_gte,          // 50
+        &&L_filter_int_lt,           // 51
+        &&L_filter_int_lte,          // 52
+        &&L_filter_int_zerofill,     // 53
+        &&L_filter_int_add,          // 54
+        &&L_filter_int_sub,          // 55
+        &&L_filter_int_mul,          // 56
+        &&L_filter_int_div,          // 57
+        &&L_filter_float_precision,  // 58
+        &&L_emit_if_filtered,        // 59
+        &&L_emit_break,              // 60
+        &&L_emit_continue,           // 61
+        &&L_emit_at_index1,          // 62
+        &&L_emit_at_size,            // 63
+        &&L_halt,                    // 64
     };
 
 /** @brief 現在の命令のオペコードに対応するラベルにジャンプする */
@@ -1126,6 +1130,42 @@ class bc_executor {
   /** @brief 整数0埋め（引数: 最小桁数） */
   L_filter_int_zerofill: {
     if (auto err = apply_int_filter(filtered_value_, {.filter = int_filter::zerofill, .arg = static_cast<int>(bc_.instructions[pc].operand)}); !err) {
+      return std::unexpected(err.error());
+    }
+    ++pc;
+    DISPATCH();
+  }
+
+  /** @brief 整数加算（引数: 加算値） */
+  L_filter_int_add: {
+    if (auto err = apply_int_filter(filtered_value_, {.filter = int_filter::add, .arg = static_cast<int>(bc_.instructions[pc].operand)}); !err) {
+      return std::unexpected(err.error());
+    }
+    ++pc;
+    DISPATCH();
+  }
+
+  /** @brief 整数減算（引数: 減算値） */
+  L_filter_int_sub: {
+    if (auto err = apply_int_filter(filtered_value_, {.filter = int_filter::sub, .arg = static_cast<int>(bc_.instructions[pc].operand)}); !err) {
+      return std::unexpected(err.error());
+    }
+    ++pc;
+    DISPATCH();
+  }
+
+  /** @brief 整数乗算（引数: 乗算値） */
+  L_filter_int_mul: {
+    if (auto err = apply_int_filter(filtered_value_, {.filter = int_filter::mul, .arg = static_cast<int>(bc_.instructions[pc].operand)}); !err) {
+      return std::unexpected(err.error());
+    }
+    ++pc;
+    DISPATCH();
+  }
+
+  /** @brief 整数除算（引数: 除算値） */
+  L_filter_int_div: {
+    if (auto err = apply_int_filter(filtered_value_, {.filter = int_filter::div, .arg = static_cast<int>(bc_.instructions[pc].operand)}); !err) {
       return std::unexpected(err.error());
     }
     ++pc;
