@@ -190,6 +190,7 @@ int main() {
 | `{{loop.is_first}}`                 | 最初の要素なら `true`（inja 互換）     |
 | `{{loop.is_last}}`                  | 最後の要素なら `true`（inja 互換）     |
 | `{{foo.bar.baz}}`                   | ネストパス                            |
+| `{{field.size}}`                   | コンテナの要素数                      |
 | `{{! ... }}`                        | コメント（Mustache 標準構文）         |
 | `{{~ var ~}}`                       | タグ前後の空白をトリム                |
 | `{{@var(name)}}`                   | 定数置換（engine 構築時に渡した定数テーブルで展開、NTTP ではテンプレート引数で指定） |
@@ -234,6 +235,10 @@ int main() {
 | `bin`    | 2 進数表記             | `{{age \| bin}}`    |
 | `mod(n)` | n で割った余り         | `{{age \| mod(5)}}` |
 | `numify` | 3 桁ごとにカンマ区切り | `{{age \| numify}}` |
+| `add(n)` | n を加算               | `{{age \| add(3)}}` |
+| `sub(n)` | n を減算               | `{{age \| sub(2)}}` |
+| `mul(n)` | n を乗算               | `{{age \| mul(10)}}` |
+| `div(n)` | n で除算（切捨）       | `{{age \| div(3)}}` |
 
 ### フィルターのチェーン
 

@@ -64,6 +64,30 @@ auto r = bc.render(User{"Alice", 30});
 // r == "Alice: 30"
 ```
 
+### 1.4 コンテナのサイズ (`{{field.size}}`)
+
+ベクトル・マップ・セットなどコンテキストフィールドの要素数を出力します。`std::size_t` として出力されるため、数値フィルターとの組み合わせも可能です。
+
+```cpp
+struct Data {
+  std::vector<User> users;
+};
+
+// engine
+auto bc = injamm::engine<Data>("Total: {{users.size}} users");
+auto r = bc.render(Data{{{"Alice", 30}, {"Bob", 25}}});
+// r == "Total: 2 users"
+
+// NTTP
+auto r2 = injamm::render<injamm::fixed_string("Count: {{users.size}}")>(
+  Data{{{"Alice", 30}, {"Bob", 25}}});
+// r2 == "Count: 2"
+
+// 空コンテナ
+auto r3 = injamm::render<injamm::fixed_string("{{users.size}}")>(Data{});
+// r3 == "0"
+```
+
 ---
 
 ## 2. ネストパス (`{{foo.bar.baz}}`)
@@ -457,23 +481,27 @@ auto r2 = bc.render(User{"hi", 0});
 
 ## 13. 整数フィルター
 
-| フィルター    | 説明            | 入力      | 出力        |
-| ------------- | --------------- | --------- | ----------- |
-| `abs`         | 絶対値          | `-42`     | `42`        |
-| `neg`         | 符号反転        | `42`      | `-42`       |
-| `hex`         | 16進数          | `255`     | `ff`        |
-| `oct`         | 8進数           | `64`      | `100`       |
-| `bin`         | 2進数           | `5`       | `101`       |
-| `mod(n)`      | n で割った余り  | `10`      | `2`         |
-| `numify`      | 3桁カンマ区切り | `1234567` | `1,234,567` |
-| `zerofill(n)` | n 桁ゼロ埋め    | `42`      | `00042`     |
-| `is_neg`      | 負数判定        | `-5`      | `true`      |
-| `eq(n)`       | n と等しい      | `25`      | `true`      |
-| `ne(n)`       | n と異なる      | `25`      | `false`     |
-| `gt(n)`       | n より大きい    | `25`      | `true`      |
-| `gte(n)`      | n 以上          | `18`      | `true`      |
-| `lt(n)`       | n 未満          | `5`       | `true`      |
-| `lte(n)`      | n 以下          | `5`       | `true`      |
+| フィルター    | 説明              | 入力      | 出力        |
+| ------------- | ----------------- | --------- | ----------- |
+| `abs`         | 絶対値            | `-42`     | `42`        |
+| `neg`         | 符号反転          | `42`      | `-42`       |
+| `hex`         | 16進数            | `255`     | `ff`        |
+| `oct`         | 8進数             | `64`      | `100`       |
+| `bin`         | 2進数             | `5`       | `101`       |
+| `mod(n)`      | n で割った余り    | `10`      | `2`         |
+| `numify`      | 3桁カンマ区切り   | `1234567` | `1,234,567` |
+| `zerofill(n)` | n 桁ゼロ埋め      | `42`      | `00042`     |
+| `is_neg`      | 負数判定          | `-5`      | `true`      |
+| `eq(n)`       | n と等しい        | `25`      | `true`      |
+| `ne(n)`       | n と異なる        | `25`      | `false`     |
+| `gt(n)`       | n より大きい      | `25`      | `true`      |
+| `gte(n)`      | n 以上            | `18`      | `true`      |
+| `lt(n)`       | n 未満            | `5`       | `true`      |
+| `lte(n)`      | n 以下            | `5`       | `true`      |
+| `add(n)`      | n を加算          | `10`      | `13`        |
+| `sub(n)`      | n を減算          | `10`      | `7`         |
+| `mul(n)`      | n を乗算          | `10`      | `30`        |
+| `div(n)`      | n で除算（切捨）  | `10`      | `3`         |
 
 ```cpp
 auto r = injamm::render<injamm::fixed_string("{{age | numify}}")>(User{"Alice", 1234567});
@@ -487,6 +515,23 @@ auto r2 = bc.render(User{"Alice", 42});
 auto r3 = injamm::render<injamm::fixed_string(
   "{{#if age | eq(18)}}exactly 18{{/if}}")>(User{"Alice", 18});
 // r3 == "exactly 18"
+
+// 四則演算フィルター
+auto r4 = injamm::render<injamm::fixed_string("{{age | add(10)}}")>(User{"Alice", 25});
+// r4 == "35"
+
+auto r5 = injamm::render<injamm::fixed_string("{{age | sub(3)}}")>(User{"Alice", 25});
+// r5 == "22"
+
+auto r6 = injamm::render<injamm::fixed_string("{{age | mul(2)}}")>(User{"Alice", 25});
+// r6 == "50"
+
+auto r7 = injamm::render<injamm::fixed_string("{{age | div(3)}}")>(User{"Alice", 25});
+// r7 == "8"  (切捨て除算)
+
+// フィルターチェーンで演算を連結
+auto r8 = injamm::render<injamm::fixed_string("{{age | add(5) | mul(2)}}")>(User{"Alice", 25});
+// r8 == "60"  ((25+5)*2)
 ```
 
 ---
