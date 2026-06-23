@@ -106,6 +106,11 @@ struct bound_context {
   static constexpr bool glaze_reflect = false;
   /** @brief 各コンテナへの const 参照を保持するタプル */
   std::tuple<Containers const&...> refs;
+  /** @brief C++23 で std::tuple が aggregate 化したことに伴い、本型が aggregate
+   *         だと glaze::count_members が any_t{} 経由で結合を試み、
+   *         Xcode 16.4 libc++ の static_assert に抵触するため、
+   *         明示的コンストラクタで非 aggregate 化する。 */
+  constexpr bound_context(std::tuple<Containers const&...> r) noexcept : refs(std::move(r)) {}
 };
 
 } // namespace injamm::detail

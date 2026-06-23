@@ -187,7 +187,9 @@ constexpr ct_parsed_template<N> resolve_field_indices(ct_parsed_template<N> tmpl
         continue;
       }
       [&]<std::size_t... I>(std::index_sequence<I...>) {
-        ((std::string_view{glz::reflect<T>::keys[I]} == key && (idx = static_cast<int>(I), true)) || ...);
+        (([&] {
+          if (std::string_view{glz::reflect<T>::keys[I]} == key) { idx = static_cast<int>(I); }
+        }()), ...);
       }(std::make_index_sequence<count>{});
     }
   }

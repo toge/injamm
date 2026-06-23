@@ -303,14 +303,14 @@ template <fixed_string... Names, typename... Containers>
 {
   static_assert(sizeof...(Names) == sizeof...(Containers),
                 "bind: Names count must match Containers count");
-  return {std::forward_as_tuple(values...)};
+  return detail::bound_context<detail::name_list<Names...>, Containers...>{std::forward_as_tuple(values...)};
 }
 
 template <typename T>
 [[nodiscard]] auto bind(T const& value)
   -> detail::bound_context<detail::name_list<fixed_string{"value"}>, T>
 {
-  return {std::forward_as_tuple(value)};
+  return detail::bound_context<detail::name_list<fixed_string{"value"}>, T>{std::forward_as_tuple(value)};
 }
 
 /**
