@@ -199,6 +199,20 @@ class bc_compiler {
   }
 
   /**
+   * @brief 変数の要素数参照命令を発行する ({{field.size}})
+   * @param key 変数名（末尾の .size は除去済み）
+   * @param raw 生出力フラグ
+   */
+  void emit_var_size(std::string_view key, bool raw) {
+    auto idx = bc_.add_var_ref(key);
+    auto field_idx = resolve_field_index<T>(key);
+    if (field_idx != UINT32_MAX) {
+      bc_.set_field_index(idx, field_idx);
+    }
+    bc_.add_instruction(bc_opcode::emit_var_size, idx);
+  }
+
+  /**
    * @brief セクション（配列ループ）をコンパイルする
    * @param key セクション変数名
    * @details {{#section}}...{{/section}} の構文を emit_section / emit_end 命令に変換する。
@@ -586,7 +600,12 @@ class bc_compiler {
           bc_.error = error_ctx{pos_, error_code::unknown_filter, parts[fi]};
           return false;
         }
-        emit_var(key, false, std::move(filters), std::move(int_filters), std::move(float_filters));
+        // {{field.size}} → emit_var_size
+        if (key.ends_with(".size") && filters.empty() && int_filters.empty() && float_filters.empty()) {
+          emit_var_size(key.substr(0, key.size() - 5), false);
+        } else {
+          emit_var(key, false, std::move(filters), std::move(int_filters), std::move(float_filters));
+        }
       }
     }
     reached_end = true;

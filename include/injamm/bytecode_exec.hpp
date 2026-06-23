@@ -378,6 +378,31 @@ class bc_executor {
     return {};
   }
 
+  static std::expected<void, error_ctx> handle_emit_var_size(bc_executor& ex, std::size_t& pc, std::string&) {
+    auto const& ref = ex.bc_.var_refs[ex.bc_.instructions[pc].operand];
+    auto r = ex.for_each_field(ex.value_, ref.key, ref.field_index, ref.has_dot, [&](auto const& field) {
+      using FT = std::remove_cvref_t<decltype(field)>;
+      std::size_t sz = 0;
+      if constexpr (ct_is_vector_like<FT>) {
+        sz = field.size();
+      } else if constexpr (ct_is_map_like<FT>) {
+        sz = field.size();
+      } else if constexpr (ct_is_set_like<FT>) {
+        sz = field.size();
+      } else if constexpr (std::is_arithmetic_v<FT>) {
+        sz = 0;
+      }
+      std::array<char, 16> buf;
+      auto [ptr, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), sz);
+      if (ec == std::errc{}) {
+        ex.out_.append(buf.data(), ptr);
+      }
+    });
+    if (!r) return std::unexpected(r.error());
+    ++pc;
+    return {};
+  }
+
   static std::expected<void, error_ctx> handle_emit_break(bc_executor& ex, std::size_t& pc, std::string&) {
     if (ex.loop_) ex.loop_->break_flag = true;
     pc = SIZE_MAX;
@@ -864,7 +889,8 @@ public:
         &&L_emit_continue,           // 62
         &&L_emit_at_index1,          // 63
         &&L_emit_at_size,            // 64
-        &&L_halt,                    // 65
+        &&L_emit_var_size,           // 65
+        &&L_halt,                    // 66
     };
 
 /** @brief 現在の命令のオペコードに対応するラベルにジャンプする */
@@ -1089,6 +1115,30 @@ public:
         out_.append(buf.data(), ptr);
       }
     }
+    ++pc;
+    DISPATCH();
+  }
+
+  /** @brief 変数の要素数を出力する ({{field.size}}) */
+  L_emit_var_size: {
+    auto const& ref = bc_.var_refs[bc_.instructions[pc].operand];
+    auto r = for_each_field(value_, ref.key, ref.field_index, ref.has_dot, [&](auto const& field) {
+      using FT = std::remove_cvref_t<decltype(field)>;
+      std::size_t sz = 0;
+      if constexpr (ct_is_vector_like<FT>) {
+        sz = field.size();
+      } else if constexpr (ct_is_map_like<FT>) {
+        sz = field.size();
+      } else if constexpr (ct_is_set_like<FT>) {
+        sz = field.size();
+      }
+      std::array<char, 16> buf;
+      auto [ptr, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), sz);
+      if (ec == std::errc{}) {
+        out_.append(buf.data(), ptr);
+      }
+    });
+    if (!r) return r;
     ++pc;
     DISPATCH();
   }

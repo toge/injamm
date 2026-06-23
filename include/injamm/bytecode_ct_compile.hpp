@@ -308,8 +308,17 @@ consteval void compile_chunk_range(ct_bytecode_builder<N>& b,
          break;
        }
 
-       auto vridx = b.add_var_ref({sv.data(), sv.size()},
-                                   static_cast<std::uint32_t>(chunks.field_indices[i]));
+        // {{field.size}} → emit_var_size
+        if (sv.ends_with(".size") && !has_filters) {
+          auto base_key = sv.substr(0, sv.size() - 5);
+          auto vridx = b.add_var_ref({base_key.data(), base_key.size()},
+                                      static_cast<std::uint32_t>(chunks.field_indices[i]));
+          b.emit(bc_opcode::emit_var_size, vridx);
+          break;
+        }
+
+        auto vridx = b.add_var_ref({sv.data(), sv.size()},
+                                    static_cast<std::uint32_t>(chunks.field_indices[i]));
 
         if (has_filters) {
           auto filter_count = static_cast<std::uint32_t>(chunks.filter_count[i] + chunks.int_filter_count[i] + chunks.float_filter_count[i]);

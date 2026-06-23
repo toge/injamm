@@ -80,6 +80,7 @@ enum class bc_opcode : std::uint8_t {
   emit_continue,      /**< 次のイテレーションへスキップ */
   emit_at_index1,     /**< ループ1始まりインデックス ({{@index1}}) */
   emit_at_size,       /**< ループ総要素数 ({{@size}}) */
+  emit_var_size,      /**< 変数の要素数 ({{field.size}}) */
   halt                /**< プログラム終了 */
 };
 
@@ -149,6 +150,7 @@ enum class bc_opcode : std::uint8_t {
   case bc_opcode::emit_continue:           return "emit_continue";
   case bc_opcode::emit_at_index1:          return "emit_at_index1";
   case bc_opcode::emit_at_size:            return "emit_at_size";
+  case bc_opcode::emit_var_size:           return "emit_var_size";
   case bc_opcode::halt:                    return "halt";
   }
   return "unknown";
