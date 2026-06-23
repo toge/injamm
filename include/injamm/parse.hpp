@@ -241,6 +241,14 @@ constexpr std::size_t constexpr_find_tag(std::string_view haystack, std::string_
       return int_filter_entry{int_filter::lte, arg};
     if (fname == "zerofill")
       return int_filter_entry{int_filter::zerofill, arg};
+    if (fname == "add")
+      return int_filter_entry{int_filter::add, arg};
+    if (fname == "sub")
+      return int_filter_entry{int_filter::sub, arg};
+    if (fname == "mul")
+      return int_filter_entry{int_filter::mul, arg};
+    if (fname == "div")
+      return int_filter_entry{int_filter::div, arg};
   }
   // 引数なしフィルタ
   if (name == "abs")

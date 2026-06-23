@@ -753,6 +753,62 @@ TEST_CASE("ct_int_filter_zerofill LLONG_MIN", "[injamm][ct]") {
   REQUIRE(*r == "-000009223372036854775808");
 }
 
+TEST_CASE("ct_int_filter_add", "[injamm][ct]") {
+  auto constexpr tmpl = injamm::fixed_string("{{age | add(5)}}");
+  auto r = injamm::render<tmpl>(CtIfData{"t", 10});
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "15");
+}
+
+TEST_CASE("ct_int_filter_add_neg", "[injamm][ct]") {
+  auto constexpr tmpl = injamm::fixed_string("{{age | add(-3)}}");
+  auto r = injamm::render<tmpl>(CtIfData{"t", 10});
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "7");
+}
+
+TEST_CASE("ct_int_filter_sub", "[injamm][ct]") {
+  auto constexpr tmpl = injamm::fixed_string("{{age | sub(5)}}");
+  auto r = injamm::render<tmpl>(CtIfData{"t", 10});
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "5");
+}
+
+TEST_CASE("ct_int_filter_mul", "[injamm][ct]") {
+  auto constexpr tmpl = injamm::fixed_string("{{age | mul(5)}}");
+  auto r = injamm::render<tmpl>(CtIfData{"t", 10});
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "50");
+}
+
+TEST_CASE("ct_int_filter_mul_zero", "[injamm][ct]") {
+  auto constexpr tmpl = injamm::fixed_string("{{age | mul(0)}}");
+  auto r = injamm::render<tmpl>(CtIfData{"t", 10});
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "0");
+}
+
+TEST_CASE("ct_int_filter_div", "[injamm][ct]") {
+  auto constexpr tmpl = injamm::fixed_string("{{age | div(3)}}");
+  auto r = injamm::render<tmpl>(CtIfData{"t", 10});
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "3");
+}
+
+TEST_CASE("ct_int_filter_div_neg", "[injamm][ct]") {
+  auto constexpr tmpl = injamm::fixed_string("{{age | div(2)}}");
+  auto r = injamm::render<tmpl>(CtIfData{"t", -7});
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "-3");
+}
+
+TEST_CASE("ct_int_filter_div_by_zero", "[injamm][ct]") {
+  auto constexpr tmpl = injamm::fixed_string("{{age | div(0)}}");
+  auto r = injamm::render<tmpl>(CtIfData{"t", 10});
+  REQUIRE(!r.has_value());
+  REQUIRE(r.error().ec == injamm::error_code::division_by_zero);
+}
+
 // ---- 実数フィルタ ----
 
 TEST_CASE("ct_float_filter_precision", "[injamm][ct]") {

@@ -506,6 +506,10 @@ class bc_executor {
     case bc_opcode::filter_int_lt:       { auto r = apply_int_filter(filtered, {.filter = int_filter::lt, .arg = arg}); if (!r) return std::unexpected(r.error()); } break;
     case bc_opcode::filter_int_lte:      { auto r = apply_int_filter(filtered, {.filter = int_filter::lte, .arg = arg}); if (!r) return std::unexpected(r.error()); } break;
     case bc_opcode::filter_int_zerofill: { auto r = apply_int_filter(filtered, {.filter = int_filter::zerofill, .arg = arg}); if (!r) return std::unexpected(r.error()); } break;
+    case bc_opcode::filter_int_add:      { auto r = apply_int_filter(filtered, {.filter = int_filter::add, .arg = arg}); if (!r) return std::unexpected(r.error()); } break;
+    case bc_opcode::filter_int_sub:      { auto r = apply_int_filter(filtered, {.filter = int_filter::sub, .arg = arg}); if (!r) return std::unexpected(r.error()); } break;
+    case bc_opcode::filter_int_mul:      { auto r = apply_int_filter(filtered, {.filter = int_filter::mul, .arg = arg}); if (!r) return std::unexpected(r.error()); } break;
+    case bc_opcode::filter_int_div:      { auto r = apply_int_filter(filtered, {.filter = int_filter::div, .arg = arg}); if (!r) return std::unexpected(r.error()); } break;
     default: return std::unexpected(error_ctx{.position = pc, .ec = error_code::syntax_error});
     }
     ++pc;
@@ -850,13 +854,17 @@ public:
         &&L_filter_int_lt,           // 52
         &&L_filter_int_lte,          // 53
         &&L_filter_int_zerofill,     // 54
-        &&L_filter_float_precision,  // 55
-        &&L_emit_if_filtered,        // 56
-        &&L_emit_break,              // 57
-        &&L_emit_continue,           // 58
-        &&L_emit_at_index1,          // 59
-        &&L_emit_at_size,            // 60
-        &&L_halt,                    // 61
+        &&L_filter_int_add,          // 55
+        &&L_filter_int_sub,          // 56
+        &&L_filter_int_mul,          // 57
+        &&L_filter_int_div,          // 58
+        &&L_filter_float_precision,  // 59
+        &&L_emit_if_filtered,        // 60
+        &&L_emit_break,              // 61
+        &&L_emit_continue,           // 62
+        &&L_emit_at_index1,          // 63
+        &&L_emit_at_size,            // 64
+        &&L_halt,                    // 65
     };
 
 /** @brief 現在の命令のオペコードに対応するラベルにジャンプする */
@@ -1568,6 +1576,34 @@ public:
   }
 
   /** @brief 実数小数点以下桁数（引数: 桁数） */
+  L_filter_int_add: {
+    if (auto err = apply_int_filter(filtered_value_, {.filter = int_filter::add, .arg = static_cast<int>(bc_.instructions[pc].operand)}); !err) {
+      return std::unexpected(err.error());
+    }
+    ++pc;
+    DISPATCH();
+  }
+  L_filter_int_sub: {
+    if (auto err = apply_int_filter(filtered_value_, {.filter = int_filter::sub, .arg = static_cast<int>(bc_.instructions[pc].operand)}); !err) {
+      return std::unexpected(err.error());
+    }
+    ++pc;
+    DISPATCH();
+  }
+  L_filter_int_mul: {
+    if (auto err = apply_int_filter(filtered_value_, {.filter = int_filter::mul, .arg = static_cast<int>(bc_.instructions[pc].operand)}); !err) {
+      return std::unexpected(err.error());
+    }
+    ++pc;
+    DISPATCH();
+  }
+  L_filter_int_div: {
+    if (auto err = apply_int_filter(filtered_value_, {.filter = int_filter::div, .arg = static_cast<int>(bc_.instructions[pc].operand)}); !err) {
+      return std::unexpected(err.error());
+    }
+    ++pc;
+    DISPATCH();
+  }
   L_filter_float_precision: {
     apply_float_filter(filtered_value_, {.filter = float_filter::precision, .arg = static_cast<int>(bc_.instructions[pc].operand)});
     ++pc;
@@ -1727,13 +1763,17 @@ public:
       &handle_int_filter,         // 51 filter_int_lt
       &handle_int_filter,         // 52 filter_int_lte
       &handle_int_filter,         // 53 filter_int_zerofill
-      &handle_float_filter,       // 54 filter_float_precision
-      &handle_emit_if_filtered,   // 55
-      &handle_emit_break,         // 56
-      &handle_emit_continue,      // 57
-      &handle_emit_at_index1,     // 58
-      &handle_emit_at_size,       // 59
-      &handle_emit_halt,          // 60
+      &handle_int_filter,         // 54 filter_int_add
+      &handle_int_filter,         // 55 filter_int_sub
+      &handle_int_filter,         // 56 filter_int_mul
+      &handle_int_filter,         // 57 filter_int_div
+      &handle_float_filter,       // 58 filter_float_precision
+      &handle_emit_if_filtered,   // 59
+      &handle_emit_break,         // 60
+      &handle_emit_continue,      // 61
+      &handle_emit_at_index1,     // 62
+      &handle_emit_at_size,       // 63
+      &handle_emit_halt,          // 64
     };
 
     while (pc < end) {

@@ -44,6 +44,10 @@ void emit_filter_chain(Emitter&& emit, std::vector<string_filter_entry> const& f
       case int_filter::lt:     emit(bc_opcode::filter_int_lt, f.arg); break;
       case int_filter::lte:    emit(bc_opcode::filter_int_lte, f.arg); break;
       case int_filter::zerofill: emit(bc_opcode::filter_int_zerofill, f.arg); break;
+      case int_filter::add:      emit(bc_opcode::filter_int_add, f.arg); break;
+      case int_filter::sub:      emit(bc_opcode::filter_int_sub, f.arg); break;
+      case int_filter::mul:      emit(bc_opcode::filter_int_mul, f.arg); break;
+      case int_filter::div:      emit(bc_opcode::filter_int_div, f.arg); break;
     }
   }
   for (auto f : float_filters) {

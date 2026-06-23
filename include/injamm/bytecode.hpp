@@ -70,6 +70,10 @@ enum class bc_opcode : std::uint8_t {
   filter_int_lt,               /**< 小なり判定: 引数未満なら "true"/"false" を出力 */
   filter_int_lte,              /**< 以下判定: 引数以下なら "true"/"false" を出力 */
   filter_int_zerofill,         /**< 整数0埋め（引数: 最小桁数） */
+  filter_int_add,              /**< 整数加算（引数: 加算値） */
+  filter_int_sub,              /**< 整数減算（引数: 減算値） */
+  filter_int_mul,              /**< 整数乗算（引数: 乗算値） */
+  filter_int_div,              /**< 整数除算（引数: 除算値） */
   filter_float_precision,     /**< 実数小数点以下桁数（引数: 桁数） */
   emit_if_filtered,           /**< フィルタ適用済み値での if 分岐 */
   emit_break,         /**< ループ脱出 */
@@ -135,6 +139,10 @@ enum class bc_opcode : std::uint8_t {
   case bc_opcode::filter_int_lt:           return "filter_int_lt";
   case bc_opcode::filter_int_lte:          return "filter_int_lte";
   case bc_opcode::filter_int_zerofill:     return "filter_int_zerofill";
+  case bc_opcode::filter_int_add:          return "filter_int_add";
+  case bc_opcode::filter_int_sub:          return "filter_int_sub";
+  case bc_opcode::filter_int_mul:          return "filter_int_mul";
+  case bc_opcode::filter_int_div:          return "filter_int_div";
   case bc_opcode::filter_float_precision:  return "filter_float_precision";
   case bc_opcode::emit_if_filtered:        return "emit_if_filtered";
   case bc_opcode::emit_break:              return "emit_break";
@@ -216,7 +224,11 @@ enum class int_filter : std::uint8_t {
   gte,     /**< 以上判定（引数: 比較値、真偽値出力: "true"/"false"） */
   lt,      /**< 小なり判定（引数: 比較値、真偽値出力: "true"/"false"） */
   lte,     /**< 以下判定（引数: 比較値、真偽値出力: "true"/"false"） */
-  zerofill /**< 0埋め（引数: 最小桁数） */
+  zerofill, /**< 0埋め（引数: 最小桁数） */
+  add,      /**< 加算（引数: 加算値） */
+  sub,      /**< 減算（引数: 減算値） */
+  mul,      /**< 乗算（引数: 乗算値） */
+  div       /**< 除算（引数: 除算値） */
 };
 
 [[nodiscard]] inline std::string_view int_filter_name(int_filter f) noexcept {
@@ -236,6 +248,10 @@ enum class int_filter : std::uint8_t {
   case int_filter::lt:      return "lt";
   case int_filter::lte:     return "lte";
   case int_filter::zerofill: return "zerofill";
+  case int_filter::add:      return "add";
+  case int_filter::sub:      return "sub";
+  case int_filter::mul:      return "mul";
+  case int_filter::div:      return "div";
   }
   return "unknown";
 }
@@ -513,7 +529,11 @@ struct bytecode {
       case bc_opcode::filter_right:
       case bc_opcode::filter_center:
       case bc_opcode::filter_truncate:
-      case bc_opcode::filter_int_mod: {
+      case bc_opcode::filter_int_mod:
+      case bc_opcode::filter_int_add:
+      case bc_opcode::filter_int_sub:
+      case bc_opcode::filter_int_mul:
+      case bc_opcode::filter_int_div: {
         char buf[16];
         auto [p, ec] = std::to_chars(buf, buf + sizeof(buf), instr.operand);
         append(std::string_view{buf, static_cast<std::size_t>(p - buf)});

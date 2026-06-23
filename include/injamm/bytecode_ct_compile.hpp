@@ -152,6 +152,10 @@ bytecode to_bytecode(ct_bytecode<N> const& ct) {
           case bc_opcode::filter_int_lt:     ref.int_filters.push_back({.filter = int_filter::lt, .arg = static_cast<int>(fi.operand)}); break;
           case bc_opcode::filter_int_lte:    ref.int_filters.push_back({.filter = int_filter::lte, .arg = static_cast<int>(fi.operand)}); break;
           case bc_opcode::filter_int_zerofill: ref.int_filters.push_back({.filter = int_filter::zerofill, .arg = static_cast<int>(fi.operand)}); break;
+          case bc_opcode::filter_int_add: ref.int_filters.push_back({.filter = int_filter::add, .arg = static_cast<int>(fi.operand)}); break;
+          case bc_opcode::filter_int_sub: ref.int_filters.push_back({.filter = int_filter::sub, .arg = static_cast<int>(fi.operand)}); break;
+          case bc_opcode::filter_int_mul: ref.int_filters.push_back({.filter = int_filter::mul, .arg = static_cast<int>(fi.operand)}); break;
+          case bc_opcode::filter_int_div: ref.int_filters.push_back({.filter = int_filter::div, .arg = static_cast<int>(fi.operand)}); break;
           case bc_opcode::filter_float_precision: ref.float_filters.push_back({.filter = float_filter::precision, .arg = static_cast<int>(fi.operand)}); break;
           default: break;
           }
@@ -253,7 +257,11 @@ consteval void compile_chunk_range(ct_bytecode_builder<N>& b,
        case int_filter::gte:      b.emit(bc_opcode::filter_int_gte, intf.arg); break;
        case int_filter::lt:       b.emit(bc_opcode::filter_int_lt, intf.arg); break;
        case int_filter::lte:      b.emit(bc_opcode::filter_int_lte, intf.arg); break;
-       case int_filter::zerofill: b.emit(bc_opcode::filter_int_zerofill, intf.arg); break;
+        case int_filter::zerofill: b.emit(bc_opcode::filter_int_zerofill, intf.arg); break;
+        case int_filter::add:      b.emit(bc_opcode::filter_int_add, intf.arg); break;
+        case int_filter::sub:      b.emit(bc_opcode::filter_int_sub, intf.arg); break;
+        case int_filter::mul:      b.emit(bc_opcode::filter_int_mul, intf.arg); break;
+        case int_filter::div:      b.emit(bc_opcode::filter_int_div, intf.arg); break;
        }
      }
      for (std::uint8_t f = 0; f < chunks.float_filter_count[idx]; ++f) {

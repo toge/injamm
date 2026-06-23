@@ -925,6 +925,94 @@ TEST_CASE("int_filter: bin zero", "[int_filter]") {
   REQUIRE(*result == "0");
 }
 
+TEST_CASE("int_filter: add", "[int_filter]") {
+  BcIfData data{"test", 10};
+  auto bc = injamm::engine<BcIfData>("{{age | add(5)}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "15");
+}
+
+TEST_CASE("int_filter: add negative", "[int_filter]") {
+  BcIfData data{"test", 10};
+  auto bc = injamm::engine<BcIfData>("{{age | add(-3)}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "7");
+}
+
+TEST_CASE("int_filter: add zero", "[int_filter]") {
+  BcIfData data{"test", 5};
+  auto bc = injamm::engine<BcIfData>("{{age | add(0)}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "5");
+}
+
+TEST_CASE("int_filter: sub", "[int_filter]") {
+  BcIfData data{"test", 10};
+  auto bc = injamm::engine<BcIfData>("{{age | sub(5)}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "5");
+}
+
+TEST_CASE("int_filter: sub negative", "[int_filter]") {
+  BcIfData data{"test", 10};
+  auto bc = injamm::engine<BcIfData>("{{age | sub(-3)}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "13");
+}
+
+TEST_CASE("int_filter: mul", "[int_filter]") {
+  BcIfData data{"test", 10};
+  auto bc = injamm::engine<BcIfData>("{{age | mul(5)}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "50");
+}
+
+TEST_CASE("int_filter: mul zero", "[int_filter]") {
+  BcIfData data{"test", 10};
+  auto bc = injamm::engine<BcIfData>("{{age | mul(0)}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "0");
+}
+
+TEST_CASE("int_filter: mul negative", "[int_filter]") {
+  BcIfData data{"test", 3};
+  auto bc = injamm::engine<BcIfData>("{{age | mul(-2)}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "-6");
+}
+
+TEST_CASE("int_filter: div", "[int_filter]") {
+  BcIfData data{"test", 10};
+  auto bc = injamm::engine<BcIfData>("{{age | div(3)}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "3");
+}
+
+TEST_CASE("int_filter: div negative", "[int_filter]") {
+  BcIfData data{"test", -7};
+  auto bc = injamm::engine<BcIfData>("{{age | div(2)}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "-3");
+}
+
+TEST_CASE("int_filter: div by zero", "[int_filter]") {
+  BcIfData data{"test", 10};
+  auto bc = injamm::engine<BcIfData>("{{age | div(0)}}");
+  auto result = bc.render(data);
+  REQUIRE(!result);
+  REQUIRE(result.error().ec == injamm::error_code::division_by_zero);
+}
+
 // ---- 引数付き文字列フィルタテスト ----
 
 TEST_CASE("filter: left", "[filter]") {

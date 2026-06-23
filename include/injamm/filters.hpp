@@ -471,6 +471,101 @@ constexpr void apply_string_filter(std::string& str, string_filter_entry entry) 
     str = result ? "true" : "false";
     break;
   }
+  case int_filter::add: {
+    auto arg    = entry.arg;
+    auto data   = str.data();
+    auto size   = str.size();
+    if (str.find('.') != std::string::npos || str.find('e') != std::string::npos || str.find('E') != std::string::npos) {
+      double val{};
+      if (auto [p, ec] = fast_float::from_chars(data, data + size, val); ec == std::errc()) {
+        std::array<char, 64> buf;
+        if (auto [tp, tec] = std::to_chars(buf.data(), buf.data() + buf.size(), val + arg); tec == std::errc()) {
+          str.assign(buf.data(), tp - buf.data());
+        }
+      }
+    } else {
+      long long val{};
+      if (auto [p, ec] = std::from_chars(data, data + size, val); ec == std::errc()) {
+        std::array<char, 32> buf;
+        if (auto [tp, tec] = std::to_chars(buf.data(), buf.data() + buf.size(), val + arg); tec == std::errc()) {
+          str.assign(buf.data(), tp - buf.data());
+        }
+      }
+    }
+    break;
+  }
+  case int_filter::sub: {
+    auto arg    = entry.arg;
+    auto data   = str.data();
+    auto size   = str.size();
+    if (str.find('.') != std::string::npos || str.find('e') != std::string::npos || str.find('E') != std::string::npos) {
+      double val{};
+      if (auto [p, ec] = fast_float::from_chars(data, data + size, val); ec == std::errc()) {
+        std::array<char, 64> buf;
+        if (auto [tp, tec] = std::to_chars(buf.data(), buf.data() + buf.size(), val - arg); tec == std::errc()) {
+          str.assign(buf.data(), tp - buf.data());
+        }
+      }
+    } else {
+      long long val{};
+      if (auto [p, ec] = std::from_chars(data, data + size, val); ec == std::errc()) {
+        std::array<char, 32> buf;
+        if (auto [tp, tec] = std::to_chars(buf.data(), buf.data() + buf.size(), val - arg); tec == std::errc()) {
+          str.assign(buf.data(), tp - buf.data());
+        }
+      }
+    }
+    break;
+  }
+  case int_filter::mul: {
+    auto arg    = entry.arg;
+    auto data   = str.data();
+    auto size   = str.size();
+    if (str.find('.') != std::string::npos || str.find('e') != std::string::npos || str.find('E') != std::string::npos) {
+      double val{};
+      if (auto [p, ec] = fast_float::from_chars(data, data + size, val); ec == std::errc()) {
+        std::array<char, 64> buf;
+        if (auto [tp, tec] = std::to_chars(buf.data(), buf.data() + buf.size(), val * arg); tec == std::errc()) {
+          str.assign(buf.data(), tp - buf.data());
+        }
+      }
+    } else {
+      long long val{};
+      if (auto [p, ec] = std::from_chars(data, data + size, val); ec == std::errc()) {
+        std::array<char, 32> buf;
+        if (auto [tp, tec] = std::to_chars(buf.data(), buf.data() + buf.size(), val * arg); tec == std::errc()) {
+          str.assign(buf.data(), tp - buf.data());
+        }
+      }
+    }
+    break;
+  }
+  case int_filter::div: {
+    auto arg    = entry.arg;
+    auto data   = str.data();
+    auto size   = str.size();
+    if (arg == 0) {
+      return std::unexpected(error_ctx{.ec = error_code::division_by_zero});
+    }
+    if (str.find('.') != std::string::npos || str.find('e') != std::string::npos || str.find('E') != std::string::npos) {
+      double val{};
+      if (auto [p, ec] = fast_float::from_chars(data, data + size, val); ec == std::errc()) {
+        std::array<char, 64> buf;
+        if (auto [tp, tec] = std::to_chars(buf.data(), buf.data() + buf.size(), val / arg); tec == std::errc()) {
+          str.assign(buf.data(), tp - buf.data());
+        }
+      }
+    } else {
+      long long val{};
+      if (auto [p, ec] = std::from_chars(data, data + size, val); ec == std::errc()) {
+        std::array<char, 32> buf;
+        if (auto [tp, tec] = std::to_chars(buf.data(), buf.data() + buf.size(), val / arg); tec == std::errc()) {
+          str.assign(buf.data(), tp - buf.data());
+        }
+      }
+    }
+    break;
+  }
   case int_filter::zerofill: {
     long long val{};
     if (auto [p, ec] = std::from_chars(str.data(), str.data() + str.size(), val); ec == std::errc()) {
