@@ -20,6 +20,7 @@
 #include "bytecode_exec.hpp"
 #include <memory>
 #include <array>
+#include <tuple>
 
 #if __has_include(<frozenchars.hpp>)
 #include <frozenchars.hpp>
@@ -282,6 +283,34 @@ template <fixed_string Tmpl, fixed_string... Entries, typename T>
     return std::unexpected(ct_bc.error);
   static auto const bc_ptr = std::make_unique<detail::bytecode>(detail::to_bytecode(ct_bc));
   return detail::bc_execute(*bc_ptr, value);
+}
+
+/**
+ * @brief コンテナを NTTP 名でバインドした bound_context を生成する
+ *
+ * @details 複数のコンテナを NTTP 文字列名と対応付けた bound_context を返す。
+ *          戻り値の bound_context は参照を保持するため、元コンテナの生存期間内で使用すること。
+ *          渡すコンテナ数と Names の数が一致しない場合はコンパイルエラーとなる。
+ *
+ * @tparam Names      バインドする変数名の NTTP fixed_string パック
+ * @tparam Containers コンテナ型パック（推論）
+ * @param  values     バインドするコンテナへの const 参照パック
+ * @return detail::bound_context<detail::name_list<Names...>, Containers...>
+ */
+template <fixed_string... Names, typename... Containers>
+[[nodiscard]] auto bind(Containers const&... values)
+  -> detail::bound_context<detail::name_list<Names...>, Containers...>
+{
+  static_assert(sizeof...(Names) == sizeof...(Containers),
+                "bind: Names count must match Containers count");
+  return {std::forward_as_tuple(values...)};
+}
+
+template <typename T>
+[[nodiscard]] auto bind(T const& value)
+  -> detail::bound_context<detail::name_list<fixed_string{"value"}>, T>
+{
+  return {std::forward_as_tuple(value)};
 }
 
 /**

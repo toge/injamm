@@ -368,7 +368,7 @@ class bc_executor {
     ex.emit_this_scratch_.clear();
     if constexpr (serializable_v<T>) {
       serialize_value(ex.emit_this_scratch_, ex.value_);
-    } else if constexpr (ct_glz_reflectable<T>) {
+    } else if constexpr (ct_glz_reflectable<T> && glz::write_supported<T, glz::JSON>) {
       if (auto ec = glz::write_json(ex.value_, ex.emit_this_scratch_)) {
         return std::unexpected(error_ctx{.position = pc, .ec = error_code::syntax_error});
       }
@@ -1348,7 +1348,7 @@ public:
     this->emit_this_scratch_.clear();
     if constexpr (serializable_v<T>) {
       serialize_value(this->emit_this_scratch_, value_);
-    } else if constexpr (ct_glz_reflectable<T>) {
+    } else if constexpr (ct_glz_reflectable<T> && glz::write_supported<T, glz::JSON>) {
       if (auto ec = glz::write_json(value_, this->emit_this_scratch_)) {
         return std::unexpected(error_ctx{.position = pc, .ec = error_code::syntax_error});
       }

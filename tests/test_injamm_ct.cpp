@@ -1464,3 +1464,109 @@ TEST_CASE("ct_trim_blocks single var with no newline", "[injamm][ct][whitespace]
     CHECK(*r == "Alice30");
   }
 }
+
+// ---- bind（コンテナ直接バインド）テスト ----
+
+TEST_CASE("CT: bind - vector of strings", "[injamm][ct][bind]") {
+  std::vector<std::string> items = {"apple", "banana", "cherry"};
+  auto res = injamm::render<"{{#items}}{{this}} {{/items}}">(injamm::bind<"items">(items));
+  REQUIRE(res);
+  CHECK(*res == "apple banana cherry ");
+}
+
+TEST_CASE("CT: bind - vector of structs", "[injamm][ct][bind]") {
+  std::vector<CtUser> users = {{"Alice", 30}, {"Bob", 25}};
+  auto res = injamm::render<"{{#users}}{{name}}:{{age}} {{/users}}">(injamm::bind<"users">(users));
+  REQUIRE(res);
+  CHECK(*res == "Alice:30 Bob:25 ");
+}
+
+TEST_CASE("CT: bind - map", "[injamm][ct][bind]") {
+  std::map<std::string, int> scores = {{"math", 90}, {"english", 85}};
+  auto res = injamm::render<"{{#scores}}{{loop.key}}={{this}} {{/scores}}">(injamm::bind<"scores">(scores));
+  REQUIRE(res);
+  CHECK(*res == "english=85 math=90 ");
+}
+
+TEST_CASE("CT: bind - multiple containers", "[injamm][ct][bind]") {
+  std::vector<CtUser> users = {{"Hello", 0}};
+  std::vector<std::string> items = {"a", "b"};
+  auto res = injamm::render<"{{#users}}{{name}}{{/users}}: {{#items}}{{this}} {{/items}}">(
+    injamm::bind<"users", "items">(users, items));
+  REQUIRE(res);
+  CHECK(*res == "Hello: a b ");
+}
+
+TEST_CASE("CT: bind - loop.index", "[injamm][ct][bind]") {
+  std::vector<int> nums = {10, 20, 30};
+  auto res = injamm::render<"{{#nums}}{{loop.index}}={{this}} {{/nums}}">(injamm::bind<"nums">(nums));
+  REQUIRE(res);
+  CHECK(*res == "0=10 1=20 2=30 ");
+}
+
+TEST_CASE("CT: bind - empty vector inverted section", "[injamm][ct][bind]") {
+  std::vector<std::string> items;
+  auto res = injamm::render<"{{^items}}empty{{/items}}">(injamm::bind<"items">(items));
+  REQUIRE(res);
+  CHECK(*res == "empty");
+}
+
+TEST_CASE("CT: bind - set", "[injamm][ct][bind]") {
+  std::set<int> nums = {3, 1, 2};
+  auto res = injamm::render<"{{#nums}}{{this}} {{/nums}}">(injamm::bind<"nums">(nums));
+  REQUIRE(res);
+  CHECK(*res == "1 2 3 ");
+}
+
+TEST_CASE("CT: bind - set with loop.is_first/is_last", "[injamm][ct][bind]") {
+  std::set<int> nums = {10, 20};
+  auto res = injamm::render<"{{#nums}}{{#if loop.is_first}}[{{/if}}{{this}}{{#if loop.is_last}}]{{/if}} {{/nums}}">(
+    injamm::bind<"nums">(nums));
+  REQUIRE(res);
+  CHECK(*res == "[10 20] ");
+}
+
+TEST_CASE("CT: bind - loop.is_first/is_last with vector", "[injamm][ct][bind]") {
+  std::vector<int> nums = {10, 20, 30};
+  auto res = injamm::render<"{{#nums}}{{#if loop.is_first}}FIRST{{/if}}{{this}} {{#if loop.is_last}}LAST{{/if}}{{/nums}}">(
+    injamm::bind<"nums">(nums));
+  REQUIRE(res);
+  CHECK(*res == "FIRST10 20 30 LAST");
+}
+
+TEST_CASE("CT: bind - title and items", "[injamm][ct][bind]") {
+  std::vector<std::string> items = {"a", "b"};
+  std::string title = "Title";
+  auto res = injamm::render<"{{title}}: {{#items}}{{this}} {{/items}}">(
+    injamm::bind<"title", "items">(title, items));
+  REQUIRE(res);
+  CHECK(*res == "Title: a b ");
+}
+
+TEST_CASE("CT: bind - string scalar", "[injamm][ct][bind]") {
+  std::string name = "World";
+  auto res = injamm::render<"Hello {{name}}!">(injamm::bind<"name">(name));
+  REQUIRE(res);
+  CHECK(*res == "Hello World!");
+}
+
+TEST_CASE("CT: bind - int scalar", "[injamm][ct][bind]") {
+  int count = 42;
+  auto res = injamm::render<"Count: {{count}}">(injamm::bind<"count">(count));
+  REQUIRE(res);
+  CHECK(*res == "Count: 42");
+}
+
+TEST_CASE("CT: bind - implicit value", "[injamm][ct][bind]") {
+  int val = 99;
+  auto res = injamm::render<"Got {{value}}">(injamm::bind(val));
+  REQUIRE(res);
+  CHECK(*res == "Got 99");
+}
+
+TEST_CASE("CT: bind - implicit value string", "[injamm][ct][bind]") {
+  std::string val = "hello";
+  auto res = injamm::render<"{{value}} world">(injamm::bind(val));
+  REQUIRE(res);
+  CHECK(*res == "hello world");
+}

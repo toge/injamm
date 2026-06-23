@@ -49,6 +49,7 @@ static double elapsed_us(auto const& start, auto const& end) {
 
 static int bench_filter_dispatch();
 static int bench_wide_struct();
+static int bench_bind_context();
 
 template <size_t N>
 static std::string repeat(std::string_view s) {
@@ -207,6 +208,9 @@ int main() {
   std::printf("\n--- wide struct (P3 field-index dispatch) ---\n");
   bench_wide_struct();
 
+  std::printf("\n--- bind context (コンテナ直接バインド) ---\n");
+  bench_bind_context();
+
   std::printf("\n=== done ===\n");
   return 0;
 }
@@ -319,5 +323,76 @@ static int bench_wide_struct() {
     auto us = elapsed_us(start, end);
     std::printf("  wide_all(5 refs)   x %d: %.0f us  (%.1f ns/call)\n", ITERS, us, us * 1000.0 / ITERS);
   }
+  return 0;
+}
+
+// ---- bind（コンテナ直接バインド）ベンチマーク ----
+
+struct BenchUser {
+  std::string name;
+  int age{};
+};
+
+template <>
+struct glz::meta<BenchUser> {
+  static constexpr auto value = glz::object("name", &BenchUser::name, "age", &BenchUser::age);
+};
+
+static auto make_large_user_list(std::size_t n) {
+  std::vector<BenchUser> users;
+  users.reserve(n);
+  for (std::size_t i = 0; i < n; ++i) {
+    users.push_back({.name = "User" + std::to_string(i), .age = static_cast<int>(i % 100)});
+  }
+  return users;
+}
+
+struct BenchUserList {
+  std::vector<BenchUser> users;
+};
+
+template <>
+struct glz::meta<BenchUserList> {
+  static constexpr auto value = glz::object("users", &BenchUserList::users);
+};
+
+static int bench_bind_context() {
+  auto constexpr kUserListTmpl = injamm::fixed_string("{{#users}}{{name}}:{{age}}\n{{/users}}");
+
+  auto const users = make_large_user_list(1000);
+
+  // struct context ウォームアップ
+  BenchUserList ctx{users};
+  for (int i = 0; i < 100; ++i) {
+    (void)injamm::render<kUserListTmpl>(ctx);
+  }
+
+  // bind context ウォームアップ
+  for (int i = 0; i < 100; ++i) {
+    (void)injamm::render<kUserListTmpl>(injamm::bind<"users">(users));
+  }
+
+  constexpr int ITERS = 500;
+
+  // struct context ベンチマーク
+  auto start_s = std::chrono::high_resolution_clock::now();
+  for (int i = 0; i < ITERS; ++i) {
+    (void)injamm::render<kUserListTmpl>(ctx);
+  }
+  auto end_s = std::chrono::high_resolution_clock::now();
+  auto us_s = elapsed_us(start_s, end_s);
+  std::printf("  struct_context x %d: %.0f us  (%.1f us/call)\n", ITERS, us_s, us_s / ITERS);
+
+  // bind context ベンチマーク
+  auto start_b = std::chrono::high_resolution_clock::now();
+  for (int i = 0; i < ITERS; ++i) {
+    (void)injamm::render<kUserListTmpl>(injamm::bind<"users">(users));
+  }
+  auto end_b = std::chrono::high_resolution_clock::now();
+  auto us_b = elapsed_us(start_b, end_b);
+  std::printf("  bind_context   x %d: %.0f us  (%.1f us/call)\n", ITERS, us_b, us_b / ITERS);
+
+  auto ratio = (us_s > 0.0) ? (us_b / us_s) : 0.0;
+  std::printf("  ratio bind/struct: %.2f (±10%% target: 0.90 - 1.10)\n", ratio);
   return 0;
 }
