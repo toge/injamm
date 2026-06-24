@@ -80,6 +80,9 @@ class bc_compiler {
   /** @brief ブロックタグ前の空白を除去する */
   bool lstrip_blocks_ = false;
 
+  /** @brief compile_body_impl の戻り値型 */
+  enum class body_result : int { close = 0, else_ = 1, eof = 2 };
+
   /**
    * @brief glaze リフレクションを用いてフィールドインデックスを解決する
    * @tparam V リフレクション対象の型
@@ -229,15 +232,41 @@ class bc_compiler {
     /** @brief 後でジャンプ先を書き込むための命令位置を記録 */
     auto section_instr_idx = bc_.current_offset() - 1;
 
-    bool found_close = compile_body();
-    if (bc_.error.ec == error_code::none && !found_close) {
+    bool reached_end = false;
+    auto result = compile_body_impl(reached_end);
+
+    if (result == body_result::else_) {
+      // Section has {{else}}. Emit trampoline jump past else body.
+      auto jump_instr = static_cast<std::uint32_t>(bc_.current_offset());
+      bc_.add_instruction(bc_opcode::emit_else, 0, 0);
+
+      // Patch operand3 = first else body instruction
+      bc_.instructions[section_instr_idx].operand3 =
+          static_cast<std::uint32_t>(bc_.current_offset());
+
+      // Compile else body (until close tag)
+      bool else_reached_end = false;
+      auto else_result = compile_body_impl(else_reached_end);
+      if (else_result == body_result::eof) {
+        bc_.error = error_ctx{section_instr_idx, error_code::unexpected_end, key};
+        return;
+      }
+
+      bc_.add_instruction(bc_opcode::emit_end);
+      auto body_end = static_cast<std::uint32_t>(bc_.current_offset());
+      bc_.patch_jump(section_instr_idx, body_end);
+      bc_.patch_jump(jump_instr, body_end);
+
+    } else if (result == body_result::close) {
+      // No else — existing path
+      bc_.add_instruction(bc_opcode::emit_end);
+      bc_.patch_jump(section_instr_idx, static_cast<std::uint32_t>(bc_.current_offset()));
+    } else {
       bc_.error = error_ctx{section_instr_idx, error_code::unexpected_end, key};
       return;
     }
-    if (trim_blocks_ && pos_ < tmpl_.size() && tmpl_[pos_] == '\n') ++pos_;
 
-    bc_.add_instruction(bc_opcode::emit_end);
-    bc_.patch_jump(section_instr_idx, static_cast<std::uint32_t>(bc_.current_offset()));
+    if (trim_blocks_ && pos_ < tmpl_.size() && tmpl_[pos_] == '\n') ++pos_;
   }
 
   /**
@@ -255,15 +284,41 @@ class bc_compiler {
 
     auto section_instr_idx = bc_.current_offset() - 1;
 
-    bool found_close = compile_body();
-    if (bc_.error.ec == error_code::none && !found_close) {
+    bool reached_end = false;
+    auto result = compile_body_impl(reached_end);
+
+    if (result == body_result::else_) {
+      // Section has {{else}}. Emit trampoline jump past else body.
+      auto jump_instr = static_cast<std::uint32_t>(bc_.current_offset());
+      bc_.add_instruction(bc_opcode::emit_else, 0, 0);
+
+      // Patch operand3 = first else body instruction
+      bc_.instructions[section_instr_idx].operand3 =
+          static_cast<std::uint32_t>(bc_.current_offset());
+
+      // Compile else body (until close tag)
+      bool else_reached_end = false;
+      auto else_result = compile_body_impl(else_reached_end);
+      if (else_result == body_result::eof) {
+        bc_.error = error_ctx{section_instr_idx, error_code::unexpected_end, key};
+        return;
+      }
+
+      bc_.add_instruction(bc_opcode::emit_end);
+      auto body_end = static_cast<std::uint32_t>(bc_.current_offset());
+      bc_.patch_jump(section_instr_idx, body_end);
+      bc_.patch_jump(jump_instr, body_end);
+
+    } else if (result == body_result::close) {
+      // No else — existing path
+      bc_.add_instruction(bc_opcode::emit_end);
+      bc_.patch_jump(section_instr_idx, static_cast<std::uint32_t>(bc_.current_offset()));
+    } else {
       bc_.error = error_ctx{section_instr_idx, error_code::unexpected_end, key};
       return;
     }
-    if (trim_blocks_ && pos_ < tmpl_.size() && tmpl_[pos_] == '\n') ++pos_;
 
-    bc_.add_instruction(bc_opcode::emit_end);
-    bc_.patch_jump(section_instr_idx, static_cast<std::uint32_t>(bc_.current_offset()));
+    if (trim_blocks_ && pos_ < tmpl_.size() && tmpl_[pos_] == '\n') ++pos_;
   }
 
   /**
@@ -353,23 +408,33 @@ class bc_compiler {
 
     auto if_instr_idx = bc_.current_offset() - 1;
 
-    std::uint32_t else_instr_idx = 0;
     bool reached_end = false;
-    bool has_else = compile_body_with_else(else_instr_idx, reached_end);
+    auto result = compile_body_impl(reached_end);
+
+    if (result == body_result::else_) {
+      auto else_jump_idx = static_cast<std::uint32_t>(bc_.current_offset());
+      bc_.add_instruction(bc_opcode::emit_else, 0, 0);
+
+      bool else_reached_end = false;
+      auto else_result = compile_body_impl(else_reached_end);
+      if (else_result == body_result::eof) reached_end = true;
+
+      auto endif_addr = static_cast<std::uint32_t>(bc_.current_offset());
+      bc_.add_instruction(bc_opcode::emit_endif);
+
+      bc_.patch_jump(if_instr_idx, else_jump_idx + 1);
+      bc_.patch_jump(else_jump_idx, endif_addr + 1);
+    } else {
+      auto endif_addr = static_cast<std::uint32_t>(bc_.current_offset());
+      bc_.add_instruction(bc_opcode::emit_endif);
+      bc_.patch_jump(if_instr_idx, endif_addr + 1);
+    }
+
     if (bc_.error.ec == error_code::none && reached_end) {
       bc_.error = error_ctx{if_instr_idx, error_code::unexpected_end, "if"};
       return;
     }
     if (trim_blocks_ && pos_ < tmpl_.size() && tmpl_[pos_] == '\n') ++pos_;
-
-    if (has_else) {
-      bc_.add_instruction(bc_opcode::emit_endif);
-      bc_.patch_jump(if_instr_idx, else_instr_idx + 1);
-      bc_.patch_jump(else_instr_idx, static_cast<std::uint32_t>(bc_.current_offset()));
-    } else {
-      bc_.add_instruction(bc_opcode::emit_endif);
-      bc_.patch_jump(if_instr_idx, static_cast<std::uint32_t>(bc_.current_offset()));
-    }
   }
 
   /**
@@ -436,22 +501,20 @@ class bc_compiler {
   }
 
   /**
-   * @brief テンプレート本体をコンパイルする（統合実装）
-   * @param in_if_context true の場合 {{else}} を if-else 節として特別処理する
-   * @param[out] else_instr_idx in_if_context 時に else 命令のインデックスを設定
+   * @brief テンプレート本体をコンパイルする
    * @param[out] reached_end テンプレート終端に到達した場合に true を設定
-   * @return {{/xxx}} または {{else}} を検出したら true、終端に達したら false
-   * @details compile_body と compile_body_with_else の共通ロジックを統合。
-   *          {{{var}}} の raw プレースホルダ、セクション、if、@変数、フィルタに対応。
+   * @return close: {{/xxx}} 検出、else_: {{else}} 検出、eof: 終端に到達
+   * @details {{{var}}} の raw プレースホルダ、セクション、if、@変数、フィルタに対応。
+   *          呼び出し元は {{else}} を適切に処理する責任を持つ。
    */
-  bool compile_body_impl(bool in_if_context, std::uint32_t& else_instr_idx, bool& reached_end) {
+  body_result compile_body_impl(bool& reached_end) {
     reached_end = false;
     while (pos_ < tmpl_.size()) {
       auto tag_start = tmpl_.find("{{", pos_);
       if (tag_start == std::string_view::npos) {
         emit_literal(tmpl_.substr(pos_));
         reached_end = true;
-        return false;
+        return body_result::eof;
       }
 
       if (tag_start > pos_) {
@@ -485,7 +548,7 @@ class bc_compiler {
           auto ffl = parse_float_filter(parts[fi]);
           if (ffl) { float_filters.push_back(*ffl); continue; }
           bc_.error = error_ctx{tag_start, error_code::unknown_filter, parts[fi]};
-          return false;
+          return body_result::eof;
         }
         if (actual_key.starts_with("root.")) {
           emit_root_field(actual_key, true);
@@ -511,24 +574,11 @@ class bc_compiler {
       if (inner.empty()) continue;
 
       if (inner.starts_with("/")) {
-        if (in_if_context) {
-          return false;
-        }
-        return true;
+        return body_result::close;
       }
 
       if (inner == "else") {
-        if (in_if_context) {
-          else_instr_idx = static_cast<std::uint32_t>(bc_.current_offset());
-          bc_.add_instruction(bc_opcode::emit_else, 0, 0);
-          bool else_found_close = compile_body_impl(false, else_instr_idx, reached_end);
-          if (bc_.error.ec == error_code::none && !else_found_close) {
-            reached_end = true;
-          }
-          return true;
-        }
-        bc_.add_instruction(bc_opcode::emit_else);
-        return true;
+        return body_result::else_;
       }
 
       if (inner.starts_with("#")) {
@@ -598,7 +648,7 @@ class bc_compiler {
           auto ffl = parse_float_filter(parts[fi]);
           if (ffl) { float_filters.push_back(*ffl); continue; }
           bc_.error = error_ctx{pos_, error_code::unknown_filter, parts[fi]};
-          return false;
+          return body_result::eof;
         }
         // {{field.size}} → emit_var_size
         if (key.ends_with(".size") && filters.empty() && int_filters.empty() && float_filters.empty()) {
@@ -609,17 +659,12 @@ class bc_compiler {
       }
     }
     reached_end = true;
-    return false;
+    return body_result::eof;
   }
 
   bool compile_body() {
-    std::uint32_t dummy_idx = 0;
-    bool dummy_end = false;
-    return compile_body_impl(false, dummy_idx, dummy_end);
-  }
-
-  bool compile_body_with_else(std::uint32_t& else_instr_idx, bool& reached_end) {
-    return compile_body_impl(true, else_instr_idx, reached_end);
+    bool reached_end = false;
+    return compile_body_impl(reached_end) != body_result::eof;
   }
 
  public:

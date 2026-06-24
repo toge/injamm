@@ -307,7 +307,7 @@ struct bc_var_ref {
 
 /**
  * @brief 中間命令
- * @details オペコードと最大2つのオペランドからなる中間表現命令。
+ * @details オペコードと最大3つのオペランドからなる中間表現命令。
  *          operand はリテラルインデックスまたはジャンプ先オフセット、
  *          operand2 は変数参照インデックスとして使用される。
  */
@@ -315,6 +315,7 @@ struct bc_instruction {
   bc_opcode op;                    /**< オペコード */
   std::uint32_t operand = 0;       /**< リテラルインデックスまたはジャンプ先オフセット */
   std::uint32_t operand2 = 0;      /**< 変数参照インデックス（セクション/inverted/if用） */
+  std::uint32_t operand3 = 0;      /**< else_target（セクション/inverted の else 本体開始、0 = なし） */
 };
 
 /**
@@ -338,6 +339,17 @@ struct bytecode {
    */
   void add_instruction(bc_opcode op, std::uint32_t operand = 0, std::uint32_t operand2 = 0) {
     instructions.push_back({op, operand, operand2});
+  }
+
+  /**
+   * @brief 命令を追加する（else_target 付き）
+   * @param op オペコード
+   * @param operand 第1オペランド
+   * @param operand2 第2オペランド
+   * @param operand3 第3オペランド（else_target）
+   */
+  void add_instruction(bc_opcode op, std::uint32_t operand, std::uint32_t operand2, std::uint32_t operand3) {
+    instructions.push_back({op, operand, operand2, operand3});
   }
 
   /**
@@ -455,6 +467,11 @@ struct bytecode {
             char buf[16];
             auto [p, ec] = std::to_chars(buf, buf + sizeof(buf), instr.operand);
             append(std::string_view{buf, static_cast<std::size_t>(p - buf)});
+            if (instr.operand3 != 0 && (instr.op == bc_opcode::emit_section || instr.op == bc_opcode::emit_inverted)) {
+              append("  else_target=");
+              auto [p2, ec2] = std::to_chars(buf, buf + sizeof(buf), instr.operand3);
+              append(std::string_view{buf, static_cast<std::size_t>(p2 - buf)});
+            }
           } else {
             append("  loop#");
             char buf[16];

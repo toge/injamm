@@ -264,6 +264,64 @@ TEST_CASE("ct_section_bool_false", "[injamm][ct]") {
   REQUIRE(*r == "");
 }
 
+TEST_CASE("ct_section_else_truthy", "[injamm][ct][else]") {
+  auto constexpr tmpl = injamm::fixed_string("{{#flag}}yes{{else}}no{{/flag}}");
+  auto r = injamm::render<tmpl>(CtBoolData{true});
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "yes");
+}
+
+TEST_CASE("ct_section_else_falsy", "[injamm][ct][else]") {
+  auto constexpr tmpl = injamm::fixed_string("{{#flag}}yes{{else}}no{{/flag}}");
+  auto r = injamm::render<tmpl>(CtBoolData{false});
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "no");
+}
+
+TEST_CASE("ct_inverted_else_falsy", "[injamm][ct][else]") {
+  auto constexpr tmpl = injamm::fixed_string("{{^flag}}inverted{{else}}truthy{{/flag}}");
+  auto r = injamm::render<tmpl>(CtBoolData{false});
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "inverted");
+}
+
+TEST_CASE("ct_inverted_else_truthy", "[injamm][ct][else]") {
+  auto constexpr tmpl = injamm::fixed_string("{{^flag}}inverted{{else}}truthy{{/flag}}");
+  auto r = injamm::render<tmpl>(CtBoolData{true});
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "truthy");
+}
+
+TEST_CASE("ct_section_else_empty_vector", "[injamm][ct][else]") {
+  auto constexpr tmpl = injamm::fixed_string("{{#users}}body{{else}}empty{{/users}}");
+  auto r = injamm::render<tmpl>(CtUsersData{});
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "empty");
+}
+
+TEST_CASE("ct_section_else_non_empty_vector", "[injamm][ct][else]") {
+  auto constexpr tmpl = injamm::fixed_string("{{#users}}{{name}}{{else}}empty{{/users}}");
+  CtUsersData data;
+  data.users.push_back(CtUser{"alice", 30});
+  auto r = injamm::render<tmpl>(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "alice");
+}
+
+TEST_CASE("ct_section_else_optional_present", "[injamm][ct][else]") {
+  auto constexpr tmpl = injamm::fixed_string("{{#opt_str}}present{{else}}absent{{/opt_str}}");
+  auto r = injamm::render<tmpl>(CtOptionalData{std::optional<std::string>{"hello"}});
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "present");
+}
+
+TEST_CASE("ct_section_else_optional_empty", "[injamm][ct][else]") {
+  auto constexpr tmpl = injamm::fixed_string("{{#opt_str}}present{{else}}absent{{/opt_str}}");
+  auto r = injamm::render<tmpl>(CtOptionalData{std::nullopt});
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "absent");
+}
+
 // ---- 逆セクション ----
 
 TEST_CASE("ct_inverted_true", "[injamm][ct]") {

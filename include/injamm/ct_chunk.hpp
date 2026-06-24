@@ -113,8 +113,11 @@ struct ct_parsed_template {
    * @param key セクションキー
    * @param body_start 本体部分の開始インデックス
    * @param body_end   本体部分の終了インデックス
+   * @param else_start else 節の開始インデックス（省略時は 0）
+   * @param else_end   else 節の終了インデックス（省略時は 0）
    */
-  constexpr void push_section(std::string_view key, std::size_t body_start, std::size_t body_end) {
+  constexpr void push_section(std::string_view key, std::size_t body_start, std::size_t body_end,
+                               std::size_t else_start = 0, std::size_t else_end = 0) {
     if (size >= N) {
       throw std::overflow_error("ct_parsed_template: chunk buffer overflow");
     }
@@ -122,6 +125,8 @@ struct ct_parsed_template {
     texts[size] = key;
     body_starts[size] = body_start;
     body_ends[size] = body_end;
+    else_starts[size] = else_start;
+    else_ends[size] = else_end;
     ++size;
   }
 
@@ -131,8 +136,11 @@ struct ct_parsed_template {
    * @param key セクションキー
    * @param body_start 本体部分の開始インデックス
    * @param body_end   本体部分の終了インデックス
+   * @param else_start else 節の開始インデックス（省略時は 0）
+   * @param else_end   else 節の終了インデックス（省略時は 0）
    */
-  constexpr void push_inverted(std::string_view key, std::size_t body_start, std::size_t body_end) {
+  constexpr void push_inverted(std::string_view key, std::size_t body_start, std::size_t body_end,
+                                std::size_t else_start = 0, std::size_t else_end = 0) {
     if (size >= N) {
       throw std::overflow_error("ct_parsed_template: chunk buffer overflow");
     }
@@ -140,6 +148,8 @@ struct ct_parsed_template {
     texts[size] = key;
     body_starts[size] = body_start;
     body_ends[size] = body_end;
+    else_starts[size] = else_start;
+    else_ends[size] = else_end;
     ++size;
   }
 

@@ -252,6 +252,55 @@ TEST_CASE("bc_section_bool_false", "[injamm]") {
   REQUIRE(*r == "");
 }
 
+TEST_CASE("bc_section_else_truthy", "[injamm][else]") {
+  BcBoolData data{true};
+  auto bc = injamm::engine<BcBoolData>("{{#flag}}yes{{else}}no{{/flag}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "yes");
+}
+
+TEST_CASE("bc_section_else_falsy", "[injamm][else]") {
+  BcBoolData data{false};
+  auto bc = injamm::engine<BcBoolData>("{{#flag}}yes{{else}}no{{/flag}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "no");
+}
+
+TEST_CASE("bc_inverted_else_falsy", "[injamm][else]") {
+  BcBoolData data{false};
+  auto bc = injamm::engine<BcBoolData>("{{^flag}}inverted{{else}}truthy{{/flag}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "inverted");
+}
+
+TEST_CASE("bc_inverted_else_truthy", "[injamm][else]") {
+  BcBoolData data{true};
+  auto bc = injamm::engine<BcBoolData>("{{^flag}}inverted{{else}}truthy{{/flag}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "truthy");
+}
+
+TEST_CASE("bc_section_else_empty_vector", "[injamm][else]") {
+  BcUsersData data;
+  auto bc = injamm::engine<BcUsersData>("{{#users}}body{{else}}empty{{/users}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "empty");
+}
+
+TEST_CASE("bc_section_else_non_empty_vector", "[injamm][else]") {
+  BcUsersData data;
+  data.users.push_back(BcUser{"alice", 30});
+  auto bc = injamm::engine<BcUsersData>("{{#users}}{{name}}{{else}}empty{{/users}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "alice");
+}
+
 /**
  * @brief 逆セクション（true）の描画テスト
  * @details {{^flag}} はフラグが true の場合に内容を出力しないことを確認する。
@@ -1662,6 +1711,22 @@ TEST_CASE("bc_optional_section_empty", "[optional]") {
   auto r = bc.render(data);
   REQUIRE(r.has_value());
   REQUIRE(*r == "");
+}
+
+TEST_CASE("bc_section_else_optional_present", "[injamm][else][optional]") {
+  BcOptionalData data{std::optional<std::string>{"hello"}};
+  auto bc = injamm::engine<BcOptionalData>("{{#opt_str}}present{{else}}absent{{/opt_str}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "present");
+}
+
+TEST_CASE("bc_section_else_optional_empty", "[injamm][else][optional]") {
+  BcOptionalData data{std::nullopt};
+  auto bc = injamm::engine<BcOptionalData>("{{#opt_str}}present{{else}}absent{{/opt_str}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "absent");
 }
 
 TEST_CASE("bc_optional_if_present", "[optional]") {

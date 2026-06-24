@@ -145,10 +145,15 @@ struct ct_parse_context {
    * @param idx         更新対象のチャンクインデックス
    * @param body_start  本体の開始チャンクインデックス
    * @param body_end    本体の終了チャンクインデックス
+   * @param else_start  else 節の開始チャンクインデックス（省略時は 0）
+   * @param else_end    else 節の終了チャンクインデックス（省略時は 0）
    */
-  constexpr void update_section(std::size_t idx, std::size_t body_start, std::size_t body_end) {
+  constexpr void update_section(std::size_t idx, std::size_t body_start, std::size_t body_end,
+                                 std::size_t else_start = 0, std::size_t else_end = 0) {
     tmpl.body_starts[idx] = body_start;
     tmpl.body_ends[idx] = body_end;
+    tmpl.else_starts[idx] = else_start;
+    tmpl.else_ends[idx] = else_end;
   }
 
   /**
@@ -514,13 +519,34 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
           pos = tmpl.size();
         }
 
+        /** @brief トップレベルの {{else}} を検出して分割 */
+        auto else_pos = find_toplevel_else(body);
+        std::string_view main_body, else_body;
+        if (else_pos != std::string_view::npos) {
+          main_body = body.substr(0, else_pos);
+          if (lstrip_blocks) main_body = trim_tail_whitespace_for_lstrip(main_body);
+          auto else_tag_end = constexpr_find(body, "}}", else_pos + 2);
+          else_body = (else_tag_end != std::string_view::npos) ? body.substr(else_tag_end + 2) : std::string_view{};
+          if (lstrip_blocks) else_body = trim_tail_whitespace_for_lstrip(else_body);
+        } else {
+          main_body = body;
+          else_body = {};
+        }
+
         /** @brief セクションチャンクを追加し、本体を再帰パース */
         auto chunk_idx = ctx.push_section(key, 0, 0);
         auto body_start_idx = ctx.tmpl.size;
-        ct_parse_into(ctx, body, trim_blocks, lstrip_blocks);
+        ct_parse_into(ctx, main_body, trim_blocks, lstrip_blocks);
         auto body_end_idx = ctx.tmpl.size;
 
-        ctx.update_section(chunk_idx, body_start_idx, body_end_idx);
+        if (else_pos != std::string_view::npos) {
+          auto else_start_idx = ctx.tmpl.size;
+          ct_parse_into(ctx, else_body, trim_blocks, lstrip_blocks);
+          auto else_end_idx = ctx.tmpl.size;
+          ctx.update_section(chunk_idx, body_start_idx, body_end_idx, else_start_idx, else_end_idx);
+        } else {
+          ctx.update_section(chunk_idx, body_start_idx, body_end_idx);
+        }
       }
       continue;
     }
@@ -531,11 +557,6 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
       auto key = trim_sv(inner.substr(1));
 
       // -- {{^loop.X}} 逆セクションの処理 --
-      /**
-       * @brief loop.* 逆セクションの解析
-       * @details `{{^loop.is_first}}...{{/loop.is_first}}` のように記述し、
-       *          条件が偽の場合に本体が描画される（{{#loop.*}} の逆）。
-       */
       if (auto k = parse_loop_kind(key); k) {
         at_var_kind var_kind = *k;
         auto body_start_pos = pos;
@@ -557,12 +578,6 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
       }
 
       // -- {{^key}} 通常の逆セクションの処理 --
-      /**
-       * @brief 通常の逆セクションの解析
-       * @details `{{^key}}...{{/key}}` の形式を解析する。
-       *          キーに対応する値が偽（空配列・false・0）の場合に本体が描画される。
-       *          ネスト対応のため depth カウントを行う。
-       */
       {
         auto const tag_size = 5 + key.size();
         auto body_start_pos = pos;
@@ -601,12 +616,32 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
           pos = tmpl.size();
         }
 
+        auto else_pos = find_toplevel_else(body);
+        std::string_view main_body, else_body;
+        if (else_pos != std::string_view::npos) {
+          main_body = body.substr(0, else_pos);
+          if (lstrip_blocks) main_body = trim_tail_whitespace_for_lstrip(main_body);
+          auto else_tag_end = constexpr_find(body, "}}", else_pos + 2);
+          else_body = (else_tag_end != std::string_view::npos) ? body.substr(else_tag_end + 2) : std::string_view{};
+          if (lstrip_blocks) else_body = trim_tail_whitespace_for_lstrip(else_body);
+        } else {
+          main_body = body;
+          else_body = {};
+        }
+
         auto chunk_idx = ctx.push_inverted(key, 0, 0);
         auto body_start_idx = ctx.tmpl.size;
-        ct_parse_into(ctx, body, trim_blocks, lstrip_blocks);
+        ct_parse_into(ctx, main_body, trim_blocks, lstrip_blocks);
         auto body_end_idx = ctx.tmpl.size;
 
-        ctx.update_section(chunk_idx, body_start_idx, body_end_idx);
+        if (else_pos != std::string_view::npos) {
+          auto else_start_idx = ctx.tmpl.size;
+          ct_parse_into(ctx, else_body, trim_blocks, lstrip_blocks);
+          auto else_end_idx = ctx.tmpl.size;
+          ctx.update_section(chunk_idx, body_start_idx, body_end_idx, else_start_idx, else_end_idx);
+        } else {
+          ctx.update_section(chunk_idx, body_start_idx, body_end_idx);
+        }
       }
       continue;
     }

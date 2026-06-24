@@ -160,6 +160,13 @@ int main() {
   std::cout << *bc.render(data) << "\n";
   // "Alice (30), Bob (25), Charlie (35)."
 
+  // セクション with else（空/偽の場合に else 節を描画）
+  Data empty_data{};
+  auto bc2 = injamm::engine<Data>(
+    "{{#users}}{{name}}{{else}}no users{{/users}}");
+  std::cout << *bc2.render(empty_data) << "\n";
+  // "no users"
+
   // NTTP コンパイル時レンダリング
   constexpr auto kTmpl = injamm::fixed_string("Hello {{name}}! Age: {{age}}.");
   std::cout << *injamm::render<kTmpl>(User{"Bob", 25}) << "\n";
@@ -176,7 +183,9 @@ int main() {
 | `{{var}}`                           | 変数（HTML エスケープあり）           |
 | `{{{var}}}`                         | 変数（HTML エスケープなし）           |
 | `{{#section}}...{{/section}}`       | セクション（配列ループまたは真理値）  |
+| `{{#section}}...{{else}}...{{/section}}` | セクション with else（空/偽の場合に else 節を描画） |
 | `{{^section}}...{{/section}}`       | 逆セクション（空/偽 のとき描画）      |
+| `{{^section}}...{{else}}...{{/section}}` | 逆セクション with else（真の場合に else 節を描画） |
 | `{{#exists var}}...{{/exists}}`     | 変数が存在（真とみなせる）ときに描画  |
 | `{{^exists var}}...{{/exists}}`     | 変数が存在しない（偽/空）ときに描画  |
 | `{{#break}}`                        | ループを中断する                      |
@@ -289,6 +298,21 @@ auto r2 = bc.render(data2);
 // @var 定数置換付き
 std::map<std::string, std::string, std::less<>> c{{"f", "name"}};
 auto bc2 = injamm::engine<User>("{{@var(f)}}", c);
+```
+
+### `injamm::bind<"name">(value)`
+
+複数のコンテナや値を NTTP 名でバインドし、`injamm::render` で利用可能なコンテキストを生成します。
+
+```cpp
+auto ctx = injamm::bind<"items", "user">(items, user);
+auto html = injamm::render<kTmpl>(ctx);
+```
+
+単一の値の場合は `"value"` という名前で自動的にバインドされます。
+
+```cpp
+auto ctx = injamm::bind(value); // "value" としてバインド
 ```
 
 ### `injamm::expected<T>`

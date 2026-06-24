@@ -928,15 +928,17 @@ public:
     auto const& instr    = bc_.instructions[pc];
     auto const& ref      = bc_.var_refs[instr.operand2];
     auto        body_end = instr.operand;
+    auto        else_pc  = instr.operand3;
 
     if (body_end <= pc + 1 || body_end > bc_.instructions.size()) {
       return std::unexpected(error_ctx{.position = pc, .ec = error_code::syntax_error});
     }
 
+    bool is_falsy = true;
     auto r = for_each_field(value_, ref.key, ref.field_index, ref.has_dot, [&](auto const& field) -> std::expected<void, error_ctx> {
       using FT = std::remove_cvref_t<decltype(field)>;
       if constexpr (ct_is_vector_like<FT>) {
-        /** 配列の場合: 各要素をループ */
+        if (!field.empty()) is_falsy = false;
         using elem_t = typename FT::value_type;
         bc_loop_state ls;
         ls.count = static_cast<std::uint32_t>(field.size());
@@ -955,14 +957,14 @@ public:
             break;
         }
       } else if constexpr (std::same_as<FT, bool>) {
-        /** bool の場合: 真ならボディを一度描画 */
+        is_falsy = !field;
         if (field) {
           auto r2 = execute_impl(pc + 1, body_end - 1);
           if (!r2)
             return r2;
         }
       } else if constexpr (is_std_optional_v<FT>) {
-        /** optional の場合: 値を持てば内部値をコンテキストとしてボディを一度描画 */
+        is_falsy = !field.has_value();
         if (field.has_value()) {
           using inner_t = typename FT::value_type;
           bc_executor<inner_t, RootT> child_exec(bc_, *field, root_value_, nullptr, out_);
@@ -971,7 +973,7 @@ public:
             return r2;
         }
       } else if constexpr (ct_is_map_like<FT>) {
-        /** map の場合: キーを @key として各要素をループ */
+        if (!field.empty()) is_falsy = false;
         bc_loop_state ls;
         ls.count = static_cast<std::uint32_t>(field.size());
         for (auto const& [k, v] : field) {
@@ -986,7 +988,7 @@ public:
           ++ls.index;
         }
       } else if constexpr (ct_is_set_like<FT>) {
-        /** set の場合: 各要素を {{this}} としてイテレータベースでループ */
+        if (!field.empty()) is_falsy = false;
         using elem_t = typename FT::value_type;
         bc_loop_state ls;
         ls.count = static_cast<std::uint32_t>(field.size());
@@ -1005,7 +1007,7 @@ public:
           ++ls.index;
         }
       } else if constexpr (ct_glz_reflectable<FT>) {
-        /** 構造体の場合: 全フィールドを反復 */
+        is_falsy = false;
         constexpr auto                 sz   = glz::reflect<FT>::size;
         auto                           tied = glz::to_tie(field);
         std::expected<void, error_ctx> res{};
@@ -1029,7 +1031,12 @@ public:
     });
     if (!r)
       return r;
-    pc = body_end;
+
+    if (else_pc > 0 && is_falsy) {
+      pc = else_pc;
+    } else {
+      pc = body_end;
+    }
     DISPATCH();
   }
 
@@ -1044,6 +1051,7 @@ public:
   L_emit_inverted: {
     auto const& instr = bc_.instructions[pc];
     auto const& ref   = bc_.var_refs[instr.operand2];
+    auto        else_pc = instr.operand3;
     bool        empty = true;
     (void)for_each_field(value_, ref.key, ref.field_index, ref.has_dot, [&](auto const& field) {
       using FT = std::remove_cvref_t<decltype(field)>;
@@ -1065,17 +1073,22 @@ public:
         empty = false;
       }
     });
+    auto body_end = instr.operand;
+    if (body_end <= pc + 1 || body_end > bc_.instructions.size()) {
+      return std::unexpected(error_ctx{.position = pc, .ec = error_code::syntax_error});
+    }
     if (empty) {
-      auto body_end = instr.operand;
-      if (body_end <= pc + 1 || body_end > bc_.instructions.size()) {
-        return std::unexpected(error_ctx{.position = pc, .ec = error_code::syntax_error});
-      }
       auto r = execute_impl(pc + 1, body_end - 1);
       if (!r)
         return r;
       pc = body_end;
+    } else if (else_pc > 0) {
+      auto r = execute_impl(else_pc, body_end - 1);
+      if (!r)
+        return r;
+      pc = body_end;
     } else {
-      pc = instr.operand;
+      pc = body_end;
     }
     DISPATCH();
   }

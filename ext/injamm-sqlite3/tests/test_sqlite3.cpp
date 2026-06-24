@@ -91,4 +91,35 @@ TEST_CASE("sqlite3 adapter", "[sqlite3]") {
 
     sqlite3_finalize(stmt);
   }
+
+  SECTION("{{#.}} with else, empty") {
+    test_db db;
+    sqlite3_stmt* stmt = prepare(db, "SELECT name FROM users WHERE id = 999");
+    auto result_set = injamm::sqlite3::sqlite3_result{stmt};
+
+    auto eng = injamm::sqlite3::runtime_engine<injamm::sqlite3::sqlite3_result>(
+      "{{#.}}body{{else}}empty{{/.}}"
+    );
+    auto result = eng.render(result_set);
+    REQUIRE(result.has_value());
+    CHECK(*result == "empty");
+
+    sqlite3_finalize(stmt);
+  }
+
+  SECTION("{{#.}} with else, non-empty") {
+    test_db db;
+    sqlite3_stmt* stmt = prepare(db, "SELECT name FROM users WHERE id = 1");
+    auto result_set = injamm::sqlite3::sqlite3_result{stmt};
+
+    auto eng = injamm::sqlite3::runtime_engine<injamm::sqlite3::sqlite3_result>(
+      "{{#.}}{{name}}{{else}}empty{{/.}}"
+    );
+    auto result = eng.render(result_set);
+    REQUIRE(result.has_value());
+    CHECK(*result == "Alice");
+
+    sqlite3_finalize(stmt);
+  }
 }
+

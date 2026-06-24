@@ -347,9 +347,20 @@ consteval void compile_chunk_range(ct_bytecode_builder<N>& b,
       auto sec_instr = b.current_offset();
       b.emit(bc_opcode::emit_section, 0, vridx);
       compile_chunk_range(b, chunks, chunks.body_starts[i], chunks.body_ends[i]);
-      b.emit(bc_opcode::emit_end, static_cast<std::uint32_t>(sec_instr));
-      b.patch_jump(sec_instr, static_cast<std::uint32_t>(b.current_offset()));
-      i = chunks.body_ends[i] - 1;
+      if (chunks.else_starts[i] != 0) {
+        auto tramp_instr = b.current_offset();
+        b.emit(bc_opcode::emit_else, 0);
+        b.bc.instructions[sec_instr].operand3 = static_cast<std::uint32_t>(b.current_offset());
+        compile_chunk_range(b, chunks, chunks.else_starts[i], chunks.else_ends[i]);
+        b.emit(bc_opcode::emit_end, static_cast<std::uint32_t>(sec_instr));
+        b.patch_jump(sec_instr, static_cast<std::uint32_t>(b.current_offset()));
+        b.patch_jump(tramp_instr, static_cast<std::uint32_t>(b.current_offset()));
+      } else {
+        b.emit(bc_opcode::emit_end, static_cast<std::uint32_t>(sec_instr));
+        b.patch_jump(sec_instr, static_cast<std::uint32_t>(b.current_offset()));
+      }
+      std::size_t skip_to = chunks.else_starts[i] != 0 ? chunks.else_ends[i] : chunks.body_ends[i];
+      i = skip_to - 1;
       break;
     }
     case ct_chunk_kind::inverted: {
@@ -358,9 +369,20 @@ consteval void compile_chunk_range(ct_bytecode_builder<N>& b,
       auto inv_instr = b.current_offset();
       b.emit(bc_opcode::emit_inverted, 0, vridx);
       compile_chunk_range(b, chunks, chunks.body_starts[i], chunks.body_ends[i]);
-      b.emit(bc_opcode::emit_end, static_cast<std::uint32_t>(inv_instr));
-      b.patch_jump(inv_instr, static_cast<std::uint32_t>(b.current_offset()));
-      i = chunks.body_ends[i] - 1;
+      if (chunks.else_starts[i] != 0) {
+        auto tramp_instr = b.current_offset();
+        b.emit(bc_opcode::emit_else, 0);
+        b.bc.instructions[inv_instr].operand3 = static_cast<std::uint32_t>(b.current_offset());
+        compile_chunk_range(b, chunks, chunks.else_starts[i], chunks.else_ends[i]);
+        b.emit(bc_opcode::emit_end, static_cast<std::uint32_t>(inv_instr));
+        b.patch_jump(inv_instr, static_cast<std::uint32_t>(b.current_offset()));
+        b.patch_jump(tramp_instr, static_cast<std::uint32_t>(b.current_offset()));
+      } else {
+        b.emit(bc_opcode::emit_end, static_cast<std::uint32_t>(inv_instr));
+        b.patch_jump(inv_instr, static_cast<std::uint32_t>(b.current_offset()));
+      }
+      std::size_t skip_to = chunks.else_starts[i] != 0 ? chunks.else_ends[i] : chunks.body_ends[i];
+      i = skip_to - 1;
       break;
     }
     case ct_chunk_kind::at_var: {

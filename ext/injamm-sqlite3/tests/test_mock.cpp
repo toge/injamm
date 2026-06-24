@@ -132,6 +132,29 @@ TEST_CASE("forward iteration rendering", "[engine][iteration]") {
     REQUIRE(result.has_value());
     CHECK(*result == "beforeafter");
   }
+
+  SECTION("{{#.}} with else, empty") {
+    mock_result res{nullptr, 0};
+    auto eng = injamm::sqlite3::runtime_engine<mock_result>(
+      "{{#.}}body{{else}}empty{{/.}}"
+    );
+    auto result = eng.render(res);
+    REQUIRE(result.has_value());
+    CHECK(*result == "empty");
+  }
+
+  SECTION("{{#.}} with else, non-empty") {
+    mock_row rows_arr[1] = {mock_row{{{"name", "A"}}}};
+    mock_result res{rows_arr, 1};
+    auto eng = injamm::sqlite3::runtime_engine<mock_result>(
+      "{{#.}}{{name}}{{else}}empty{{/.}}"
+    );
+    auto result = eng.render(res);
+    REQUIRE(result.has_value());
+    CHECK(*result == "A");
+  }
+
+
 }
 
 
