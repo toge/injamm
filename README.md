@@ -11,7 +11,7 @@ Glaze でメタプログラミングされた C++ 構造体をコンテキスト
 
 - **ヘッダオンリー**: インクルードするだけで使用可能
 - **高速**: コンパイル時テンプレートパース、Computed goto ディスパッチ（GCC）、Glaze リフレクションによる O(1) フィールドアクセス
-- **依存最小**: Glaze のみ必須
+- **依存最小**: [Glaze](https://github.com/stephenberry/glaze) のみ必須
 
 ## 要件
 
@@ -311,6 +311,5 @@ auto bc2 = injamm::engine<User>("{{@var(f)}}", c);
 ## 注意事項
 
 - `render<fixed_string>` の戻り値型 `expected<std::string>` は、GCC 16 の `[[nodiscard]] expected<void, error_ctx>` と衝突する可能性があります。必要に応じて `void` 特殊化を無視してください。
-- GCC 以外のコンパイラでは `ENABLE_THREADED_DISPATCH` を OFF にしてください。
-tx>` と衝突する可能性があります。必要に応じて `void` 特殊化を無視してください。
-- GCC 以外のコンパイラでは `ENABLE_THREADED_DISPATCH` を OFF にしてください。
+- GCC 以外のコンパイラでは `ENABLE_THREADED_DISPATCH` を OFF にしてください。(デフォルトは自動で OFF になります)
+

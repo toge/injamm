@@ -16,6 +16,7 @@ struct Data {
   std::string title;
 };
 
+// メタデータの定義はなくてもよいです
 template <> struct glz::meta<User> {
   static constexpr auto value = glz::object("name", &User::name, "age", &User::age, "active", &User::active);
 };
