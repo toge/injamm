@@ -236,9 +236,9 @@ auto r = injamm::render<injamm::fixed_string(
 // r == "Bob is minor"
 ```
 
-### 6.3 整数比較 (`{{#if x == N}}...{{/if}}`)
+### 6.3 直接比較 (`{{#if lhs op rhs}}...{{/if}}`)
 
-右辺の整数リテラルとの比較が可能です。`==` と `!=` をサポート。
+`==`, `!=`, `<`, `<=`, `>`, `>=` をサポートします。右辺には整数リテラル、文字列リテラル、または別の変数を指定できます。
 
 ```cpp
 auto bc = injamm::engine<User>("{{#if age == 18}}exactly 18{{/if}}");
@@ -248,9 +248,58 @@ bc.render(User{"Alice", 18}); // r == "exactly 18"
 auto r = injamm::render<injamm::fixed_string(
   "{{#if age != 0}}non-zero{{/if}}")>(User{"Alice", 25});
 // r == "non-zero"
+
+// 直接大小比較
+auto r2 = injamm::render<injamm::fixed_string(
+  "{{#if age >= 18}}adult{{else}}minor{{/if}}")>(User{"Alice", 25});
+// r2 == "adult"
+
+// 文字列リテラル比較
+auto r3 = injamm::render<injamm::fixed_string(
+  "{{#if name == \"Alice\"}}match{{/if}}")>(User{"Alice", 25});
+// r3 == "match"
 ```
 
-### 6.4 if + フィルター
+別の変数との比較:
+
+```cpp
+struct Pair {
+  int lhs{};
+  int rhs{};
+};
+
+template <> struct glz::meta<Pair> {
+  static constexpr auto value = glz::object("lhs", &Pair::lhs, "rhs", &Pair::rhs);
+};
+
+auto bc = injamm::engine<Pair>("{{#if lhs > rhs}}gt{{/if}}");
+bc.render(Pair{10, 3}); // r == "gt"
+```
+
+### 6.4 論理演算 (`{{#if a || b}}`, `{{#if a && b}}`, `{{#if !a}}`)
+
+単純な論理演算として `||`, `&&`, `!` をサポートします。各オペランドの真偽値判定は通常の `if` と同じです。
+
+```cpp
+struct Flags {
+  bool a{};
+  bool b{};
+};
+
+template <> struct glz::meta<Flags> {
+  static constexpr auto value = glz::object("a", &Flags::a, "b", &Flags::b);
+};
+
+auto r = injamm::render<injamm::fixed_string(
+  "{{#if a || b}}on{{/if}}")>(Flags{false, true});
+// r == "on"
+
+auto r2 = injamm::render<injamm::fixed_string(
+  "{{#if !a}}off{{/if}}")>(Flags{false, false});
+// r2 == "off"
+```
+
+### 6.5 if + フィルター
 
 フィルターを使って条件判定することもできます。`is_neg`, `eq(n)`, `ne(n)`, `gt(n)`, `gte(n)`, `lt(n)`, `lte(n)` フィルターが特に有用です。
 
@@ -311,6 +360,7 @@ auto r = injamm::render<injamm::fixed_string(
 | `{{loop.is_first}}` | 最初の要素なら `true`        | `true` / `false` |
 | `{{loop.is_last}}`  | 最後の要素なら `true`        | `true` / `false` |
 | `{{loop.key}}`      | 現在のキー名（マップ反復時） | `"alice"`        |
+| `{{loop.parent.*}}` | 親ループの loop 変数         | `{{loop.parent.index}}` |
 
 ```cpp
 // ループ変数の使用例
@@ -321,6 +371,29 @@ auto r = injamm::render<injamm::fixed_string(
 ```
 
 ループ変数をセクションキーとしても使用できます:
+
+親ループにも `parent` を連結してアクセスできます。
+
+```cpp
+struct Group {
+  std::vector<int> items;
+};
+struct Nested {
+  std::vector<Group> groups;
+};
+
+template <> struct glz::meta<Group> {
+  static constexpr auto value = glz::object("items", &Group::items);
+};
+template <> struct glz::meta<Nested> {
+  static constexpr auto value = glz::object("groups", &Nested::groups);
+};
+
+auto r = injamm::render<injamm::fixed_string(
+  "{{#groups}}{{#items}}({{loop.parent.index}}/{{loop.index}}={{this}}){{/items}}{{/groups}}")>(
+  Nested{{{{1, 2}}, {{3}}}});
+// r == "(0/0=1)(0/1=2)(1/0=3)"
+```
 
 ### 8.1 `{{#loop.is_first}}...{{/loop.is_first}}`
 
@@ -630,6 +703,50 @@ auto r = injamm::render<injamm::fixed_string(
   "{{#config}}{{loop.key}}={{this}};{{/config}}")>(Config{});
 // r == "host=localhost;port=8080;"
 ```
+
+---
+
+## 18. `bind()` で複数コンテキストを束ねる
+
+`injamm::bind<Names...>(values...)` を使うと、独立した値やコンテナを 1 つのレンダリングコンテキストとして扱えます。`render`（NTTP）で特に便利です。
+
+```cpp
+std::vector<User> users{{"Alice", 30, true}, {"Bob", 25, false}};
+std::string title = "Members";
+
+auto ctx = injamm::bind<"title", "users">(title, users);
+auto r = injamm::render<injamm::fixed_string(
+  "{{title}}: {{#users}}{{name}} {{/users}}")>(ctx);
+// r == "Members: Alice Bob "
+```
+
+単一の値なら `bind(value)` で `"value"` 名が自動的に付きます。
+
+```cpp
+auto r = injamm::render<injamm::fixed_string("Got {{value}}")>(injamm::bind(42));
+// r == "Got 42"
+```
+
+---
+
+## 19. partial / include（NTTP render 専用）
+
+`{{> partial_name}}` は NTTP `render` の compile-time entry pair で展開されます。runtime `engine<T>` では未対応です。
+
+```cpp
+std::string title = "Members";
+std::string name = "Alice";
+
+auto ctx = injamm::bind<"title", "name">(title, name);
+auto r = injamm::render<
+  "{{> header}} {{name}} {{> footer}}",
+  "header", "<h1>{{title}}</h1>",
+  "footer", "<footer>{{title}}</footer>"
+>(ctx);
+// r == "<h1>Members</h1> Alice <footer>Members</footer>"
+```
+
+partial の中には通常のテンプレート構文を書けます。展開はパース前に行われます。
 
 ---
 

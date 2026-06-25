@@ -31,6 +31,8 @@ target_include_directories(injamm-sqlite3 INTERFACE
   $<INSTALL_INTERFACE:include>
 )
 target_link_libraries(injamm-sqlite3 INTERFACE injamm::injamm unofficial::sqlite3::sqlite3)
+# sqlite3 backend は core と別の VM 実装を持つため、opcode 追加の追従漏れを避ける。
+target_compile_definitions(injamm-sqlite3 INTERFACE INJAMM_NO_THREADED_DISPATCH)
 
 # ---- Install ----
 include(GNUInstallDirs)

@@ -192,8 +192,10 @@ int main() {
 | `{{#continue}}`                     | ループをスキップして次の反復へ        |
 | `{{#if cond}}...{{/if}}`            | 条件分岐（0/空/偽は偽、それ以外は真） |
 | `{{#if cond}}...{{else}}...{{/if}}` | if/else                               |
-| `{{#if x == N}}...{{/if}}`          | 整数比較（`==` / `!=`、右辺は整数リテラル） |
+| `{{#if x == rhs}}...{{/if}}`        | 直接比較（`==` / `!=` / `<` / `<=` / `>` / `>=`、右辺は整数リテラル・文字列リテラル・変数） |
+| `{{#if a || b}}...{{/if}}`          | 単純な論理演算（`||` / `&&` / `!`） |
 | `{{loop.index}}`                    | ループインデックス（0 始まり、inja 互換）|
+| `{{loop.parent.index}}`             | 親ループの loop 変数へアクセス |
 | `{{loop.index1}}`                   | ループインデックス（1 始まり、inja 互換）|
 | `{{loop.size}}`                     | ループ総要素数（inja 互換）            |
 | `{{loop.is_first}}`                 | 最初の要素なら `true`（inja 互換）     |
@@ -203,6 +205,7 @@ int main() {
 | `{{! ... }}`                        | コメント（Mustache 標準構文）         |
 | `{{~ var ~}}`                       | タグ前後の空白をトリム                |
 | `{{@var(name)}}`                   | 定数置換（engine 構築時に渡した定数テーブルで展開、NTTP ではテンプレート引数で指定） |
+| `{{> partial}}`                    | partial 展開（NTTP render + テンプレート引数ペアのみ） |
 
 ### @var 定数置換
 
@@ -315,6 +318,19 @@ auto html = injamm::render<kTmpl>(ctx);
 auto ctx = injamm::bind(value); // "value" としてバインド
 ```
 
+### NTTP partial (`{{> partial}}`)
+
+NTTP `render` の entry pair は `@var` だけでなく partial 展開にも使えます。
+
+```cpp
+auto ctx = injamm::bind<"title", "name">(title, name);
+auto html = injamm::render<
+  "{{> header}} {{name}} {{> footer}}",
+  "header", "<h1>{{title}}</h1>",
+  "footer", "<footer>{{title}}</footer>"
+>(ctx);
+```
+
 ### `injamm::expected<T>`
 
 `std::expected<T, error_ctx>` のエイリアス。
@@ -336,4 +352,3 @@ auto ctx = injamm::bind(value); // "value" としてバインド
 
 - `render<fixed_string>` の戻り値型 `expected<std::string>` は、GCC 16 の `[[nodiscard]] expected<void, error_ctx>` と衝突する可能性があります。必要に応じて `void` 特殊化を無視してください。
 - GCC 以外のコンパイラでは `ENABLE_THREADED_DISPATCH` を OFF にしてください。(デフォルトは自動で OFF になります)
-

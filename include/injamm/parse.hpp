@@ -2,6 +2,7 @@
 
 #include "types.hpp"
 #include <array>
+#include <limits>
 #include <optional>
 #include <string>
 #include <string_view>
@@ -29,6 +30,61 @@ namespace injamm::detail {
   }
   return negative ? -arg : arg;
 }
+
+/**
+ * @brief 厳密な整数リテラルをパースする
+ * @param s 入力文字列
+ * @return パース成功時は int、失敗時は std::nullopt
+ * @details 先頭の `-` を1回だけ許容し、それ以外の文字が含まれる場合は失敗する。
+ *          値域は int に収まることを要求する。
+ */
+[[nodiscard]] constexpr std::optional<int> parse_int_literal(std::string_view s) noexcept {
+  if (s.empty()) {
+    return std::nullopt;
+  }
+
+  bool negative = false;
+  std::size_t i = 0;
+  if (s[i] == '-') {
+    negative = true;
+    ++i;
+    if (i == s.size()) {
+      return std::nullopt;
+    }
+  }
+
+  long long value = 0;
+  for (; i < s.size(); ++i) {
+    auto const c = s[i];
+    if (c < '0' || c > '9') {
+      return std::nullopt;
+    }
+    value = value * 10 + static_cast<long long>(c - '0');
+    if (!negative && value > std::numeric_limits<int>::max()) {
+      return std::nullopt;
+    }
+    if (negative && -value < std::numeric_limits<int>::min()) {
+      return std::nullopt;
+    }
+  }
+
+  auto const signed_value = negative ? -value : value;
+  return static_cast<int>(signed_value);
+}
+
+/**
+ * @brief 二重引用符で囲まれた文字列リテラルをパースする
+ * @param s 入力文字列
+ * @return クォートを除いた文字列 view。形式不正なら std::nullopt
+ * @details 現状はエスケープシーケンスを解釈せず、そのまま内部部分を返す。
+ */
+[[nodiscard]] constexpr std::optional<std::string_view> parse_string_literal(std::string_view s) noexcept {
+  if (s.size() < 2 || s.front() != '"' || s.back() != '"') {
+    return std::nullopt;
+  }
+  return s.substr(1, s.size() - 2);
+}
+
 
 /**
  * @brief 文字列の前後から空白（スペース・タブ）を取り除いた view を返す

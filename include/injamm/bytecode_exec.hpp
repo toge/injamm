@@ -320,6 +320,64 @@ class bc_executor {
     }
   }
 
+  /** @brief loop.parent.* 変数の解決。解決できれば true を返す */
+  static auto resolve_loop_parent_var(bc_executor const& ex, std::string_view key, bool raw) -> bool {
+    if (!ex.loop_) return false;
+    if (!key.starts_with("loop.parent.")) return false;
+    auto parent = ex.loop_->parent;
+    if (!parent) return false;
+    auto prop = key.substr(12);
+    if (prop == "index") {
+      std::array<char, 16> buf;
+      auto [ptr, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), parent->index);
+      if (ec == std::errc{}) ex.out_.append(buf.data(), ptr);
+      return true;
+    }
+    if (prop == "index1") {
+      std::array<char, 16> buf;
+      auto [ptr, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), parent->index + 1);
+      if (ec == std::errc{}) ex.out_.append(buf.data(), ptr);
+      return true;
+    }
+    if (prop == "size") {
+      std::array<char, 16> buf;
+      auto [ptr, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), parent->count);
+      if (ec == std::errc{}) ex.out_.append(buf.data(), ptr);
+      return true;
+    }
+    if (prop == "is_first") {
+      ex.out_.append(parent->index == 0 ? "true" : "false");
+      return true;
+    }
+    if (prop == "is_last") {
+      ex.out_.append((parent->index + 1 == parent->count) ? "true" : "false");
+      return true;
+    }
+    if (prop == "key") {
+      if (!parent->key.empty()) {
+        if (raw) { ex.out_.append(parent->key); } else { html_escape_into(ex.out_, parent->key); }
+      }
+      return true;
+    }
+    return false;
+  }
+
+  /** @brief loop.parent.* の truthiness を判定。判定できれば true を返す */
+  static auto eval_loop_parent_truthy(bc_executor const& ex, std::string_view key, bool& result) -> bool {
+    if (!ex.loop_) return false;
+    if (!key.starts_with("loop.parent.")) return false;
+    auto parent = ex.loop_->parent;
+    if (!parent) return false;
+    auto prop = key.substr(12);
+    if (prop == "index") { result = (parent->index != 0); return true; }
+    if (prop == "index1") { result = true; return true; }
+    if (prop == "size") { result = (parent->count != 0); return true; }
+    if (prop == "is_first") { result = (parent->index == 0); return true; }
+    if (prop == "is_last") { result = (parent->index + 1 == parent->count); return true; }
+    if (prop == "key") { result = !parent->key.empty(); return true; }
+    return false;
+  }
+
   // -- handler functions (shared by both dispatch paths) --
 
   static std::expected<void, error_ctx> handle_emit_literal(bc_executor& ex, std::size_t& pc, std::string&) {
@@ -331,8 +389,10 @@ class bc_executor {
   static std::expected<void, error_ctx> handle_emit_var(bc_executor& ex, std::size_t& pc, std::string&) {
     bool raw = ex.bc_.instructions[pc].op == bc_opcode::emit_var_raw;
     auto const& ref = ex.bc_.var_refs[ex.bc_.instructions[pc].operand];
-    auto r = ex.for_each_field(ex.value_, ref.key, ref.field_index, ref.has_dot, [&](auto const& field) { ex.emit_var_value(field, raw); });
-    if (!r) return std::unexpected(r.error());
+    if (!resolve_loop_parent_var(ex, ref.key, raw)) {
+      auto r = ex.for_each_field(ex.value_, ref.key, ref.field_index, ref.has_dot, [&](auto const& field) { ex.emit_var_value(field, raw); });
+      if (!r) return std::unexpected(r.error());
+    }
     ++pc;
     return {};
   }
@@ -341,8 +401,10 @@ class bc_executor {
     bool raw = ex.bc_.instructions[pc].op == bc_opcode::emit_litvar_raw;
     ex.out_.append(ex.bc_.literals[ex.bc_.instructions[pc].operand]);
     auto const& ref = ex.bc_.var_refs[ex.bc_.instructions[pc].operand2];
-    auto r = ex.for_each_field(ex.value_, ref.key, ref.field_index, ref.has_dot, [&](auto const& field) { ex.emit_var_value(field, raw); });
-    if (!r) return std::unexpected(r.error());
+    if (!resolve_loop_parent_var(ex, ref.key, raw)) {
+      auto r = ex.for_each_field(ex.value_, ref.key, ref.field_index, ref.has_dot, [&](auto const& field) { ex.emit_var_value(field, raw); });
+      if (!r) return std::unexpected(r.error());
+    }
     ++pc;
     return {};
   }
@@ -599,6 +661,7 @@ class bc_executor {
       if constexpr (ct_is_vector_like<FT>) {
         using elem_t = typename FT::value_type;
         bc_loop_state ls;
+        ls.parent = ex.loop_;
         ls.count = static_cast<std::uint32_t>(field.size());
         for (ls.index = 0; ls.index < static_cast<std::uint32_t>(field.size()); ++ls.index) {
           ls.continue_flag = false;
@@ -619,6 +682,7 @@ class bc_executor {
         }
       } else if constexpr (ct_is_map_like<FT>) {
         bc_loop_state ls;
+        ls.parent = ex.loop_;
         ls.count = static_cast<std::uint32_t>(field.size());
         for (auto const& [k, v] : field) {
           ls.key = std::string_view{k};
@@ -632,6 +696,7 @@ class bc_executor {
       } else if constexpr (ct_is_set_like<FT>) {
         using elem_t = typename FT::value_type;
         bc_loop_state ls;
+        ls.parent = ex.loop_;
         ls.count = static_cast<std::uint32_t>(field.size());
         for (auto const& elem : field) {
           ls.continue_flag = false;
@@ -650,6 +715,7 @@ class bc_executor {
           (([&] {
             if (!res) return;
             bc_loop_state ls;
+            ls.parent = ex.loop_;
             ls.count = sz; ls.index = I; ls.key = glz::reflect<FT>::keys[I];
             using elem_t = std::remove_cvref_t<decltype(glz::get<I>(tied))>;
             bc_executor<elem_t, RootT> child_exec(ex.bc_, glz::get<I>(tied), ex.root_value_, &ls, ex.out_);
@@ -697,7 +763,9 @@ class bc_executor {
     auto const& instr = ex.bc_.instructions[pc];
     auto const& ref   = ex.bc_.var_refs[instr.operand2];
     bool cond = false;
-    if (ref.key.starts_with("loop.")) {
+    if (ref.key.starts_with("loop.parent.")) {
+      eval_loop_parent_truthy(ex, ref.key, cond);
+    } else if (ref.key.starts_with("loop.")) {
       if (ex.loop_) {
         if (ref.key == "loop.is_last") { cond = (ex.loop_->index + 1 == ex.loop_->count); }
         else if (ref.key == "loop.is_first") { cond = (ex.loop_->index == 0); }
@@ -722,18 +790,58 @@ class bc_executor {
 
   static std::expected<void, error_ctx> handle_emit_if_cmp(bc_executor& ex, std::size_t& pc, std::string&) {
     auto const& instr = ex.bc_.instructions[pc];
-    bool is_eq = instr.op == bc_opcode::emit_if_eq;
     auto const& ref   = ex.bc_.var_refs[instr.operand2];
     int rhs = ref.int_filters.empty() ? 0 : ref.int_filters[0].arg;
     bool cond = false;
     (void)ex.for_each_field(ex.value_, ref.key, ref.field_index, ref.has_dot, [&](auto const& field) {
       using FT = std::remove_cvref_t<decltype(field)>;
       if constexpr (std::is_arithmetic_v<FT>) {
-        cond = is_eq ? (static_cast<long long>(field) == static_cast<long long>(rhs))
-                     : (static_cast<long long>(field) != static_cast<long long>(rhs));
+        auto lv = static_cast<long long>(field);
+        auto rv = static_cast<long long>(rhs);
+        switch (instr.op) {
+        case bc_opcode::emit_if_eq:  cond = (lv == rv); break;
+        case bc_opcode::emit_if_ne:  cond = (lv != rv); break;
+        case bc_opcode::emit_if_gt:  cond = (lv > rv);  break;
+        case bc_opcode::emit_if_gte: cond = (lv >= rv); break;
+        case bc_opcode::emit_if_lt:  cond = (lv < rv);  break;
+        case bc_opcode::emit_if_lte: cond = (lv <= rv); break;
+        default: break;
+        }
       }
     });
     if (!cond) { pc = instr.operand; } else { ++pc; }
+    return {};
+  }
+
+  static std::expected<void, error_ctx> handle_emit_if_logic(bc_executor& ex, std::size_t& pc, std::string&) {
+    auto const& instr = ex.bc_.instructions[pc];
+    auto const& lhs_ref = ex.bc_.var_refs[instr.operand2];
+    bool cond = false;
+    auto eval_truthy = [&](std::string_view key, std::uint32_t field_idx, bool has_dot) -> bool {
+      bool result = false;
+      if (!eval_loop_parent_truthy(ex, key, result)) {
+        (void)ex.for_each_field(ex.value_, key, field_idx, has_dot, [&](auto const& field) {
+          using FT = std::remove_cvref_t<decltype(field)>;
+          if constexpr (std::same_as<FT, bool>) { result = field; }
+          else if constexpr (ct_is_vector_like<FT>) { result = !field.empty(); }
+          else if constexpr (std::same_as<FT, std::string> || std::same_as<FT, std::string_view>) { result = !field.empty(); }
+          else if constexpr (std::is_arithmetic_v<FT>) { result = (field != 0); }
+          else if constexpr (is_std_optional_v<FT>) { result = field.has_value(); }
+          else if constexpr (ct_is_map_like<FT>) { result = !field.empty(); }
+          else if constexpr (ct_is_set_like<FT>) { result = !field.empty(); }
+        });
+      }
+      return result;
+    };
+    bool lhs = eval_truthy(lhs_ref.key, lhs_ref.field_index, lhs_ref.has_dot);
+    if (instr.op == bc_opcode::emit_if_not) {
+      cond = !lhs;
+    } else {
+      auto const& rhs_ref = ex.bc_.var_refs[instr.operand];
+      bool rhs_val = eval_truthy(rhs_ref.key, rhs_ref.field_index, rhs_ref.has_dot);
+      cond = (instr.op == bc_opcode::emit_if_or) ? (lhs || rhs_val) : (lhs && rhs_val);
+    }
+    if (!cond) { pc = instr.operand2 + 1; } else { ++pc; }
     return {};
   }
 
@@ -835,10 +943,14 @@ public:
         &&L_emit_at_first,           // 8
         &&L_emit_at_last,            // 9
         &&L_emit_if,                 // 10
-        &&L_emit_if_eq,              // 11
-        &&L_emit_if_ne,              // 12
-        &&L_emit_else,               // 13
-        &&L_emit_endif,              // 14
+       &&L_emit_if_cmp,             // 11 emit_if_eq
+       &&L_emit_if_cmp,             // 12 emit_if_ne
+        &&L_emit_if_cmp,             // 13 emit_if_gt (falls through to L_emit_if_eq handler)
+        &&L_emit_if_cmp,             // 14 emit_if_gte
+        &&L_emit_if_cmp,             // 15 emit_if_lt
+        &&L_emit_if_cmp,             // 16 emit_if_lte
+        &&L_emit_else,               // 17
+        &&L_emit_endif,              // 18
         &&L_emit_at_section,         // 15
         &&L_emit_at_inverted,        // 16
         &&L_emit_litvar,             // 17
@@ -890,7 +1002,10 @@ public:
         &&L_emit_at_index1,          // 63
         &&L_emit_at_size,            // 64
         &&L_emit_var_size,           // 65
-        &&L_halt,                    // 66
+        &&L_emit_if_logic,           // 66 emit_if_or
+        &&L_emit_if_logic,           // 67 emit_if_and
+        &&L_emit_if_not,             // 68 emit_if_not
+        &&L_halt,                    // 69
     };
 
 /** @brief 現在の命令のオペコードに対応するラベルにジャンプする */
@@ -912,9 +1027,11 @@ public:
   L_emit_var_raw: {
     auto const& ref = bc_.var_refs[bc_.instructions[pc].operand];
     bool        raw = (bc_.instructions[pc].op == bc_opcode::emit_var_raw);
-    auto        r   = for_each_field(value_, ref.key, ref.field_index, ref.has_dot, [&](auto const& field) { emit_var_value(field, raw); });
-    if (!r)
-      return r;
+    if (!resolve_loop_parent_var(*this, ref.key, raw)) {
+      auto r = for_each_field(value_, ref.key, ref.field_index, ref.has_dot, [&](auto const& field) { emit_var_value(field, raw); });
+      if (!r)
+        return r;
+    }
     ++pc;
     DISPATCH();
   }
@@ -941,6 +1058,7 @@ public:
         if (!field.empty()) is_falsy = false;
         using elem_t = typename FT::value_type;
         bc_loop_state ls;
+        ls.parent = loop_;
         ls.count = static_cast<std::uint32_t>(field.size());
 
         for (ls.index = 0; ls.index < static_cast<std::uint32_t>(field.size()); ++ls.index) {
@@ -975,6 +1093,7 @@ public:
       } else if constexpr (ct_is_map_like<FT>) {
         if (!field.empty()) is_falsy = false;
         bc_loop_state ls;
+        ls.parent = loop_;
         ls.count = static_cast<std::uint32_t>(field.size());
         for (auto const& [k, v] : field) {
           ls.key      = std::string_view{k};
@@ -991,6 +1110,7 @@ public:
         if (!field.empty()) is_falsy = false;
         using elem_t = typename FT::value_type;
         bc_loop_state ls;
+        ls.parent = loop_;
         ls.count = static_cast<std::uint32_t>(field.size());
         for (auto const& elem : field) {
           ls.continue_flag = false;
@@ -1016,6 +1136,7 @@ public:
              if (!res)
                return;
              bc_loop_state ls;
+             ls.parent = loop_;
              ls.count     = sz;
              ls.index     = I;
              ls.key       = glz::reflect<FT>::keys[I];
@@ -1188,8 +1309,10 @@ public:
     auto const& ref   = bc_.var_refs[instr.operand2];
     bool        cond  = false;
 
-    /** loop.is_last, loop.is_first, loop.index の場合は loop 変数を直接参照 */
-    if (ref.key.starts_with("loop.")) {
+    /** loop.parent.* 変数の解決 */
+    if (ref.key.starts_with("loop.parent.")) {
+      eval_loop_parent_truthy(*this, ref.key, cond);
+    } else if (ref.key.starts_with("loop.")) {
       if (loop_) {
         if (ref.key == "loop.is_last") {
           cond = (loop_->index + 1 == loop_->count);
@@ -1236,7 +1359,7 @@ public:
   }
 
   /** @brief if (var == int_literal): 整数フィールドがオペランド値と等しいとき真 */
-  L_emit_if_eq: {
+  L_emit_if_cmp: {
     auto const& instr = bc_.instructions[pc];
     auto const& ref   = bc_.var_refs[instr.operand2];
     int rhs = 0;
@@ -1247,7 +1370,17 @@ public:
     (void)for_each_field(value_, ref.key, ref.field_index, ref.has_dot, [&](auto const& field) {
       using FT = std::remove_cvref_t<decltype(field)>;
       if constexpr (std::is_arithmetic_v<FT>) {
-        cond = (static_cast<long long>(field) == static_cast<long long>(rhs));
+        auto lv = static_cast<long long>(field);
+        auto rv = static_cast<long long>(rhs);
+        switch (instr.op) {
+        case bc_opcode::emit_if_eq:  cond = (lv == rv); break;
+        case bc_opcode::emit_if_ne:  cond = (lv != rv); break;
+        case bc_opcode::emit_if_gt:  cond = (lv > rv);  break;
+        case bc_opcode::emit_if_gte: cond = (lv >= rv); break;
+        case bc_opcode::emit_if_lt:  cond = (lv < rv);  break;
+        case bc_opcode::emit_if_lte: cond = (lv <= rv); break;
+        default: break;
+        }
       }
     });
     if (!cond) {
@@ -1258,23 +1391,59 @@ public:
     DISPATCH();
   }
 
-  /** @brief if (var != int_literal): 整数フィールドがオペランド値と異なるとき真 */
-  L_emit_if_ne: {
+  /** @brief if (!a): 単項否定 */
+  L_emit_if_not: {
     auto const& instr = bc_.instructions[pc];
     auto const& ref   = bc_.var_refs[instr.operand2];
-    int rhs = 0;
-    if (!ref.int_filters.empty()) {
-      rhs = ref.int_filters[0].arg;
-    }
-    bool cond = false;
+    bool result = false;
     (void)for_each_field(value_, ref.key, ref.field_index, ref.has_dot, [&](auto const& field) {
       using FT = std::remove_cvref_t<decltype(field)>;
-      if constexpr (std::is_arithmetic_v<FT>) {
-        cond = (static_cast<long long>(field) != static_cast<long long>(rhs));
-      }
+      if constexpr (std::same_as<FT, bool>) { result = field; }
+      else if constexpr (ct_is_vector_like<FT>) { result = !field.empty(); }
+      else if constexpr (std::same_as<FT, std::string> || std::same_as<FT, std::string_view>) { result = !field.empty(); }
+      else if constexpr (std::is_arithmetic_v<FT>) { result = (field != 0); }
+      else if constexpr (is_std_optional_v<FT>) { result = field.has_value(); }
+      else if constexpr (ct_is_map_like<FT>) { result = !field.empty(); }
+      else if constexpr (ct_is_set_like<FT>) { result = !field.empty(); }
     });
+    if (!result) {
+      ++pc;
+    } else {
+      pc = instr.operand2 + 1;
+    }
+    DISPATCH();
+  }
+
+  /** @brief if (a || b) / if (a && b): 二項論理演算 */
+  L_emit_if_logic: {
+    auto const& instr  = bc_.instructions[pc];
+    auto const& lhs_ref = bc_.var_refs[instr.operand2];
+    bool lhs = false;
+    (void)for_each_field(value_, lhs_ref.key, lhs_ref.field_index, lhs_ref.has_dot, [&](auto const& field) {
+      using FT = std::remove_cvref_t<decltype(field)>;
+      if constexpr (std::same_as<FT, bool>) { lhs = field; }
+      else if constexpr (ct_is_vector_like<FT>) { lhs = !field.empty(); }
+      else if constexpr (std::same_as<FT, std::string> || std::same_as<FT, std::string_view>) { lhs = !field.empty(); }
+      else if constexpr (std::is_arithmetic_v<FT>) { lhs = (field != 0); }
+      else if constexpr (is_std_optional_v<FT>) { lhs = field.has_value(); }
+      else if constexpr (ct_is_map_like<FT>) { lhs = !field.empty(); }
+      else if constexpr (ct_is_set_like<FT>) { lhs = !field.empty(); }
+    });
+    auto const& rhs_ref = bc_.var_refs[instr.operand];
+    bool rhs = false;
+    (void)for_each_field(value_, rhs_ref.key, rhs_ref.field_index, rhs_ref.has_dot, [&](auto const& field) {
+      using FT = std::remove_cvref_t<decltype(field)>;
+      if constexpr (std::same_as<FT, bool>) { rhs = field; }
+      else if constexpr (ct_is_vector_like<FT>) { rhs = !field.empty(); }
+      else if constexpr (std::same_as<FT, std::string> || std::same_as<FT, std::string_view>) { rhs = !field.empty(); }
+      else if constexpr (std::is_arithmetic_v<FT>) { rhs = (field != 0); }
+      else if constexpr (is_std_optional_v<FT>) { rhs = field.has_value(); }
+      else if constexpr (ct_is_map_like<FT>) { rhs = !field.empty(); }
+      else if constexpr (ct_is_set_like<FT>) { rhs = !field.empty(); }
+    });
+    bool cond = (instr.op == bc_opcode::emit_if_or) ? (lhs || rhs) : (lhs && rhs);
     if (!cond) {
-      pc = instr.operand;
+      pc = instr.operand2 + 1;
     } else {
       ++pc;
     }
@@ -1368,9 +1537,11 @@ public:
     /** 変数部分を出力 */
     auto const& ref = bc_.var_refs[instr.operand2];
     bool        raw = (instr.op == bc_opcode::emit_litvar_raw);
-    auto        r   = for_each_field(value_, ref.key, ref.field_index, ref.has_dot, [&](auto const& field) { emit_var_value(field, raw); });
-    if (!r)
-      return r;
+    if (!resolve_loop_parent_var(*this, ref.key, raw)) {
+      auto r = for_each_field(value_, ref.key, ref.field_index, ref.has_dot, [&](auto const& field) { emit_var_value(field, raw); });
+      if (!r)
+        return r;
+    }
     ++pc;
     DISPATCH();
   }
@@ -1784,7 +1955,11 @@ public:
       &handle_emit_if,            // 9
       &handle_emit_if_cmp,        // 10 emit_if_eq
       &handle_emit_if_cmp,        // 11 emit_if_ne
-      &handle_emit_else,          // 12
+      &handle_emit_if_cmp,        // 12 emit_if_gt
+      &handle_emit_if_cmp,        // 13 emit_if_gte
+      &handle_emit_if_cmp,        // 14 emit_if_lt
+      &handle_emit_if_cmp,        // 15 emit_if_lte
+      &handle_emit_else,          // 16
       &handle_emit_endif,         // 13
       &handle_emit_at_section,    // 14
       &handle_emit_at_inverted,   // 15
@@ -1837,7 +2012,10 @@ public:
       &handle_emit_at_index1,     // 62
       &handle_emit_at_size,       // 63
       &handle_emit_var_size,      // 64
-      &handle_emit_halt,          // 65
+      &handle_emit_if_logic,      // 65 emit_if_or
+      &handle_emit_if_logic,      // 66 emit_if_and
+      &handle_emit_if_not,        // 67 emit_if_not
+      &handle_emit_halt,          // 68
     };
 
     while (pc < end) {

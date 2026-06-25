@@ -28,6 +28,10 @@ enum class bc_opcode : std::uint8_t {
   emit_if,            /**< if 条件分岐 */
   emit_if_eq,         /**< if (var == int_literal) 分岐 */
   emit_if_ne,         /**< if (var != int_literal) 分岐 */
+  emit_if_gt,         /**< if (var > int_literal) 分岐 */
+  emit_if_gte,        /**< if (var >= int_literal) 分岐 */
+  emit_if_lt,         /**< if (var < int_literal) 分岐 */
+  emit_if_lte,        /**< if (var <= int_literal) 分岐 */
   emit_else,          /**< else ジャンプ先 */
   emit_endif,         /**< endif（ifブロック終了） */
   emit_at_section,    /**< @first/@last/@index によるセクション制御 */
@@ -81,6 +85,9 @@ enum class bc_opcode : std::uint8_t {
   emit_at_index1,     /**< ループ1始まりインデックス ({{@index1}}) */
   emit_at_size,       /**< ループ総要素数 ({{@size}}) */
   emit_var_size,      /**< 変数の要素数 ({{field.size}}) */
+  emit_if_or,         /**< if (a || b) 分岐 */
+  emit_if_and,        /**< if (a && b) 分岐 */
+  emit_if_not,        /**< if (!a) 分岐 */
   halt                /**< プログラム終了 */
 };
 
@@ -98,6 +105,10 @@ enum class bc_opcode : std::uint8_t {
   case bc_opcode::emit_if:                 return "emit_if";
   case bc_opcode::emit_if_eq:              return "emit_if_eq";
   case bc_opcode::emit_if_ne:              return "emit_if_ne";
+  case bc_opcode::emit_if_gt:              return "emit_if_gt";
+  case bc_opcode::emit_if_gte:             return "emit_if_gte";
+  case bc_opcode::emit_if_lt:              return "emit_if_lt";
+  case bc_opcode::emit_if_lte:             return "emit_if_lte";
   case bc_opcode::emit_else:               return "emit_else";
   case bc_opcode::emit_endif:              return "emit_endif";
   case bc_opcode::emit_at_section:         return "emit_at_section";
@@ -151,6 +162,9 @@ enum class bc_opcode : std::uint8_t {
   case bc_opcode::emit_at_index1:          return "emit_at_index1";
   case bc_opcode::emit_at_size:            return "emit_at_size";
   case bc_opcode::emit_var_size:           return "emit_var_size";
+  case bc_opcode::emit_if_or:              return "emit_if_or";
+  case bc_opcode::emit_if_and:             return "emit_if_and";
+  case bc_opcode::emit_if_not:             return "emit_if_not";
   case bc_opcode::halt:                    return "halt";
   }
   return "unknown";
@@ -292,6 +306,16 @@ struct float_filter_entry {
 };
 
 /**
+ * @brief if 比較の右オペランド種別
+ */
+enum class compare_operand_kind : std::uint8_t {
+  none,
+  int_literal,
+  string_literal,
+  variable
+};
+
+/**
  * @brief 変数参照情報
  * @details テンプレート内の変数参照を表す。コンパイル時に glaze リフレクションで
  *          フィールドインデックスが解決可能な場合は field_index に値が設定される。
@@ -300,6 +324,10 @@ struct bc_var_ref {
   std::string key;                         /**< 変数名 */
   std::uint32_t field_index = UINT32_MAX;  /**< コンパイル時解決済みフィールドインデックス */
   bool has_dot = false;                    /**< ドット区切りパス（ネスト）を持つか */
+  compare_operand_kind compare_rhs_kind = compare_operand_kind::none; /**< if 比較の右オペランド種別 */
+  std::string compare_rhs_text;            /**< 右オペランド文字列（文字列リテラル or 変数名） */
+  std::uint32_t compare_rhs_field_index = UINT32_MAX; /**< 右オペランドの解決済みフィールドインデックス */
+  bool compare_rhs_has_dot = false;        /**< 右オペランドがドット区切りパスか */
   std::vector<string_filter_entry> filters; /**< 文字列フィルタチェーン */
   std::vector<int_filter_entry> int_filters; /**< 整数フィルタチェーン */
   std::vector<float_filter_entry> float_filters; /**< 実数フィルタチェーン */

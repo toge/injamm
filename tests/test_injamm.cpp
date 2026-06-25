@@ -2724,3 +2724,39 @@ TEST_CASE("bc_array_index_empty_vec", "[injamm][array_index]") {
   CHECK(*r == "");
 }
 
+struct BcNestedGroup {
+  std::vector<int> items;
+};
+
+template <>
+struct glz::meta<BcNestedGroup> {
+  using T = BcNestedGroup;
+  static constexpr auto value = glz::object("items", &T::items);
+};
+
+struct BcNestedLoopData {
+  std::vector<BcNestedGroup> groups;
+};
+
+template <>
+struct glz::meta<BcNestedLoopData> {
+  using T = BcNestedLoopData;
+  static constexpr auto value = glz::object("groups", &T::groups);
+};
+
+TEST_CASE("loop_parent_index_in_nested_loop", "[injamm][loop]") {
+  BcNestedLoopData data{.groups = {{.items = {1, 2}}, {.items = {3}}}};
+  auto bc = injamm::engine<BcNestedLoopData>("{{#groups}}{{#items}}({{loop.parent.index}}/{{loop.index}}={{this}}){{/items}}{{/groups}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "(0/0=1)(0/1=2)(1/0=3)");
+}
+
+TEST_CASE("loop_parent_is_last_in_nested_if", "[injamm][loop]") {
+  BcNestedLoopData data{.groups = {{.items = {1}}, {.items = {2}}}};
+  auto bc = injamm::engine<BcNestedLoopData>("{{#groups}}{{#items}}{{#if loop.parent.is_last}}L{{else}}N{{/if}}{{/items}}{{/groups}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "NL");
+}
+

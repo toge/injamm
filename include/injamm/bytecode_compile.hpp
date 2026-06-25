@@ -328,6 +328,79 @@ class bc_compiler {
    *          else がある場合とない場合の両方を処理する。
    */
   void compile_if(std::string_view expr_full) {
+    auto finish_if = [this](std::size_t if_instr_idx) {
+      bool reached_end = false;
+      auto result = compile_body_impl(reached_end);
+
+      if (result == body_result::else_) {
+        auto else_jump_idx = static_cast<std::uint32_t>(bc_.current_offset());
+        bc_.add_instruction(bc_opcode::emit_else, 0, 0);
+
+        bool else_reached_end = false;
+        auto else_result = compile_body_impl(else_reached_end);
+        if (else_result == body_result::eof) reached_end = true;
+
+        auto endif_addr = static_cast<std::uint32_t>(bc_.current_offset());
+        bc_.add_instruction(bc_opcode::emit_endif);
+
+        bc_.patch_jump(if_instr_idx, else_jump_idx + 1);
+        bc_.patch_jump(else_jump_idx, endif_addr + 1);
+      } else {
+        auto endif_addr = static_cast<std::uint32_t>(bc_.current_offset());
+        bc_.add_instruction(bc_opcode::emit_endif);
+        bc_.patch_jump(if_instr_idx, endif_addr + 1);
+      }
+
+      if (bc_.error.ec == error_code::none && reached_end) {
+        bc_.error = error_ctx{if_instr_idx, error_code::unexpected_end, "if"};
+      }
+    };
+
+    auto add_if_var_ref = [this](std::string_view key) {
+      auto idx = bc_.add_var_ref(key);
+      auto field_idx = resolve_field_index<T>(key);
+      if (field_idx != UINT32_MAX) {
+        bc_.set_field_index(idx, field_idx);
+      }
+      return idx;
+    };
+
+    auto expr_trimmed = trim_sv(expr_full);
+    auto emit_simple_logic = [&](bc_opcode op, std::string_view lhs, std::string_view rhs = {}) -> bool {
+      lhs = trim_sv(lhs);
+      rhs = trim_sv(rhs);
+      if (lhs.empty()) {
+        return false;
+      }
+      auto lhs_idx = add_if_var_ref(lhs);
+      auto rhs_idx = std::uint32_t{0};
+      if (op != bc_opcode::emit_if_not) {
+        if (rhs.empty()) {
+          return false;
+        }
+        rhs_idx = add_if_var_ref(rhs);
+      }
+      bc_.add_instruction(op, 0, lhs_idx, rhs_idx);
+      finish_if(bc_.current_offset() - 1);
+      return true;
+    };
+
+    if (auto or_pos = expr_trimmed.find("||"); or_pos != std::string_view::npos) {
+      if (emit_simple_logic(bc_opcode::emit_if_or, expr_trimmed.substr(0, or_pos), expr_trimmed.substr(or_pos + 2))) {
+        return;
+      }
+    }
+    if (auto and_pos = expr_trimmed.find("&&"); and_pos != std::string_view::npos) {
+      if (emit_simple_logic(bc_opcode::emit_if_and, expr_trimmed.substr(0, and_pos), expr_trimmed.substr(and_pos + 2))) {
+        return;
+      }
+    }
+    if (expr_trimmed.starts_with("!")) {
+      if (emit_simple_logic(bc_opcode::emit_if_not, expr_trimmed.substr(1))) {
+        return;
+      }
+    }
+
     /** フィルタチェーンの解析 */
     auto parts = split_by_pipe(expr_full);
     auto expr = parts.empty() ? std::string_view{} : parts[0];
@@ -356,37 +429,65 @@ class bc_compiler {
 
     /** {{#if x == N}} / {{#if x != N}} の比較演算子検出 */
     bc_opcode compare_op = bc_opcode::emit_if;
-    std::uint32_t compare_lit = 0;
     bool has_filters_local = !filters.empty() || !int_filters.empty() || !float_filters.empty();
     if (has_filters_local) {
       /* フィルタがある場合は比較演算子は使えない */
     } else {
-      auto eq_pos = expr.find("==");
-      auto ne_pos = expr.find("!=");
-      if (eq_pos != std::string_view::npos || ne_pos != std::string_view::npos) {
-        auto op_pos = (eq_pos != std::string_view::npos) ? eq_pos : ne_pos;
-        bool is_eq = (eq_pos != std::string_view::npos);
-        auto lhs = trim_sv(expr.substr(0, op_pos));
-        auto rhs = trim_sv(expr.substr(op_pos + 2));
-        /** 右辺を整数リテラルとして解釈 */
-        bool is_int = !rhs.empty();
-        int lit_val = 0;
-        for (auto c : rhs) {
-          if (c < '0' || c > '9') { is_int = false; break; }
-          lit_val = lit_val * 10 + (c - '0');
+      struct compare_token {
+        std::string_view token;
+        bc_opcode op;
+      };
+      auto constexpr compare_tokens = std::array{
+        compare_token{"==", bc_opcode::emit_if_eq},
+        compare_token{"!=", bc_opcode::emit_if_ne},
+        compare_token{">=", bc_opcode::emit_if_gte},
+        compare_token{"<=", bc_opcode::emit_if_lte},
+        compare_token{">", bc_opcode::emit_if_gt},
+        compare_token{"<", bc_opcode::emit_if_lt},
+      };
+
+      auto compare_token_it = compare_tokens.end();
+      auto op_pos = std::string_view::npos;
+      for (auto it = compare_tokens.begin(); it != compare_tokens.end(); ++it) {
+        auto const pos = expr.find(it->token);
+        if (pos != std::string_view::npos) {
+          compare_token_it = it;
+          op_pos = pos;
+          break;
         }
-        if (is_int && !lhs.empty()) {
+      }
+
+      if (compare_token_it != compare_tokens.end()) {
+        auto lhs = trim_sv(expr.substr(0, op_pos));
+        auto rhs = trim_sv(expr.substr(op_pos + compare_token_it->token.size()));
+        /** 右辺を整数リテラルとして解釈 */
+        auto lit_val = parse_int_literal(rhs);
+        if (!lhs.empty()) {
           /** 左辺の変数参照を作り直す */
           auto cmp_idx = bc_.add_var_ref(lhs);
           auto cmp_field_idx = resolve_field_index<T>(lhs);
           if (cmp_field_idx != UINT32_MAX) {
             bc_.set_field_index(cmp_idx, cmp_field_idx);
           }
-          /** rhs は var_ref.int_filters[0].arg として保持 */
-          bc_.var_refs[cmp_idx].int_filters.push_back({int_filter::eq, lit_val});
-          bc_.add_instruction(is_eq ? bc_opcode::emit_if_eq : bc_opcode::emit_if_ne,
-                              0, cmp_idx);
-          compare_op = bc_opcode::halt; /* dummy: do not emit emit_if below */
+          /** rhs は var_ref に保持する */
+          auto& cmp_ref = bc_.var_refs[cmp_idx];
+          if (lit_val) {
+            cmp_ref.compare_rhs_kind = compare_operand_kind::int_literal;
+            cmp_ref.int_filters.push_back({int_filter::eq, *lit_val});
+          } else if (auto str_lit = parse_string_literal(rhs)) {
+            cmp_ref.compare_rhs_kind = compare_operand_kind::string_literal;
+            cmp_ref.compare_rhs_text.assign(str_lit->data(), str_lit->size());
+          } else if (!rhs.empty()) {
+            cmp_ref.compare_rhs_kind = compare_operand_kind::variable;
+            cmp_ref.compare_rhs_text.assign(rhs.data(), rhs.size());
+            cmp_ref.compare_rhs_field_index = resolve_field_index<T>(rhs);
+            cmp_ref.compare_rhs_has_dot = (rhs.find('.') != std::string_view::npos);
+          }
+
+          if (cmp_ref.compare_rhs_kind != compare_operand_kind::none) {
+            bc_.add_instruction(compare_token_it->op, 0, cmp_idx);
+            compare_op = bc_opcode::halt; /* dummy: do not emit emit_if below */
+          }
         }
       }
     }
@@ -407,33 +508,7 @@ class bc_compiler {
     }
 
     auto if_instr_idx = bc_.current_offset() - 1;
-
-    bool reached_end = false;
-    auto result = compile_body_impl(reached_end);
-
-    if (result == body_result::else_) {
-      auto else_jump_idx = static_cast<std::uint32_t>(bc_.current_offset());
-      bc_.add_instruction(bc_opcode::emit_else, 0, 0);
-
-      bool else_reached_end = false;
-      auto else_result = compile_body_impl(else_reached_end);
-      if (else_result == body_result::eof) reached_end = true;
-
-      auto endif_addr = static_cast<std::uint32_t>(bc_.current_offset());
-      bc_.add_instruction(bc_opcode::emit_endif);
-
-      bc_.patch_jump(if_instr_idx, else_jump_idx + 1);
-      bc_.patch_jump(else_jump_idx, endif_addr + 1);
-    } else {
-      auto endif_addr = static_cast<std::uint32_t>(bc_.current_offset());
-      bc_.add_instruction(bc_opcode::emit_endif);
-      bc_.patch_jump(if_instr_idx, endif_addr + 1);
-    }
-
-    if (bc_.error.ec == error_code::none && reached_end) {
-      bc_.error = error_ctx{if_instr_idx, error_code::unexpected_end, "if"};
-      return;
-    }
+    finish_if(if_instr_idx);
     if (trim_blocks_ && pos_ < tmpl_.size() && tmpl_[pos_] == '\n') ++pos_;
   }
 

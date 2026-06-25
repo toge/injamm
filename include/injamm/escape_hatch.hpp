@@ -174,20 +174,39 @@ struct ct_expanded_template {
     std::size_t pos = 0;
     while (pos < sv.size()) {
       auto var_start = constexpr_find(sv, "@var(", pos);
-      if (var_start == std::string_view::npos) {
+      auto partial_start = constexpr_find(sv, "{{>", pos);
+      auto next = [&] {
+        if (var_start == std::string_view::npos) return partial_start;
+        if (partial_start == std::string_view::npos) return var_start;
+        return std::min(var_start, partial_start);
+      }();
+      if (next == std::string_view::npos) {
         sz += sv.size() - pos;
         break;
       }
-      sz += var_start - pos;
-      auto close = constexpr_find(sv, ')', var_start + 5);
-      if (close == std::string_view::npos) {
-        sz += sv.size() - var_start;
-        break;
+      sz += next - pos;
+
+      if (next == var_start) {
+        auto close = constexpr_find(sv, ')', var_start + 5);
+        if (close == std::string_view::npos) {
+          sz += sv.size() - var_start;
+          break;
+        }
+        auto name = sv.substr(var_start + 5, close - var_start - 5);
+        auto val = table::lookup(name);
+        sz += val.empty() ? (close - var_start + 1) : val.size();
+        pos = close + 1;
+      } else {
+        auto close = constexpr_find(sv, "}}", partial_start + 3);
+        if (close == std::string_view::npos) {
+          sz += sv.size() - partial_start;
+          break;
+        }
+        auto name = trim_sv(sv.substr(partial_start + 3, close - partial_start - 3));
+        auto val = table::lookup(name);
+        sz += val.empty() ? (close - partial_start + 2) : val.size();
+        pos = close + 2;
       }
-      auto name = sv.substr(var_start + 5, close - var_start - 5);
-      auto val = table::lookup(name);
-      sz += val.empty() ? (close - var_start + 1) : val.size();
-      pos = close + 1;
     }
     return sz;
   }
@@ -201,29 +220,55 @@ struct ct_expanded_template {
     std::size_t pos = 0;
     while (pos < sv.size()) {
       auto var_start = constexpr_find(sv, "@var(", pos);
-      if (var_start == std::string_view::npos) {
+      auto partial_start = constexpr_find(sv, "{{>", pos);
+      auto next = [&] {
+        if (var_start == std::string_view::npos) return partial_start;
+        if (partial_start == std::string_view::npos) return var_start;
+        return std::min(var_start, partial_start);
+      }();
+      if (next == std::string_view::npos) {
         while (pos < sv.size())
           arr[out++] = sv[pos++];
         break;
       }
-      while (pos < var_start)
+      while (pos < next)
         arr[out++] = sv[pos++];
-      auto close = constexpr_find(sv, ')', var_start + 5);
-      if (close == std::string_view::npos) {
-        while (pos < sv.size())
-          arr[out++] = sv[pos++];
-        break;
-      }
-      auto name = sv.substr(var_start + 5, close - var_start - 5);
-      auto val = table::lookup(name);
-      if (!val.empty()) {
-        for (auto c : val)
-          arr[out++] = c;
+
+      if (next == var_start) {
+        auto close = constexpr_find(sv, ')', var_start + 5);
+        if (close == std::string_view::npos) {
+          while (pos < sv.size())
+            arr[out++] = sv[pos++];
+          break;
+        }
+        auto name = sv.substr(var_start + 5, close - var_start - 5);
+        auto val = table::lookup(name);
+        if (!val.empty()) {
+          for (auto c : val)
+            arr[out++] = c;
+        } else {
+          for (auto i = var_start; i <= close; ++i)
+            arr[out++] = sv[i];
+        }
+        pos = close + 1;
       } else {
-        for (auto i = var_start; i <= close; ++i)
-          arr[out++] = sv[i];
+        auto close = constexpr_find(sv, "}}", partial_start + 3);
+        if (close == std::string_view::npos) {
+          while (pos < sv.size())
+            arr[out++] = sv[pos++];
+          break;
+        }
+        auto name = trim_sv(sv.substr(partial_start + 3, close - partial_start - 3));
+        auto val = table::lookup(name);
+        if (!val.empty()) {
+          for (auto c : val)
+            arr[out++] = c;
+        } else {
+          for (auto i = partial_start; i < close + 2; ++i)
+            arr[out++] = sv[i];
+        }
+        pos = close + 2;
       }
-      pos = close + 1;
     }
     return arr;
   }();
