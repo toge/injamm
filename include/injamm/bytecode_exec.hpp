@@ -2014,7 +2014,7 @@ public:
       &handle_emit_var_size,      // 64
       &handle_emit_if_logic,      // 65 emit_if_or
       &handle_emit_if_logic,      // 66 emit_if_and
-      &handle_emit_if_not,        // 67 emit_if_not
+      &handle_emit_if_logic,       // 67 emit_if_not
       &handle_emit_halt,          // 68
     };
 
