@@ -837,11 +837,11 @@ class bc_executor {
     if (instr.op == bc_opcode::emit_if_not) {
       cond = !lhs;
     } else {
-      auto const& rhs_ref = ex.bc_.var_refs[instr.operand];
+      auto const& rhs_ref = ex.bc_.var_refs[instr.operand3];
       bool rhs_val = eval_truthy(rhs_ref.key, rhs_ref.field_index, rhs_ref.has_dot);
       cond = (instr.op == bc_opcode::emit_if_or) ? (lhs || rhs_val) : (lhs && rhs_val);
     }
-    if (!cond) { pc = instr.operand2 + 1; } else { ++pc; }
+    if (!cond) { pc = instr.operand; } else { ++pc; }
     return {};
   }
 
@@ -1409,7 +1409,7 @@ public:
     if (!result) {
       ++pc;
     } else {
-      pc = instr.operand2 + 1;
+      pc = instr.operand;
     }
     DISPATCH();
   }
@@ -1429,7 +1429,7 @@ public:
       else if constexpr (ct_is_map_like<FT>) { lhs = !field.empty(); }
       else if constexpr (ct_is_set_like<FT>) { lhs = !field.empty(); }
     });
-    auto const& rhs_ref = bc_.var_refs[instr.operand];
+    auto const& rhs_ref = bc_.var_refs[instr.operand3];
     bool rhs = false;
     (void)for_each_field(value_, rhs_ref.key, rhs_ref.field_index, rhs_ref.has_dot, [&](auto const& field) {
       using FT = std::remove_cvref_t<decltype(field)>;
@@ -1443,7 +1443,7 @@ public:
     });
     bool cond = (instr.op == bc_opcode::emit_if_or) ? (lhs || rhs) : (lhs && rhs);
     if (!cond) {
-      pc = instr.operand2 + 1;
+      pc = instr.operand;
     } else {
       ++pc;
     }
