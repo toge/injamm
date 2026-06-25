@@ -654,11 +654,14 @@ class bc_executor {
     auto const& instr = ex.bc_.instructions[pc];
     auto const& ref   = ex.bc_.var_refs[instr.operand2];
     auto        body_end = instr.operand;
+    auto        else_pc  = instr.operand3;
+    bool        is_falsy = true;
     if (body_end <= pc + 1 || body_end > ex.bc_.instructions.size())
       return std::unexpected(error_ctx{.position = pc, .ec = error_code::syntax_error});
     auto r = ex.for_each_field(ex.value_, ref.key, ref.field_index, ref.has_dot, [&](auto const& field) -> std::expected<void, error_ctx> {
       using FT = std::remove_cvref_t<decltype(field)>;
       if constexpr (ct_is_vector_like<FT>) {
+        if (!field.empty()) is_falsy = false;
         using elem_t = typename FT::value_type;
         bc_loop_state ls;
         ls.parent = ex.loop_;
@@ -672,8 +675,10 @@ class bc_executor {
           if (ls.break_flag) break;
         }
       } else if constexpr (std::same_as<FT, bool>) {
+        is_falsy = !field;
         if (field) { auto r2 = ex.execute_impl(pc + 1, body_end - 1); if (!r2) return r2; }
       } else if constexpr (is_std_optional_v<FT>) {
+        is_falsy = !field.has_value();
         if (field.has_value()) {
           using inner_t = typename FT::value_type;
           bc_executor<inner_t, RootT> child_exec(ex.bc_, *field, ex.root_value_, nullptr, ex.out_);
@@ -681,6 +686,7 @@ class bc_executor {
           if (!r2) return r2;
         }
       } else if constexpr (ct_is_map_like<FT>) {
+        if (!field.empty()) is_falsy = false;
         bc_loop_state ls;
         ls.parent = ex.loop_;
         ls.count = static_cast<std::uint32_t>(field.size());
@@ -694,6 +700,7 @@ class bc_executor {
           ++ls.index;
         }
       } else if constexpr (ct_is_set_like<FT>) {
+        if (!field.empty()) is_falsy = false;
         using elem_t = typename FT::value_type;
         bc_loop_state ls;
         ls.parent = ex.loop_;
@@ -708,6 +715,7 @@ class bc_executor {
           ++ls.index;
         }
       } else if constexpr (ct_glz_reflectable<FT>) {
+        is_falsy = false;
         constexpr auto sz = glz::reflect<FT>::size;
         auto tied = glz::to_tie(field);
         std::expected<void, error_ctx> res{};
@@ -727,13 +735,18 @@ class bc_executor {
       return {};
     });
     if (!r) return std::unexpected(r.error());
-    pc = body_end;
+    if (else_pc > 0 && is_falsy) {
+      pc = else_pc;
+    } else {
+      pc = body_end;
+    }
     return {};
   }
 
   static std::expected<void, error_ctx> handle_emit_inverted(bc_executor& ex, std::size_t& pc, std::string&) {
     auto const& instr = ex.bc_.instructions[pc];
     auto const& ref   = ex.bc_.var_refs[instr.operand2];
+    auto        else_pc = instr.operand3;
     bool empty = true;
     (void)ex.for_each_field(ex.value_, ref.key, ref.field_index, ref.has_dot, [&](auto const& field) {
       using FT = std::remove_cvref_t<decltype(field)>;
@@ -746,15 +759,19 @@ class bc_executor {
       else if constexpr (std::is_arithmetic_v<FT>) { empty = (field == 0); }
       else if constexpr (ct_glz_reflectable<FT>) { empty = false; }
     });
+    auto body_end = instr.operand;
+    if (body_end <= pc + 1 || body_end > ex.bc_.instructions.size())
+      return std::unexpected(error_ctx{.position = pc, .ec = error_code::syntax_error});
     if (empty) {
-      auto body_end = instr.operand;
-      if (body_end <= pc + 1 || body_end > ex.bc_.instructions.size())
-        return std::unexpected(error_ctx{.position = pc, .ec = error_code::syntax_error});
       auto r = ex.execute_impl(pc + 1, body_end - 1);
       if (!r) return std::unexpected(r.error());
       pc = body_end;
+    } else if (else_pc > 0) {
+      auto r = ex.execute_impl(else_pc, body_end - 1);
+      if (!r) return std::unexpected(r.error());
+      pc = body_end;
     } else {
-      pc = instr.operand;
+      pc = body_end;
     }
     return {};
   }
