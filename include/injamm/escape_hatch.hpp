@@ -353,9 +353,9 @@ template <fixed_string... Names, typename... Containers>
 
 template <typename T>
 [[nodiscard]] auto bind(T const& value)
-  -> detail::bound_context<detail::name_list<fixed_string{"value"}>, T>
+  -> detail::bound_context<detail::name_list<fixed_string{"_"}>, T>
 {
-  return detail::bound_context<detail::name_list<fixed_string{"value"}>, T>{std::forward_as_tuple(value)};
+  return detail::bound_context<detail::name_list<fixed_string{"_"}>, T>{std::forward_as_tuple(value)};
 }
 
 /**
