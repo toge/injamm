@@ -296,8 +296,8 @@ template <fixed_string Tmpl, int TrimBlocks = 0, int LstripBlocks = 0, typename 
   constexpr auto ct_bc = detail::ct_chunks_to_bytecode<T>(resolved);
   if (ct_bc.error.ec != error_code::none)
     return std::unexpected(ct_bc.error);
-  static auto const bc_ptr = std::make_unique<detail::bytecode>(detail::to_bytecode(ct_bc));
-  return detail::bc_execute(*bc_ptr, value);
+  static detail::bytecode const bc = detail::to_bytecode(ct_bc);
+  return detail::bc_execute(bc, value);
 }
 
 /**
@@ -326,8 +326,8 @@ template <fixed_string Tmpl, fixed_string... Entries, typename T>
   constexpr auto ct_bc = detail::ct_chunks_to_bytecode<T>(parsed);
   if (ct_bc.error.ec != error_code::none)
     return std::unexpected(ct_bc.error);
-  static auto const bc_ptr = std::make_unique<detail::bytecode>(detail::to_bytecode(ct_bc));
-  return detail::bc_execute(*bc_ptr, value);
+  static detail::bytecode const bc = detail::to_bytecode(ct_bc);
+  return detail::bc_execute(bc, value);
 }
 
 /**
