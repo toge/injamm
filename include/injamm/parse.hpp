@@ -15,9 +15,10 @@ namespace injamm::detail {
  * @param s 入力文字列
  * @return パース結果（負の符号対応）
  * @note 数字のみを処理し、先頭の '-' を負号として解釈する。非数字は無視。
+ *       オーバーフロー時は INT_MAX / INT_MIN にクランプする。
  */
 [[nodiscard]] constexpr int parse_int_arg(std::string_view s) noexcept {
-  int  arg      = 0;
+  long long  arg      = 0;
   bool negative = false;
   std::size_t i = 0;
   if (i < s.size() && s[i] == '-') {
@@ -78,14 +79,27 @@ namespace injamm::detail {
 /**
  * @brief 二重引用符で囲まれた文字列リテラルをパースする
  * @param s 入力文字列
- * @return クォートを除いた文字列 view。形式不正なら std::nullopt
- * @details 現状はエスケープシーケンスを解釈せず、そのまま内部部分を返す。
+ * @return クォートを除いた文字列（エスケープ展開済み）。形式不正なら std::nullopt
+ * @details `\"` → `"`、`\\` → `\` の基本エスケープシーケンスを解釈する。
  */
-[[nodiscard]] constexpr std::optional<std::string_view> parse_string_literal(std::string_view s) noexcept {
+[[nodiscard]] constexpr std::optional<std::string> parse_string_literal(std::string_view s) noexcept {
   if (s.size() < 2 || s.front() != '"' || s.back() != '"') {
     return std::nullopt;
   }
-  return s.substr(1, s.size() - 2);
+  auto inner = s.substr(1, s.size() - 2);
+  std::string result;
+  result.reserve(inner.size());
+  for (std::size_t i = 0; i < inner.size(); ++i) {
+    if (inner[i] == '\\' && i + 1 < inner.size()) {
+      ++i;
+      if (inner[i] == '"')       result += '"';
+      else if (inner[i] == '\\') result += '\\';
+      else { result += '\\'; result += inner[i]; }  // 未知のエスケープはそのまま
+    } else {
+      result += inner[i];
+    }
+  }
+  return result;
 }
 
 
