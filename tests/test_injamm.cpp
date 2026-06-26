@@ -123,6 +123,16 @@ struct glz::meta<BcBoolData> {
 };
 
 /**
+ * @brief セクション＋後続コンテンツの結合テスト用データ型
+ * @details セクション変数（users）と後続で参照する独立変数（title）の両方を持ち、
+ *          セクション終了後のスコープ復帰とレンダリング継続を検証する。
+ */
+struct BcSectionWithPostData {
+  std::vector<BcUser> users; /**< セクション用ベクタ */
+  std::string title{};       /**< セクション後に参照する独立変数 */
+};
+
+/**
  * @brief ネストセクションテスト用の内部データ型
  * @details BcOuter の配列要素として使用される。
  */
@@ -299,6 +309,53 @@ TEST_CASE("bc_section_else_non_empty_vector", "[injamm][else]") {
   auto r = bc.render(data);
   REQUIRE(r.has_value());
   REQUIRE(*r == "alice");
+}
+
+// ── セクション＋else ＋ 前後コンテンツ（回帰テスト） ──
+
+TEST_CASE("bc_section_else_empty_with_post_content", "[injamm][else][regression]") {
+  BcSectionWithPostData data;
+  data.title = "Users";
+  auto bc = injamm::engine<BcSectionWithPostData>(
+    "before{{#users}}name={{name}}{{else}}empty{{/users}}after");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "beforeemptyafter");
+}
+
+TEST_CASE("bc_section_else_non_empty_with_post_content", "[injamm][else][regression]") {
+  BcSectionWithPostData data;
+  data.users.push_back(BcUser{"alice", 30});
+  data.title = "Users";
+  auto bc = injamm::engine<BcSectionWithPostData>(
+    "before{{#users}}name={{name}}{{else}}empty{{/users}}after");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "beforename=aliceafter");
+}
+
+TEST_CASE("bc_section_else_empty_post_scope", "[injamm][else][regression]") {
+  BcSectionWithPostData data;
+  data.title = "Users";
+  auto bc = injamm::engine<BcSectionWithPostData>(
+    "{{#users}}{{name}}{{else}}empty{{/users}} title={{title}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  // セクション終了後の {{title}} はルートスコープで解決されること
+  REQUIRE(*r == "empty title=Users");
+}
+
+TEST_CASE("bc_section_else_non_empty_post_scope", "[injamm][else][regression]") {
+  BcSectionWithPostData data;
+  data.users.push_back(BcUser{"alice", 30});
+  data.users.push_back(BcUser{"bob", 20});
+  data.title = "Users";
+  auto bc = injamm::engine<BcSectionWithPostData>(
+    "{{#users}}{{name}}{{else}}empty{{/users}} title={{title}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  // ループ後もルートスコープの変数 {{title}} が正しく解決されること
+  REQUIRE(*r == "alicebob title=Users");
 }
 
 /**

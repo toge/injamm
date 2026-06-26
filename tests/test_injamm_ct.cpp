@@ -104,6 +104,12 @@ struct glz::meta<CtOptionalData> {
   static constexpr auto value = glz::object("opt_str", &CtOptionalData::opt_str);
 };
 
+/** @brief セクション＋後続コンテンツの結合テスト用データ型 */
+struct CtSectionWithPostData {
+  std::vector<CtUser> users;
+  std::string title{};
+};
+
 struct CtFloatData {
   double value{};
 };
@@ -306,6 +312,51 @@ TEST_CASE("ct_section_else_non_empty_vector", "[injamm][ct][else]") {
   auto r = injamm::render<tmpl>(data);
   REQUIRE(r.has_value());
   REQUIRE(*r == "alice");
+}
+
+// ── セクション＋else ＋ 前後コンテンツ（回帰テスト） ──
+
+TEST_CASE("ct_section_else_empty_with_post_content", "[injamm][ct][else][regression]") {
+  auto constexpr tmpl = injamm::fixed_string(
+    "before{{#users}}name={{name}}{{else}}empty{{/users}}after");
+  CtSectionWithPostData data;
+  data.title = "Users";
+  auto r = injamm::render<tmpl>(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "beforeemptyafter");
+}
+
+TEST_CASE("ct_section_else_non_empty_with_post_content", "[injamm][ct][else][regression]") {
+  auto constexpr tmpl = injamm::fixed_string(
+    "before{{#users}}name={{name}}{{else}}empty{{/users}}after");
+  CtSectionWithPostData data;
+  data.users.push_back(CtUser{"alice", 30});
+  data.title = "Users";
+  auto r = injamm::render<tmpl>(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "beforename=aliceafter");
+}
+
+TEST_CASE("ct_section_else_empty_post_scope", "[injamm][ct][else][regression]") {
+  auto constexpr tmpl = injamm::fixed_string(
+    "{{#users}}{{name}}{{else}}empty{{/users}} title={{title}}");
+  CtSectionWithPostData data;
+  data.title = "Users";
+  auto r = injamm::render<tmpl>(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "empty title=Users");
+}
+
+TEST_CASE("ct_section_else_non_empty_post_scope", "[injamm][ct][else][regression]") {
+  auto constexpr tmpl = injamm::fixed_string(
+    "{{#users}}{{name}}{{else}}empty{{/users}} title={{title}}");
+  CtSectionWithPostData data;
+  data.users.push_back(CtUser{"alice", 30});
+  data.users.push_back(CtUser{"bob", 20});
+  data.title = "Users";
+  auto r = injamm::render<tmpl>(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "alicebob title=Users");
 }
 
 TEST_CASE("ct_section_else_optional_present", "[injamm][ct][else]") {
@@ -1673,14 +1724,14 @@ TEST_CASE("CT: bind - int scalar", "[injamm][ct][bind]") {
 
 TEST_CASE("CT: bind - implicit value", "[injamm][ct][bind]") {
   int val = 99;
-  auto res = injamm::render<"Got {{value}}">(injamm::bind(val));
+  auto res = injamm::render<"Got {{_}}">(injamm::bind(val));
   REQUIRE(res);
   CHECK(*res == "Got 99");
 }
 
 TEST_CASE("CT: bind - implicit value string", "[injamm][ct][bind]") {
   std::string val = "hello";
-  auto res = injamm::render<"{{value}} world">(injamm::bind(val));
+  auto res = injamm::render<"{{_}} world">(injamm::bind(val));
   REQUIRE(res);
   CHECK(*res == "hello world");
 }
