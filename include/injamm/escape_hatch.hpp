@@ -373,7 +373,7 @@ class engine {
   detail::bytecode bc_;
 
 public:
-  engine() = default;
+  engine() = delete;
 
   /**
    * @brief テンプレート文字列から構築（実行時コンパイル）
