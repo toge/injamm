@@ -249,3 +249,48 @@ jobs:
 
       - name: Test
         run: ctest --test-dir build -V
+
+  clang-sanitizer:
+    runs-on: ubuntu-latest
+    container: fedora:44
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build tools
+        run: dnf install -y clang compiler-rt cmake ninja-build git curl zip unzip tar
+
+      - name: Check Clang version
+        run: clang++ --version
+
+      - name: Restore vcpkg cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/vcpkg
+            build/vcpkg_installed
+          key: ${{ runner.os }}-clang-sanitizer-vcpkg-${{ hashFiles('vcpkg.json') }}
+          restore-keys: |
+            ${{ runner.os }}-clang-sanitizer-vcpkg-
+
+      - name: Install vcpkg
+        run: |
+          if [ ! -d ~/vcpkg ]; then
+            git clone https://github.com/microsoft/vcpkg.git ~/vcpkg
+            ~/vcpkg/bootstrap-vcpkg.sh
+          fi
+
+      - name: Configure with sanitizers
+        run: |
+          cmake -B build -S . -G Ninja \
+            -DCMAKE_TOOLCHAIN_FILE=$HOME/vcpkg/scripts/buildsystems/vcpkg.cmake \
+            -DCMAKE_C_COMPILER=clang \
+            -DCMAKE_CXX_COMPILER=clang++ \
+            -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer" \
+            -DENABLE_THREADED_DISPATCH=OFF
+
+      - name: Build
+        run: cmake --build build
+
+      - name: Test
+        run: ctest --test-dir build -V
