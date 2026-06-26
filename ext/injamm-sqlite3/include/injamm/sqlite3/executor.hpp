@@ -413,8 +413,13 @@ class bc_executor {
         &&L_halt,                    // 65
     };
 
-/** @brief 現在の命令のオペコードに対応するラベルにジャンプする */
-#define DISPATCH() goto* dispatch_table[static_cast<int>(bc_.instructions[pc].op)]
+/** @brief 現在の命令のオペコードに対応するラベルにジャンプする（実行範囲外なら終了） */
+#define DISPATCH()                                                         \
+  do {                                                                     \
+    if (pc >= end)                                                         \
+      goto L_halt;                                                         \
+    goto* dispatch_table[static_cast<int>(bc_.instructions[pc].op)];       \
+  } while (0)
 
     if (pc >= end)
       goto L_halt;
@@ -580,7 +585,7 @@ class bc_executor {
   }
 
   /** @brief 実行終端（通常到達しない） */
-  L_emit_end: { return {}; }
+  L_emit_end: { ++pc; DISPATCH(); }
 
   /**
    * @brief 逆セクションの開始
