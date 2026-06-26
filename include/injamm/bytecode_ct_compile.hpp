@@ -1,11 +1,14 @@
 #pragma once
 
 #include "ct_chunk.hpp"
-#include "parse.hpp"
 #include "glz_dispatch.hpp"
+#include "parse.hpp"
 #include "types.hpp"
 #include "bytecode.hpp"
 #include "bytecode_exec.hpp"
+#ifndef INJAMM_NO_ENUM_REGISTRY
+#include <enchantum/enchantum.hpp>
+#endif
 
 #include <array>
 #include <cstddef>
@@ -26,6 +29,10 @@ struct string_ref {
 struct ct_var_ref {
   string_ref key;
   std::uint32_t field_index = UINT32_MAX;
+  /** @brief 比較演算子の RHS 整数値（emit_if_eq/ne 等で使用） */
+  int compare_rhs = 0;
+  /** @brief compare_rhs が有効かどうか */
+  bool has_compare_rhs = false;
 };
 
 struct ct_lit_entry {
@@ -70,6 +77,14 @@ struct ct_bytecode_builder {
     return idx;
   }
 
+  /** @brief 比較 RHS 整数値を保持する var_ref を追加する（emit_if_cmp 用） */
+  constexpr std::uint32_t add_var_ref_cmp(string_ref key, std::uint32_t field_index, int compare_rhs) {
+    auto idx = static_cast<std::uint32_t>(bc.var_ref_count);
+    bc.var_refs[bc.var_ref_count] = {key, field_index, compare_rhs, /*has_compare_rhs=*/true};
+    ++bc.var_ref_count;
+    return idx;
+  }
+
   constexpr void emit(bc_opcode op, std::uint32_t operand = 0, std::uint32_t operand2 = 0) {
     bc.instructions[bc.instr_count] = {op, operand, operand2};
     ++bc.instr_count;
@@ -96,6 +111,10 @@ bytecode to_bytecode(ct_bytecode<N> const& ct) {
     ref.key.assign(ct.var_refs[i].key.data, ct.var_refs[i].key.size);
     ref.field_index = ct.var_refs[i].field_index;
     ref.has_dot = (ref.key.find('.') != std::string::npos);
+    /** 比較演算子の RHS 整数値が設定されている場合は int_filters に追加（emit_if_cmp 用） */
+    if (ct.var_refs[i].has_compare_rhs) {
+      ref.int_filters.push_back({int_filter::eq, ct.var_refs[i].compare_rhs});
+    }
     bc.var_refs.push_back(std::move(ref));
   }
   // Compute total literal size for buffer pre-allocation
@@ -175,6 +194,18 @@ constexpr ct_parsed_template<N> resolve_field_indices(ct_parsed_template<N> tmpl
   tmpl.field_indices.fill(-1);
   if constexpr (ct_glz_reflectable<T>) {
     constexpr auto count = glz::reflect<T>::size;
+
+    /** 比較演算子トークン（長さの多い順に並べて誤マッチを避ける） */
+    struct compare_entry { std::string_view token; bc_opcode op; };
+    constexpr auto compare_tokens = std::array{
+      compare_entry{"==", bc_opcode::emit_if_eq},
+      compare_entry{"!=", bc_opcode::emit_if_ne},
+      compare_entry{">=", bc_opcode::emit_if_gte},
+      compare_entry{"<=", bc_opcode::emit_if_lte},
+      compare_entry{">",  bc_opcode::emit_if_gt},
+      compare_entry{"<",  bc_opcode::emit_if_lt},
+    };
+
     for (std::size_t i = 0; i < tmpl.size; ++i) {
       auto& idx = tmpl.field_indices[i];
       auto kind = tmpl.kinds[i];
@@ -182,6 +213,61 @@ constexpr ct_parsed_template<N> resolve_field_indices(ct_parsed_template<N> tmpl
           kind != ct_chunk_kind::inverted && kind != ct_chunk_kind::if_else) {
         continue;
       }
+
+      /** if_else チャンクの比較演算子解析（enum 文字列→int 解決） */
+      if (kind == ct_chunk_kind::if_else) {
+        auto expr = tmpl.texts[i];
+        for (auto const& cmp : compare_tokens) {
+          auto op_pos = constexpr_find(expr, cmp.token);
+          if (op_pos == std::string_view::npos) continue;
+          auto lhs = trim_sv(expr.substr(0, op_pos));
+          auto rhs = trim_sv(expr.substr(op_pos + cmp.token.size()));
+          if (lhs.empty() || rhs.empty()) break;
+
+          /** RHS が文字列リテラルの場合のみ enum 解決を試みる */
+          auto str_lit = parse_string_literal(rhs);
+          if (!str_lit) break;
+
+          /** LHS フィールドインデックスを検索 */
+          int lhs_idx = -1;
+          [&]<std::size_t... I>(std::index_sequence<I...>) {
+            (([&] {
+               if (std::string_view{glz::reflect<T>::keys[I]} == lhs) {
+                 lhs_idx = static_cast<int>(I);
+               }
+             }()),
+             ...);
+          }(std::make_index_sequence<count>{});
+
+          if (lhs_idx < 0) break;
+
+          /** LHS フィールドが enum 型かどうか判定し、enchantum で RHS を解決 */
+#ifndef INJAMM_NO_ENUM_REGISTRY
+          [&]<std::size_t... I>(std::index_sequence<I...>) {
+            (([&] {
+               if (static_cast<std::size_t>(lhs_idx) != I) return;
+               using FT = std::remove_cvref_t<decltype(glz::get<I>(glz::to_tie(std::declval<T const&>())))>;
+               if constexpr (std::is_enum_v<FT>) {
+                 auto ev = enchantum::cast<FT>(std::string_view{str_lit->data(), str_lit->size()});
+                 if (ev) {
+                   using U = std::underlying_type_t<FT>;
+                   /** テキストをLHSキーに更新し、比較演算子をflagsに、RHS整数をint_filtersに保存 */
+                   tmpl.texts[i]    = lhs;
+                   tmpl.flags[i]    = static_cast<std::uint8_t>(cmp.op);
+                   tmpl.int_filters[i][0] = int_filter_entry{int_filter::eq, static_cast<int>(static_cast<U>(*ev))};
+                   tmpl.int_filter_count[i] = 1;
+                   idx = lhs_idx;
+                 }
+               }
+             }()),
+             ...);
+          }(std::make_index_sequence<count>{});
+#endif
+          break;
+        }
+      }
+
+      /** 通常のフィールドインデックス解決 */
       auto key = tmpl.texts[i];
       if (key.empty() || key.starts_with("loop.") || key == "root" || constexpr_find(key, '.') != std::string_view::npos) {
         continue;
@@ -419,11 +505,22 @@ consteval void compile_chunk_range(ct_bytecode_builder<N>& b,
     case ct_chunk_kind::if_else: {
       bool has_else = (chunks.else_starts[i] != 0 || chunks.else_ends[i] != 0);
       auto sv = chunks.texts[i];
-      auto vridx = b.add_var_ref({sv.data(), sv.size()},
-                                  static_cast<std::uint32_t>(chunks.field_indices[i]));
+      auto field_idx = static_cast<std::uint32_t>(chunks.field_indices[i]);
 
       auto if_instr = b.current_offset();
-      b.emit(bc_opcode::emit_if, 0, vridx);
+
+      if (chunks.flags[i] != 0 && chunks.int_filter_count[i] > 0) {
+        /** 比較演算子が解決済み（enum 文字列→int 変換済み）: emit_if_cmp を発行 */
+        auto cmp_op = static_cast<bc_opcode>(chunks.flags[i]);
+        auto vridx  = b.add_var_ref_cmp({sv.data(), sv.size()}, field_idx,
+                                        chunks.int_filters[i][0].arg);
+        b.emit(cmp_op, 0, vridx);
+      } else {
+        /** 通常の真偽判定 */
+        auto vridx = b.add_var_ref({sv.data(), sv.size()}, field_idx);
+        b.emit(bc_opcode::emit_if, 0, vridx);
+      }
+
       compile_chunk_range(b, chunks, chunks.body_starts[i], chunks.body_ends[i]);
 
       if (has_else) {

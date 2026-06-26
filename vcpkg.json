@@ -5,6 +5,7 @@
     "catch2",
     "frozenchars",
     "fast-float",
-    "sqlite3"
+    "sqlite3",
+    "enchantum"
   ]
 }

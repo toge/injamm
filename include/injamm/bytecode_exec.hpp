@@ -14,6 +14,7 @@
 
 #include "../injamm.hpp"
 #include "bytecode.hpp"
+#include "enum_io.hpp"
 #include "escape.hpp"
 #include "filters.hpp"
 #include "glz_dispatch.hpp"
@@ -305,6 +306,9 @@ class bc_executor {
       } else {
         html_escape_into(out_, field);
       }
+    } else if constexpr (std::is_enum_v<FT>) {
+      /** enum 型: enchantum で列挙子名を取得してHTMLエスケープ制御 */
+      serialize_enum(out_, field, raw);
     } else if constexpr (std::is_arithmetic_v<FT> && !std::same_as<FT, bool>) {
       /** 整数/浮動小数の高速 append: traits::copy 経由の memmove を避けて push_back ループで書き出す */
       std::array<char, 32> buf;
@@ -757,6 +761,7 @@ class bc_executor {
       else if constexpr (ct_is_set_like<FT>) { empty = field.empty(); }
       else if constexpr (std::same_as<FT, std::string> || std::same_as<FT, std::string_view>) { empty = field.empty(); }
       else if constexpr (std::is_arithmetic_v<FT>) { empty = (field == 0); }
+      else if constexpr (std::is_enum_v<FT>) { empty = (static_cast<std::underlying_type_t<FT>>(field) == 0); }
       else if constexpr (ct_glz_reflectable<FT>) { empty = false; }
     });
     auto body_end = instr.operand;
@@ -796,6 +801,7 @@ class bc_executor {
         else if constexpr (ct_is_vector_like<FT>) { cond = !field.empty(); }
         else if constexpr (std::same_as<FT, std::string> || std::same_as<FT, std::string_view>) { cond = !field.empty(); }
         else if constexpr (std::is_arithmetic_v<FT>) { cond = (field != 0); }
+        else if constexpr (std::is_enum_v<FT>) { cond = (static_cast<std::underlying_type_t<FT>>(field) != 0); }
         else if constexpr (is_std_optional_v<FT>) { cond = field.has_value(); }
         else if constexpr (ct_is_map_like<FT>) { cond = !field.empty(); }
         else if constexpr (ct_is_set_like<FT>) { cond = !field.empty(); }
@@ -814,6 +820,19 @@ class bc_executor {
       using FT = std::remove_cvref_t<decltype(field)>;
       if constexpr (std::is_arithmetic_v<FT>) {
         auto lv = static_cast<long long>(field);
+        auto rv = static_cast<long long>(rhs);
+        switch (instr.op) {
+        case bc_opcode::emit_if_eq:  cond = (lv == rv); break;
+        case bc_opcode::emit_if_ne:  cond = (lv != rv); break;
+        case bc_opcode::emit_if_gt:  cond = (lv > rv);  break;
+        case bc_opcode::emit_if_gte: cond = (lv >= rv); break;
+        case bc_opcode::emit_if_lt:  cond = (lv < rv);  break;
+        case bc_opcode::emit_if_lte: cond = (lv <= rv); break;
+        default: break;
+        }
+      } else if constexpr (std::is_enum_v<FT>) {
+        /** enum LHS: underlying 整数に変換して算術比較と同じロジックで評価 */
+        auto lv = static_cast<long long>(static_cast<std::underlying_type_t<FT>>(field));
         auto rv = static_cast<long long>(rhs);
         switch (instr.op) {
         case bc_opcode::emit_if_eq:  cond = (lv == rv); break;
@@ -843,6 +862,7 @@ class bc_executor {
           else if constexpr (ct_is_vector_like<FT>) { result = !field.empty(); }
           else if constexpr (std::same_as<FT, std::string> || std::same_as<FT, std::string_view>) { result = !field.empty(); }
           else if constexpr (std::is_arithmetic_v<FT>) { result = (field != 0); }
+          else if constexpr (std::is_enum_v<FT>) { result = (static_cast<std::underlying_type_t<FT>>(field) != 0); }
           else if constexpr (is_std_optional_v<FT>) { result = field.has_value(); }
           else if constexpr (ct_is_map_like<FT>) { result = !field.empty(); }
           else if constexpr (ct_is_set_like<FT>) { result = !field.empty(); }
@@ -1212,6 +1232,9 @@ public:
         empty = field.empty();
       } else if constexpr (std::is_arithmetic_v<FT>) {
         empty = (field == 0);
+      } else if constexpr (std::is_enum_v<FT>) {
+        /** enum: underlying 整数が 0 なら偽（空）扱い */
+        empty = (static_cast<std::underlying_type_t<FT>>(field) == 0);
       } else if constexpr (ct_glz_reflectable<FT>) {
         empty = false;
       }
@@ -1360,6 +1383,9 @@ public:
           cond = !field.empty();
         } else if constexpr (std::is_arithmetic_v<FT>) {
           cond = (field != 0);
+        } else if constexpr (std::is_enum_v<FT>) {
+          /** enum: underlying 整数が 0 でなければ真 */
+          cond = (static_cast<std::underlying_type_t<FT>>(field) != 0);
         } else if constexpr (is_std_optional_v<FT>) {
           cond = field.has_value();
         } else if constexpr (ct_is_map_like<FT>) {
@@ -1403,6 +1429,19 @@ public:
         case bc_opcode::emit_if_lte: cond = (lv <= rv); break;
         default: break;
         }
+      } else if constexpr (std::is_enum_v<FT>) {
+        /** enum LHS: underlying 整数に変換して算術比較と同じロジックで評価 */
+        auto lv = static_cast<long long>(static_cast<std::underlying_type_t<FT>>(field));
+        auto rv = static_cast<long long>(rhs);
+        switch (instr.op) {
+        case bc_opcode::emit_if_eq:  cond = (lv == rv); break;
+        case bc_opcode::emit_if_ne:  cond = (lv != rv); break;
+        case bc_opcode::emit_if_gt:  cond = (lv > rv);  break;
+        case bc_opcode::emit_if_gte: cond = (lv >= rv); break;
+        case bc_opcode::emit_if_lt:  cond = (lv < rv);  break;
+        case bc_opcode::emit_if_lte: cond = (lv <= rv); break;
+        default: break;
+        }
       }
     });
     if (!cond) {
@@ -1424,6 +1463,7 @@ public:
       else if constexpr (ct_is_vector_like<FT>) { result = !field.empty(); }
       else if constexpr (std::same_as<FT, std::string> || std::same_as<FT, std::string_view>) { result = !field.empty(); }
       else if constexpr (std::is_arithmetic_v<FT>) { result = (field != 0); }
+      else if constexpr (std::is_enum_v<FT>) { result = (static_cast<std::underlying_type_t<FT>>(field) != 0); }
       else if constexpr (is_std_optional_v<FT>) { result = field.has_value(); }
       else if constexpr (ct_is_map_like<FT>) { result = !field.empty(); }
       else if constexpr (ct_is_set_like<FT>) { result = !field.empty(); }
@@ -1447,6 +1487,7 @@ public:
       else if constexpr (ct_is_vector_like<FT>) { lhs = !field.empty(); }
       else if constexpr (std::same_as<FT, std::string> || std::same_as<FT, std::string_view>) { lhs = !field.empty(); }
       else if constexpr (std::is_arithmetic_v<FT>) { lhs = (field != 0); }
+      else if constexpr (std::is_enum_v<FT>) { lhs = (static_cast<std::underlying_type_t<FT>>(field) != 0); }
       else if constexpr (is_std_optional_v<FT>) { lhs = field.has_value(); }
       else if constexpr (ct_is_map_like<FT>) { lhs = !field.empty(); }
       else if constexpr (ct_is_set_like<FT>) { lhs = !field.empty(); }
@@ -1459,6 +1500,7 @@ public:
       else if constexpr (ct_is_vector_like<FT>) { rhs = !field.empty(); }
       else if constexpr (std::same_as<FT, std::string> || std::same_as<FT, std::string_view>) { rhs = !field.empty(); }
       else if constexpr (std::is_arithmetic_v<FT>) { rhs = (field != 0); }
+      else if constexpr (std::is_enum_v<FT>) { rhs = (static_cast<std::underlying_type_t<FT>>(field) != 0); }
       else if constexpr (is_std_optional_v<FT>) { rhs = field.has_value(); }
       else if constexpr (ct_is_map_like<FT>) { rhs = !field.empty(); }
       else if constexpr (ct_is_set_like<FT>) { rhs = !field.empty(); }

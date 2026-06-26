@@ -11,12 +11,13 @@ Glaze でメタプログラミングされた C++ 構造体をコンテキスト
 
 - **ヘッダオンリー**: インクルードするだけで使用可能
 - **高速**: コンパイル時テンプレートパース、Computed goto ディスパッチ（GCC）、Glaze リフレクションによる O(1) フィールドアクセス
-- **依存最小**: [Glaze](https://github.com/stephenberry/glaze) のみ必須
+- **依存最小**: [Glaze](https://github.com/stephenberry/glaze) + [enchantum](https://github.com/anomalyco/enchantum) のみ必須
 
 ## 要件
 
 - C++23 対応コンパイラ（GCC 14+ 推奨）
 - [Glaze](https://github.com/stephenberry/glaze)
+- [enchantum](https://github.com/anomalyco/enchantum)（C++20 enum→string 反射ライブラリ）
 
 ## ビルド・インストール
 
@@ -192,7 +193,7 @@ int main() {
 | `{{#continue}}`                     | ループをスキップして次の反復へ        |
 | `{{#if cond}}...{{/if}}`            | 条件分岐（0/空/偽は偽、それ以外は真） |
 | `{{#if cond}}...{{else}}...{{/if}}` | if/else                               |
-| `{{#if x == rhs}}...{{/if}}`        | 直接比較（`==` / `!=` / `<` / `<=` / `>` / `>=`、右辺は整数リテラル・文字列リテラル・変数） |
+| `{{#if x == rhs}}...{{/if}}`        | 直接比較（`==` / `!=` / `<` / `<=` / `>` / `>=`、右辺は整数リテラル・文字列リテラル・変数）。文字列リテラル比較は enum フィールドの列挙子名とも照合可能 |
 | `{{#if a || b}}...{{/if}}`          | 単純な論理演算（`||` / `&&` / `!`） |
 | `{{loop.index}}`                    | ループインデックス（0 始まり、inja 互換）|
 | `{{loop.parent.index}}`             | 親ループの loop 変数へアクセス |
@@ -212,6 +213,44 @@ int main() {
 `{{@var(name)}}` はテンプレートをパースする**前**にプリプロセッサ的に展開されます。テンプレート構文を適用する前に定数で置換されるため、フィールド名のエイリアスやセクションキーのパラメータ化に使用できます。
 
 値に `@var(yyy)` が含まれている場合は再帰的に展開します。
+
+### enum 型のサポート
+
+C++ の `enum` / `enum class` 型は、Glaze リフレクションで構造体フィールドとして登録すると、テンプレート内で以下のように扱えます。
+
+| 機能 | 例 | 説明 |
+| --- | --- | --- |
+| 値の出力 | `{{status}}` → `"Active"` | 列挙子名を文字列として出力（`{{}}` なら HTML エスケープ、`{{{}}}` なら生出力） |
+| 真偽判定 | `{{#if status}}` | 非0の列挙値は真、0は偽 |
+| 文字列比較 | `{{#if status == "Pending"}}` | 列挙子名との等値/不等値比較（`==` / `!=`）が可能。NTTP ではコンパイル時に解決 |
+| 未知値 | `{{unknown_enum}}` → `"42"` | enchantum が認識しない値は underlying 整数を10進数で出力 |
+
+```cpp
+enum class Status : int { Unknown = 0, Active = 1, Pending = 2 };
+
+struct Task {
+  std::string title;
+  Status status{Status::Active};
+};
+
+template <> struct glz::meta<Task> {
+  static constexpr auto value = glz::object("title", &Task::title, "status", &Task::status);
+};
+
+// enum 値の出力
+auto bc = injamm::engine<Task>("{{title}}: {{status}}");
+auto r = bc.render(Task{"write docs", Status::Pending});
+// r == "write docs: Pending"
+
+// enum 比較
+auto bc2 = injamm::engine<Task>("{{#if status == \"Active\"}}active{{else}}inactive{{/if}}");
+auto r2 = bc2.render(Task{"review", Status::Inactive});
+// r2 == "inactive"
+
+// NTTP でも同じ構文が使用可能
+auto r3 = injamm::render<"{{title}}: {{status}}">(Task{"fix bug", Status::Active});
+// r3 == "fix bug: Active"
+```
 
 ## フィルター
 

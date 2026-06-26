@@ -1,5 +1,6 @@
 #pragma once
 
+#include "enum_io.hpp"
 #include <array>
 #include <charconv>
 #include <concepts>
@@ -7,19 +8,21 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <unordered_map>
 
 namespace injamm::detail {
 
 /** @brief シリアライズ可能な型の判定
  *
- *  整数型（bool除く）、浮動小数点型、std::string、std::string_view のみをシリアライズ対象とする。
+ *  整数型（bool除く）、浮動小数点型、std::string、std::string_view、enum 型をシリアライズ対象とする。
  *  std::vector<U> などのコンテナ型を serialize_value から除外するガードとして機能する。
  */
 template <class T>
 inline constexpr bool serializable_v =
     std::integral<T> || std::floating_point<T> ||
-    std::same_as<T, std::string> || std::same_as<T, std::string_view>;
+    std::same_as<T, std::string> || std::same_as<T, std::string_view> ||
+    std::is_enum_v<T>;
 
 /** @brief std::optional かどうかを判定する型特性 */
 template <class T>
@@ -121,6 +124,21 @@ inline void serialize_value(Buffer& out, T value) {
   if (ec == std::errc{}) {
     out.append(std::string_view{buf.data(), static_cast<std::size_t>(ptr - buf.data())});
   }
+}
+
+/** @brief enum 型をバッファに変換して追記する（filter scratch 用、常に raw 出力）
+ *
+ *  フィルタパスは独自エスケープ処理を持つため、ここでは raw=true で serialize_enum を呼ぶ。
+ *
+ *  @tparam Buffer 出力バッファ型
+ *  @tparam E enum 型
+ *  @param[in,out] out 出力先バッファ
+ *  @param[in] value 変換する enum 値
+ */
+template <class Buffer, class E>
+  requires std::is_enum_v<E>
+inline void serialize_value(Buffer& out, E value) {
+  serialize_enum(out, value, /*raw=*/true);
 }
 
 } // namespace injamm::detail

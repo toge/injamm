@@ -1,8 +1,14 @@
 #pragma once
 
-#include "bytecode.hpp"
-#include "parse.hpp"
 #include <string_view>
+#include <type_traits>
+
+#include "bytecode.hpp"
+#include "enum_io.hpp"
+#include "parse.hpp"
+#ifndef INJAMM_NO_ENUM_REGISTRY
+#include <enchantum/enchantum.hpp>
+#endif
 
 namespace injamm::detail {
 
@@ -100,6 +106,33 @@ class bc_compiler {
       }
     }
     return UINT32_MAX;
+  }
+
+  /**
+   * @brief glaze リフレクションを用いて、フィールドインデックスからフィールド型で関数を呼ぶ
+   * @tparam V リフレクション対象の型
+   * @tparam F `template<class FieldType>()` を受け取る関数型
+   * @param field_idx フィールドインデックス（UINT32_MAX の場合は何もしない）
+   * @param fn 各フィールド型で呼ばれるラムダ（`fn.template operator()<FieldType>()` 形式）
+   * @details enum フィールドのコンパイル時型取得に使用する。
+   */
+  template <class V, class F>
+  static void with_field_type_at(std::uint32_t field_idx, F&& fn) {
+    if (field_idx == UINT32_MAX) return;
+    if constexpr (ct_glz_reflectable<V>) {
+      constexpr auto sz = static_cast<std::size_t>(glz::reflect<V>::size);
+      [&]<std::size_t... I>(std::index_sequence<I...>) {
+        (([&] {
+           if (I == field_idx) {
+             /** std::declval を使い未評価コンテキストで型を取得（null 逆参照を避ける） */
+             using tied_t = decltype(glz::to_tie(std::declval<V const&>()));
+             using FT     = std::remove_cvref_t<decltype(glz::get<I>(std::declval<tied_t>()))>;
+             fn.template operator()<FT>();
+           }
+         }()),
+         ...);
+      }(std::make_index_sequence<sz>{});
+    }
   }
 
   /**
@@ -475,8 +508,27 @@ class bc_compiler {
             cmp_ref.compare_rhs_kind = compare_operand_kind::int_literal;
             cmp_ref.int_filters.push_back({int_filter::eq, *lit_val});
           } else if (auto str_lit = parse_string_literal(rhs)) {
-            cmp_ref.compare_rhs_kind = compare_operand_kind::string_literal;
-            cmp_ref.compare_rhs_text.assign(str_lit->data(), str_lit->size());
+            /** 文字列リテラルの場合: LHS フィールド型が enum なら列挙子名→整数に変換 */
+            bool resolved_as_enum = false;
+#ifndef INJAMM_NO_ENUM_REGISTRY
+            if (cmp_field_idx != UINT32_MAX) {
+              with_field_type_at<T>(cmp_field_idx, [&]<class FT>() {
+                if constexpr (std::is_enum_v<FT>) {
+                  if (auto ev = enchantum::cast<FT>(*str_lit)) {
+                    using U = std::underlying_type_t<FT>;
+                    cmp_ref.compare_rhs_kind = compare_operand_kind::int_literal;
+                    cmp_ref.int_filters.push_back({int_filter::eq, static_cast<int>(static_cast<U>(*ev))});
+                    resolved_as_enum = true;
+                  }
+                }
+              });
+            }
+#endif
+            if (!resolved_as_enum) {
+              /** 通常の文字列リテラル比較として保持 */
+              cmp_ref.compare_rhs_kind = compare_operand_kind::string_literal;
+              cmp_ref.compare_rhs_text.assign(str_lit->data(), str_lit->size());
+            }
           } else if (!rhs.empty()) {
             cmp_ref.compare_rhs_kind = compare_operand_kind::variable;
             cmp_ref.compare_rhs_text.assign(rhs.data(), rhs.size());

@@ -2,7 +2,9 @@
 
 #include <string_view>
 
-#if defined(__SSE2__)
+#if defined(__AVX2__)
+#include <immintrin.h>
+#elif defined(__SSE2__)
 #include <emmintrin.h>
 #endif
 

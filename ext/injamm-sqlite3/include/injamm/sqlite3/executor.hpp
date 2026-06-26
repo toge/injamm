@@ -29,18 +29,18 @@
 #define INJAMM_THREADED_DISPATCH 1
 #endif
 
-#include <injamm/bytecode.hpp>
-#include <injamm/escape.hpp>
-#include <injamm/filters.hpp>
-#include <injamm/glz_dispatch.hpp>
-#include <injamm/serialize_value.hpp>
-#include <injamm/types.hpp>
-#include <injamm/sqlite3/concept.hpp>
 #include <array>
 #include <charconv>
 #include <cmath>
 #include <cstdint>
 #include <expected>
+#include <injamm/bytecode.hpp>
+#include <injamm/escape.hpp>
+#include <injamm/filters.hpp>
+#include <injamm/glz_dispatch.hpp>
+#include <injamm/serialize_value.hpp>
+#include <injamm/sqlite3/concept.hpp>
+#include <injamm/types.hpp>
 #include <string>
 
 namespace injamm::sqlite3::detail {
@@ -314,12 +314,15 @@ class bc_executor {
       } else {
         html_escape_into(out_, field);
       }
+    } else if constexpr (std::is_enum_v<FT>) {
+      /** enum 型: core 側と同様に列挙子名を文字列化し、未知値は underlying 整数へフォールバック */
+      serialize_enum(out_, field, raw);
     } else if constexpr (std::is_arithmetic_v<FT> && !std::same_as<FT, bool>) {
       /** 整数/浮動小数の高速 append: traits::copy 経由の memmove を避けて push_back ループで書き出す */
       std::array<char, 32> buf;
       auto [ptr, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), field);
       if (ec == std::errc{}) {
-        auto const n = static_cast<std::size_t>(ptr - buf.data());
+        auto const  n = static_cast<std::size_t>(ptr - buf.data());
         auto const* p = buf.data();
         for (std::size_t i = 0; i < n; ++i)
           out_.push_back(p[i]);
@@ -431,11 +434,11 @@ class bc_executor {
     };
 
 /** @brief 現在の命令のオペコードに対応するラベルにジャンプする（実行範囲外なら終了） */
-#define DISPATCH()                                                         \
-  do {                                                                     \
-    if (pc >= end)                                                         \
-      goto L_halt;                                                         \
-    goto* dispatch_table[static_cast<int>(bc_.instructions[pc].op)];       \
+#define DISPATCH()                                                   \
+  do {                                                               \
+    if (pc >= end)                                                   \
+      goto L_halt;                                                   \
+    goto* dispatch_table[static_cast<int>(bc_.instructions[pc].op)]; \
   } while (0)
 
     if (pc >= end)
@@ -477,10 +480,11 @@ class bc_executor {
     }
 
     bool is_falsy = true;
-    auto r = for_each_field(value_, ref.key, ref.field_index, ref.has_dot, [&](auto const& field) -> std::expected<void, error_ctx> {
+    auto r        = for_each_field(value_, ref.key, ref.field_index, ref.has_dot, [&](auto const& field) -> std::expected<void, error_ctx> {
       using FT = std::remove_cvref_t<decltype(field)>;
       if constexpr (ct_is_vector_like<FT>) {
-        if (!field.empty()) is_falsy = false;
+        if (!field.empty())
+          is_falsy = false;
         using elem_t = typename FT::value_type;
         bc_loop_state ls;
         ls.count = static_cast<std::uint32_t>(field.size());
@@ -515,7 +519,8 @@ class bc_executor {
             return r2;
         }
       } else if constexpr (ct_is_map_like<FT>) {
-        if (!field.empty()) is_falsy = false;
+        if (!field.empty())
+          is_falsy = false;
         bc_loop_state ls;
         ls.count = static_cast<std::uint32_t>(field.size());
         for (auto const& [k, v] : field) {
@@ -530,7 +535,8 @@ class bc_executor {
           ++ls.index;
         }
       } else if constexpr (ct_is_set_like<FT>) {
-        if (!field.empty()) is_falsy = false;
+        if (!field.empty())
+          is_falsy = false;
         using elem_t = typename FT::value_type;
         bc_loop_state ls;
         ls.count = static_cast<std::uint32_t>(field.size());
@@ -553,10 +559,10 @@ class bc_executor {
         bc_loop_state ls;
         ls.count = 0;  // unknown size for forward-only cursor
         for (auto& elem : field) {
-          is_falsy = false;
+          is_falsy         = false;
           ls.continue_flag = false;
           bc_executor<elem_t, RootT> child_exec(bc_, elem, root_value_, &ls, out_);
-          auto r2 = child_exec.execute_impl(pc + 1, body_end - 1);
+          auto                       r2 = child_exec.execute_impl(pc + 1, body_end - 1);
           if (!r2)
             return r2;
           if (ls.continue_flag) {
@@ -568,7 +574,7 @@ class bc_executor {
           ++ls.index;
         }
       } else if constexpr (ct_glz_reflectable<FT>) {
-        is_falsy = false;
+        is_falsy                            = false;
         constexpr auto                 sz   = glz::reflect<FT>::size;
         auto                           tied = glz::to_tie(field);
         std::expected<void, error_ctx> res{};
@@ -602,7 +608,10 @@ class bc_executor {
   }
 
   /** @brief 実行終端（通常到達しない） */
-  L_emit_end: { ++pc; DISPATCH(); }
+  L_emit_end: {
+    ++pc;
+    DISPATCH();
+  }
 
   /**
    * @brief 逆セクションの開始
@@ -610,10 +619,10 @@ class bc_executor {
    *          条件が成立しなければ operand の位置（endif）にジャンプする。
    */
   L_emit_inverted: {
-    auto const& instr = bc_.instructions[pc];
-    auto const& ref   = bc_.var_refs[instr.operand2];
+    auto const& instr   = bc_.instructions[pc];
+    auto const& ref     = bc_.var_refs[instr.operand2];
     auto        else_pc = instr.operand3;
-    bool        empty = true;
+    bool        empty   = true;
     (void)for_each_field(value_, ref.key, ref.field_index, ref.has_dot, [&](auto const& field) {
       using FT = std::remove_cvref_t<decltype(field)>;
       if constexpr (ct_is_vector_like<FT>) {
@@ -630,6 +639,8 @@ class bc_executor {
         empty = field.empty();
       } else if constexpr (std::is_arithmetic_v<FT>) {
         empty = (field == 0);
+      } else if constexpr (std::is_enum_v<FT>) {
+        empty = (static_cast<std::underlying_type_t<FT>>(field) == 0);
       } else if constexpr (ct_glz_reflectable<FT>) {
         empty = false;
       }
@@ -696,8 +707,8 @@ class bc_executor {
   /** @brief 変数の要素数を出力する ({{field.size}}) */
   L_emit_var_size: {
     auto const& ref = bc_.var_refs[bc_.instructions[pc].operand];
-    auto r = for_each_field(value_, ref.key, ref.field_index, ref.has_dot, [&](auto const& field) {
-      using FT = std::remove_cvref_t<decltype(field)>;
+    auto        r   = for_each_field(value_, ref.key, ref.field_index, ref.has_dot, [&](auto const& field) {
+      using FT       = std::remove_cvref_t<decltype(field)>;
       std::size_t sz = 0;
       if constexpr (ct_is_vector_like<FT>) {
         sz = field.size();
@@ -712,7 +723,8 @@ class bc_executor {
         out_.append(buf.data(), ptr);
       }
     });
-    if (!r) return r;
+    if (!r)
+      return r;
     ++pc;
     DISPATCH();
   }
@@ -772,8 +784,12 @@ class bc_executor {
           cond = field;
         } else if constexpr (ct_is_vector_like<FT>) {
           cond = !field.empty();
+        } else if constexpr (std::same_as<FT, std::string> || std::same_as<FT, std::string_view>) {
+          cond = !field.empty();
         } else if constexpr (std::is_arithmetic_v<FT>) {
           cond = (field != 0);
+        } else if constexpr (std::is_enum_v<FT>) {
+          cond = (static_cast<std::underlying_type_t<FT>>(field) != 0);
         } else if constexpr (is_std_optional_v<FT>) {
           cond = field.has_value();
         } else if constexpr (ct_is_map_like<FT>) {
@@ -794,11 +810,11 @@ class bc_executor {
     DISPATCH();
   }
 
-  /** @brief if (var == int_literal): 整数フィールドがオペランド値と等しいとき真 */
+  /** @brief if (var == rhs): 数値/enum の整数比較または文字列リテラル比較 */
   L_emit_if_eq: {
     auto const& instr = bc_.instructions[pc];
     auto const& ref   = bc_.var_refs[instr.operand2];
-    int rhs = 0;
+    int         rhs   = 0;
     if (!ref.int_filters.empty()) {
       rhs = ref.int_filters[0].arg;
     }
@@ -807,6 +823,12 @@ class bc_executor {
       using FT = std::remove_cvref_t<decltype(field)>;
       if constexpr (std::is_arithmetic_v<FT>) {
         cond = (static_cast<long long>(field) == static_cast<long long>(rhs));
+      } else if constexpr (std::is_enum_v<FT>) {
+        cond = (static_cast<long long>(static_cast<std::underlying_type_t<FT>>(field)) == static_cast<long long>(rhs));
+      } else if constexpr (std::same_as<FT, std::string> || std::same_as<FT, std::string_view>) {
+        if (ref.compare_rhs_kind == compare_operand_kind::string_literal) {
+          cond = (std::string_view{field} == std::string_view{ref.compare_rhs_text});
+        }
       }
     });
     if (!cond) {
@@ -817,11 +839,11 @@ class bc_executor {
     DISPATCH();
   }
 
-  /** @brief if (var != int_literal): 整数フィールドがオペランド値と異なるとき真 */
+  /** @brief if (var != rhs): 数値/enum の整数比較または文字列リテラル比較 */
   L_emit_if_ne: {
     auto const& instr = bc_.instructions[pc];
     auto const& ref   = bc_.var_refs[instr.operand2];
-    int rhs = 0;
+    int         rhs   = 0;
     if (!ref.int_filters.empty()) {
       rhs = ref.int_filters[0].arg;
     }
@@ -830,6 +852,12 @@ class bc_executor {
       using FT = std::remove_cvref_t<decltype(field)>;
       if constexpr (std::is_arithmetic_v<FT>) {
         cond = (static_cast<long long>(field) != static_cast<long long>(rhs));
+      } else if constexpr (std::is_enum_v<FT>) {
+        cond = (static_cast<long long>(static_cast<std::underlying_type_t<FT>>(field)) != static_cast<long long>(rhs));
+      } else if constexpr (std::same_as<FT, std::string> || std::same_as<FT, std::string_view>) {
+        if (ref.compare_rhs_kind == compare_operand_kind::string_literal) {
+          cond = (std::string_view{field} != std::string_view{ref.compare_rhs_text});
+        }
       }
     });
     if (!cond) {
@@ -1459,10 +1487,10 @@ class bc_executor {
             bc_loop_state ls;
             ls.count = 0;
             for (auto& elem : field) {
-              is_falsy = false;
+              is_falsy         = false;
               ls.continue_flag = false;
               bc_executor<elem_t, RootT> child_exec(bc_, elem, root_value_, &ls, out_);
-              auto r2 = child_exec.execute_impl(pc + 1, body_end - 1);
+              auto                       r2 = child_exec.execute_impl(pc + 1, body_end - 1);
               if (!r2)
                 return r2;
               if (ls.continue_flag) {
@@ -1474,7 +1502,7 @@ class bc_executor {
               ++ls.index;
             }
           } else if constexpr (ct_glz_reflectable<FT>) {
-            is_falsy = false;
+            is_falsy                            = false;
             constexpr auto                 sz   = glz::reflect<FT>::size;
             auto                           tied = glz::to_tie(field);
             std::expected<void, error_ctx> res{};
@@ -1513,9 +1541,9 @@ class bc_executor {
 
       /** @brief 逆セクションの開始 */
       case bc_opcode::emit_inverted: {
-        auto const& ref   = bc_.var_refs[instr.operand2];
+        auto const& ref     = bc_.var_refs[instr.operand2];
         auto        else_pc = instr.operand3;
-        bool        empty = true;
+        bool        empty   = true;
         (void)for_each_field(value_, ref.key, ref.field_index, ref.has_dot, [&](auto const& field) {
           using FT = std::remove_cvref_t<decltype(field)>;
           if constexpr (ct_is_vector_like<FT>) {
@@ -1532,6 +1560,8 @@ class bc_executor {
             empty = field.empty();
           } else if constexpr (std::is_arithmetic_v<FT>) {
             empty = (field == 0);
+          } else if constexpr (std::is_enum_v<FT>) {
+            empty = (static_cast<std::underlying_type_t<FT>>(field) == 0);
           } else if constexpr (ct_glz_reflectable<FT>) {
             empty = false;
           }
@@ -1541,7 +1571,7 @@ class bc_executor {
           if (body_end <= pc + 1 || body_end > bc_.instructions.size()) {
             return std::unexpected(error_ctx{.position = pc, .ec = error_code::syntax_error});
           }
-          auto r        = execute_impl(pc + 1, body_end - 1);
+          auto r = execute_impl(pc + 1, body_end - 1);
           if (!r)
             return r;
           pc = body_end;
@@ -1550,7 +1580,7 @@ class bc_executor {
           if (body_end <= pc + 1 || body_end > bc_.instructions.size()) {
             return std::unexpected(error_ctx{.position = pc, .ec = error_code::syntax_error});
           }
-          auto r        = execute_impl(else_pc, body_end - 1);
+          auto r = execute_impl(else_pc, body_end - 1);
           if (!r)
             return r;
           pc = body_end;
@@ -1668,8 +1698,12 @@ class bc_executor {
               cond = field;
             } else if constexpr (ct_is_vector_like<FT>) {
               cond = !field.empty();
+            } else if constexpr (std::same_as<FT, std::string> || std::same_as<FT, std::string_view>) {
+              cond = !field.empty();
             } else if constexpr (std::is_arithmetic_v<FT>) {
               cond = (field != 0);
+            } else if constexpr (std::is_enum_v<FT>) {
+              cond = (static_cast<std::underlying_type_t<FT>>(field) != 0);
             } else if constexpr (is_std_optional_v<FT>) {
               cond = field.has_value();
             } else if constexpr (ct_is_map_like<FT>) {
@@ -1688,10 +1722,10 @@ class bc_executor {
         break;
       }
 
-      /** @brief if (var == int_literal) */
+      /** @brief if (var == rhs): 数値/enum の整数比較または文字列リテラル比較 */
       case bc_opcode::emit_if_eq: {
-        auto const& ref  = bc_.var_refs[instr.operand2];
-        int rhs = 0;
+        auto const& ref = bc_.var_refs[instr.operand2];
+        int         rhs = 0;
         if (!ref.int_filters.empty()) {
           rhs = ref.int_filters[0].arg;
         }
@@ -1700,6 +1734,12 @@ class bc_executor {
           using FT = std::remove_cvref_t<decltype(field)>;
           if constexpr (std::is_arithmetic_v<FT>) {
             cond = (static_cast<long long>(field) == static_cast<long long>(rhs));
+          } else if constexpr (std::is_enum_v<FT>) {
+            cond = (static_cast<long long>(static_cast<std::underlying_type_t<FT>>(field)) == static_cast<long long>(rhs));
+          } else if constexpr (std::same_as<FT, std::string> || std::same_as<FT, std::string_view>) {
+            if (ref.compare_rhs_kind == compare_operand_kind::string_literal) {
+              cond = (std::string_view{field} == std::string_view{ref.compare_rhs_text});
+            }
           }
         });
         if (!cond) {
@@ -1710,10 +1750,10 @@ class bc_executor {
         break;
       }
 
-      /** @brief if (var != int_literal) */
+      /** @brief if (var != rhs): 数値/enum の整数比較または文字列リテラル比較 */
       case bc_opcode::emit_if_ne: {
-        auto const& ref  = bc_.var_refs[instr.operand2];
-        int rhs = 0;
+        auto const& ref = bc_.var_refs[instr.operand2];
+        int         rhs = 0;
         if (!ref.int_filters.empty()) {
           rhs = ref.int_filters[0].arg;
         }
@@ -1722,6 +1762,12 @@ class bc_executor {
           using FT = std::remove_cvref_t<decltype(field)>;
           if constexpr (std::is_arithmetic_v<FT>) {
             cond = (static_cast<long long>(field) != static_cast<long long>(rhs));
+          } else if constexpr (std::is_enum_v<FT>) {
+            cond = (static_cast<long long>(static_cast<std::underlying_type_t<FT>>(field)) != static_cast<long long>(rhs));
+          } else if constexpr (std::same_as<FT, std::string> || std::same_as<FT, std::string_view>) {
+            if (ref.compare_rhs_kind == compare_operand_kind::string_literal) {
+              cond = (std::string_view{field} != std::string_view{ref.compare_rhs_text});
+            }
           }
         });
         if (!cond) {
@@ -2142,8 +2188,8 @@ class bc_executor {
       /** @brief 変数の要素数を出力する ({{field.size}}) */
       case bc_opcode::emit_var_size: {
         auto const& ref = bc_.var_refs[bc_.instructions[pc].operand];
-        auto r = for_each_field(value_, ref.key, ref.field_index, ref.has_dot, [&](auto const& field) {
-          using FT = std::remove_cvref_t<decltype(field)>;
+        auto        r   = for_each_field(value_, ref.key, ref.field_index, ref.has_dot, [&](auto const& field) {
+          using FT       = std::remove_cvref_t<decltype(field)>;
           std::size_t sz = 0;
           if constexpr (ct_is_vector_like<FT>) {
             sz = field.size();
@@ -2158,7 +2204,8 @@ class bc_executor {
             out_.append(buf.data(), ptr);
           }
         });
-        if (!r) return r;
+        if (!r)
+          return r;
         ++pc;
         break;
       }

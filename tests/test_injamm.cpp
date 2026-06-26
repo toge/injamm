@@ -2817,3 +2817,194 @@ TEST_CASE("loop_parent_is_last_in_nested_if", "[injamm][loop]") {
   CHECK(*r == "NL");
 }
 
+// ---- enum テスト ----
+
+/** @brief enum テスト用のステータス列挙型 */
+enum class BcStatus : int {
+  Unknown  = 0,
+  Active   = 1,
+  Pending  = 2,
+  Inactive = 3,
+};
+
+/** @brief 特殊HTML文字を含む列挙子名をテストするための enum */
+enum class BcSpecialEnum : int {
+  Normal = 0,
+};
+
+/** @brief enum フィールドを持つテスト用データ型 */
+struct BcEnumData {
+  BcStatus status{BcStatus::Active};
+  std::optional<BcStatus> opt_status{};
+};
+
+template <>
+struct glz::meta<BcEnumData> {
+  static constexpr auto value = glz::object("status", &BcEnumData::status, "opt_status", &BcEnumData::opt_status);
+};
+
+/** @brief ネストされた enum フィールドを持つテスト用データ型 */
+struct BcEnumNested {
+  struct Inner {
+    BcStatus status{BcStatus::Pending};
+  } user{};
+};
+
+template <>
+struct glz::meta<BcEnumNested::Inner> {
+  static constexpr auto value = glz::object("status", &BcEnumNested::Inner::status);
+};
+
+template <>
+struct glz::meta<BcEnumNested> {
+  static constexpr auto value = glz::object("user", &BcEnumNested::user);
+};
+
+#ifndef INJAMM_NO_ENUM_REGISTRY
+TEST_CASE("enum_basic_output", "[injamm][enum]") {
+  /** {{status}} → "Active" (HTMLエスケープあり) */
+  BcEnumData data{.status = BcStatus::Active};
+  auto bc = injamm::engine<BcEnumData>("{{status}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "Active");
+}
+
+TEST_CASE("enum_raw_output", "[injamm][enum]") {
+  /** {{{status}}} → "Active" (生出力、名前に特殊文字なし) */
+  BcEnumData data{.status = BcStatus::Active};
+  auto bc = injamm::engine<BcEnumData>("{{{status}}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "Active");
+}
+
+TEST_CASE("enum_pending_output", "[injamm][enum]") {
+  /** {{status}} → "Pending" */
+  BcEnumData data{.status = BcStatus::Pending};
+  auto bc = injamm::engine<BcEnumData>("Status: {{status}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "Status: Pending");
+}
+#endif
+
+TEST_CASE("enum_unknown_value_fallback", "[injamm][enum]") {
+  /** 未知の enum 値 → underlying 整数を10進で出力 */
+  BcEnumData data{.status = static_cast<BcStatus>(42)};
+  auto bc = injamm::engine<BcEnumData>("{{status}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "42");
+}
+
+TEST_CASE("enum_truthiness_truthy", "[injamm][enum]") {
+  /** {{#if status}} → 非0 なら真 (Active=1) */
+  BcEnumData data{.status = BcStatus::Active};
+  auto bc = injamm::engine<BcEnumData>("{{#if status}}YES{{else}}NO{{/if}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "YES");
+}
+
+TEST_CASE("enum_truthiness_falsy", "[injamm][enum]") {
+  /** {{#if status}} → 0 (Unknown) は偽 */
+  BcEnumData data{.status = BcStatus::Unknown};
+  auto bc = injamm::engine<BcEnumData>("{{#if status}}YES{{else}}NO{{/if}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "NO");
+}
+
+TEST_CASE("enum_inverted_section_truthy", "[injamm][enum]") {
+  /** {{^status}} → 非0 なら逆セクションは描画されない */
+  BcEnumData data{.status = BcStatus::Active};
+  auto bc = injamm::engine<BcEnumData>("{{^status}}EMPTY{{/status}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "");
+}
+
+TEST_CASE("enum_inverted_section_falsy", "[injamm][enum]") {
+  /** {{^status}} → 0 (Unknown) なら逆セクションが描画される */
+  BcEnumData data{.status = BcStatus::Unknown};
+  auto bc = injamm::engine<BcEnumData>("{{^status}}EMPTY{{/status}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "EMPTY");
+}
+
+#ifndef INJAMM_NO_ENUM_REGISTRY
+TEST_CASE("enum_compare_eq_string_literal_true", "[injamm][enum]") {
+  /** {{#if status == "Pending"}} → Pending のとき真 */
+  BcEnumData data{.status = BcStatus::Pending};
+  auto bc = injamm::engine<BcEnumData>("{{#if status == \"Pending\"}}YES{{else}}NO{{/if}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "YES");
+}
+
+TEST_CASE("enum_compare_eq_string_literal_false", "[injamm][enum]") {
+  /** {{#if status == "Active"}} → Pending のとき偽 */
+  BcEnumData data{.status = BcStatus::Pending};
+  auto bc = injamm::engine<BcEnumData>("{{#if status == \"Active\"}}YES{{else}}NO{{/if}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "NO");
+}
+
+TEST_CASE("enum_compare_ne_string_literal_true", "[injamm][enum]") {
+  /** {{#if status != "Active"}} → Pending のとき真 */
+  BcEnumData data{.status = BcStatus::Pending};
+  auto bc = injamm::engine<BcEnumData>("{{#if status != \"Active\"}}YES{{else}}NO{{/if}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "YES");
+}
+
+TEST_CASE("enum_compare_ne_string_literal_false", "[injamm][enum]") {
+  /** {{#if status != "Pending"}} → Pending のとき偽 */
+  BcEnumData data{.status = BcStatus::Pending};
+  auto bc = injamm::engine<BcEnumData>("{{#if status != \"Pending\"}}YES{{else}}NO{{/if}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "NO");
+}
+
+TEST_CASE("enum_optional_empty", "[injamm][enum]") {
+  /** std::optional<BcStatus> が空の場合は何も出力しない */
+  BcEnumData data{.opt_status = std::nullopt};
+  auto bc = injamm::engine<BcEnumData>("{{opt_status}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "");
+}
+
+TEST_CASE("enum_optional_value", "[injamm][enum]") {
+  /** std::optional<BcStatus> に値がある場合は列挙子名を出力する */
+  BcEnumData data{.opt_status = BcStatus::Inactive};
+  auto bc = injamm::engine<BcEnumData>("{{opt_status}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "Inactive");
+}
+
+TEST_CASE("enum_nested_path", "[injamm][enum]") {
+  /** {{user.status}} → ネストパス経由で enum を出力 */
+  BcEnumNested data{.user = {.status = BcStatus::Pending}};
+  auto bc = injamm::engine<BcEnumNested>("{{user.status}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "Pending");
+}
+#endif
+
+TEST_CASE("enum_compare_unknown_string_no_match", "[injamm][enum]") {
+  /** 存在しない列挙子名での比較は常に偽 */
+  BcEnumData data{.status = BcStatus::Active};
+  auto bc = injamm::engine<BcEnumData>("{{#if status == \"Nonexistent\"}}YES{{else}}NO{{/if}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "NO");
+}
+

@@ -1735,3 +1735,93 @@ TEST_CASE("CT: bind - implicit value string", "[injamm][ct][bind]") {
   REQUIRE(res);
   CHECK(*res == "hello world");
 }
+
+// ---- NTTP enum テスト ----
+
+/** @brief NTTP enum テスト用のステータス列挙型 */
+enum class CtStatus : int {
+  Unknown  = 0,
+  Active   = 1,
+  Pending  = 2,
+  Inactive = 3,
+};
+
+struct CtEnumData {
+  CtStatus status{CtStatus::Active};
+  std::optional<CtStatus> opt_status{};
+};
+
+template <>
+struct glz::meta<CtEnumData> {
+  static constexpr auto value = glz::object("status", &CtEnumData::status, "opt_status", &CtEnumData::opt_status);
+};
+
+#ifndef INJAMM_NO_ENUM_REGISTRY
+TEST_CASE("CT: enum basic output", "[injamm][ct][enum]") {
+  /** NTTP render で enum 列挙子名を出力 */
+  CtEnumData data{.status = CtStatus::Active};
+  auto r = injamm::render<"{{status}}">(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "Active");
+}
+
+TEST_CASE("CT: enum pending output", "[injamm][ct][enum]") {
+  CtEnumData data{.status = CtStatus::Pending};
+  auto r = injamm::render<"Status: {{status}}">(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "Status: Pending");
+}
+#endif
+
+TEST_CASE("CT: enum unknown value fallback", "[injamm][ct][enum]") {
+  /** 未知 enum 値 → underlying 整数を10進出力 */
+  CtEnumData data{.status = static_cast<CtStatus>(99)};
+  auto r = injamm::render<"{{status}}">(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "99");
+}
+
+TEST_CASE("CT: enum truthiness truthy", "[injamm][ct][enum]") {
+  CtEnumData data{.status = CtStatus::Active};
+  auto r = injamm::render<"{{#if status}}YES{{else}}NO{{/if}}">(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "YES");
+}
+
+TEST_CASE("CT: enum truthiness falsy", "[injamm][ct][enum]") {
+  CtEnumData data{.status = CtStatus::Unknown};
+  auto r = injamm::render<"{{#if status}}YES{{else}}NO{{/if}}">(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "NO");
+}
+
+#ifndef INJAMM_NO_ENUM_REGISTRY
+TEST_CASE("CT: enum compare eq string literal true", "[injamm][ct][enum]") {
+  CtEnumData data{.status = CtStatus::Pending};
+  auto r = injamm::render<"{{#if status == \"Pending\"}}YES{{else}}NO{{/if}}">(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "YES");
+}
+
+TEST_CASE("CT: enum compare eq string literal false", "[injamm][ct][enum]") {
+  CtEnumData data{.status = CtStatus::Pending};
+  auto r = injamm::render<"{{#if status == \"Active\"}}YES{{else}}NO{{/if}}">(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "NO");
+}
+
+TEST_CASE("CT: enum optional value", "[injamm][ct][enum]") {
+  CtEnumData data{.opt_status = CtStatus::Inactive};
+  auto r = injamm::render<"{{opt_status}}">(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "Inactive");
+}
+#endif
+
+TEST_CASE("CT: enum optional empty", "[injamm][ct][enum]") {
+  CtEnumData data{.opt_status = std::nullopt};
+  auto r = injamm::render<"{{opt_status}}">(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "");
+}
+

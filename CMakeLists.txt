@@ -15,11 +15,35 @@ option(ENABLE_THREADED_DISPATCH "GCC computed goto dispatch (GCC only)" ON)
 option(BUILD_TEST "Build tests" ON)
 option(BUILD_EXAMPLE "Build examples" ON)
 option(BUILD_FUZZ "Build fuzz targets (requires -fsanitize=fuzzer)" OFF)
+option(ENABLE_ENUM "Enable enchantum-based enum string conversion" ON)
 option(ENABLE_EXT_SQLITE3 "Build injamm-sqlite3 extension" ON)
 
 # ---- 依存 ----
 find_package(glaze CONFIG REQUIRED)
 find_package(FastFloat CONFIG REQUIRED)
+
+if(ENABLE_ENUM)
+  # enchantum: vcpkg port の enchantumConfig.cmake が enchantumTargets.cmake を
+  # cmake/ サブディレクトリではなく直下に期待するため CONFIG find は使わず、
+  # ヘッダパスを直接解決してターゲットを手動作成する。
+  find_path(ENCHANTUM_INCLUDE_DIR enchantum/enchantum.hpp
+    PATHS
+      "${CMAKE_CURRENT_BINARY_DIR}/vcpkg_installed/${VCPKG_TARGET_TRIPLET}/include"
+      "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/include"
+      "${_VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/include"
+  )
+  if(NOT ENCHANTUM_INCLUDE_DIR)
+    message(FATAL_ERROR "enchantum headers not found. Please install enchantum via vcpkg.")
+  endif()
+  if(NOT TARGET enchantum::enchantum)
+    add_library(enchantum::enchantum INTERFACE IMPORTED)
+    set_target_properties(enchantum::enchantum PROPERTIES
+      INTERFACE_INCLUDE_DIRECTORIES "${ENCHANTUM_INCLUDE_DIR}"
+      INTERFACE_COMPILE_DEFINITIONS "ENCHANTUM_ENABLE_MSVC_SPEEDUP=$<BOOL:ON>"
+      INTERFACE_COMPILE_FEATURES "cxx_std_17"
+    )
+  endif()
+endif()
 
 # ---- ライブラリ定義 ----
 add_library(injamm INTERFACE)
@@ -29,7 +53,12 @@ target_include_directories(injamm INTERFACE
   $<BUILD_INTERFACE:${CMAKE_CURRENT_SOURCE_DIR}/include>
   $<INSTALL_INTERFACE:include>
 )
-target_link_libraries(injamm INTERFACE glaze::glaze FastFloat::fast_float)
+if(ENABLE_ENUM)
+  target_link_libraries(injamm INTERFACE glaze::glaze FastFloat::fast_float enchantum::enchantum)
+else()
+  target_compile_definitions(injamm INTERFACE INJAMM_NO_ENUM_REGISTRY)
+  target_link_libraries(injamm INTERFACE glaze::glaze FastFloat::fast_float)
+endif()
 target_compile_features(injamm INTERFACE cxx_std_23)
 
 # GCC スレッデッドディスパッチ制御
@@ -81,7 +110,7 @@ install(
 )
 
 # ---- Tests & Examples ----
-if(BUILD_TEST)
+if(BUILD_TEST AND ENABLE_ENUM)
   find_package(Catch2 CONFIG REQUIRED)
 
   enable_testing()

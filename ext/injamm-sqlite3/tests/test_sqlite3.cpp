@@ -1,6 +1,6 @@
-#include <injamm/sqlite3/engine.hpp>
-#include <injamm/sqlite3/adapter.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <injamm/sqlite3/adapter.hpp>
+#include <injamm/sqlite3/engine.hpp>
 #include <sqlite3.h>
 #include <string>
 
@@ -23,12 +23,12 @@ sqlite3_stmt* prepare(test_db& db, const char* sql) {
 
 TEST_CASE("sqlite3 adapter", "[sqlite3]") {
   SECTION("single row rendering") {
-    test_db db;
+    test_db       db;
     sqlite3_stmt* stmt = prepare(db, "SELECT name, email FROM users WHERE id = 1");
     REQUIRE(sqlite3_step(stmt) == SQLITE_ROW);
 
-    auto row = injamm::sqlite3::sqlite3_row_view{stmt};
-    auto eng = injamm::sqlite3::runtime_engine<injamm::sqlite3::sqlite3_row_view>("{{name}} <{{email}}>");
+    auto row    = injamm::sqlite3::sqlite3_row_view{stmt};
+    auto eng    = injamm::sqlite3::runtime_engine<injamm::sqlite3::sqlite3_row_view>("{{name}} <{{email}}>");
     auto result = eng.render(row);
     REQUIRE(result.has_value());
     CHECK(*result == "Alice <alice@example.com>");
@@ -37,13 +37,11 @@ TEST_CASE("sqlite3 adapter", "[sqlite3]") {
   }
 
   SECTION("multiple rows with {{#.}}") {
-    test_db db;
-    sqlite3_stmt* stmt = prepare(db, "SELECT name FROM users ORDER BY id");
-    auto result_set = injamm::sqlite3::sqlite3_result{stmt};
+    test_db       db;
+    sqlite3_stmt* stmt       = prepare(db, "SELECT name FROM users ORDER BY id");
+    auto          result_set = injamm::sqlite3::sqlite3_result{stmt};
 
-    auto eng = injamm::sqlite3::runtime_engine<injamm::sqlite3::sqlite3_result>(
-      "{{#.}}{{name}} {{/.}}"
-    );
+    auto eng    = injamm::sqlite3::runtime_engine<injamm::sqlite3::sqlite3_result>("{{#.}}{{name}} {{/.}}");
     auto result = eng.render(result_set);
     REQUIRE(result.has_value());
     CHECK(*result == "Alice Bob ");
@@ -52,12 +50,12 @@ TEST_CASE("sqlite3 adapter", "[sqlite3]") {
   }
 
   SECTION("integer column") {
-    test_db db;
+    test_db       db;
     sqlite3_stmt* stmt = prepare(db, "SELECT id, name FROM users WHERE id = 2");
     REQUIRE(sqlite3_step(stmt) == SQLITE_ROW);
 
-    auto row = injamm::sqlite3::sqlite3_row_view{stmt};
-    auto eng = injamm::sqlite3::runtime_engine<injamm::sqlite3::sqlite3_row_view>("{{id}}:{{name}}");
+    auto row    = injamm::sqlite3::sqlite3_row_view{stmt};
+    auto eng    = injamm::sqlite3::runtime_engine<injamm::sqlite3::sqlite3_row_view>("{{id}}:{{name}}");
     auto result = eng.render(row);
     REQUIRE(result.has_value());
     CHECK(*result == "2:Bob");
@@ -66,25 +64,51 @@ TEST_CASE("sqlite3 adapter", "[sqlite3]") {
   }
 
   SECTION("NULL column renders empty") {
-    test_db db;
+    test_db       db;
     sqlite3_stmt* stmt = prepare(db, "SELECT NULL AS val");
     REQUIRE(sqlite3_step(stmt) == SQLITE_ROW);
-    auto row = injamm::sqlite3::sqlite3_row_view{stmt};
-    auto eng = injamm::sqlite3::runtime_engine<injamm::sqlite3::sqlite3_row_view>("[{{val}}]");
+    auto row    = injamm::sqlite3::sqlite3_row_view{stmt};
+    auto eng    = injamm::sqlite3::runtime_engine<injamm::sqlite3::sqlite3_row_view>("[{{val}}]");
     auto result = eng.render(row);
     REQUIRE(result.has_value());
     CHECK(*result == "[]");
     sqlite3_finalize(stmt);
   }
 
-  SECTION("empty result set") {
-    test_db db;
-    sqlite3_stmt* stmt = prepare(db, "SELECT name FROM users WHERE id = 999");
-    auto result_set = injamm::sqlite3::sqlite3_result{stmt};
+  SECTION("text column truthiness works in if") {
+    test_db       db;
+    sqlite3_stmt* stmt = prepare(db, "SELECT 'Pending' AS status");
+    REQUIRE(sqlite3_step(stmt) == SQLITE_ROW);
 
-    auto eng = injamm::sqlite3::runtime_engine<injamm::sqlite3::sqlite3_result>(
-      "before{{#.}}{{name}}{{/.}}after"
-    );
+    auto row    = injamm::sqlite3::sqlite3_row_view{stmt};
+    auto eng    = injamm::sqlite3::runtime_engine<injamm::sqlite3::sqlite3_row_view>("{{#if status}}YES{{else}}NO{{/if}}");
+    auto result = eng.render(row);
+    REQUIRE(result.has_value());
+    CHECK(*result == "YES");
+
+    sqlite3_finalize(stmt);
+  }
+
+  SECTION("enum-like text equality works in if") {
+    test_db       db;
+    sqlite3_stmt* stmt = prepare(db, "SELECT 'Pending' AS status");
+    REQUIRE(sqlite3_step(stmt) == SQLITE_ROW);
+
+    auto row    = injamm::sqlite3::sqlite3_row_view{stmt};
+    auto eng    = injamm::sqlite3::runtime_engine<injamm::sqlite3::sqlite3_row_view>("{{#if status == \"Pending\"}}YES{{else}}NO{{/if}}");
+    auto result = eng.render(row);
+    REQUIRE(result.has_value());
+    CHECK(*result == "YES");
+
+    sqlite3_finalize(stmt);
+  }
+
+  SECTION("empty result set") {
+    test_db       db;
+    sqlite3_stmt* stmt       = prepare(db, "SELECT name FROM users WHERE id = 999");
+    auto          result_set = injamm::sqlite3::sqlite3_result{stmt};
+
+    auto eng    = injamm::sqlite3::runtime_engine<injamm::sqlite3::sqlite3_result>("before{{#.}}{{name}}{{/.}}after");
     auto result = eng.render(result_set);
     REQUIRE(result.has_value());
     CHECK(*result == "beforeafter");
@@ -93,13 +117,11 @@ TEST_CASE("sqlite3 adapter", "[sqlite3]") {
   }
 
   SECTION("{{#.}} with else, empty") {
-    test_db db;
-    sqlite3_stmt* stmt = prepare(db, "SELECT name FROM users WHERE id = 999");
-    auto result_set = injamm::sqlite3::sqlite3_result{stmt};
+    test_db       db;
+    sqlite3_stmt* stmt       = prepare(db, "SELECT name FROM users WHERE id = 999");
+    auto          result_set = injamm::sqlite3::sqlite3_result{stmt};
 
-    auto eng = injamm::sqlite3::runtime_engine<injamm::sqlite3::sqlite3_result>(
-      "{{#.}}body{{else}}empty{{/.}}"
-    );
+    auto eng    = injamm::sqlite3::runtime_engine<injamm::sqlite3::sqlite3_result>("{{#.}}body{{else}}empty{{/.}}");
     auto result = eng.render(result_set);
     REQUIRE(result.has_value());
     CHECK(*result == "empty");
@@ -108,13 +130,11 @@ TEST_CASE("sqlite3 adapter", "[sqlite3]") {
   }
 
   SECTION("{{#.}} with else, non-empty") {
-    test_db db;
-    sqlite3_stmt* stmt = prepare(db, "SELECT name FROM users WHERE id = 1");
-    auto result_set = injamm::sqlite3::sqlite3_result{stmt};
+    test_db       db;
+    sqlite3_stmt* stmt       = prepare(db, "SELECT name FROM users WHERE id = 1");
+    auto          result_set = injamm::sqlite3::sqlite3_result{stmt};
 
-    auto eng = injamm::sqlite3::runtime_engine<injamm::sqlite3::sqlite3_result>(
-      "{{#.}}{{name}}{{else}}empty{{/.}}"
-    );
+    auto eng    = injamm::sqlite3::runtime_engine<injamm::sqlite3::sqlite3_result>("{{#.}}{{name}}{{else}}empty{{/.}}");
     auto result = eng.render(result_set);
     REQUIRE(result.has_value());
     CHECK(*result == "Alice");
@@ -122,4 +142,3 @@ TEST_CASE("sqlite3 adapter", "[sqlite3]") {
     sqlite3_finalize(stmt);
   }
 }
-
