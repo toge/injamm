@@ -1,6 +1,23 @@
 #pragma once
 
 /**
+ * @file executor.hpp
+ * @brief injamm-sqlite3 用バイトコード VM エグゼキュータ
+ *
+ * @note このファイルは injamm 本体の `include/injamm/bytecode_exec.hpp` を
+ *       fork したものです。runtime dispatch（sqlite3_row_view / sqlite3_result）
+ *       に対応するために分岐しており、ODR 衝突を避けるために別 namespace
+ *       (`injamm::sqlite3::detail`) に置いています。
+ *
+ *       **乖離防止ルール:**
+ *       - `bytecode_exec.hpp` に新機能・バグ修正を加えた場合は、
+ *         このファイルの対応箇所にも同じ変更を反映してください。
+ *       - 変更内容の差分は `diff include/injamm/bytecode_exec.hpp \
+ *         ext/injamm-sqlite3/include/injamm/sqlite3/executor.hpp` で確認できます。
+ *       - sqlite3 固有の差分は "// [sqlite3]" コメントで印を付けています。
+ */
+
+/**
  * @brief GCC + C++23 以上の環境では computed goto ディスパッチを自動有効化する。
  * @details CMake 経由でビルドした場合は INJAMM_THREADED_DISPATCH が定義済みのため
  *          このブロックは実質 no-op となる。ヘッダオンリーで直接インクルードする
