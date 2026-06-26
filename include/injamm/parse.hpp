@@ -25,10 +25,13 @@ namespace injamm::detail {
     ++i;
   }
   for (; i < s.size(); ++i) {
-    if (s[i] >= '0' && s[i] <= '9')
+    if (s[i] >= '0' && s[i] <= '9') {
       arg = arg * 10 + (s[i] - '0');
+      if (!negative && arg > std::numeric_limits<int>::max()) return std::numeric_limits<int>::max();
+      if (negative && -arg < std::numeric_limits<int>::min()) return std::numeric_limits<int>::min();
+    }
   }
-  return negative ? -arg : arg;
+  return static_cast<int>(negative ? -arg : arg);
 }
 
 /**
