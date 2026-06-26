@@ -16,28 +16,21 @@ inline void html_escape_into(Buffer& out, std::string_view s) {
   auto const* data = s.data();
 
   auto const process_special = [&](std::size_t start, std::size_t end) {
+    std::size_t safe = start;
     for (std::size_t j = start; j < end; ++j) {
-      switch (data[j]) {
-      case '<':
-        out.append("&lt;");
-        break;
-      case '>':
-        out.append("&gt;");
-        break;
-      case '&':
-        out.append("&amp;");
-        break;
-      case '"':
-        out.append("&quot;");
-        break;
-      case '\'':
-        out.append("&#x27;");
-        break;
-      default:
-        out.push_back(data[j]);
-        break;
+      auto const c = data[j];
+      if (c != '<' && c != '>' && c != '&' && c != '"' && c != '\'') continue;
+      if (j > safe) out.append(data + safe, j - safe);
+      switch (c) {
+      case '<': out.append("&lt;");   break;
+      case '>': out.append("&gt;");   break;
+      case '&': out.append("&amp;");  break;
+      case '"': out.append("&quot;"); break;
+      case '\'': out.append("&#x27;"); break;
       }
+      safe = j + 1;
     }
+    if (safe < end) out.append(data + safe, end - safe);
   };
 
   auto const find_first_match = [](unsigned mask) -> int {
@@ -87,28 +80,21 @@ inline void html_escape_into(Buffer& out, std::string_view s) {
   auto const* data = s.data();
 
   auto const process_special = [&](std::size_t start, std::size_t end) {
+    std::size_t safe = start;
     for (std::size_t j = start; j < end; ++j) {
-      switch (data[j]) {
-      case '<':
-        out.append("&lt;");
-        break;
-      case '>':
-        out.append("&gt;");
-        break;
-      case '&':
-        out.append("&amp;");
-        break;
-      case '"':
-        out.append("&quot;");
-        break;
-      case '\'':
-        out.append("&#x27;");
-        break;
-      default:
-        out.push_back(data[j]);
-        break;
+      auto const c = data[j];
+      if (c != '<' && c != '>' && c != '&' && c != '"' && c != '\'') continue;
+      if (j > safe) out.append(data + safe, j - safe);
+      switch (c) {
+      case '<': out.append("&lt;");   break;
+      case '>': out.append("&gt;");   break;
+      case '&': out.append("&amp;");  break;
+      case '"': out.append("&quot;"); break;
+      case '\'': out.append("&#x27;"); break;
       }
+      safe = j + 1;
     }
+    if (safe < end) out.append(data + safe, end - safe);
   };
 
   auto const find_first_match = [](unsigned mask) -> int {
