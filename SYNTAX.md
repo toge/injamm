@@ -720,10 +720,10 @@ auto r = injamm::render<injamm::fixed_string(
 // r == "Members: Alice Bob "
 ```
 
-単一の値なら `bind(value)` で `"value"` 名が自動的に付きます。
+単一の値なら `bind(value)` で `"_"` 名が自動的に付きます。
 
 ```cpp
-auto r = injamm::render<injamm::fixed_string("Got {{value}}")>(injamm::bind(42));
+auto r = injamm::render<injamm::fixed_string("Got {{_}}")>(injamm::bind(42));
 // r == "Got 42"
 ```
 

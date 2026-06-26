@@ -312,10 +312,10 @@ auto ctx = injamm::bind<"items", "user">(items, user);
 auto html = injamm::render<kTmpl>(ctx);
 ```
 
-単一の値の場合は `"value"` という名前で自動的にバインドされます。
+単一の値の場合は `"_"` という名前で自動的にバインドされます。
 
 ```cpp
-auto ctx = injamm::bind(value); // "value" としてバインド
+auto ctx = injamm::bind(value); // "_" としてバインド
 ```
 
 ### NTTP partial (`{{> partial}}`)
@@ -347,6 +347,7 @@ auto html = injamm::render<
 | 5   | type_mismatch  | 型不一致                   |
 | 6   | invalid_utf8   | 不正な UTF-8               |
 | 7   | unknown_filter | 不明なフィルタ             |
+| 8   | division_by_zero | 除数ゼロエラー           |
 
 ## 注意事項
 
