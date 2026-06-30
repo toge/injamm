@@ -6,9 +6,7 @@
 #include "types.hpp"
 #include "bytecode.hpp"
 #include "bytecode_exec.hpp"
-#ifndef INJAMM_NO_ENUM_REGISTRY
-#include <enchantum/enchantum.hpp>
-#endif
+// enum_io.hpp provides enum_name_to_int and serialize_enum
 
 #include <array>
 #include <cstddef>
@@ -248,13 +246,10 @@ constexpr ct_parsed_template<N> resolve_field_indices(ct_parsed_template<N> tmpl
                if (static_cast<std::size_t>(lhs_idx) != I) return;
                using FT = std::remove_cvref_t<decltype(glz::get<I>(glz::to_tie(std::declval<T const&>())))>;
                if constexpr (std::is_enum_v<FT>) {
-                 auto ev = enchantum::cast<FT>(std::string_view{str_lit->data(), str_lit->size()});
-                 if (ev) {
-                   using U = std::underlying_type_t<FT>;
-                   /** テキストをLHSキーに更新し、比較演算子をflagsに、RHS整数をint_filtersに保存 */
+                 if (auto ev = enum_name_to_int<FT>(std::string_view{str_lit->data(), str_lit->size()})) {
                    tmpl.texts[i]    = lhs;
                    tmpl.flags[i]    = static_cast<std::uint8_t>(cmp.op);
-                   tmpl.int_filters[i][0] = int_filter_entry{int_filter::eq, static_cast<int>(static_cast<U>(*ev))};
+                   tmpl.int_filters[i][0] = int_filter_entry{int_filter::eq, static_cast<int>(*ev)};
                    tmpl.int_filter_count[i] = 1;
                    idx = lhs_idx;
                  }

@@ -1825,3 +1825,72 @@ TEST_CASE("CT: enum optional empty", "[injamm][ct][enum]") {
   CHECK(*r == "");
 }
 
+#ifndef INJAMM_NO_ENUM_REGISTRY
+TEST_CASE("CT: enum raw output", "[injamm][ct][enum]") {
+  CtEnumData data{.status = CtStatus::Active};
+  auto r = injamm::render<"{{{status}}}">(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "Active");
+}
+
+TEST_CASE("CT: enum inverted section truthy", "[injamm][ct][enum]") {
+  CtEnumData data{.status = CtStatus::Active};
+  auto r = injamm::render<"{{^status}}EMPTY{{/status}}">(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "");
+}
+
+TEST_CASE("CT: enum inverted section falsy", "[injamm][ct][enum]") {
+  CtEnumData data{.status = CtStatus::Unknown};
+  auto r = injamm::render<"{{^status}}EMPTY{{/status}}">(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "EMPTY");
+}
+
+TEST_CASE("CT: enum compare ne string literal true", "[injamm][ct][enum]") {
+  CtEnumData data{.status = CtStatus::Pending};
+  auto r = injamm::render<"{{#if status != \"Active\"}}YES{{else}}NO{{/if}}">(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "YES");
+}
+
+TEST_CASE("CT: enum compare ne string literal false", "[injamm][ct][enum]") {
+  CtEnumData data{.status = CtStatus::Pending};
+  auto r = injamm::render<"{{#if status != \"Pending\"}}YES{{else}}NO{{/if}}">(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "NO");
+}
+
+TEST_CASE("CT: enum compare unknown string no match", "[injamm][ct][enum]") {
+  CtEnumData data{.status = CtStatus::Active};
+  auto r = injamm::render<"{{#if status == \"Nonexistent\"}}YES{{else}}NO{{/if}}">(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "NO");
+}
+#endif
+
+struct CtEnumTask {
+  CtStatus status{CtStatus::Active};
+};
+
+template <>
+struct glz::meta<CtEnumTask> {
+  static constexpr auto value = glz::object("status", &CtEnumTask::status);
+};
+
+struct CtEnumWrapper {
+  CtEnumTask task{};
+};
+
+template <>
+struct glz::meta<CtEnumWrapper> {
+  static constexpr auto value = glz::object("task", &CtEnumWrapper::task);
+};
+
+TEST_CASE("CT: enum nested path", "[injamm][ct][enum]") {
+  CtEnumWrapper data{.task = {CtStatus::Pending}};
+  auto r = injamm::render<"{{task.status}}">(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "Pending");
+}
+

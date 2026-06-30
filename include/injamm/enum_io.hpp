@@ -55,4 +55,15 @@ inline void serialize_enum(Buffer& out, E value, bool raw) {
   }
 }
 
+template <class E>
+  requires std::is_enum_v<E>
+inline constexpr auto enum_name_to_int(std::string_view name) -> std::optional<long long> {
+#ifndef INJAMM_NO_ENUM_REGISTRY
+  if (auto ev = enchantum::cast<E>(name)) {
+    return static_cast<long long>(static_cast<std::underlying_type_t<E>>(*ev));
+  }
+#endif
+  return std::nullopt;
+}
+
 } // namespace injamm::detail

@@ -2827,9 +2827,10 @@ enum class BcStatus : int {
   Inactive = 3,
 };
 
-/** @brief 特殊HTML文字を含む列挙子名をテストするための enum */
+/** @brief enum 値の出力と HTML エスケープをテストするための enum */
 enum class BcSpecialEnum : int {
   Normal = 0,
+  Alert  = 1,
 };
 
 /** @brief enum フィールドを持つテスト用データ型 */
@@ -2858,6 +2859,17 @@ struct glz::meta<BcEnumNested::Inner> {
 template <>
 struct glz::meta<BcEnumNested> {
   static constexpr auto value = glz::object("user", &BcEnumNested::user);
+};
+
+/** @brief BcSpecialEnum フィールドを持つテスト用データ型 */
+struct BcSpecialEnumData {
+  BcSpecialEnum special_enum{BcSpecialEnum::Alert};
+  std::string html_chars{"<>&"};
+};
+
+template <>
+struct glz::meta<BcSpecialEnumData> {
+  static constexpr auto value = glz::object("special_enum", &BcSpecialEnumData::special_enum, "html_chars", &BcSpecialEnumData::html_chars);
 };
 
 #ifndef INJAMM_NO_ENUM_REGISTRY
@@ -2996,6 +3008,56 @@ TEST_CASE("enum_nested_path", "[injamm][enum]") {
   auto r = bc.render(data);
   REQUIRE(r.has_value());
   CHECK(*r == "Pending");
+}
+
+TEST_CASE("enum_special_escaped", "[injamm][enum]") {
+  /** {{special_enum}} → HTMLエスケープあり (Alert に特殊文字はないが両方のコードパスを検証) */
+  BcSpecialEnumData data{.special_enum = BcSpecialEnum::Alert};
+  auto bc = injamm::engine<BcSpecialEnumData>("{{special_enum}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "Alert");
+}
+
+TEST_CASE("enum_special_raw", "[injamm][enum]") {
+  /** {{{special_enum}}} → 生出力 */
+  BcSpecialEnumData data{.special_enum = BcSpecialEnum::Alert};
+  auto bc = injamm::engine<BcSpecialEnumData>("{{{special_enum}}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "Alert");
+}
+
+TEST_CASE("enum_special_html_chars_escaped", "[injamm][enum]") {
+  /** {{html_chars}} → HTMLエスケープされる */
+  BcSpecialEnumData data{.special_enum = BcSpecialEnum::Alert, .html_chars = "<>&"};
+  auto bc = injamm::engine<BcSpecialEnumData>("{{html_chars}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "&lt;&gt;&amp;");
+}
+
+TEST_CASE("enum_special_html_chars_raw", "[injamm][enum]") {
+  /** {{{html_chars}}} → 生出力 */
+  BcSpecialEnumData data{.special_enum = BcSpecialEnum::Alert, .html_chars = "<>&"};
+  auto bc = injamm::engine<BcSpecialEnumData>("{{{html_chars}}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "<>&");
+}
+
+TEST_CASE("enum_special_escaped_vs_raw_differ", "[injamm][enum]") {
+  /** {{x}} と {{{x}}} で出力が異なることを検証 */
+  BcSpecialEnumData data{.special_enum = BcSpecialEnum::Alert, .html_chars = "<>&"};
+  auto bc_esc = injamm::engine<BcSpecialEnumData>("{{html_chars}}");
+  auto r_esc = bc_esc.render(data);
+  REQUIRE(r_esc.has_value());
+  auto bc_raw = injamm::engine<BcSpecialEnumData>("{{{html_chars}}}");
+  auto r_raw = bc_raw.render(data);
+  REQUIRE(r_raw.has_value());
+  CHECK(*r_esc != *r_raw);
+  CHECK(*r_esc == "&lt;&gt;&amp;");
+  CHECK(*r_raw == "<>&");
 }
 #endif
 

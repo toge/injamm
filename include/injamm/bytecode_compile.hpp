@@ -6,9 +6,7 @@
 #include "bytecode.hpp"
 #include "enum_io.hpp"
 #include "parse.hpp"
-#ifndef INJAMM_NO_ENUM_REGISTRY
-#include <enchantum/enchantum.hpp>
-#endif
+// enum_io.hpp provides enum_name_to_int and serialize_enum
 
 namespace injamm::detail {
 
@@ -510,20 +508,18 @@ class bc_compiler {
           } else if (auto str_lit = parse_string_literal(rhs)) {
             /** 文字列リテラルの場合: LHS フィールド型が enum なら列挙子名→整数に変換 */
             bool resolved_as_enum = false;
-#ifndef INJAMM_NO_ENUM_REGISTRY
             if (cmp_field_idx != UINT32_MAX) {
               with_field_type_at<T>(cmp_field_idx, [&]<class FT>() {
                 if constexpr (std::is_enum_v<FT>) {
-                  if (auto ev = enchantum::cast<FT>(*str_lit)) {
-                    using U = std::underlying_type_t<FT>;
+                  auto ev = enum_name_to_int<FT>(*str_lit);
+                  if (ev) {
                     cmp_ref.compare_rhs_kind = compare_operand_kind::int_literal;
-                    cmp_ref.int_filters.push_back({int_filter::eq, static_cast<int>(static_cast<U>(*ev))});
+                    cmp_ref.int_filters.push_back({int_filter::eq, static_cast<int>(*ev)});
                     resolved_as_enum = true;
                   }
                 }
               });
             }
-#endif
             if (!resolved_as_enum) {
               /** 通常の文字列リテラル比較として保持 */
               cmp_ref.compare_rhs_kind = compare_operand_kind::string_literal;

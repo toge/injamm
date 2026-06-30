@@ -12,6 +12,8 @@ if(@ENABLE_ENUM@)
     add_library(enchantum::enchantum INTERFACE IMPORTED)
     set_target_properties(enchantum::enchantum PROPERTIES
       INTERFACE_INCLUDE_DIRECTORIES "${_ENCHANTUM_INCLUDE_DIR}"
+      INTERFACE_COMPILE_DEFINITIONS "ENCHANTUM_ENABLE_MSVC_SPEEDUP=$<BOOL:ON>"
+      INTERFACE_COMPILE_FEATURES "cxx_std_17"
     )
     unset(_ENCHANTUM_INCLUDE_DIR CACHE)
   endif()
