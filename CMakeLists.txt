@@ -110,7 +110,7 @@ install(
 )
 
 # ---- Tests & Examples ----
-if(BUILD_TEST AND ENABLE_ENUM)
+if(BUILD_TEST)
   find_package(Catch2 CONFIG REQUIRED)
 
   enable_testing()

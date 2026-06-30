@@ -11,12 +11,13 @@ Glaze でメタプログラミングされた C++ 構造体をコンテキスト
 
 - **ヘッダオンリー**: インクルードするだけで使用可能
 - **高速**: コンパイル時テンプレートパース、Computed goto ディスパッチ（GCC）、Glaze リフレクションによる O(1) フィールドアクセス
-- **依存最小**: [Glaze](https://github.com/stephenberry/glaze) + [enchantum](https://github.com/anomalyco/enchantum) のみ必須
+- **依存最小**: [Glaze](https://github.com/stephenberry/glaze) + [FastFloat](https://github.com/lemire/fast_float) + [enchantum](https://github.com/anomalyco/enchantum) のみ必須
 
 ## 要件
 
 - C++23 対応コンパイラ（GCC 14+ 推奨）
 - [Glaze](https://github.com/stephenberry/glaze)
+- [FastFloat](https://github.com/lemire/fast_float)（高速浮動小数点解析）
 - [enchantum](https://github.com/anomalyco/enchantum)（C++20 enum→string 反射ライブラリ）
 
 ## ビルド・インストール
@@ -244,8 +245,8 @@ auto r = bc.render(Task{"write docs", Status::Pending});
 
 // enum 比較
 auto bc2 = injamm::engine<Task>("{{#if status == \"Active\"}}active{{else}}inactive{{/if}}");
-auto r2 = bc2.render(Task{"review", Status::Inactive});
-// r2 == "inactive"
+auto r2 = bc2.render(Task{"review", Status::Pending});
+// r2 == "pending"
 
 // NTTP でも同じ構文が使用可能
 auto r3 = injamm::render<"{{title}}: {{status}}">(Task{"fix bug", Status::Active});

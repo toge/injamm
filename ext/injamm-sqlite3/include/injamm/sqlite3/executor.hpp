@@ -377,10 +377,10 @@ class bc_executor {
         &&L_emit_if,                 // 9
         &&L_emit_if_eq,              // 10
         &&L_emit_if_ne,              // 11
-        &&L_emit_else,               // 12
-        &&L_emit_endif,              // 13
-        &&L_emit_at_section,         // 14
-        &&L_emit_at_inverted,        // 15
+        &&L_emit_if_cmp,             // 12 emit_if_gt
+        &&L_emit_if_cmp,             // 13 emit_if_gte
+        &&L_emit_if_cmp,             // 14 emit_if_lt
+        &&L_emit_if_cmp,             // 15 emit_if_lte
         &&L_emit_litvar,             // 16
         &&L_emit_litvar_raw,         // 17
         &&L_emit_at_root,            // 18
@@ -857,6 +857,52 @@ class bc_executor {
       } else if constexpr (std::same_as<FT, std::string> || std::same_as<FT, std::string_view>) {
         if (ref.compare_rhs_kind == compare_operand_kind::string_literal) {
           cond = (std::string_view{field} != std::string_view{ref.compare_rhs_text});
+        }
+      }
+    });
+    if (!cond) {
+      pc = instr.operand;
+    } else {
+      ++pc;
+    }
+    DISPATCH();
+  }
+
+  /** @brief if comparison (gt/gte/lt/lte): reads int_filters[0].arg for RHS value */
+  L_emit_if_cmp: {
+    auto const& instr = bc_.instructions[pc];
+    auto const& ref   = bc_.var_refs[instr.operand2];
+    int         rhs   = 0;
+    if (!ref.int_filters.empty()) {
+      rhs = ref.int_filters[0].arg;
+    }
+    bool cond = false;
+    auto cmp_op = instr.op;
+    (void)for_each_field(value_, ref.key, ref.field_index, ref.has_dot, [&](auto const& field) {
+      using FT = std::remove_cvref_t<decltype(field)>;
+      if constexpr (std::is_arithmetic_v<FT>) {
+        auto lv = static_cast<long long>(field);
+        auto rv = static_cast<long long>(rhs);
+        switch (cmp_op) {
+        case bc_opcode::emit_if_eq:  cond = (lv == rv); break;
+        case bc_opcode::emit_if_ne:  cond = (lv != rv); break;
+        case bc_opcode::emit_if_gt:  cond = (lv > rv);  break;
+        case bc_opcode::emit_if_gte: cond = (lv >= rv); break;
+        case bc_opcode::emit_if_lt:  cond = (lv < rv);  break;
+        case bc_opcode::emit_if_lte: cond = (lv <= rv); break;
+        default: break;
+        }
+      } else if constexpr (std::is_enum_v<FT>) {
+        auto lv = static_cast<long long>(static_cast<std::underlying_type_t<FT>>(field));
+        auto rv = static_cast<long long>(rhs);
+        switch (cmp_op) {
+        case bc_opcode::emit_if_eq:  cond = (lv == rv); break;
+        case bc_opcode::emit_if_ne:  cond = (lv != rv); break;
+        case bc_opcode::emit_if_gt:  cond = (lv > rv);  break;
+        case bc_opcode::emit_if_gte: cond = (lv >= rv); break;
+        case bc_opcode::emit_if_lt:  cond = (lv < rv);  break;
+        case bc_opcode::emit_if_lte: cond = (lv <= rv); break;
+        default: break;
         }
       }
     });
@@ -1775,6 +1821,34 @@ class bc_executor {
         } else {
           ++pc;
         }
+        break;
+      }
+
+      /** @brief if (var >/>=/</<= rhs): 数値/enum の比較 */
+      case bc_opcode::emit_if_gt:
+      case bc_opcode::emit_if_gte:
+      case bc_opcode::emit_if_lt:
+      case bc_opcode::emit_if_lte: {
+        auto const& ref = bc_.var_refs[instr.operand2];
+        int rhs = 0;
+        if (!ref.int_filters.empty()) { rhs = ref.int_filters[0].arg; }
+        long long lv = 0;
+        (void)for_each_field(value_, ref.key, ref.field_index, ref.has_dot, [&](auto const& field) {
+          using FT = std::remove_cvref_t<decltype(field)>;
+          if constexpr (std::is_arithmetic_v<FT>) { lv = static_cast<long long>(field); }
+          else if constexpr (std::is_enum_v<FT>) { lv = static_cast<long long>(static_cast<std::underlying_type_t<FT>>(field)); }
+        });
+        bool cond = false;
+        switch (instr.op) {
+        case bc_opcode::emit_if_eq:  cond = (lv == rhs); break;
+        case bc_opcode::emit_if_ne:  cond = (lv != rhs); break;
+        case bc_opcode::emit_if_gt:  cond = (lv > rhs);  break;
+        case bc_opcode::emit_if_gte: cond = (lv >= rhs); break;
+        case bc_opcode::emit_if_lt:  cond = (lv < rhs);  break;
+        case bc_opcode::emit_if_lte: cond = (lv <= rhs); break;
+        default: break;
+        }
+        if (!cond) { pc = instr.operand; } else { ++pc; }
         break;
       }
 
