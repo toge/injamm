@@ -498,8 +498,31 @@ consteval void compile_chunk_range(ct_bytecode_builder<N>& b,
       break;
     }
     case ct_chunk_kind::if_else: {
-      bool has_else = (chunks.else_starts[i] != 0 || chunks.else_ends[i] != 0);
       auto sv = chunks.texts[i];
+
+      /** 定数条件の最適化: リテラル整数はコンパイル時に真偽判定し、到達不可能な分岐のバイトコード生成を省略 */
+      if (chunks.flags[i] == 0 && chunks.filter_count[i] == 0 &&
+          chunks.int_filter_count[i] == 0 && chunks.float_filter_count[i] == 0) {
+        auto check_expr = sv;
+        bool negate = false;
+        if (check_expr.starts_with("!")) {
+          negate = true;
+          check_expr = trim_sv(check_expr.substr(1));
+        }
+        if (auto int_val = parse_int_literal(check_expr)) {
+          bool cond = negate ? (*int_val == 0) : (*int_val != 0);
+          if (cond) {
+            compile_chunk_range(b, chunks, chunks.body_starts[i], chunks.body_ends[i]);
+          } else {
+            compile_chunk_range(b, chunks, chunks.else_starts[i], chunks.else_ends[i]);
+          }
+          std::size_t skip_to = chunks.else_ends[i] != 0 ? chunks.else_ends[i] : chunks.body_ends[i];
+          i = skip_to - 1;
+          break;
+        }
+      }
+
+      bool has_else = (chunks.else_starts[i] != 0 || chunks.else_ends[i] != 0);
       auto field_idx = static_cast<std::uint32_t>(chunks.field_indices[i]);
 
       auto if_instr = b.current_offset();

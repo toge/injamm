@@ -352,13 +352,106 @@ class bc_compiler {
     if (trim_blocks_ && pos_ < tmpl_.size() && tmpl_[pos_] == '\n') ++pos_;
   }
 
+  enum class skip_result { end, else_, eof };
+
+  /**
+   * @brief ブロックタグ本文をバイトコード生成なしでスキップする
+   * @details depth 0 で {{else}} または閉じタグ {{/...}} に達するまで pos_ を進める。
+   *          ネストしたブロックタグ {{#...}} は depth を増やしてスキップする。
+   */
+  skip_result skip_to_else_or_end() {
+    int depth = 0;
+    while (pos_ < tmpl_.size()) {
+      auto tag_start = tmpl_.find("{{", pos_);
+      if (tag_start == std::string_view::npos) {
+        pos_ = tmpl_.size();
+        return skip_result::eof;
+      }
+      pos_ = tag_start;
+      if (tag_start + 2 < tmpl_.size() && tmpl_[tag_start + 2] == '{') {
+        auto end = tmpl_.find("}}}", tag_start + 3);
+        if (end == std::string_view::npos) {
+          pos_ = tag_start + 1;
+          continue;
+        }
+        pos_ = end + 3;
+        if (trim_blocks_ && pos_ < tmpl_.size() && tmpl_[pos_] == '\n') ++pos_;
+        continue;
+      }
+      auto tag_end = tmpl_.find("}}", tag_start + 2);
+      if (tag_end == std::string_view::npos) {
+        pos_ = tag_start + 1;
+        continue;
+      }
+      auto inner = trim_sv(tmpl_.substr(tag_start + 2, tag_end - tag_start - 2));
+      pos_ = tag_end + 2;
+      if (trim_blocks_ && pos_ < tmpl_.size() && tmpl_[pos_] == '\n') ++pos_;
+      if (inner.empty()) continue;
+      if (inner == "else" && depth == 0) {
+        return skip_result::else_;
+      }
+      if (inner.starts_with("/")) {
+        if (depth == 0) return skip_result::end;
+        --depth;
+        continue;
+      }
+      if (inner.starts_with("#")) {
+        ++depth;
+        continue;
+      }
+    }
+    return skip_result::eof;
+  }
+
   /**
    * @brief if 条件分岐をコンパイルする
    * @param expr 条件式の変数名
    * @details {{#if expr}}...{{else}}...{{/if}} の構文を emit_if / emit_else / emit_endif 命令に変換する。
    *          else がある場合とない場合の両方を処理する。
+   *          定数条件（if 0 / if 1）はコンパイル時に解決し、到達不可能な分岐のバイトコード生成を省略する。
    */
   void compile_if(std::string_view expr_full) {
+    /** 定数条件の最適化: リテラル整数はコンパイル時に真偽判定し、到達不可能な分岐をスキップ */
+    if (expr_full.find('|') == std::string_view::npos &&
+        expr_full.find("||") == std::string_view::npos &&
+        expr_full.find("&&") == std::string_view::npos) {
+      auto check_expr = trim_sv(expr_full);
+      bool negate = false;
+      if (check_expr.starts_with("!")) {
+        negate = true;
+        check_expr = trim_sv(check_expr.substr(1));
+      }
+      if (auto int_val = parse_int_literal(check_expr)) {
+        bool cond = negate ? (*int_val == 0) : (*int_val != 0);
+        if (!cond) {
+          auto result = skip_to_else_or_end();
+          if (result == skip_result::eof) {
+            bc_.error = error_ctx{pos_, error_code::unexpected_end, "if"};
+            return;
+          }
+          if (result == skip_result::else_) {
+            bool else_reached_end = false;
+            auto else_result = compile_body_impl(else_reached_end);
+            if (bc_.error.ec == error_code::none && else_result == body_result::eof) {
+              bc_.error = error_ctx{pos_, error_code::unexpected_end, "if"};
+            }
+          }
+        } else {
+          bool reached_end = false;
+          auto result = compile_body_impl(reached_end);
+          if (bc_.error.ec == error_code::none && reached_end) {
+            bc_.error = error_ctx{pos_, error_code::unexpected_end, "if"};
+            return;
+          }
+          if (result == body_result::else_) {
+            skip_to_else_or_end();
+          }
+        }
+        if (trim_blocks_ && pos_ < tmpl_.size() && tmpl_[pos_] == '\n') ++pos_;
+        return;
+      }
+    }
+
     auto finish_if = [this](std::size_t if_instr_idx) {
       bool reached_end = false;
       auto result = compile_body_impl(reached_end);

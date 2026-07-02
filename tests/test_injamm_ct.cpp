@@ -1894,3 +1894,87 @@ TEST_CASE("CT: enum nested path", "[injamm][ct][enum]") {
   CHECK(*r == "Pending");
 }
 
+TEST_CASE("ct_const_if_0_no_else", "[injamm][ct][const_if]") {
+  auto constexpr tmpl = injamm::fixed_string("{{#if 0}}yes{{/if}}");
+  auto r = injamm::render<tmpl>(CtIfData{"alice", 42});
+  REQUIRE(r.has_value());
+  CHECK(*r == "");
+}
+
+TEST_CASE("ct_const_if_1_no_else", "[injamm][ct][const_if]") {
+  auto constexpr tmpl = injamm::fixed_string("{{#if 1}}yes{{/if}}");
+  auto r = injamm::render<tmpl>(CtIfData{"alice", 42});
+  REQUIRE(r.has_value());
+  CHECK(*r == "yes");
+}
+
+TEST_CASE("ct_const_if_0_with_else", "[injamm][ct][const_if]") {
+  auto constexpr tmpl = injamm::fixed_string("{{#if 0}}yes{{else}}no{{/if}}");
+  auto r = injamm::render<tmpl>(CtIfData{"alice", 42});
+  REQUIRE(r.has_value());
+  CHECK(*r == "no");
+}
+
+TEST_CASE("ct_const_if_1_with_else", "[injamm][ct][const_if]") {
+  auto constexpr tmpl = injamm::fixed_string("{{#if 1}}yes{{else}}no{{/if}}");
+  auto r = injamm::render<tmpl>(CtIfData{"alice", 42});
+  REQUIRE(r.has_value());
+  CHECK(*r == "yes");
+}
+
+TEST_CASE("ct_const_if_neg0", "[injamm][ct][const_if]") {
+  auto constexpr tmpl = injamm::fixed_string("{{#if !0}}yes{{else}}no{{/if}}");
+  auto r = injamm::render<tmpl>(CtIfData{"alice", 42});
+  REQUIRE(r.has_value());
+  CHECK(*r == "yes");
+}
+
+TEST_CASE("ct_const_if_neg1", "[injamm][ct][const_if]") {
+  auto constexpr tmpl = injamm::fixed_string("{{#if !1}}yes{{else}}no{{/if}}");
+  auto r = injamm::render<tmpl>(CtIfData{"alice", 42});
+  REQUIRE(r.has_value());
+  CHECK(*r == "no");
+}
+
+TEST_CASE("ct_const_if_surrounded", "[injamm][ct][const_if]") {
+  auto constexpr tmpl = injamm::fixed_string("pre{{#if 0}}mid{{/if}}post");
+  auto r = injamm::render<tmpl>(CtIfData{"alice", 0});
+  REQUIRE(r.has_value());
+  CHECK(*r == "prepost");
+}
+
+TEST_CASE("ct_const_if_42", "[injamm][ct][const_if]") {
+  auto constexpr tmpl = injamm::fixed_string("{{#if 42}}yes{{else}}no{{/if}}");
+  auto r = injamm::render<tmpl>(CtIfData{"alice", 0});
+  REQUIRE(r.has_value());
+  CHECK(*r == "yes");
+}
+
+TEST_CASE("ct_const_if_negative", "[injamm][ct][const_if]") {
+  auto constexpr tmpl = injamm::fixed_string("{{#if -1}}yes{{else}}no{{/if}}");
+  auto r = injamm::render<tmpl>(CtIfData{"alice", 0});
+  REQUIRE(r.has_value());
+  CHECK(*r == "yes");
+}
+
+TEST_CASE("ct_const_if_else_with_var", "[injamm][ct][const_if]") {
+  auto constexpr tmpl = injamm::fixed_string("{{#if 0}}{{name}}{{else}}found{{/if}}");
+  auto r = injamm::render<tmpl>(CtIfData{"alice", 42});
+  REQUIRE(r.has_value());
+  CHECK(*r == "found");
+}
+
+TEST_CASE("ct_const_if_via_atvar_0", "[injamm][ct][const_if][atvar]") {
+  auto constexpr tmpl = injamm::fixed_string("{{#if @var(flag)}}yes{{else}}no{{/if}}");
+  auto r = injamm::render<tmpl, "flag", "0">(CtIfData{"alice", 42});
+  REQUIRE(r.has_value());
+  CHECK(*r == "no");
+}
+
+TEST_CASE("ct_const_if_via_atvar_1", "[injamm][ct][const_if][atvar]") {
+  auto constexpr tmpl = injamm::fixed_string("{{#if @var(flag)}}yes{{else}}no{{/if}}");
+  auto r = injamm::render<tmpl, "flag", "1">(CtIfData{"alice", 42});
+  REQUIRE(r.has_value());
+  CHECK(*r == "yes");
+}
+

@@ -428,18 +428,46 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
         auto chunk_idx = ctx.push_if(expr, 0, 0, 0, 0,
                                          if_filters, if_int_filters, if_float_filters);
 
-        /** @brief then 節を再帰パース */
-        auto then_start = ctx.tmpl.size;
-        ct_parse_into(ctx, then_body, trim_blocks, lstrip_blocks);
-        auto then_end = ctx.tmpl.size;
+        /** 定数条件の最適化: リテラル整数はコンパイル時に真偽判定し、到達不可能な分岐のパースを省略 */
+        bool constant_folded = false;
+        if (if_filters.empty() && if_int_filters.empty() && if_float_filters.empty()) {
+          auto check_expr = expr;
+          bool negate = false;
+          if (check_expr.starts_with("!")) {
+            negate = true;
+            check_expr = trim_sv(check_expr.substr(1));
+          }
+          if (auto int_val = parse_int_literal(check_expr)) {
+            constant_folded = true;
+            bool cond = negate ? (*int_val == 0) : (*int_val != 0);
+            if (cond) {
+              auto then_start = ctx.tmpl.size;
+              ct_parse_into(ctx, then_body, trim_blocks, lstrip_blocks);
+              auto then_end = ctx.tmpl.size;
+              ctx.update_if(chunk_idx, then_start, then_end, then_end, then_end);
+            } else {
+              auto else_start = ctx.tmpl.size;
+              ct_parse_into(ctx, else_body, trim_blocks, lstrip_blocks);
+              auto else_end = ctx.tmpl.size;
+              ctx.update_if(chunk_idx, else_start, else_start, else_start, else_end);
+            }
+          }
+        }
 
-        /** @brief else 節を再帰パース */
-        auto else_start = ctx.tmpl.size;
-        ct_parse_into(ctx, else_body, trim_blocks, lstrip_blocks);
-        auto else_end = ctx.tmpl.size;
+        if (!constant_folded) {
+          /** @brief then 節を再帰パース */
+          auto then_start = ctx.tmpl.size;
+          ct_parse_into(ctx, then_body, trim_blocks, lstrip_blocks);
+          auto then_end = ctx.tmpl.size;
 
-        /** @brief 仮追加したチャンクの範囲を更新 */
-        ctx.update_if(chunk_idx, then_start, then_end, else_start, else_end);
+          /** @brief else 節を再帰パース */
+          auto else_start = ctx.tmpl.size;
+          ct_parse_into(ctx, else_body, trim_blocks, lstrip_blocks);
+          auto else_end = ctx.tmpl.size;
+
+          /** @brief 仮追加したチャンクの範囲を更新 */
+          ctx.update_if(chunk_idx, then_start, then_end, else_start, else_end);
+        }
         continue;
       }
 

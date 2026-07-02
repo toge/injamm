@@ -3070,3 +3070,122 @@ TEST_CASE("enum_compare_unknown_string_no_match", "[injamm][enum]") {
   CHECK(*r == "NO");
 }
 
+TEST_CASE("bc_const_if_0_no_else", "[injamm][const_if]") {
+  /** if 0 は常に偽なので then 節が出力されない */
+  BcIfData data{"alice", 42};
+  auto bc = injamm::engine<BcIfData>("{{#if 0}}yes{{/if}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "");
+}
+
+TEST_CASE("bc_const_if_1_no_else", "[injamm][const_if]") {
+  /** if 1 は常に真なので then 節が出力される */
+  BcIfData data{"alice", 42};
+  auto bc = injamm::engine<BcIfData>("{{#if 1}}yes{{/if}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "yes");
+}
+
+TEST_CASE("bc_const_if_0_with_else", "[injamm][const_if]") {
+  /** if 0 は常に偽なので else 節が出力される */
+  BcIfData data{"alice", 42};
+  auto bc = injamm::engine<BcIfData>("{{#if 0}}yes{{else}}no{{/if}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "no");
+}
+
+TEST_CASE("bc_const_if_1_with_else", "[injamm][const_if]") {
+  /** if 1 は常に真なので then 節が出力され else 節はスキップ */
+  BcIfData data{"alice", 42};
+  auto bc = injamm::engine<BcIfData>("{{#if 1}}yes{{else}}no{{/if}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "yes");
+}
+
+TEST_CASE("bc_const_if_neg0", "[injamm][const_if]") {
+  /** !0 は常に真 */
+  BcIfData data{"alice", 42};
+  auto bc = injamm::engine<BcIfData>("{{#if !0}}yes{{else}}no{{/if}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "yes");
+}
+
+TEST_CASE("bc_const_if_neg1", "[injamm][const_if]") {
+  /** !1 は常に偽 */
+  BcIfData data{"alice", 42};
+  auto bc = injamm::engine<BcIfData>("{{#if !1}}yes{{else}}no{{/if}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "no");
+}
+
+TEST_CASE("bc_const_if_nested", "[injamm][const_if]") {
+  /** if 0 の中身がスキップされても外側の else 節が正しく動作する */
+  BcIfData data{"alice", 42};
+  auto bc = injamm::engine<BcIfData>("{{#if 0}}never{{else}}outer{{/if}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "outer");
+}
+
+TEST_CASE("bc_const_if_42", "[injamm][const_if]") {
+  /** 非ゼロリテラルは常に真 */
+  BcIfData data{"alice", 0};
+  auto bc = injamm::engine<BcIfData>("{{#if 42}}yes{{else}}no{{/if}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "yes");
+}
+
+TEST_CASE("bc_const_if_negative", "[injamm][const_if]") {
+  /** 負のリテラルは常に真 */
+  BcIfData data{"alice", 0};
+  auto bc = injamm::engine<BcIfData>("{{#if -1}}yes{{else}}no{{/if}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "yes");
+}
+
+TEST_CASE("bc_const_if_surrounded_by_literal", "[injamm][const_if]") {
+  /** 定数 if の前後にリテラルテキストがある場合 */
+  BcIfData data{"alice", 0};
+  auto bc = injamm::engine<BcIfData>("pre{{#if 0}}mid{{/if}}post");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "prepost");
+}
+
+TEST_CASE("bc_const_if_else_with_literal", "[injamm][const_if]") {
+  /** 定数 if の else 節にリテラルと変数の混在 */
+  BcIfData data{"alice", 42};
+  auto bc = injamm::engine<BcIfData>("{{#if 0}}{{name}}{{else}}found{{/if}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "found");
+}
+
+TEST_CASE("bc_const_if_via_atvar_0", "[injamm][const_if][atvar]") {
+  /** @var 展開で if 0 に解決され、then 節がスキップされる */
+  BcIfData data{"alice", 42};
+  std::map<std::string, std::string, std::less<>> consts{{"flag", "0"}};
+  auto bc = injamm::engine<BcIfData>("{{#if @var(flag)}}yes{{else}}no{{/if}}", consts);
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "no");
+}
+
+TEST_CASE("bc_const_if_via_atvar_1", "[injamm][const_if][atvar]") {
+  /** @var 展開で if 1 に解決され、else 節がスキップされる */
+  BcIfData data{"alice", 42};
+  std::map<std::string, std::string, std::less<>> consts{{"flag", "1"}};
+  auto bc = injamm::engine<BcIfData>("{{#if @var(flag)}}yes{{else}}no{{/if}}", consts);
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "yes");
+}
+
