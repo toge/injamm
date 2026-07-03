@@ -3189,3 +3189,124 @@ TEST_CASE("bc_const_if_via_atvar_1", "[injamm][const_if][atvar]") {
   CHECK(*r == "yes");
 }
 
+// ---- partials テスト用データ型 ----
+
+struct BcPartialUser {
+  std::string name;
+  int age = 0;
+};
+
+struct BcPartialUsers {
+  std::vector<BcPartialUser> users;
+};
+
+template <>
+struct glz::meta<BcPartialUser> {
+  using T = BcPartialUser;
+  static constexpr auto value = object(&T::name, &T::age);
+};
+
+template <>
+struct glz::meta<BcPartialUsers> {
+  using T = BcPartialUsers;
+  static constexpr auto value = object(&T::users);
+};
+
+TEST_CASE("simple_partial_literal_only", "[injamm][partial]") {
+  BcPartialUser user{"Alice", 30};
+  auto eng = injamm::engine<BcPartialUser>{
+    "|{{#partialdef greeting}}HELLO{{/partialdef}}{{#partial greeting}}|"
+  };
+  auto r = eng.render(user);
+  REQUIRE(r.has_value());
+  CHECK(*r == "|HELLO|");
+}
+
+TEST_CASE("simple_partial_with_vars", "[injamm][partial]") {
+  // Use BcPartialUser directly as context ({{#user}} on struct iterates fields, not element)
+  BcPartialUser user{"Alice", 30};
+  auto eng = injamm::engine<BcPartialUser>{
+    "{{#partialdef greeting}}{{name}}-{{age}}{{/partialdef}}{{#partial greeting}}|"
+  };
+  auto r = eng.render(user);
+  REQUIRE(r.has_value());
+  CHECK(*r == "Alice-30|");
+}
+
+TEST_CASE("partial_multiple_uses", "[injamm][partial]") {
+  BcPartialUser user{"Alice", 30};
+  auto eng = injamm::engine<BcPartialUser>{
+    "{{#partialdef nameplate}}{{name}}({{age}}){{/partialdef}}"
+    "{{#partial nameplate}} {{#partial nameplate}} {{#partial nameplate}}"
+  };
+  auto r = eng.render(user);
+  REQUIRE(r.has_value());
+  CHECK(*r == "Alice(30) Alice(30) Alice(30)");
+}
+
+TEST_CASE("partial_forward_reference", "[injamm][partial]") {
+  BcPartialUser user{"Bob", 25};
+  auto eng = injamm::engine<BcPartialUser>{
+    "before {{#partial info}} after{{#partialdef info}}{{name}}({{age}}){{/partialdef}}"
+  };
+  auto r = eng.render(user);
+  REQUIRE(r.has_value());
+  CHECK(*r == "before Bob(25) after");
+}
+
+TEST_CASE("partial_with_loop", "[injamm][partial]") {
+  BcPartialUsers data{{{ "Bob", 25 }, { "Charlie", 35 }}};
+  auto eng = injamm::engine<BcPartialUsers>{
+    "{{#partialdef card}}{{name}}({{age}})/{{/partialdef}}"
+    "{{#users}}{{#partial card}}{{/users}}"
+  };
+  auto r = eng.render(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "Bob(25)/Charlie(35)/");
+}
+
+TEST_CASE("partial_render_by_name", "[injamm][partial]") {
+  BcPartialUser user{"Dave", 40};
+  auto eng = injamm::engine<BcPartialUser>{
+    "{{#partialdef sidebar}}{{name}}'s page{{/partialdef}}full: {{#partial sidebar}}|end"
+  };
+  auto full = eng.render(user);
+  REQUIRE(full.has_value());
+  CHECK(*full == "full: Dave's page|end");
+
+  auto side = eng.render(user, "sidebar");
+  REQUIRE(side.has_value());
+  CHECK(*side == "Dave's page");
+}
+
+TEST_CASE("partial_unknown_name_error", "[injamm][partial]") {
+  BcPartialUser user{"Alice", 30};
+  auto eng = injamm::engine<BcPartialUser>{"{{name}}"};
+  auto r = eng.render(user, "nonexistent");
+  REQUIRE_FALSE(r.has_value());
+  CHECK(r.error().ec == injamm::error_code::unknown_key);
+}
+
+TEST_CASE("partial_compile_undefined", "[injamm][partial]") {
+  BcPartialUser user{"Alice", 30};
+  auto eng = injamm::engine<BcPartialUser>{
+    "{{#partialdef info}}{{name}}{{/partialdef}}"
+    "{{#partial missing}}"
+  };
+  auto r = eng.render(user);
+  REQUIRE_FALSE(r.has_value());
+  CHECK(r.error().ec == injamm::error_code::unknown_key);
+}
+
+TEST_CASE("partial_in_partial", "[injamm][partial]") {
+  BcPartialUsers data{{{ "Bob", 25 }, { "Charlie", 35 }}};
+  auto eng = injamm::engine<BcPartialUsers>{
+    "{{#partialdef name}}{{name}}{{/partialdef}}"
+    "{{#partialdef card}}{{#partial name}}({{age}})/{{/partialdef}}"
+    "{{#users}}{{#partial card}}{{/users}}"
+  };
+  auto r = eng.render(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "Bob(25)/Charlie(35)/");
+}
+

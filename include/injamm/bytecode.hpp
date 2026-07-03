@@ -3,6 +3,7 @@
 #include <array>
 #include <cstddef>
 #include <cstdint>
+#include <memory>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -88,6 +89,7 @@ enum class bc_opcode : std::uint8_t {
   emit_if_or,         /**< if (a || b) 分岐 */
   emit_if_and,        /**< if (a && b) 分岐 */
   emit_if_not,        /**< if (!a) 分岐 */
+  call_partial,       /**< 名前付きpartial呼び出し (operand: partial_entry index) */
   halt                /**< プログラム終了 */
 };
 
@@ -165,6 +167,7 @@ enum class bc_opcode : std::uint8_t {
   case bc_opcode::emit_if_or:              return "emit_if_or";
   case bc_opcode::emit_if_and:             return "emit_if_and";
   case bc_opcode::emit_if_not:             return "emit_if_not";
+  case bc_opcode::call_partial:            return "call_partial";
   case bc_opcode::halt:                    return "halt";
   }
   return "unknown";
@@ -346,6 +349,18 @@ struct bc_instruction {
   std::uint32_t operand3 = 0;      /**< else_target（セクション/inverted の else 本体開始、0 = なし） */
 };
 
+struct bytecode;
+
+/**
+ * @brief 名前付きpartialエントリ
+ * @details プリコンパイルされたpartial本体のバイトコード。
+ *          コンパイル時に各 {{#partialdef name}}...{{/partialdef}} から生成される。
+ */
+struct partial_entry {
+  std::string name;              /**< partial 名 */
+  std::shared_ptr<bytecode> bc;  /**< プリコンパイル済みバイトコード */
+};
+
 /**
  * @brief コンパイル済みバイトコード
  * @details 命令列、リテラルテーブル、変数参照テーブルを保持する。
@@ -358,6 +373,7 @@ struct bytecode {
   std::size_t literal_total_size = 0;        /**< 全リテラルの合計サイズ（出力バッファ事前確保用） */
   error_ctx error{};                         /**< コンパイル時エラー（非ゼロ ec でエラー） */
   std::string template_storage;              /**< テンプレート文字列（string_view の生存期間保証用） */
+  std::vector<partial_entry> partial_entries;/**< プリコンパイル済みpartialエントリ（call_partial 用） */
 
   /**
    * @brief 命令を追加する
@@ -596,6 +612,18 @@ struct bytecode {
         append(std::string_view{buf, static_cast<std::size_t>(p2 - buf)});
         break;
       }
+      case bc_opcode::call_partial: {
+        if (instr.operand < partial_entries.size()) {
+          append("partial=\"");
+          append(partial_entries[instr.operand].name);
+          append("\"");
+        } else {
+          char buf[16];
+          auto [p, ec] = std::to_chars(buf, buf + sizeof(buf), instr.operand);
+          append(std::string_view{buf, static_cast<std::size_t>(p - buf)});
+        }
+        break;
+      }
       case bc_opcode::filter_float_precision:
       case bc_opcode::filter_int_eq:
       case bc_opcode::filter_int_ne:
@@ -674,6 +702,22 @@ struct bytecode {
           append("]");
         }
         append("\n");
+      }
+    }
+
+    // partial テーブル
+    if (!partial_entries.empty()) {
+      append("\n--- partials ---\n");
+      for (std::size_t i = 0; i < partial_entries.size(); ++i) {
+        char addr_buf[16];
+        auto [p, ec] = std::to_chars(addr_buf, addr_buf + sizeof(addr_buf), i);
+        append(std::string_view{addr_buf, static_cast<std::size_t>(p - addr_buf)});
+        append(": \"");
+        append(partial_entries[i].name);
+        append("\" (");
+        auto [p2, ec2] = std::to_chars(addr_buf, addr_buf + sizeof(addr_buf), partial_entries[i].bc->instructions.size());
+        append(std::string_view{addr_buf, static_cast<std::size_t>(p2 - addr_buf)});
+        append(" instr)\n");
       }
     }
 

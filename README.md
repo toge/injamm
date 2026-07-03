@@ -190,6 +190,8 @@ int main() {
 | `{{^section}}...{{else}}...{{/section}}` | 逆セクション with else（真の場合に else 節を描画） |
 | `{{#exists var}}...{{/exists}}`     | 変数が存在（真とみなせる）ときに描画  |
 | `{{^exists var}}...{{/exists}}`     | 変数が存在しない（偽/空）ときに描画  |
+| `{{#partialdef name}}...{{/partialdef}}` | 名前付き partial の定義（runtime engine のみ） |
+| `{{#partial name}}`               | 定義済み partial を現在のコンテキストで描画（runtime engine のみ） |
 | `{{#break}}`                        | ループを中断する                      |
 | `{{#continue}}`                     | ループをスキップして次の反復へ        |
 | `{{#if cond}}...{{/if}}`            | 条件分岐（0/空/偽は偽、それ以外は真） |
@@ -338,6 +340,9 @@ auto bc = injamm::engine<Data>("{{name}}");
 auto r1 = bc.render(data1);
 auto r2 = bc.render(data2);
 
+// 名前付き partial のみレンダリング
+auto partial = bc.render(data, "sidebar");
+
 // @var 定数置換付き
 std::map<std::string, std::string, std::less<>> c{{"f", "name"}};
 auto bc2 = injamm::engine<User>("{{@var(f)}}", c);
@@ -357,6 +362,42 @@ auto html = injamm::render<kTmpl>(ctx);
 ```cpp
 auto ctx = injamm::bind(value); // "_" としてバインド
 ```
+
+### Template Partials（`engine<T>` のみ）
+
+同一テンプレート内で名前付きの断片（partial）を定義し、複数回呼び出すことができます。
+partial はプリコンパイル方式で保持されるため、`render(data, "name")` で特定の partial だけを選択的にレンダリングすることも可能です（HTMX 等の部分更新に有用）。
+
+```cpp
+struct Data {
+  std::string title;
+  std::string name;
+  std::vector<std::string> items;
+};
+
+auto bc = injamm::engine<Data>(R"(
+<h1>{{title}}</h1>
+{{#partialdef sidebar}}
+<div class="sidebar">
+  <h3>{{name}}'s items</h3>
+  <ul>{{#items}}<li>{{this}}</li>{{/items}}</ul>
+</div>
+{{/partialdef}}
+<main>
+  {{#partial sidebar}}
+  {{#partial sidebar}}
+</main>
+)");
+
+// フルレンダリング
+auto html = bc.render(data);
+
+// sidebar 部分のみレンダリング（HTMX Partial 等）
+auto sidebar_html = bc.render(data, "sidebar");
+```
+
+`{{#partialdef name}}...{{/partialdef}}` で partial を定義し、`{{#partial name}}` で現在のコンテキストで描画します。
+partial は前方参照可能（定義より前で呼び出せる）。partial 内から別の partial も呼び出せます。
 
 ### NTTP partial (`{{> partial}}`)
 

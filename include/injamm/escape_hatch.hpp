@@ -403,6 +403,25 @@ public:
   }
 
   /**
+   * @brief 名前付き partial のみをレンダリングする
+   *
+   * @param value コンテキスト値の const 参照
+   * @param partial_name レンダリングする partial の名前
+   * @return expected<std::string> レンダリング結果、またはエラー
+   */
+  [[nodiscard]] expected<std::string> render(T const& value, std::string_view partial_name) const {
+    if (bc_.error.ec != error_code::none) {
+      return std::unexpected(bc_.error);
+    }
+    auto it = std::find_if(bc_.partial_entries.begin(), bc_.partial_entries.end(),
+                            [&](auto const& e) { return e.name == partial_name; });
+    if (it == bc_.partial_entries.end()) {
+      return std::unexpected(error_ctx{0, error_code::unknown_key, partial_name});
+    }
+    return detail::bc_execute(*it->bc, value);
+  }
+
+  /**
    * @brief レンダリング結果を既存バッファに書き込む（バッファ再利用用）
    *
    * @param value コンテキスト値の const 参照

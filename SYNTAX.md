@@ -729,7 +729,120 @@ auto r = injamm::render<injamm::fixed_string("Got {{_}}")>(injamm::bind(42));
 
 ---
 
-## 19. partial / include（NTTP render 専用）
+## 19. Template Partials（`engine<T>` 専用）
+
+同一テンプレート内で名前付きの再利用可能な断片（partial）を定義できます。
+`render(data, "partial_name")` で特定の partial だけを選択的にレンダリングすることも可能です（HTMX 等の部分更新に有用）。
+
+partial の本体は **プリコンパイル方式**で保持されるため、呼び出しのたびに再コンパイルは発生しません。
+
+### 19.1 定義と呼び出し
+
+`{{#partialdef name}}...{{/partialdef}}` で定義し、`{{#partial name}}` で呼び出します。
+
+```cpp
+struct Data {
+  std::string title;
+  std::string name;
+  std::vector<std::string> items;
+};
+
+auto bc = injamm::engine<Data>(R"(
+<h1>{{title}}</h1>
+{{#partialdef sidebar}}
+<div class="sidebar">
+  <h3>{{name}}'s items</h3>
+  <ul>{{#items}}<li>{{this}}</li>{{/items}}</ul>
+</div>
+{{/partialdef}}
+<main>
+  {{#partial sidebar}}
+  {{#partial sidebar}}
+</main>
+)");
+
+auto r = bc.render(data);
+// r == "<h1>Members</h1>\n... (両方の sidebar が描画される)"
+```
+
+### 19.2 複数回呼び出し
+
+同じ partial を同一テンプレート内で何度でも呼び出せます。呼び出しのたびに現在のコンテキストで評価されます。
+
+```cpp
+struct User { std::string name; int age; };
+auto eng = injamm::engine<User>(
+  "{{#partialdef card}}{{name}}({{age}}){{/partialdef}}"
+  "{{#partial card}} {{#partial card}} {{#partial card}}");
+auto r = eng.render(User{"Alice", 30});
+// r == "Alice(30) Alice(30) Alice(30)"
+```
+
+### 19.3 ループ内での使用
+
+セクション（ループ）内で partial を呼び出すと、現在のループ要素をコンテキストとして描画されます。
+
+```cpp
+struct Data { std::vector<User> users; };
+auto eng = injamm::engine<Data>(
+  "{{#partialdef card}}{{name}}({{age}})/{{/partialdef}}"
+  "{{#users}}{{#partial card}}{{/users}}");
+auto r = eng.render(Data{{{"Bob", 25}, {"Charlie", 35}}});
+// r == "Bob(25)/Charlie(35)/"
+```
+
+### 19.4 前方参照
+
+partial の定義より前の位置で呼び出せます（前方参照可能）。
+
+```cpp
+auto eng = injamm::engine<User>(
+  "before {{#partial info}} after"
+  "{{#partialdef info}}{{name}}({{age}}){{/partialdef}}");
+auto r = eng.render(User{"Bob", 25});
+// r == "before Bob(25) after"
+```
+
+### 19.5 入れ子 partial
+
+partial の中から別の partial を呼び出せます。
+
+```cpp
+struct Data { std::vector<User> users; };
+auto eng = injamm::engine<Data>(
+  "{{#partialdef name}}{{name}}{{/partialdef}}"
+  "{{#partialdef card}}{{#partial name}}({{age}})/{{/partialdef}}"
+  "{{#users}}{{#partial card}}{{/users}}");
+auto r = eng.render(Data{{{"Bob", 25}, {"Charlie", 35}}});
+// r == "Bob(25)/Charlie(35)/"
+```
+
+### 19.6 部分レンダリング
+
+`engine.render(data, "partial_name")` でテンプレート全体ではなく、特定の partial のみをレンダリングできます。
+
+```cpp
+auto eng = injamm::engine<User>(
+  "{{#partialdef sidebar}}{{name}}'s page{{/partialdef}}"
+  "full: {{#partial sidebar}}|end");
+auto full = eng.render(User{"Dave", 40});
+// full == "full: Dave's page|end"
+
+auto side = eng.render(User{"Dave", 40}, "sidebar");
+// side == "Dave's page"
+```
+
+存在しない partial 名を指定すると `unknown_key` エラーを返します。
+
+### 19.7 制限
+
+- `{{#partialdef}}` のネストはできません
+- NTTP `render<fixed_string>` では未対応です（runtime `engine<T>` のみ）
+- ファイルインクルード（`{% include %}`）には対応していません
+
+---
+
+## 20. partial / include（NTTP render 専用）
 
 `{{> partial_name}}` は NTTP `render` の compile-time entry pair で展開されます。runtime `engine<T>` では未対応です。
 

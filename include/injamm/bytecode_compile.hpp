@@ -807,6 +807,21 @@ class bc_compiler {
           bc_.add_instruction(bc_opcode::emit_continue);
           continue;
         }
+        if (key.starts_with("partialdef ")) {
+          continue;
+        }
+        if (key.starts_with("partial ")) {
+          auto partial_name = trim_sv(key.substr(8));
+          auto it = std::find_if(bc_.partial_entries.begin(), bc_.partial_entries.end(),
+                                  [&](auto const& e) { return e.name == partial_name; });
+          if (it == bc_.partial_entries.end()) {
+            bc_.error = error_ctx{tag_start, error_code::unknown_key, partial_name};
+            return body_result::eof;
+          }
+          bc_.add_instruction(bc_opcode::call_partial,
+                             static_cast<std::uint32_t>(std::distance(bc_.partial_entries.begin(), it)));
+          continue;
+        }
         if (key.starts_with("if") && (key.size() == 2 || key[2] == ' ')) {
           auto expr = key.size() > 2 ? trim_sv(key.substr(3)) : std::string_view{};
           compile_if(expr);
@@ -878,9 +893,84 @@ class bc_compiler {
     return body_result::eof;
   }
 
+  /**
+   * @brief テンプレートから {{#partialdef name}}...{{/partialdef}} を抽出し、
+   *        各ボディを個別にバイトコードコンパイルして partial_entries に格納する。
+   * @param tmpl_str クリーニング済みテンプレート文字列
+   * @return partialdef ブロックを除去したメインテンプレート文字列
+   */
+  std::string extract_partials(std::string const& tmpl_str) {
+    std::string_view tmpl = tmpl_str;
+    std::string result;
+    result.reserve(tmpl.size());
+
+    struct pending_partial {
+      std::string name;
+      std::string body;
+    };
+    std::vector<pending_partial> pending;
+
+    std::size_t pos = 0;
+    while (pos < tmpl.size()) {
+      auto pdef_start = tmpl.find("{{#partialdef", pos);
+      if (pdef_start == std::string_view::npos) {
+        result.append(tmpl.substr(pos));
+        break;
+      }
+
+      result.append(tmpl.substr(pos, pdef_start - pos));
+
+      auto tag_end = tmpl.find("}}", pdef_start);
+      if (tag_end == std::string_view::npos) {
+        result.append(tmpl.substr(pdef_start));
+        break;
+      }
+
+      auto inner = trim_sv(tmpl.substr(pdef_start + 2, tag_end - pdef_start - 2));
+      if (!inner.starts_with("#partialdef ")) {
+        result.append(tmpl.substr(pdef_start, tag_end - pdef_start + 2));
+        pos = tag_end + 2;
+        continue;
+      }
+      auto name = trim_sv(inner.substr(12));
+
+      auto close_tag = tmpl.find("{{/partialdef}}", tag_end + 2);
+      if (close_tag == std::string_view::npos) {
+        result.append(tmpl.substr(pdef_start));
+        break;
+      }
+
+      auto body = std::string_view{tmpl}.substr(tag_end + 2, close_tag - (tag_end + 2));
+      pending.push_back({std::string(trim_sv(name)), std::string(body)});
+
+      pos = close_tag + 15;
+    }
+
+    for (auto& pp : pending) {
+      bc_compiler<T> partial_compiler;
+      partial_compiler.set_partial_entries(bc_.partial_entries);
+      auto partial_bc = partial_compiler.compile(pp.body, trim_blocks_, lstrip_blocks_);
+      if (partial_bc.error.ec != error_code::none) {
+        bc_.error = partial_bc.error;
+        return {};
+      }
+
+      partial_entry entry;
+      entry.name = pp.name;
+      entry.bc = std::make_shared<bytecode>(std::move(partial_bc));
+      bc_.partial_entries.push_back(std::move(entry));
+    }
+
+    return result;
+  }
+
   bool compile_body() {
     bool reached_end = false;
     return compile_body_impl(reached_end) != body_result::eof;
+  }
+
+  void set_partial_entries(std::vector<partial_entry> const& entries) {
+    bc_.partial_entries = entries;
   }
 
  public:
@@ -896,6 +986,16 @@ class bc_compiler {
     bc_.template_storage = clean_tmpl_;
     tmpl_ = bc_.template_storage;
     pos_ = 0;
+
+    // Extract partials before main compilation
+    auto main_tmpl = extract_partials(bc_.template_storage);
+    if (bc_.error.ec != error_code::none) {
+      return std::move(bc_);
+    }
+    bc_.template_storage = main_tmpl;
+    tmpl_ = bc_.template_storage;
+    pos_ = 0;
+
     bool found_close = compile_body();
     if (bc_.error.ec == error_code::none && found_close) {
       bc_.error = error_ctx{pos_, error_code::syntax_error, "stray closing tag"};

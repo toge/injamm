@@ -939,6 +939,17 @@ class bc_executor {
     return {};
   }
 
+  static std::expected<void, error_ctx> handle_call_partial(bc_executor& ex, std::size_t& pc, std::string&) {
+    auto const& instr = ex.bc_.instructions[pc];
+    auto const& entry = ex.bc_.partial_entries[instr.operand];
+    bc_executor<T, RootT> child_exec(*entry.bc, ex.value_, ex.root_value_, ex.loop_, ex.out_);
+    auto r = child_exec.execute();
+    if (!r)
+      return std::unexpected(r.error());
+    ++pc;
+    return {};
+  }
+
 public:
   bc_executor(bytecode const& bc, T const& value, RootT const& root_value, bc_loop_state const* loop, std::string& out) : bc_(bc), value_(value), root_value_(root_value), loop_(loop), out_(out) {}
 
@@ -1042,7 +1053,8 @@ public:
         &&L_emit_if_logic,           // 66 emit_if_or
         &&L_emit_if_logic,           // 67 emit_if_and
         &&L_emit_if_not,             // 68 emit_if_not
-        &&L_halt,                    // 69
+        &&L_call_partial,            // 69
+        &&L_halt,                    // 70
     };
 
 /** @brief 現在の命令のオペコードに対応するラベルにジャンプする（実行範囲外なら終了） */
@@ -1999,6 +2011,20 @@ public:
     return {};
   }
 
+  /** @brief partial呼び出し: プリコンパイル済みpartialバイトコードをサブexecutorで実行 */
+  L_call_partial: {
+    auto const& instr    = bc_.instructions[pc];
+    auto const& entry    = bc_.partial_entries[instr.operand];
+    {
+      bc_executor<T, RootT> child_exec(*entry.bc, value_, root_value_, loop_, out_);
+      auto r = child_exec.execute();
+      if (!r)
+        return r;
+    }
+    ++pc;
+    DISPATCH();
+  }
+
   /** @brief プログラム終端 */
   L_halt: { return {}; }
 
@@ -2079,7 +2105,8 @@ public:
       &handle_emit_if_logic,      // 65 emit_if_or
       &handle_emit_if_logic,      // 66 emit_if_and
       &handle_emit_if_logic,       // 67 emit_if_not
-      &handle_emit_halt,          // 68
+      &handle_call_partial,       // 68
+      &handle_emit_halt,          // 69
     };
 
     while (pc < end) {
