@@ -274,6 +274,32 @@ struct ct_expanded_template {
   }();
 };
 
+// ---- constexpr 計算を保持する thin-wrapper 用構造体 ----
+
+template <auto Tmpl, bool Trim, bool Lstrip, typename T>
+struct nttp_render_data {
+  static constexpr auto parsed   = detail::parse_fixed_impl<Tmpl, Trim, Lstrip>();
+  static constexpr auto resolved = detail::resolve_field_indices<T>(parsed);
+  static constexpr auto ct_bc    = detail::ct_chunks_to_bytecode<T>(resolved);
+};
+
+template <auto Tmpl, typename T, auto... Entries>
+struct nttp_atvar_data {
+  using ET = detail::ct_expanded_template<Tmpl, Entries...>;
+  static constexpr auto parsed = []() {
+    detail::ct_parse_context<ET::expanded_size + 1> ctx;
+    detail::ct_parse_into(ctx, std::string_view{ET::data.data(), ET::expanded_size});
+    return detail::resolve_field_indices<T>(ctx.tmpl);
+  }();
+  static constexpr auto ct_bc = detail::ct_chunks_to_bytecode<T>(parsed);
+};
+
+template <typename Data>
+detail::bytecode const& nttp_bytecode_holder() {
+  static detail::bytecode const bc = detail::to_bytecode(Data::ct_bc);
+  return bc;
+}
+
 } // namespace detail
 
 /**
@@ -291,13 +317,32 @@ struct ct_expanded_template {
  */
 template <fixed_string Tmpl, int TrimBlocks = 0, int LstripBlocks = 0, typename T>
 [[nodiscard]] expected<std::string> render(T const& value) {
-  constexpr auto parsed = detail::parse_fixed_impl<Tmpl, TrimBlocks != 0, LstripBlocks != 0>();
-  constexpr auto resolved = detail::resolve_field_indices<T>(parsed);
-  constexpr auto ct_bc = detail::ct_chunks_to_bytecode<T>(resolved);
-  if (ct_bc.error.ec != error_code::none)
-    return std::unexpected(ct_bc.error);
-  static detail::bytecode const bc = detail::to_bytecode(ct_bc);
-  return detail::bc_execute(bc, value);
+  using D = detail::nttp_render_data<Tmpl, TrimBlocks != 0, LstripBlocks != 0, T>;
+  if constexpr (D::ct_bc.error.ec != error_code::none)
+    return std::unexpected(D::ct_bc.error);
+  return detail::bc_execute(detail::nttp_bytecode_holder<D>(), value);
+}
+
+/**
+ * @brief NTTP ベースのレンダリング（バッファ再利用版）
+ *
+ * @details render() のバッファ再利用オーバーロード。
+ *          既存の std::string インスタンスを出力先として受け取り、
+ *          内部バッファを再利用することでアロケーションを削減する。
+ *          出力文字列の内容はクリアされる。
+ *
+ * @tparam Tmpl コンパイル時テンプレート文字列（fixed_string リテラル）
+ * @tparam T    コンテキスト値の型（glz::meta<T> 要特殊化）
+ * @param value コンテキスト値の const 参照
+ * @param out   出力先バッファ（内容はクリアされる）
+ * @return expected<void> 実行結果、またはエラー（error_ctx）
+ */
+template <fixed_string Tmpl, int TrimBlocks = 0, int LstripBlocks = 0, typename T>
+[[nodiscard]] expected<void> render(T const& value, std::string& out) {
+  using D = detail::nttp_render_data<Tmpl, TrimBlocks != 0, LstripBlocks != 0, T>;
+  if constexpr (D::ct_bc.error.ec != error_code::none)
+    return std::unexpected(D::ct_bc.error);
+  return detail::bc_execute_into(detail::nttp_bytecode_holder<D>(), value, out);
 }
 
 /**
@@ -316,18 +361,33 @@ template <fixed_string Tmpl, int TrimBlocks = 0, int LstripBlocks = 0, typename 
 template <fixed_string Tmpl, fixed_string... Entries, typename T>
   requires(sizeof...(Entries) > 0 && sizeof...(Entries) % 2 == 0)
 [[nodiscard]] expected<std::string> render(T const& value) {
-  using ET = detail::ct_expanded_template<Tmpl, Entries...>;
-  constexpr std::string_view expanded_sv{ET::data.data(), ET::expanded_size};
-  constexpr auto parsed = [&]() {
-    detail::ct_parse_context<ET::expanded_size + 1> ctx;
-    detail::ct_parse_into(ctx, expanded_sv);
-    return detail::resolve_field_indices<T>(ctx.tmpl);
-  }();
-  constexpr auto ct_bc = detail::ct_chunks_to_bytecode<T>(parsed);
-  if (ct_bc.error.ec != error_code::none)
-    return std::unexpected(ct_bc.error);
-  static detail::bytecode const bc = detail::to_bytecode(ct_bc);
-  return detail::bc_execute(bc, value);
+  using D = detail::nttp_atvar_data<Tmpl, T, Entries...>;
+  if constexpr (D::ct_bc.error.ec != error_code::none)
+    return std::unexpected(D::ct_bc.error);
+  return detail::bc_execute(detail::nttp_bytecode_holder<D>(), value);
+}
+
+/**
+ * @brief NTTP ベースのレンダリング バッファ再利用版（@var 定数展開版）
+ *
+ * @details render() のバッファ再利用オーバーロード。
+ *          既存の std::string インスタンスを出力先として受け取り、
+ *          内部バッファを再利用することでアロケーションを削減する。
+ *
+ * @tparam Tmpl    コンパイル時テンプレート文字列（fixed_string リテラル）
+ * @tparam Entries キー・バリューペア（キー1, 値1, キー2, 値2, ...）
+ * @tparam T       コンテキスト値の型（glz::meta<T> 要特殊化）
+ * @param value    コンテキスト値の const 参照
+ * @param out      出力先バッファ（内容はクリアされる）
+ * @return expected<void> 実行結果、またはエラー
+ */
+template <fixed_string Tmpl, fixed_string... Entries, typename T>
+  requires(sizeof...(Entries) > 0 && sizeof...(Entries) % 2 == 0)
+[[nodiscard]] expected<void> render(T const& value, std::string& out) {
+  using D = detail::nttp_atvar_data<Tmpl, T, Entries...>;
+  if constexpr (D::ct_bc.error.ec != error_code::none)
+    return std::unexpected(D::ct_bc.error);
+  return detail::bc_execute_into(detail::nttp_bytecode_holder<D>(), value, out);
 }
 
 /**

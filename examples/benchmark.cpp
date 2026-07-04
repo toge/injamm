@@ -27,6 +27,17 @@ struct glz::meta<Team> {
   static constexpr auto value = object(&T::name, &T::members);
 };
 
+struct TeamLarge {
+  std::string name;
+  std::vector<Person> members;
+};
+
+template <>
+struct glz::meta<TeamLarge> {
+  using T = TeamLarge;
+  static constexpr auto value = object(&T::name, &T::members);
+};
+
 /// P3 確認用: 20フィールド構造体
 struct WideStruct {
   std::string f0, f1, f2, f3, f4, f5, f6, f7, f8, f9;
@@ -43,6 +54,33 @@ struct glz::meta<WideStruct> {
     &T::f15, &T::f16, &T::f17, &T::f18, &T::f19);
 };
 
+/// P4 enum 解決ベンチマーク用
+enum class Color : int { Red = 1, Green = 2, Blue = 3 };
+
+struct EnumItem {
+  std::string name;
+  Color       color;
+};
+
+template <>
+struct glz::meta<EnumItem> {
+  using T = EnumItem;
+  static constexpr auto value = object("name", &EnumItem::name, "color", &EnumItem::color);
+};
+
+/// P4 SoA 用: 大量の命令列を生成する big テンプレート
+struct BigData {
+  std::string a0, a1, a2, a3, a4, a5, a6, a7, a8, a9;
+};
+
+template <>
+struct glz::meta<BigData> {
+  using T = BigData;
+  static constexpr auto value = object(
+    "a0", &T::a0, "a1", &T::a1, "a2", &T::a2, "a3", &T::a3, "a4", &T::a4,
+    "a5", &T::a5, "a6", &T::a6, "a7", &T::a7, "a8", &T::a8, "a9", &T::a9);
+};
+
 static double elapsed_us(auto const& start, auto const& end) {
   return std::chrono::duration<double, std::micro>(end - start).count();
 }
@@ -50,6 +88,9 @@ static double elapsed_us(auto const& start, auto const& end) {
 static int bench_filter_dispatch();
 static int bench_wide_struct();
 static int bench_bind_context();
+static int bench_section_loop_large();
+static int bench_enum_resolve();
+static int bench_many_vars();
 
 template <size_t N>
 static std::string repeat(std::string_view s) {
@@ -165,6 +206,30 @@ static int bench_section_loop() {
   return 0;
 }
 
+static int bench_section_loop_large() {
+  std::vector<Person> people;
+  people.reserve(1000);
+  for (int i = 0; i < 1000; ++i)
+    people.push_back({"User" + std::to_string(i), i % 100});
+  TeamLarge team{"BigTeam", std::move(people)};
+
+  auto tmpl = "{{#members}}{{name}} ({{age}})\n{{/members}}";
+  injamm::engine<TeamLarge> eng(tmpl);
+
+  for (int i = 0; i < 100; ++i)
+    (void)eng.render(team);
+
+  constexpr int ITERS = 1000;
+  auto start = std::chrono::high_resolution_clock::now();
+  for (int i = 0; i < ITERS; ++i)
+    (void)eng.render(team);
+  auto end = std::chrono::high_resolution_clock::now();
+
+  auto us = elapsed_us(start, end);
+  std::printf("  section_loop_large(1000elem) x %d: %.0f us  (%.1f ns/elem)\n", ITERS, us, us * 1000.0 / ITERS / 1000);
+  return 0;
+}
+
 static int bench_ct_render() {
   Person dave{"Dave", 40};
 
@@ -193,11 +258,18 @@ int main() {
   std::printf("\n--- buffer pre-allocation ---\n");
   bench_buffer_prealloc();
 
+  std::printf("\n--- enum resolution ---\n");
+  bench_enum_resolve();
+
+  std::printf("\n--- many vars (SoA cache) ---\n");
+  bench_many_vars();
+
   std::printf("\n--- buffer reuse ---\n");
   bench_buffer_reuse();
 
   std::printf("\n--- section loop ---\n");
   bench_section_loop();
+  bench_section_loop_large();
 
   std::printf("\n--- filter dispatch micro-benchmark ---\n");
   bench_filter_dispatch();
@@ -394,5 +466,137 @@ static int bench_bind_context() {
 
   auto ratio = (us_s > 0.0) ? (us_b / us_s) : 0.0;
   std::printf("  ratio bind/struct: %.2f (±10%% target: 0.90 - 1.10)\n", ratio);
+  return 0;
+}
+
+/**
+ * @brief enum 値解決のベンチマーク
+ * @details enchantum 経由の enum 名前解決コストを文字列出力と比較する。
+ *          テンプレート内で enum フィールドを参照した場合のオーバーヘッドを測定。
+ */
+static int bench_enum_resolve() {
+  EnumItem item{"Alice", Color::Red};
+
+  // string フィールドのみ
+  injamm::engine<EnumItem> eng_str("{{name}}");
+  // enum フィールドのみ
+  injamm::engine<EnumItem> eng_enum("{{color}}");
+  // string + enum
+  injamm::engine<EnumItem> eng_both("{{name}} {{color}}");
+
+  for (int i = 0; i < 1000; ++i) {
+    (void)eng_str.render(item);
+    (void)eng_enum.render(item);
+    (void)eng_both.render(item);
+  }
+
+  constexpr int ITERS = 100000;
+
+  {
+    auto start = std::chrono::high_resolution_clock::now();
+    for (int i = 0; i < ITERS; ++i)
+      (void)eng_str.render(item);
+    auto end = std::chrono::high_resolution_clock::now();
+    auto us = elapsed_us(start, end);
+    std::printf("  enum_str_field   x %d: %.0f us  (%.1f ns/call)\n", ITERS, us, us * 1000.0 / ITERS);
+  }
+  {
+    auto start = std::chrono::high_resolution_clock::now();
+    for (int i = 0; i < ITERS; ++i)
+      (void)eng_enum.render(item);
+    auto end = std::chrono::high_resolution_clock::now();
+    auto us = elapsed_us(start, end);
+    std::printf("  enum_field       x %d: %.0f us  (%.1f ns/call)\n", ITERS, us, us * 1000.0 / ITERS);
+  }
+  {
+    auto start = std::chrono::high_resolution_clock::now();
+    for (int i = 0; i < ITERS; ++i)
+      (void)eng_both.render(item);
+    auto end = std::chrono::high_resolution_clock::now();
+    auto us = elapsed_us(start, end);
+    std::printf("  enum_str_both    x %d: %.0f us  (%.1f ns/call)\n", ITERS, us, us * 1000.0 / ITERS);
+  }
+
+  // 列挙子名が長い場合の enum 解決
+  EnumItem item2{"Bob", Color::Blue};
+  injamm::engine<EnumItem> eng_long_color("{{name}} {{color}}");
+  for (int i = 0; i < 1000; ++i)
+    (void)eng_long_color.render(item2);
+
+  {
+    auto start = std::chrono::high_resolution_clock::now();
+    for (int i = 0; i < ITERS; ++i)
+      (void)eng_long_color.render(item2);
+    auto end = std::chrono::high_resolution_clock::now();
+    auto us = elapsed_us(start, end);
+    std::printf("  enum_long_color  x %d: %.0f us  (%.1f ns/call)\n", ITERS, us, us * 1000.0 / ITERS);
+  }
+
+  // 出力バッファ再利用時の差分
+  constexpr int ITERS2 = 50000;
+  std::string reused;
+  {
+    auto start = std::chrono::high_resolution_clock::now();
+    for (int i = 0; i < ITERS2; ++i)
+      (void)eng_enum.render(item, reused);
+    auto end = std::chrono::high_resolution_clock::now();
+    auto us = elapsed_us(start, end);
+    std::printf("  enum_reuse_buf   x %d: %.0f us  (%.1f ns/call)\n", ITERS2, us, us * 1000.0 / ITERS2);
+  }
+  return 0;
+}
+
+/**
+ * @brief 多変数テンプレートのベンチマーク
+ * @details 多数の変数参照を含むテンプレートをレンダリングし、
+ *          bc_var_ref AoS レイアウトのキャッシュ振る舞いを評価する。
+ *          命令数・var_ref 数が多い場合の性能を測定。
+ */
+static int bench_many_vars() {
+  BigData data{"v0", "v1", "v2", "v3", "v4", "v5", "v6", "v7", "v8", "v9"};
+
+  // 10個の変数を多数回参照するテンプレート
+  auto tmpl = "{{a0}}{{a1}}{{a2}}{{a3}}{{a4}}{{a5}}{{a6}}{{a7}}{{a8}}{{a9}}";
+  auto large = repeat<100>(tmpl) + "{{a0}}";
+
+  injamm::engine<BigData> eng(large);
+
+  for (int i = 0; i < 100; ++i)
+    (void)eng.render(data);
+
+  constexpr int ITERS = 5000;
+  auto start = std::chrono::high_resolution_clock::now();
+  for (int i = 0; i < ITERS; ++i)
+    (void)eng.render(data);
+  auto end = std::chrono::high_resolution_clock::now();
+  auto us = elapsed_us(start, end);
+  std::printf("  many_vars(%zu refs) x %d: %.0f us  (%.1f ns/call)\n",
+              size_t{100} * 10 + 1, ITERS, us, us * 1000.0 / ITERS);
+
+  // 命令数が多いテンプレート（長いリテラル・多数の命令）
+  auto long_template = repeat<300>("Hello {{a0}} value {{a1}} end. ");
+  injamm::engine<BigData> eng_long(long_template);
+  for (int i = 0; i < 100; ++i)
+    (void)eng_long.render(data);
+
+  {
+    auto start = std::chrono::high_resolution_clock::now();
+    for (int i = 0; i < ITERS; ++i)
+      (void)eng_long.render(data);
+    auto end = std::chrono::high_resolution_clock::now();
+    auto us = elapsed_us(start, end);
+    std::printf("  long_literals(300 blk) x %d: %.0f us  (%.1f ns/call)\n", ITERS, us, us * 1000.0 / ITERS);
+  }
+
+  // 同じテンプレートをバッファ再利用で
+  {
+    std::string reused;
+    auto start = std::chrono::high_resolution_clock::now();
+    for (int i = 0; i < ITERS; ++i)
+      (void)eng_long.render(data, reused);
+    auto end = std::chrono::high_resolution_clock::now();
+    auto us = elapsed_us(start, end);
+    std::printf("  long_literals(reuse)  x %d: %.0f us  (%.1f ns/call)\n", ITERS, us, us * 1000.0 / ITERS);
+  }
   return 0;
 }

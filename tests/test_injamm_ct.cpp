@@ -1978,3 +1978,50 @@ TEST_CASE("ct_const_if_via_atvar_1", "[injamm][ct][const_if][atvar]") {
   CHECK(*r == "yes");
 }
 
+TEST_CASE("ct_render_into_basic", "[injamm][ct][buffer_reuse]") {
+  auto constexpr tmpl = injamm::fixed_string("{{name}}:{{age}}");
+  CtUser const user{"Alice", 30};
+  std::string buf;
+  auto r = injamm::render<tmpl>(user, buf);
+  REQUIRE(r.has_value());
+  CHECK(buf == "Alice:30");
+}
+
+TEST_CASE("ct_render_into_buffer_reuse", "[injamm][ct][buffer_reuse]") {
+  auto constexpr tmpl = injamm::fixed_string("{{name}}:{{age}}");
+  CtUser const user{"Alice", 30};
+  std::string buf;
+  buf.reserve(128);
+  auto r1 = injamm::render<tmpl>(user, buf);
+  REQUIRE(r1.has_value());
+  CHECK(buf == "Alice:30");
+  CtUser const user2{"Bob", 25};
+  auto r2 = injamm::render<tmpl>(user2, buf);
+  REQUIRE(r2.has_value());
+  CHECK(buf == "Bob:25");
+}
+
+TEST_CASE("ct_render_into_atvar", "[injamm][ct][buffer_reuse][atvar]") {
+  // @var(field) expands to "name", then {{name}} resolves to struct field "name"
+  auto constexpr tmpl = injamm::fixed_string("{{@var(field)}}:{{age}}");
+  CtUser const user{"Alice", 30};
+  // non-buffer version
+  auto r0 = injamm::render<tmpl, "field", "name">(user);
+  REQUIRE(r0.has_value());
+  CHECK(*r0 == "Alice:30");
+  // buffer-reuse version
+  std::string buf;
+  auto r = injamm::render<tmpl, "field", "name">(user, buf);
+  REQUIRE(r.has_value());
+  CHECK(buf == "Alice:30");
+}
+
+TEST_CASE("ct_render_into_error_propagated", "[injamm][ct][buffer_reuse][error]") {
+  auto constexpr tmpl = injamm::fixed_string("{{nonexistent}}");
+  CtUser const user{"Alice", 30};
+  std::string buf;
+  auto r = injamm::render<tmpl>(user, buf);
+  REQUIRE_FALSE(r.has_value());
+  CHECK(r.error().ec == injamm::error_code::unknown_key);
+}
+

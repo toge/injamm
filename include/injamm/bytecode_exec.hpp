@@ -12,6 +12,10 @@
 #define INJAMM_THREADED_DISPATCH 1
 #endif
 
+#ifndef INJAMM_FAST_PATH
+#define INJAMM_FAST_PATH 1
+#endif
+
 #include "../injamm.hpp"
 #include "bytecode.hpp"
 #include "enum_io.hpp"
@@ -78,200 +82,34 @@ class bc_executor {
    *          残りのパスで再帰する。Glaze のコンパイル時リフレクションにより
    *          フィールド名の比較を展開する。
    */
-  template <class V, class F>
-  auto resolve_nested_path(V const& v, std::string_view path, F&& visitor) const -> std::expected<void, error_ctx> {
-    /** ドットの位置で分割: 末端に達したか判定 */
-    auto dot_pos = path.find('.');
-    if (dot_pos == std::string_view::npos) {
-      /** 末端: パス全体をキーとして一致するフィールドを探し visitor を適用 */
-      if constexpr (ct_glz_reflectable<V>) {
-        constexpr auto sz   = static_cast<std::size_t>(glz::reflect<V>::size);
-        auto           tied = glz::to_tie(v);
-        using visitor_r     = decltype(visitor(glz::get<0>(tied)));
-        if constexpr (std::same_as<visitor_r, void>) {
-          /** visitor が void を返す場合: fold 式で全フィールドを走査 */
-          [&]<std::size_t... I>(std::index_sequence<I...>) {
-            (([&] {
-               if (std::string_view{glz::reflect<V>::keys[I]} == path) {
-                 visitor(glz::get<I>(tied));
-               }
-             }()),
-             ...);
-          }(std::make_index_sequence<sz>{});
-        } else {
-          /** visitor が std::expected を返す場合: エラーを伝搬する */
-          std::expected<void, error_ctx> result{};
-          [&]<std::size_t... I>(std::index_sequence<I...>) {
-            (([&] {
-               if (!result)
-                 return;
-               if (std::string_view{glz::reflect<V>::keys[I]} == path) {
-                 result = visitor(glz::get<I>(tied));
-               }
-             }()),
-             ...);
-          }(std::make_index_sequence<sz>{});
-          return result;
-        }
-      }
-      return {};
-    }
-
-    /** 中間ノード: 最初のキーを取得し、残りのパスで再帰 */
-    auto first_key = path.substr(0, dot_pos);
-    auto rest_path = path.substr(dot_pos + 1);
-
+template <class V, class F>
+static auto resolve_nested_path(V const& v, std::string_view path, F&& visitor) -> std::expected<void, error_ctx> {
+  /** ドットの位置で分割: 末端に達したか判定 */
+  auto dot_pos = path.find('.');
+  if (dot_pos == std::string_view::npos) {
+    /** 末端: パス全体をキーとして一致するフィールドを探し visitor を適用 */
     if constexpr (ct_glz_reflectable<V>) {
       constexpr auto sz   = static_cast<std::size_t>(glz::reflect<V>::size);
       auto           tied = glz::to_tie(v);
       using visitor_r     = decltype(visitor(glz::get<0>(tied)));
       if constexpr (std::same_as<visitor_r, void>) {
-        /** visitor が void の場合: フィールドを発見次第再帰 */
+        /** visitor が void を返す場合: fold 式で全フィールドを走査 */
         [&]<std::size_t... I>(std::index_sequence<I...>) {
           (([&] {
-             if (std::string_view{glz::reflect<V>::keys[I]} == first_key) {
-               auto const& field = glz::get<I>(tied);
-               using FT          = std::remove_cvref_t<decltype(field)>;
-                if constexpr (ct_glz_reflectable<FT>) {
-                  (void)resolve_nested_path(field, rest_path, std::forward<F>(visitor));
-                } else if constexpr (ct_is_vector_like<FT>) {
-                  auto idx_dot = rest_path.find('.');
-                  auto idx_str = rest_path.substr(0, idx_dot);
-                  if (!idx_str.empty() && idx_str.find_first_not_of("0123456789") == std::string_view::npos) {
-                    std::size_t idx = 0;
-                    auto [ptr, ec] = std::from_chars(idx_str.data(), idx_str.data() + idx_str.size(), idx);
-                    if (ec == std::errc{} && idx < field.size()) {
-                      auto const& elem = field[idx];
-                      using ET = std::remove_cvref_t<decltype(elem)>;
-                      if (idx_dot == std::string_view::npos) {
-                        visitor(elem);
-                      } else if constexpr (ct_glz_reflectable<ET>) {
-                        (void)resolve_nested_path(elem, rest_path.substr(idx_dot + 1), std::forward<F>(visitor));
-                      }
-                    }
-                  }
-                }
-              }
-            }()),
-            ...);
-        }(std::make_index_sequence<sz>{});
-      } else {
-        /** visitor が expected を返す場合: エラーを伝搬しながら再帰 */
-        std::expected<void, error_ctx> result{};
-        [&]<std::size_t... I>(std::index_sequence<I...>) {
-          (([&] {
-             if (!result)
-               return;
-             if (std::string_view{glz::reflect<V>::keys[I]} == first_key) {
-               auto const& field = glz::get<I>(tied);
-               using FT          = std::remove_cvref_t<decltype(field)>;
-               if constexpr (ct_glz_reflectable<FT>) {
-                 result = resolve_nested_path(field, rest_path, std::forward<F>(visitor));
-               } else if constexpr (ct_is_vector_like<FT>) {
-                 auto idx_dot = rest_path.find('.');
-                 auto idx_str = rest_path.substr(0, idx_dot);
-                 if (!idx_str.empty() && idx_str.find_first_not_of("0123456789") == std::string_view::npos) {
-                   std::size_t idx = 0;
-                   auto [ptr, ec] = std::from_chars(idx_str.data(), idx_str.data() + idx_str.size(), idx);
-                   if (ec == std::errc{} && idx < field.size()) {
-                     auto const& elem = field[idx];
-                     using ET = std::remove_cvref_t<decltype(elem)>;
-                     if (idx_dot == std::string_view::npos) {
-                       result = visitor(elem);
-                     } else if constexpr (ct_glz_reflectable<ET>) {
-                       result = resolve_nested_path(elem, rest_path.substr(idx_dot + 1), std::forward<F>(visitor));
-                     }
-                   }
-                 }
-               }
-             }
-           }()),
-           ...);
-        }(std::make_index_sequence<sz>{});
-        return result;
-      }
-    }
-    return {};
-  }
-
-  /**
-   * @brief 指定されたキーでフィールドを検索し visitor を呼び出す
-   * @tparam V 検索対象の型
-   * @tparam F visitor の型
-   * @param v 検索対象の値
-   * @param key フィールド名またはドット区切りパス
-   * @param field_index プリコンパイルされたフィールドインデックス（不明なら UINT32_MAX）
-   * @param visitor 発見時に呼ばれるコールバック
-   * @return std::expected<void, error_ctx> エラー伝搬用
-   * @details field_index が有効なら O(1) アクセス、そうでなければ線形探索を行う。
-   *          キーにドットが含まれる場合は resolve_nested_path に委譲する。
-   */
-  template <class V, class F>
-  auto for_each_field(V const& v, std::string_view key, std::uint32_t field_index, bool has_dot, F&& visitor) const -> std::expected<void, error_ctx> {
-    /** ネストパスが含まれている場合は再帰解決に委譲 */
-    if (has_dot) {
-      return resolve_nested_path(v, key, std::forward<F>(visitor));
-    }
-
-    if constexpr (ct_glz_reflectable<V>) {
-      constexpr auto sz   = static_cast<std::size_t>(glz::reflect<V>::size);
-      auto           tied = glz::to_tie(v);
-      using visitor_t     = decltype(visitor(glz::get<0>(tied)));
-
-      /**
-       * O(1) アクセス: field_index が有効な場合
-       * if constexpr チェーンで実行時の field_index 値をコンパイル時定数に変換し、
-       * 該当フィールドに直接アクセスする。コンパイラが二分探索的ジャンプテーブルを生成。
-       */
-      if (field_index != UINT32_MAX && field_index < sz) {
-        auto visit_by_index = [&]<std::size_t... I>(std::index_sequence<I...>) -> std::expected<void, error_ctx> {
-          std::expected<void, error_ctx> visitor_result{};
-          /** 単一インデックスを試行する内部ラムダ。見つかれば visitor を適用。 */
-          auto try_index = [&]<std::size_t Idx>() -> bool {
-            if (field_index == Idx) {
-              if constexpr (std::same_as<visitor_t, void>) {
-                visitor(glz::get<Idx>(tied));
-              } else {
-                visitor_result = visitor(glz::get<Idx>(tied));
-              }
-              return true;
-            }
-            return false;
-          };
-          /** fold 式で全インデックスを試行（最初の一致で短絡） */
-          bool found = (try_index.template operator()<I>() || ...);
-          (void)found;
-          return visitor_result;
-        };
-        return visit_by_index(std::make_index_sequence<sz>{});
-      }
-
-      /**
-       * フォールバック: 線形探索
-       * フィールドインデックスが不明な場合、全てのフィールドを走査して
-       * キー名と一致するものを探す。
-       */
-      if constexpr (std::same_as<visitor_t, void>) {
-        bool found = false;
-        [&]<std::size_t... I>(std::index_sequence<I...>) {
-          (([&] {
-             if (std::string_view{glz::reflect<V>::keys[I]} == key) {
+             if (std::string_view{glz::reflect<V>::keys[I]} == path) {
                visitor(glz::get<I>(tied));
-               found = true;
              }
            }()),
            ...);
         }(std::make_index_sequence<sz>{});
-        if (!found && !key.empty() && !key.starts_with('@'))
-          return std::unexpected(error_ctx{.ec = error_code::unknown_key});
-        return {};
       } else {
+        /** visitor が std::expected を返す場合: エラーを伝搬する */
         std::expected<void, error_ctx> result{};
         [&]<std::size_t... I>(std::index_sequence<I...>) {
           (([&] {
              if (!result)
                return;
-             if (std::string_view{glz::reflect<V>::keys[I]} == key) {
+             if (std::string_view{glz::reflect<V>::keys[I]} == path) {
                result = visitor(glz::get<I>(tied));
              }
            }()),
@@ -282,6 +120,174 @@ class bc_executor {
     }
     return {};
   }
+
+  /** 中間ノード: 最初のキーを取得し、残りのパスで再帰 */
+  auto first_key = path.substr(0, dot_pos);
+  auto rest_path = path.substr(dot_pos + 1);
+
+  if constexpr (ct_glz_reflectable<V>) {
+    constexpr auto sz   = static_cast<std::size_t>(glz::reflect<V>::size);
+    auto           tied = glz::to_tie(v);
+    using visitor_r     = decltype(visitor(glz::get<0>(tied)));
+    if constexpr (std::same_as<visitor_r, void>) {
+      /** visitor が void の場合: フィールドを発見次第再帰 */
+      [&]<std::size_t... I>(std::index_sequence<I...>) {
+        (([&] {
+           if (std::string_view{glz::reflect<V>::keys[I]} == first_key) {
+             auto const& field = glz::get<I>(tied);
+             using FT          = std::remove_cvref_t<decltype(field)>;
+              if constexpr (ct_glz_reflectable<FT>) {
+                (void)resolve_nested_path(field, rest_path, std::forward<F>(visitor));
+              } else if constexpr (ct_is_vector_like<FT>) {
+                auto idx_dot = rest_path.find('.');
+                auto idx_str = rest_path.substr(0, idx_dot);
+                if (!idx_str.empty() && idx_str.find_first_not_of("0123456789") == std::string_view::npos) {
+                  std::size_t idx = 0;
+                  auto [ptr, ec] = std::from_chars(idx_str.data(), idx_str.data() + idx_str.size(), idx);
+                  if (ec == std::errc{} && idx < field.size()) {
+                    auto const& elem = field[idx];
+                    using ET = std::remove_cvref_t<decltype(elem)>;
+                    if (idx_dot == std::string_view::npos) {
+                      visitor(elem);
+                    } else if constexpr (ct_glz_reflectable<ET>) {
+                      (void)resolve_nested_path(elem, rest_path.substr(idx_dot + 1), std::forward<F>(visitor));
+                    }
+                  }
+                }
+              }
+            }
+          }()),
+          ...);
+      }(std::make_index_sequence<sz>{});
+    } else {
+      /** visitor が expected を返す場合: エラーを伝搬しながら再帰 */
+      std::expected<void, error_ctx> result{};
+      [&]<std::size_t... I>(std::index_sequence<I...>) {
+        (([&] {
+           if (!result)
+             return;
+           if (std::string_view{glz::reflect<V>::keys[I]} == first_key) {
+             auto const& field = glz::get<I>(tied);
+             using FT          = std::remove_cvref_t<decltype(field)>;
+             if constexpr (ct_glz_reflectable<FT>) {
+               result = resolve_nested_path(field, rest_path, std::forward<F>(visitor));
+             } else if constexpr (ct_is_vector_like<FT>) {
+               auto idx_dot = rest_path.find('.');
+               auto idx_str = rest_path.substr(0, idx_dot);
+               if (!idx_str.empty() && idx_str.find_first_not_of("0123456789") == std::string_view::npos) {
+                 std::size_t idx = 0;
+                 auto [ptr, ec] = std::from_chars(idx_str.data(), idx_str.data() + idx_str.size(), idx);
+                 if (ec == std::errc{} && idx < field.size()) {
+                   auto const& elem = field[idx];
+                   using ET = std::remove_cvref_t<decltype(elem)>;
+                   if (idx_dot == std::string_view::npos) {
+                     result = visitor(elem);
+                   } else if constexpr (ct_glz_reflectable<ET>) {
+                     result = resolve_nested_path(elem, rest_path.substr(idx_dot + 1), std::forward<F>(visitor));
+                   }
+                 }
+               }
+             }
+           }
+         }()),
+         ...);
+      }(std::make_index_sequence<sz>{});
+      return result;
+    }
+  }
+  return {};
+}
+
+/**
+ * @brief 指定されたキーでフィールドを検索し visitor を呼び出す
+ * @tparam V 検索対象の型
+ * @tparam F visitor の型
+ * @param v 検索対象の値
+ * @param key フィールド名またはドット区切りパス
+ * @param field_index プリコンパイルされたフィールドインデックス（不明なら UINT32_MAX）
+ * @param visitor 発見時に呼ばれるコールバック
+ * @return std::expected<void, error_ctx> エラー伝搬用
+ * @details field_index が有効なら O(1) アクセス、そうでなければ線形探索を行う。
+ *          キーにドットが含まれる場合は resolve_nested_path に委譲する。
+ */
+template <class V, class F>
+static auto for_each_field(V const& v, std::string_view key, std::uint32_t field_index, bool has_dot, F&& visitor) -> std::expected<void, error_ctx> {
+  /** ネストパスが含まれている場合は再帰解決に委譲 */
+  if (has_dot) {
+    return resolve_nested_path(v, key, std::forward<F>(visitor));
+  }
+
+  if constexpr (ct_glz_reflectable<V>) {
+    constexpr auto sz   = static_cast<std::size_t>(glz::reflect<V>::size);
+    auto           tied = glz::to_tie(v);
+    using visitor_t     = decltype(visitor(glz::get<0>(tied)));
+
+    /**
+     * O(1) アクセス: field_index が有効な場合
+     * if constexpr チェーンで実行時の field_index 値をコンパイル時定数に変換し、
+     * 該当フィールドに直接アクセスする。コンパイラが二分探索的ジャンプテーブルを生成。
+     */
+    if (field_index != UINT32_MAX && field_index < sz) {
+      auto visit_by_index = [&]<std::size_t... I>(std::index_sequence<I...>) -> std::expected<void, error_ctx> {
+        std::expected<void, error_ctx> visitor_result{};
+        /** 単一インデックスを試行する内部ラムダ。見つかれば visitor を適用。 */
+        auto try_index = [&]<std::size_t Idx>() -> bool {
+          if (field_index == Idx) {
+            if constexpr (std::same_as<visitor_t, void>) {
+              visitor(glz::get<Idx>(tied));
+            } else {
+              visitor_result = visitor(glz::get<Idx>(tied));
+            }
+            return true;
+          }
+          return false;
+        };
+        /** fold 式で全インデックスを試行（最初の一致で短絡） */
+        bool found = (try_index.template operator()<I>() || ...);
+        (void)found;
+        return visitor_result;
+      };
+      return visit_by_index(std::make_index_sequence<sz>{});
+    }
+
+    /**
+     * フォールバック: 線形探索
+     * フィールドインデックスが不明な場合、全てのフィールドを走査して
+     * キー名と一致するものを探す。
+     */
+    if constexpr (std::same_as<visitor_t, void>) {
+      bool found = false;
+      [&]<std::size_t... I>(std::index_sequence<I...>) {
+        (([&] {
+           if (std::string_view{glz::reflect<V>::keys[I]} == key) {
+             visitor(glz::get<I>(tied));
+             found = true;
+           }
+         }()),
+         ...);
+      }(std::make_index_sequence<sz>{});
+      if (!found && !key.empty() && !key.starts_with('@'))
+        return std::unexpected(error_ctx{.ec = error_code::unknown_key});
+      return {};
+    } else {
+      std::expected<void, error_ctx> result{};
+      [&]<std::size_t... I>(std::index_sequence<I...>) {
+        (([&] {
+           if (!result)
+             return;
+           if (std::string_view{glz::reflect<V>::keys[I]} == key) {
+             result = visitor(glz::get<I>(tied));
+           }
+         }()),
+         ...);
+      }(std::make_index_sequence<sz>{});
+      return result;
+    }
+  }
+  return {};
+}
+
+  /**
 
   /**
    * @brief フィールドの値を出力バッファに追記する
@@ -394,7 +400,7 @@ class bc_executor {
     bool raw = ex.bc_.instructions[pc].op == bc_opcode::emit_var_raw;
     auto const& ref = ex.bc_.var_refs[ex.bc_.instructions[pc].operand];
     if (!resolve_loop_parent_var(ex, ref.key, raw)) {
-      auto r = ex.for_each_field(ex.value_, ref.key, ref.field_index, ref.has_dot, [&](auto const& field) { ex.emit_var_value(field, raw); });
+      auto r = for_each_field(ex.value_, ref.key, ref.field_index, ref.has_dot, [&](auto const& field) { ex.emit_var_value(field, raw); });
       if (!r) return std::unexpected(r.error());
     }
     ++pc;
@@ -406,7 +412,7 @@ class bc_executor {
     ex.out_.append(ex.bc_.literals[ex.bc_.instructions[pc].operand]);
     auto const& ref = ex.bc_.var_refs[ex.bc_.instructions[pc].operand2];
     if (!resolve_loop_parent_var(ex, ref.key, raw)) {
-      auto r = ex.for_each_field(ex.value_, ref.key, ref.field_index, ref.has_dot, [&](auto const& field) { ex.emit_var_value(field, raw); });
+      auto r = for_each_field(ex.value_, ref.key, ref.field_index, ref.has_dot, [&](auto const& field) { ex.emit_var_value(field, raw); });
       if (!r) return std::unexpected(r.error());
     }
     ++pc;
@@ -424,7 +430,7 @@ class bc_executor {
   static std::expected<void, error_ctx> handle_emit_at_root_field(bc_executor& ex, std::size_t& pc, std::string&) {
     bool raw = ex.bc_.instructions[pc].op == bc_opcode::emit_at_root_field_raw;
     auto const& ref = ex.bc_.var_refs[ex.bc_.instructions[pc].operand];
-    auto r = ex.for_each_field(ex.root_value_, ref.key, ref.field_index, ref.has_dot, [&](auto const& field) { ex.emit_var_value(field, raw); });
+    auto r = for_each_field(ex.root_value_, ref.key, ref.field_index, ref.has_dot, [&](auto const& field) { ex.emit_var_value(field, raw); });
     if (!r) return std::unexpected(r.error());
     ++pc;
     return {};
@@ -446,7 +452,7 @@ class bc_executor {
 
   static std::expected<void, error_ctx> handle_emit_var_size(bc_executor& ex, std::size_t& pc, std::string&) {
     auto const& ref = ex.bc_.var_refs[ex.bc_.instructions[pc].operand];
-    auto r = ex.for_each_field(ex.value_, ref.key, ref.field_index, ref.has_dot, [&](auto const& field) {
+    auto r = for_each_field(ex.value_, ref.key, ref.field_index, ref.has_dot, [&](auto const& field) {
       using FT = std::remove_cvref_t<decltype(field)>;
       std::size_t sz = 0;
       if constexpr (ct_is_vector_like<FT>) {
@@ -618,7 +624,7 @@ class bc_executor {
     auto const& instr  = ex.bc_.instructions[pc];
     auto const& var_ref = ex.bc_.var_refs[instr.operand2];
     filtered.clear();
-    auto r = ex.for_each_field(ex.value_, var_ref.key, var_ref.field_index, var_ref.has_dot, [&](auto const& field) {
+    auto r = for_each_field(ex.value_, var_ref.key, var_ref.field_index, var_ref.has_dot, [&](auto const& field) {
       using FT = std::remove_cvref_t<decltype(field)>;
       if constexpr (serializable_v<FT>) {
         serialize_value(filtered, field);
@@ -662,7 +668,7 @@ class bc_executor {
     bool        is_falsy = true;
     if (body_end <= pc + 1 || body_end > ex.bc_.instructions.size())
       return std::unexpected(error_ctx{.position = pc, .ec = error_code::syntax_error});
-    auto r = ex.for_each_field(ex.value_, ref.key, ref.field_index, ref.has_dot, [&](auto const& field) -> std::expected<void, error_ctx> {
+    auto r = for_each_field(ex.value_, ref.key, ref.field_index, ref.has_dot, [&](auto const& field) -> std::expected<void, error_ctx> {
       using FT = std::remove_cvref_t<decltype(field)>;
       if constexpr (ct_is_vector_like<FT>) {
         if (!field.empty()) is_falsy = false;
@@ -752,7 +758,7 @@ class bc_executor {
     auto const& ref   = ex.bc_.var_refs[instr.operand2];
     auto        else_pc = instr.operand3;
     bool empty = true;
-    (void)ex.for_each_field(ex.value_, ref.key, ref.field_index, ref.has_dot, [&](auto const& field) {
+    (void)for_each_field(ex.value_, ref.key, ref.field_index, ref.has_dot, [&](auto const& field) {
       using FT = std::remove_cvref_t<decltype(field)>;
       if constexpr (ct_is_vector_like<FT>) { empty = field.empty(); }
       else if constexpr (std::same_as<FT, bool>) { empty = !field; }
@@ -795,7 +801,7 @@ class bc_executor {
         else if (ref.key == "loop.key") { cond = !ex.loop_->key.empty(); }
       }
     } else {
-      (void)ex.for_each_field(ex.value_, ref.key, ref.field_index, ref.has_dot, [&](auto const& field) {
+      (void)for_each_field(ex.value_, ref.key, ref.field_index, ref.has_dot, [&](auto const& field) {
         using FT = std::remove_cvref_t<decltype(field)>;
         if constexpr (std::same_as<FT, bool>) { cond = field; }
         else if constexpr (ct_is_vector_like<FT>) { cond = !field.empty(); }
@@ -816,7 +822,7 @@ class bc_executor {
     auto const& ref   = ex.bc_.var_refs[instr.operand2];
     int rhs = ref.int_filters.empty() ? 0 : ref.int_filters[0].arg;
     bool cond = false;
-    (void)ex.for_each_field(ex.value_, ref.key, ref.field_index, ref.has_dot, [&](auto const& field) {
+    (void)for_each_field(ex.value_, ref.key, ref.field_index, ref.has_dot, [&](auto const& field) {
       using FT = std::remove_cvref_t<decltype(field)>;
       if constexpr (std::is_arithmetic_v<FT>) {
         auto lv = static_cast<long long>(field);
@@ -856,7 +862,7 @@ class bc_executor {
     auto eval_truthy = [&](std::string_view key, std::uint32_t field_idx, bool has_dot) -> bool {
       bool result = false;
       if (!eval_loop_parent_truthy(ex, key, result)) {
-        (void)ex.for_each_field(ex.value_, key, field_idx, has_dot, [&](auto const& field) {
+        (void)for_each_field(ex.value_, key, field_idx, has_dot, [&](auto const& field) {
           using FT = std::remove_cvref_t<decltype(field)>;
           if constexpr (std::same_as<FT, bool>) { result = field; }
           else if constexpr (ct_is_vector_like<FT>) { result = !field.empty(); }
@@ -972,6 +978,47 @@ public:
   std::expected<void, error_ctx> execute_impl(std::size_t start, std::size_t end) {
     std::size_t pc = start;
     std::string filtered_value_;
+
+    // Fast path: simple emit_litvar + emit_literal + halt only
+    // Skips computed-goto dispatch overhead for common trivial templates.
+    if constexpr (INJAMM_FAST_PATH) {
+      if (start == 0 && end == bc_.instructions.size()) {
+        bool simple = true;
+        for (auto i = start; i < end; ++i) {
+          auto op = bc_.instructions[i].op;
+          if (op != bc_opcode::emit_litvar && op != bc_opcode::emit_litvar_raw
+              && op != bc_opcode::emit_literal && op != bc_opcode::halt) {
+            simple = false;
+            break;
+          }
+        }
+        if (simple) {
+          for (auto i = start; i < end; ++i) {
+            auto const& instr = bc_.instructions[i];
+            switch (instr.op) {
+              case bc_opcode::emit_literal:
+                out_.append(bc_.literals[instr.operand]);
+                break;
+              case bc_opcode::emit_litvar:
+              case bc_opcode::emit_litvar_raw: {
+                out_.append(bc_.literals[instr.operand]);
+                auto const& ref = bc_.var_refs[instr.operand2];
+                bool raw = (instr.op == bc_opcode::emit_litvar_raw);
+                if (!resolve_loop_parent_var(*this, ref.key, raw)) {
+                  auto r = for_each_field(value_, ref.key, ref.field_index, ref.has_dot,
+                    [&](auto const& field) { emit_var_value(field, raw); });
+                  if (!r) return r;
+                }
+                break;
+              }
+              default:
+                return {};
+            }
+          }
+          return {};
+        }
+      }
+    }
 
 #if defined(__GNUC__) && !defined(__clang__) && defined(INJAMM_THREADED_DISPATCH)
     /**
@@ -2119,7 +2166,61 @@ public:
     return {};
 #endif
   }
+
+  /**
+   * @brief 全変数参照の値サイズ合計を推定する
+   */
+  template <class U>
+  static std::size_t estimate_var_sizes(bytecode const& bc, U const& value) {
+    std::size_t total = 0;
+    for (auto const& ref : bc.var_refs) {
+      auto r = for_each_field(value, ref.key, ref.field_index, ref.has_dot, [&](auto const& field) -> std::expected<void, error_ctx> {
+        total += estimate_field_size(field);
+        return {};
+      });
+      if (!r) total += 32;
+    }
+    return total;
+  }
+
+private:
+  template <class V>
+  static std::size_t estimate_field_size(V const& v) {
+    using FT = std::remove_cvref_t<V>;
+    if constexpr (std::same_as<FT, bool>) {
+      return 5;
+    } else if constexpr (is_std_optional_v<FT>) {
+      return v.has_value() ? estimate_field_size(*v) : 0;
+    } else if constexpr (std::same_as<FT, std::string> || std::same_as<FT, std::string_view>) {
+      return v.size();
+    } else if constexpr (std::is_enum_v<FT>) {
+#ifndef INJAMM_NO_ENUM_REGISTRY
+      auto name = enchantum::to_string(v);
+      if (!name.empty()) return name.size();
+#endif
+      return 10;
+    } else if constexpr (std::is_arithmetic_v<FT>) {
+      return 16;
+    }
+    return 16;
+  }
 };
+
+/**
+ * @brief 出力バッファのサイズ見積もりを計算する
+ * @tparam T コンテキスト値の型
+ * @param bc バイトコード
+ * @param value コンテキスト値
+ * @return 推定出力サイズ
+ */
+template <class T>
+std::size_t estimate_output_size(bytecode const& bc, T const& value) {
+  auto base = bc.literal_total_size * 4;
+  if (bc.var_refs.size() > 5) {
+    return base + bc_executor<T>::template estimate_var_sizes(bc, value);
+  }
+  return base + bc.var_refs.size() * 32;
+}
 
 /**
  * @brief バイトコードを実行してレンダリング結果を取得する
@@ -2131,7 +2232,8 @@ public:
 template <class T>
 std::expected<std::string, error_ctx> bc_execute(bytecode const& bc, T const& value) {
   std::string out;
-  auto        estimated = bc.literal_total_size > 32 ? bc.literal_total_size * 4 : 256;
+  auto        estimated = estimate_output_size(bc, value);
+  if (estimated < 256) estimated = 256;
   out.reserve(estimated);
   bc_executor<T> exec(bc, value, value, nullptr, out);
   auto           r = exec.execute();
@@ -2152,7 +2254,8 @@ std::expected<std::string, error_ctx> bc_execute(bytecode const& bc, T const& va
 template <class T>
 std::expected<void, error_ctx> bc_execute_into(bytecode const& bc, T const& value, std::string& out) {
   out.clear();
-  auto estimated = bc.literal_total_size > 64 ? bc.literal_total_size * 4 : 256;
+  auto estimated = estimate_output_size(bc, value);
+  if (estimated < 256) estimated = 256;
   if (out.capacity() < estimated)
     out.reserve(estimated);
   bc_executor<T> exec(bc, value, value, nullptr, out);

@@ -154,6 +154,16 @@ if(BUILD_EXAMPLE)
   if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     target_compile_options(injamm_benchmark PRIVATE -march=native)
   endif()
+
+  add_executable(injamm_bench_delegate
+    examples/bench_delegate.cpp
+  )
+  target_link_libraries(injamm_bench_delegate PRIVATE injamm)
+  target_include_directories(injamm_bench_delegate PRIVATE include)
+  target_compile_features(injamm_bench_delegate PRIVATE cxx_std_23)
+  if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    target_compile_options(injamm_bench_delegate PRIVATE -march=native)
+  endif()
 endif()
 
 # ---- Fuzz targets ----
