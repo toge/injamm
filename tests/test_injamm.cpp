@@ -2216,7 +2216,7 @@ TEST_CASE("bc_set_inverted_empty", "[injamm][bc][set]") {
 
 TEST_CASE("bc_set_inverted_nonempty", "[injamm][bc][set]") {
   auto bc = injamm::engine<BcSetIntData>("{{^values}}empty{{/values}}");
-  BcSetIntData data{{ {1} }};
+  BcSetIntData data{{1}};
   auto r = bc.render(data);
   REQUIRE(r.has_value());
   REQUIRE(*r == "");

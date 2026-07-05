@@ -288,8 +288,6 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
 }
 
   /**
-
-  /**
    * @brief フィールドの値を出力バッファに追記する
    * @param field 出力対象のフィールド
    * @param raw HTMLエスケープを行わない場合は true
@@ -2217,7 +2215,7 @@ template <class T>
 std::size_t estimate_output_size(bytecode const& bc, T const& value) {
   auto base = bc.literal_total_size * 4;
   if (bc.var_refs.size() > 5) {
-    return base + bc_executor<T>::template estimate_var_sizes(bc, value);
+    return base + bc_executor<T>::template estimate_var_sizes<>(bc, value);
   }
   return base + bc.var_refs.size() * 32;
 }

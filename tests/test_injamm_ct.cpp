@@ -1219,7 +1219,7 @@ TEST_CASE("ct_set_inverted_empty", "[injamm][ct][set]") {
 
 TEST_CASE("ct_set_inverted_nonempty", "[injamm][ct][set]") {
   auto constexpr tmpl = injamm::fixed_string("{{^values}}empty{{/values}}");
-  CtSetIntData data{{ {1} }};
+  CtSetIntData data{{1}};
   auto r = injamm::render<tmpl>(data);
   REQUIRE(r.has_value());
   REQUIRE(*r == "");
