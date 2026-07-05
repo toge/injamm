@@ -126,10 +126,12 @@ if(BUILD_TEST)
       GIT_SHALLOW TRUE
       SOURCE_DIR ${CMAKE_CURRENT_BINARY_DIR}/catch2_emscripten-src
     )
+    cmake_policy(SET CMP0169 OLD)
     FetchContent_GetProperties(catch2_emscripten)
     if(NOT catch2_emscripten_POPULATED)
       FetchContent_Populate(catch2_emscripten)
     endif()
+    cmake_policy(SET CMP0169 NEW)
     add_library(catch2_emscripten_core STATIC
       "${catch2_emscripten_SOURCE_DIR}/extras/catch_amalgamated.cpp"
     )
