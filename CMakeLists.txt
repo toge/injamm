@@ -16,7 +16,7 @@ option(BUILD_TEST "Build tests" ON)
 option(BUILD_EXAMPLE "Build examples" ON)
 option(BUILD_FUZZ "Build fuzz targets (requires -fsanitize=fuzzer)" OFF)
 option(ENABLE_ENUM "Enable enchantum-based enum string conversion" ON)
-option(ENABLE_EXT_SQLITE3 "Build injamm-sqlite3 extension" ON)
+option(ENABLE_SQLITE3 "Build injamm-sqlite3 extension" ON)
 
 # ---- 依存 ----
 find_package(glaze CONFIG REQUIRED)
@@ -230,6 +230,6 @@ if(BUILD_FUZZ)
   endif()
 endif()
 
-if(ENABLE_EXT_SQLITE3)
+if(ENABLE_SQLITE3)
   add_subdirectory(ext/injamm-sqlite3)
 endif()
