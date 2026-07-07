@@ -58,6 +58,12 @@ enum class bc_opcode : std::uint8_t {
   filter_truncate,    /**< 文字列切り詰め（引数: 最大文字数） */
   filter_substr,      /**< 部分文字列（引数1: 開始位置, 引数2: 文字数） */
   filter_replace,     /**< 部分文字列置換 */
+  filter_default,     /**< デフォルト値フィルタ（引数: literal index） */
+  filter_json,        /**< JSON出力フィルタ */
+  filter_safe,        /**< 生出力マーク（エスケープ抑制） */
+  filter_indent,      /**< インデント（引数: 空白数） */
+  filter_pad,         /**< パディング（引数1: 幅, 引数2: 埋め文字literal index） */
+  filter_pluralize,   /**< 単数形/複数形（引数1: 単数literal index, 引数2: 複数literal index） */
   emit_filtered,      /**< フィルタ後の文字列出力（エスケープあり） */
   emit_filtered_raw,  /**< フィルタ後の文字列出力（生出力） */
   filter_int_abs,     /**< 整数絶対値変換 */
@@ -136,6 +142,12 @@ enum class bc_opcode : std::uint8_t {
   case bc_opcode::filter_truncate:         return "filter_truncate";
   case bc_opcode::filter_substr:           return "filter_substr";
   case bc_opcode::filter_replace:          return "filter_replace";
+  case bc_opcode::filter_default:          return "filter_default";
+  case bc_opcode::filter_json:             return "filter_json";
+  case bc_opcode::filter_safe:             return "filter_safe";
+  case bc_opcode::filter_indent:           return "filter_indent";
+  case bc_opcode::filter_pad:              return "filter_pad";
+  case bc_opcode::filter_pluralize:        return "filter_pluralize";
   case bc_opcode::emit_filtered:           return "emit_filtered";
   case bc_opcode::emit_filtered_raw:       return "emit_filtered_raw";
   case bc_opcode::filter_int_abs:          return "filter_int_abs";
@@ -190,7 +202,13 @@ enum class string_filter : std::uint8_t {
   center,      /**< 中央寄せ（引数: 幅） */
   truncate,    /**< 文字列切り詰め（引数: 最大文字数） */
   substr,      /**< 部分文字列（引数1: 開始位置, 引数2: 文字数） */
-  replace      /**< 部分文字列置換 */
+  replace,     /**< 部分文字列置換 */
+  default_value, /**< デフォルト値（引数: フォールバック文字列） */
+  to_json,     /**< JSON出力 */
+  safe,        /**< 生出力マーク（エスケープ抑制、コンパイル時処理） */
+  indent,      /**< 各行にインデント追加（引数: 空白数） */
+  pad,         /**< パディング（引数1: 幅, 引数2: 埋め文字） */
+  pluralize    /**< 単数形/複数形（引数1: 単数形, 引数2: 複数形） */
 };
 
 [[nodiscard]] inline std::string_view string_filter_name(string_filter f) noexcept {
@@ -206,8 +224,14 @@ enum class string_filter : std::uint8_t {
   case string_filter::right:      return "right";
   case string_filter::center:     return "center";
   case string_filter::truncate:   return "truncate";
-  case string_filter::substr:     return "substr";
-  case string_filter::replace:    return "replace";
+  case string_filter::substr:        return "substr";
+  case string_filter::replace:       return "replace";
+  case string_filter::default_value: return "default";
+  case string_filter::to_json:       return "json";
+  case string_filter::safe:          return "safe";
+  case string_filter::indent:        return "indent";
+  case string_filter::pad:           return "pad";
+  case string_filter::pluralize:     return "pluralize";
   }
   return "unknown";
 }
@@ -621,6 +645,38 @@ struct bytecode {
           char buf[16];
           auto [p, ec] = std::to_chars(buf, buf + sizeof(buf), instr.operand);
           append(std::string_view{buf, static_cast<std::size_t>(p - buf)});
+        }
+        break;
+      }
+      case bc_opcode::filter_default: {
+        if (instr.operand < literals.size()) {
+          append("\"");
+          append(literals[instr.operand]);
+          append("\"");
+        }
+        break;
+      }
+      case bc_opcode::filter_pad: {
+        char buf[16];
+        auto [p, ec] = std::to_chars(buf, buf + sizeof(buf), instr.operand);
+        append(std::string_view{buf, static_cast<std::size_t>(p - buf)});
+        if (instr.operand2 < literals.size()) {
+          append(" \"");
+          append(literals[instr.operand2]);
+          append("\"");
+        }
+        break;
+      }
+      case bc_opcode::filter_pluralize: {
+        if (instr.operand < literals.size()) {
+          append("\"");
+          append(literals[instr.operand]);
+          append("\"");
+        }
+        if (instr.operand2 < literals.size()) {
+          append(" \"");
+          append(literals[instr.operand2]);
+          append("\"");
         }
         break;
       }

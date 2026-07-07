@@ -541,7 +541,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
     return {};
   }
 
-  /** @brief ディスパッチテーブル用: filter_upper / lower / capitalize / title / trim / ltrim / rtrim / replace */
+  /** @brief ディスパッチテーブル用: filter_upper / lower / capitalize / title / trim / ltrim / rtrim / replace / default */
   static std::expected<void, error_ctx> handle_string_filter(bc_executor& ex, std::size_t& pc, std::string& filtered) {
     auto op = ex.bc_.instructions[pc].op;
     switch (op) {
@@ -553,13 +553,20 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
     case bc_opcode::filter_ltrim:      apply_string_filter(filtered, {.filter = string_filter::ltrim}); break;
     case bc_opcode::filter_rtrim:      apply_string_filter(filtered, {.filter = string_filter::rtrim}); break;
     case bc_opcode::filter_replace:    apply_string_filter(filtered, {.filter = string_filter::replace}); break;
+    case bc_opcode::filter_default: {
+      auto def_str = ex.bc_.instructions[pc].operand < ex.bc_.literals.size()
+        ? std::string_view{ex.bc_.literals[ex.bc_.instructions[pc].operand]}
+        : std::string_view{};
+      apply_string_filter(filtered, {.filter = string_filter::default_value, .str_arg1 = def_str});
+      break;
+    }
     default: return std::unexpected(error_ctx{.position = pc, .ec = error_code::syntax_error});
     }
     ++pc;
     return {};
   }
 
-  /** @brief ディスパッチテーブル用: filter_left / right / center / truncate（1引数） */
+  /** @brief ディスパッチテーブル用: filter_left / right / center / truncate / indent（1引数） */
   static std::expected<void, error_ctx> handle_string_filter_arg(bc_executor& ex, std::size_t& pc, std::string& filtered) {
     auto op  = ex.bc_.instructions[pc].op;
     auto arg = static_cast<int>(ex.bc_.instructions[pc].operand);
@@ -568,8 +575,33 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
     case bc_opcode::filter_right:    apply_string_filter(filtered, {.filter = string_filter::right, .arg1 = arg}); break;
     case bc_opcode::filter_center:   apply_string_filter(filtered, {.filter = string_filter::center, .arg1 = arg}); break;
     case bc_opcode::filter_truncate: apply_string_filter(filtered, {.filter = string_filter::truncate, .arg1 = arg}); break;
+    case bc_opcode::filter_indent:   apply_string_filter(filtered, {.filter = string_filter::indent, .arg1 = arg}); break;
     default: return std::unexpected(error_ctx{.position = pc, .ec = error_code::syntax_error});
     }
+    ++pc;
+    return {};
+  }
+
+  /** @brief ディスパッチテーブル用: no-op（json, safe 等） */
+  static std::expected<void, error_ctx> handle_noop(bc_executor&, std::size_t& pc, std::string&) {
+    ++pc;
+    return {};
+  }
+
+  /** @brief ディスパッチテーブル用: filter_pad（引数1: 幅, 引数2: 埋め文字literal index） */
+  static std::expected<void, error_ctx> handle_string_filter_arg_pad(bc_executor& ex, std::size_t& pc, std::string& filtered) {
+    auto arg     = static_cast<int>(ex.bc_.instructions[pc].operand);
+    auto pad_str = (ex.bc_.instructions[pc].operand2 != UINT32_MAX) ? std::string_view{ex.bc_.literals[ex.bc_.instructions[pc].operand2]} : std::string_view{};
+    apply_string_filter(filtered, {.filter = string_filter::pad, .arg1 = arg, .str_arg1 = pad_str});
+    ++pc;
+    return {};
+  }
+
+  /** @brief ディスパッチテーブル用: filter_pluralize（引数1: 単数literal index, 引数2: 複数literal index） */
+  static std::expected<void, error_ctx> handle_string_filter_arg_pluralize(bc_executor& ex, std::size_t& pc, std::string& filtered) {
+    auto singular = ex.bc_.literals[ex.bc_.instructions[pc].operand];
+    auto plural   = ex.bc_.literals[ex.bc_.instructions[pc].operand2];
+    apply_string_filter(filtered, {.filter = string_filter::pluralize, .str_arg1 = singular, .str_arg2 = plural});
     ++pc;
     return {};
   }
@@ -618,16 +650,36 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
     return {};
   }
 
+  /** @brief JSONシリアライズヘルパー（glz::write_json を呼ぶ） */
+  template <class Buffer, class V>
+  static void json_serialize_value(Buffer& out, V const& value) {
+    if constexpr (glz::reflectable<V>) {
+      auto ec = glz::write_json(value, out);
+      (void)ec;
+    } else if constexpr (serializable_v<V>) {
+      serialize_value(out, value);
+    }
+  }
+
   static std::expected<void, error_ctx> handle_resolve_filtered(bc_executor& ex, std::size_t& pc, std::string& filtered) {
     auto const& instr  = ex.bc_.instructions[pc];
     auto const& var_ref = ex.bc_.var_refs[instr.operand2];
     filtered.clear();
+    // json filter detection
+    bool use_json = false;
+    for (auto const& f : var_ref.filters) {
+      if (f.filter == string_filter::to_json) { use_json = true; break; }
+    }
     auto r = for_each_field(ex.value_, var_ref.key, var_ref.field_index, var_ref.has_dot, [&](auto const& field) {
       using FT = std::remove_cvref_t<decltype(field)>;
-      if constexpr (serializable_v<FT>) {
-        serialize_value(filtered, field);
-      } else if constexpr (is_std_optional_v<FT>) {
-        if (field.has_value()) serialize_value(filtered, *field);
+      if (use_json) {
+        json_serialize_value(filtered, field);
+      } else {
+        if constexpr (serializable_v<FT>) {
+          serialize_value(filtered, field);
+        } else if constexpr (is_std_optional_v<FT>) {
+          if (field.has_value()) serialize_value(filtered, *field);
+        }
       }
     });
     if (!r) return std::unexpected(r.error());
@@ -1066,40 +1118,46 @@ public:
         &&L_filter_center,           // 34
         &&L_filter_truncate,         // 35
         &&L_filter_substr,           // 36
-        &&L_filter_replace,          // 37
-        &&L_emit_filtered,           // 38
-        &&L_emit_filtered_raw,       // 39
-        &&L_filter_int_abs,          // 40
-        &&L_filter_int_hex,          // 41
-        &&L_filter_int_oct,          // 42
-        &&L_filter_int_bin,          // 43
-        &&L_filter_int_neg,          // 44
-        &&L_filter_int_mod,          // 45
-        &&L_filter_int_numify,       // 46
-        &&L_filter_int_is_neg,       // 47
-        &&L_filter_int_eq,           // 48
-        &&L_filter_int_ne,           // 49
-        &&L_filter_int_gt,           // 50
-        &&L_filter_int_gte,          // 51
-        &&L_filter_int_lt,           // 52
-        &&L_filter_int_lte,          // 53
-        &&L_filter_int_zerofill,     // 54
-        &&L_filter_int_add,          // 55
-        &&L_filter_int_sub,          // 56
-        &&L_filter_int_mul,          // 57
-        &&L_filter_int_div,          // 58
-        &&L_filter_float_precision,  // 59
-        &&L_emit_if_filtered,        // 60
-        &&L_emit_break,              // 61
-        &&L_emit_continue,           // 62
-        &&L_emit_at_index1,          // 63
-        &&L_emit_at_size,            // 64
-        &&L_emit_var_size,           // 65
-        &&L_emit_if_logic,           // 66 emit_if_or
-        &&L_emit_if_logic,           // 67 emit_if_and
-        &&L_emit_if_not,             // 68 emit_if_not
-        &&L_call_partial,            // 69
-        &&L_halt,                    // 70
+        &&L_filter_replace,          // 40
+        &&L_filter_default,          // 41
+        &&L_filter_json,             // 42
+        &&L_filter_safe,             // 43
+        &&L_filter_indent,           // 44
+        &&L_filter_pad,              // 45
+        &&L_filter_pluralize,        // 46
+        &&L_emit_filtered,           // 47
+        &&L_emit_filtered_raw,       // 48
+        &&L_filter_int_abs,          // 49
+        &&L_filter_int_hex,          // 50
+        &&L_filter_int_oct,          // 51
+        &&L_filter_int_bin,          // 52
+        &&L_filter_int_neg,          // 53
+        &&L_filter_int_mod,          // 54
+        &&L_filter_int_numify,       // 55
+        &&L_filter_int_is_neg,       // 56
+        &&L_filter_int_eq,           // 57
+        &&L_filter_int_ne,           // 58
+        &&L_filter_int_gt,           // 59
+        &&L_filter_int_gte,          // 60
+        &&L_filter_int_lt,           // 61
+        &&L_filter_int_lte,          // 62
+        &&L_filter_int_zerofill,     // 63
+        &&L_filter_int_add,          // 64
+        &&L_filter_int_sub,          // 65
+        &&L_filter_int_mul,          // 66
+        &&L_filter_int_div,          // 67
+        &&L_filter_float_precision,  // 68
+        &&L_emit_if_filtered,        // 69
+        &&L_emit_break,              // 70
+        &&L_emit_continue,           // 71
+        &&L_emit_at_index1,          // 72
+        &&L_emit_at_size,            // 73
+        &&L_emit_var_size,           // 74
+        &&L_emit_if_logic,           // 75 emit_if_or
+        &&L_emit_if_logic,           // 76 emit_if_and
+        &&L_emit_if_not,             // 77 emit_if_not
+        &&L_call_partial,            // 78
+        &&L_halt,                    // 79
     };
 
 /** @brief 現在の命令のオペコードに対応するラベルにジャンプする（実行範囲外なら終了） */
@@ -1726,13 +1784,22 @@ public:
     auto const& instr   = bc_.instructions[pc];
     auto const& var_ref = bc_.var_refs[instr.operand2];
     filtered_value_.clear();
+    // json filter detection
+    bool use_json = false;
+    for (auto const& f : var_ref.filters) {
+      if (f.filter == string_filter::to_json) { use_json = true; break; }
+    }
     auto r = for_each_field(value_, var_ref.key, var_ref.field_index, var_ref.has_dot, [&](auto const& field) {
       using FT = std::remove_cvref_t<decltype(field)>;
-      if constexpr (serializable_v<FT>) {
-        serialize_value(filtered_value_, field);
-      } else if constexpr (is_std_optional_v<FT>) {
-        if (field.has_value()) {
-          serialize_value(filtered_value_, *field);
+      if (use_json) {
+        json_serialize_value(filtered_value_, field);
+      } else {
+        if constexpr (serializable_v<FT>) {
+          serialize_value(filtered_value_, field);
+        } else if constexpr (is_std_optional_v<FT>) {
+          if (field.has_value()) {
+            serialize_value(filtered_value_, *field);
+          }
         }
       }
     });
@@ -1840,6 +1907,49 @@ public:
   /** @brief 部分文字列置換（デフォルト: 改行→空白） */
   L_filter_replace: {
     apply_string_filter(filtered_value_, {.filter = string_filter::replace});
+    ++pc;
+    DISPATCH();
+  }
+
+  /** @brief デフォルト値フィルタ */
+  L_filter_default: {
+    auto const& instr = bc_.instructions[pc];
+    apply_string_filter(filtered_value_, {.filter = string_filter::default_value, .str_arg1 = bc_.literals[instr.operand]});
+    ++pc;
+    DISPATCH();
+  }
+
+  /** @brief JSON出力フィルタ（L_resolve_filtered で処理済み） */
+  L_filter_json: {
+    ++pc;
+    DISPATCH();
+  }
+
+  /** @brief 生出力マーク（コンパイル時処理済み） */
+  L_filter_safe: {
+    ++pc;
+    DISPATCH();
+  }
+
+  /** @brief 行インデント */
+  L_filter_indent: {
+    apply_string_filter(filtered_value_, {.filter = string_filter::indent, .arg1 = static_cast<int>(bc_.instructions[pc].operand)});
+    ++pc;
+    DISPATCH();
+  }
+
+  /** @brief パディング */
+  L_filter_pad: {
+    auto arg     = static_cast<int>(bc_.instructions[pc].operand);
+    auto pad_str = (bc_.instructions[pc].operand2 != UINT32_MAX) ? std::string_view{bc_.literals[bc_.instructions[pc].operand2]} : std::string_view{};
+    apply_string_filter(filtered_value_, {.filter = string_filter::pad, .arg1 = arg, .str_arg1 = pad_str});
+    ++pc;
+    DISPATCH();
+  }
+
+  /** @brief 単数形/複数形 */
+  L_filter_pluralize: {
+    apply_string_filter(filtered_value_, {.filter = string_filter::pluralize, .str_arg1 = bc_.literals[bc_.instructions[pc].operand], .str_arg2 = bc_.literals[bc_.instructions[pc].operand2]});
     ++pc;
     DISPATCH();
   }
@@ -2119,39 +2229,45 @@ public:
       &handle_string_filter_arg,  // 34 filter_truncate
       &handle_string_filter_arg2, // 35 filter_substr
       &handle_string_filter,      // 36 filter_replace
-      &handle_emit_filtered,      // 37
-      &handle_emit_filtered,      // 38 emit_filtered_raw
-      &handle_int_filter,         // 39 filter_int_abs
-      &handle_int_filter,         // 40 filter_int_hex
-      &handle_int_filter,         // 41 filter_int_oct
-      &handle_int_filter,         // 42 filter_int_bin
-      &handle_int_filter,         // 43 filter_int_neg
-      &handle_int_filter,         // 44 filter_int_mod
-      &handle_int_filter,         // 45 filter_int_numify
-      &handle_int_filter,         // 46 filter_int_is_neg
-      &handle_int_filter,         // 47 filter_int_eq
-      &handle_int_filter,         // 48 filter_int_ne
-      &handle_int_filter,         // 49 filter_int_gt
-      &handle_int_filter,         // 50 filter_int_gte
-      &handle_int_filter,         // 51 filter_int_lt
-      &handle_int_filter,         // 52 filter_int_lte
-      &handle_int_filter,         // 53 filter_int_zerofill
-      &handle_int_filter,         // 54 filter_int_add
-      &handle_int_filter,         // 55 filter_int_sub
-      &handle_int_filter,         // 56 filter_int_mul
-      &handle_int_filter,         // 57 filter_int_div
-      &handle_float_filter,       // 58 filter_float_precision
-      &handle_emit_if_filtered,   // 59
-      &handle_emit_break,         // 60
-      &handle_emit_continue,      // 61
-      &handle_emit_at_index1,     // 62
-      &handle_emit_at_size,       // 63
-      &handle_emit_var_size,      // 64
-      &handle_emit_if_logic,      // 65 emit_if_or
-      &handle_emit_if_logic,      // 66 emit_if_and
-      &handle_emit_if_logic,       // 67 emit_if_not
-      &handle_call_partial,       // 68
-      &handle_emit_halt,          // 69
+      &handle_string_filter,      // 37 filter_default (generic handler with literal arg)
+      &handle_noop,               // 38 filter_json
+      &handle_noop,               // 39 filter_safe
+      &handle_string_filter_arg,  // 40 filter_indent
+      &handle_string_filter_arg_pad, // 41 filter_pad
+      &handle_string_filter_arg_pluralize, // 42 filter_pluralize
+      &handle_emit_filtered,      // 43
+      &handle_emit_filtered,      // 44 emit_filtered_raw
+      &handle_int_filter,         // 45 filter_int_abs
+      &handle_int_filter,         // 46 filter_int_hex
+      &handle_int_filter,         // 47 filter_int_oct
+      &handle_int_filter,         // 48 filter_int_bin
+      &handle_int_filter,         // 49 filter_int_neg
+      &handle_int_filter,         // 50 filter_int_mod
+      &handle_int_filter,         // 51 filter_int_numify
+      &handle_int_filter,         // 52 filter_int_is_neg
+      &handle_int_filter,         // 53 filter_int_eq
+      &handle_int_filter,         // 54 filter_int_ne
+      &handle_int_filter,         // 55 filter_int_gt
+      &handle_int_filter,         // 56 filter_int_gte
+      &handle_int_filter,         // 57 filter_int_lt
+      &handle_int_filter,         // 58 filter_int_lte
+      &handle_int_filter,         // 59 filter_int_zerofill
+      &handle_int_filter,         // 60 filter_int_add
+      &handle_int_filter,         // 61 filter_int_sub
+      &handle_int_filter,         // 62 filter_int_mul
+      &handle_int_filter,         // 63 filter_int_div
+      &handle_float_filter,       // 64 filter_float_precision
+      &handle_emit_if_filtered,   // 65
+      &handle_emit_break,         // 66
+      &handle_emit_continue,      // 67
+      &handle_emit_at_index1,     // 68
+      &handle_emit_at_size,       // 69
+      &handle_emit_var_size,      // 70
+      &handle_emit_if_logic,      // 71 emit_if_or
+      &handle_emit_if_logic,      // 72 emit_if_and
+      &handle_emit_if_logic,      // 73 emit_if_not
+      &handle_call_partial,       // 74
+      &handle_emit_halt,          // 75
     };
 
     while (pc < end) {

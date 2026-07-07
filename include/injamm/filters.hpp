@@ -153,6 +153,63 @@ constexpr void apply_string_filter(std::string& str, string_filter_entry entry) 
     }
     break;
   }
+  case string_filter::default_value: {
+    if (str.empty() && !entry.str_arg1.empty()) {
+      str = entry.str_arg1;
+    }
+    break;
+  }
+  case string_filter::to_json:
+  case string_filter::safe:
+    /** to_json は resolve_filtered で特殊処理（glz::write_json）、
+        safe はコンパイル時に raw 出力に切り替え */
+    break;
+  case string_filter::indent: {
+    if (entry.arg1 > 0 && !str.empty()) {
+      auto pad = std::string(static_cast<std::size_t>(entry.arg1), ' ');
+      std::string result;
+      std::size_t pos = 0;
+      while (pos < str.size()) {
+        auto nl = str.find('\n', pos);
+        if (nl == std::string::npos) {
+          result.append(str, pos, str.size() - pos);
+          break;
+        }
+        result.append(str, pos, nl - pos);
+        result.push_back('\n');
+        result.append(pad);
+        pos = nl + 1;
+      }
+      str = std::move(result);
+    }
+    break;
+  }
+  case string_filter::pad: {
+    auto width = entry.arg1;
+    if (static_cast<int>(str.size()) < width && width > 0) {
+      auto total_pad = static_cast<std::size_t>(width) - str.size();
+      std::string pad_str = entry.str_arg1.empty() ? " " : std::string{entry.str_arg1};
+      /** 複数文字パディングの繰り返し */
+      std::string padding;
+      padding.reserve(total_pad);
+      while (padding.size() < total_pad) {
+        padding += pad_str;
+      }
+      if (padding.size() > total_pad) {
+        padding.resize(total_pad);
+      }
+      str = str + padding;
+    }
+    break;
+  }
+  case string_filter::pluralize: {
+    long long val{};
+    auto [p, ec] = std::from_chars(str.data(), str.data() + str.size(), val);
+    if (ec == std::errc()) {
+      str = (val == 1) ? std::string{entry.str_arg1} : std::string{entry.str_arg2};
+    }
+    break;
+  }
   }
 }
 

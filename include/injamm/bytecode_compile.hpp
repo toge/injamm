@@ -28,7 +28,15 @@ void emit_filter_chain(Emitter&& emit, std::vector<string_filter_entry> const& f
       case string_filter::center:     emit(bc_opcode::filter_center, f.arg1); break;
       case string_filter::truncate:   emit(bc_opcode::filter_truncate, f.arg1); break;
       case string_filter::substr:     emit(bc_opcode::filter_substr, f.arg1, f.arg2); break;
-      case string_filter::replace:    emit(bc_opcode::filter_replace); break;
+      case string_filter::replace:       emit(bc_opcode::filter_replace); break;
+      case string_filter::default_value: emit(bc_opcode::filter_default, static_cast<std::uint32_t>(0)); break;
+      case string_filter::to_json:       emit(bc_opcode::filter_json); break;
+      case string_filter::safe:          emit(bc_opcode::filter_safe); break;
+      case string_filter::indent:        emit(bc_opcode::filter_indent, static_cast<std::uint32_t>(f.arg1)); break;
+      case string_filter::pad:
+        emit(bc_opcode::filter_pad, static_cast<std::uint32_t>(f.arg1), UINT32_MAX);
+        break;
+      case string_filter::pluralize:     emit(bc_opcode::filter_pluralize); break;
     }
   }
   for (auto f : int_filters) {
@@ -161,18 +169,24 @@ class bc_compiler {
     bc_.var_refs[idx].filters = filters;
     bc_.var_refs[idx].int_filters = int_filters;
     bc_.var_refs[idx].float_filters = float_filters;
+    // safe filter detection: force raw output
+    bool has_safe = false;
+    for (auto const& f : filters) {
+      if (f.filter == string_filter::safe) { has_safe = true; break; }
+    }
+    bool use_raw = raw || has_safe;
     // フィルタの有無で分岐
     if (filters.empty() && int_filters.empty() && float_filters.empty()) {
       // 既存の高速パス（変更なし）
       if (!bc_.instructions.empty()) {
         auto& last = bc_.instructions.back();
         if (last.op == bc_opcode::emit_literal) {
-          last.op = raw ? bc_opcode::emit_litvar_raw : bc_opcode::emit_litvar;
+          last.op = use_raw ? bc_opcode::emit_litvar_raw : bc_opcode::emit_litvar;
           last.operand2 = idx;
           return;
         }
       }
-      bc_.add_instruction(raw ? bc_opcode::emit_var_raw : bc_opcode::emit_var, idx);
+      bc_.add_instruction(use_raw ? bc_opcode::emit_var_raw : bc_opcode::emit_var, idx);
     } else {
       // フィルタ専用パス: 後続フィルタ命令数を operand に格納（executor がスキップ用に使用）
       auto filter_count = static_cast<std::uint32_t>(filters.size() + int_filters.size() + float_filters.size());
@@ -180,7 +194,7 @@ class bc_compiler {
       emit_filter_chain([this](bc_opcode op, std::uint32_t a = 0, std::uint32_t a2 = 0) {
         bc_.add_instruction(op, a, a2);
       }, filters, int_filters, float_filters);
-      bc_.add_instruction(raw ? bc_opcode::emit_filtered_raw : bc_opcode::emit_filtered);
+      bc_.add_instruction(use_raw ? bc_opcode::emit_filtered_raw : bc_opcode::emit_filtered);
     }
   }
 

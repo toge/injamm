@@ -127,7 +127,7 @@ bytecode to_bytecode(ct_bytecode<N> const& ct) {
       while (j < bc.instructions.size()) {
         auto op = bc.instructions[j].op;
         auto const& fi = bc.instructions[j];
-        if (op >= bc_opcode::filter_upper && op <= bc_opcode::filter_replace) {
+        if (op >= bc_opcode::filter_upper && op <= bc_opcode::filter_pluralize) {
           switch (op) {
           case bc_opcode::filter_upper:      ref.filters.push_back({.filter = string_filter::upper}); break;
           case bc_opcode::filter_lower:      ref.filters.push_back({.filter = string_filter::lower}); break;
@@ -147,6 +147,31 @@ bytecode to_bytecode(ct_bytecode<N> const& ct) {
             } else {
               ref.filters.push_back({.filter = string_filter::replace});
             }
+            break;
+          }
+          case bc_opcode::filter_default: {
+            ref.filters.push_back({.filter = string_filter::default_value, .str_arg1 = bc.literals[fi.operand]});
+            break;
+          }
+          case bc_opcode::filter_json: {
+            ref.filters.push_back({.filter = string_filter::to_json});
+            break;
+          }
+          case bc_opcode::filter_safe: {
+            ref.filters.push_back({.filter = string_filter::safe});
+            break;
+          }
+          case bc_opcode::filter_indent: {
+            ref.filters.push_back({.filter = string_filter::indent, .arg1 = static_cast<int>(fi.operand)});
+            break;
+          }
+          case bc_opcode::filter_pad: {
+            auto pad_str = (fi.operand2 != UINT32_MAX) ? bc.literals[fi.operand2] : std::string_view{};
+            ref.filters.push_back({.filter = string_filter::pad, .arg1 = static_cast<int>(fi.operand), .str_arg1 = pad_str});
+            break;
+          }
+          case bc_opcode::filter_pluralize: {
+            ref.filters.push_back({.filter = string_filter::pluralize, .str_arg1 = bc.literals[fi.operand], .str_arg2 = bc.literals[fi.operand2]});
             break;
           }
           default: break;
@@ -321,9 +346,37 @@ consteval void compile_chunk_range(ct_bytecode_builder<N>& b,
           }
           break;
         }
+        case string_filter::default_value: {
+          auto def_idx = b.add_literal({sf.str_arg1.data(), sf.str_arg1.size()});
+          b.emit(bc_opcode::filter_default, def_idx);
+          break;
+        }
+        case string_filter::to_json:
+          b.emit(bc_opcode::filter_json);
+          break;
+        case string_filter::safe:
+          b.emit(bc_opcode::filter_safe);
+          break;
+        case string_filter::indent:
+          b.emit(bc_opcode::filter_indent, static_cast<std::uint32_t>(sf.arg1));
+          break;
+        case string_filter::pad: {
+          std::uint32_t pad_idx = UINT32_MAX;
+          if (!sf.str_arg1.empty()) {
+            pad_idx = b.add_literal({sf.str_arg1.data(), sf.str_arg1.size()});
+          }
+          b.emit(bc_opcode::filter_pad, static_cast<std::uint32_t>(sf.arg1), pad_idx);
+          break;
+        }
+        case string_filter::pluralize: {
+          auto s_idx = b.add_literal({sf.str_arg1.data(), sf.str_arg1.size()});
+          auto p_idx = b.add_literal({sf.str_arg2.data(), sf.str_arg2.size()});
+          b.emit(bc_opcode::filter_pluralize, s_idx, p_idx);
+          break;
+        }
        }
-     }
-     for (std::uint8_t f = 0; f < chunks.int_filter_count[idx]; ++f) {
+      }
+      for (std::uint8_t f = 0; f < chunks.int_filter_count[idx]; ++f) {
        auto const& intf = chunks.int_filters[idx][f];
        switch (intf.filter) {
        case int_filter::abs:      b.emit(bc_opcode::filter_int_abs); break;
@@ -361,11 +414,18 @@ consteval void compile_chunk_range(ct_bytecode_builder<N>& b,
       b.emit(bc_opcode::emit_literal, lit_idx);
       break;
     }
-     case ct_chunk_kind::placeholder: {
-       auto sv = chunks.texts[i];
-       bool raw = (chunks.flags[i] != 0);
-       bool has_filters = (chunks.filter_count[i] > 0 || chunks.int_filter_count[i] > 0
-                           || chunks.float_filter_count[i] > 0);
+      case ct_chunk_kind::placeholder: {
+        auto sv = chunks.texts[i];
+        bool raw = (chunks.flags[i] != 0);
+        bool has_filters = (chunks.filter_count[i] > 0 || chunks.int_filter_count[i] > 0
+                            || chunks.float_filter_count[i] > 0);
+
+        // safe filter detection: force raw output
+        bool has_safe = false;
+        for (std::uint8_t f = 0; f < chunks.filter_count[i]; ++f) {
+          if (chunks.filters[i][f].filter == string_filter::safe) { has_safe = true; break; }
+        }
+        bool use_raw = raw || has_safe;
 
         // {{this}} → emit_this (context serialization)
         if (sv == "this") {
@@ -382,12 +442,12 @@ consteval void compile_chunk_range(ct_bytecode_builder<N>& b,
            auto filter_count = static_cast<std::uint32_t>(chunks.filter_count[i] + chunks.int_filter_count[i] + chunks.float_filter_count[i]);
            b.emit(bc_opcode::resolve_filtered, filter_count, vridx);
            emit_filter_chain(i);
-           b.emit(raw ? bc_opcode::emit_filtered_raw : bc_opcode::emit_filtered);
+           b.emit(use_raw ? bc_opcode::emit_filtered_raw : bc_opcode::emit_filtered);
           } else {
-            b.emit(raw ? bc_opcode::emit_at_root_field_raw : bc_opcode::emit_at_root_field, vridx);
+            b.emit(use_raw ? bc_opcode::emit_at_root_field_raw : bc_opcode::emit_at_root_field, vridx);
           }
          break;
-       }
+        }
 
         // {{field.size}} → emit_var_size
         if (sv.ends_with(".size") && !has_filters) {
@@ -405,23 +465,23 @@ consteval void compile_chunk_range(ct_bytecode_builder<N>& b,
           auto filter_count = static_cast<std::uint32_t>(chunks.filter_count[i] + chunks.int_filter_count[i] + chunks.float_filter_count[i]);
           b.emit(bc_opcode::resolve_filtered, filter_count, vridx);
           emit_filter_chain(i);
-          b.emit(raw ? bc_opcode::emit_filtered_raw : bc_opcode::emit_filtered);
+          b.emit(use_raw ? bc_opcode::emit_filtered_raw : bc_opcode::emit_filtered);
           break;
         }
 
-       // Fusion: preceding emit_literal + no-filters var → emit_litvar
-       if (b.bc.instr_count > 0) {
-         auto& prev = b.bc.instructions[b.bc.instr_count - 1];
-         if (prev.op == bc_opcode::emit_literal) {
-           prev.op = raw ? bc_opcode::emit_litvar_raw : bc_opcode::emit_litvar;
-           prev.operand2 = vridx;
-           break;
-         }
-       }
+        // Fusion: preceding emit_literal + no-filters var → emit_litvar
+        if (b.bc.instr_count > 0) {
+          auto& prev = b.bc.instructions[b.bc.instr_count - 1];
+          if (prev.op == bc_opcode::emit_literal) {
+            prev.op = use_raw ? bc_opcode::emit_litvar_raw : bc_opcode::emit_litvar;
+            prev.operand2 = vridx;
+            break;
+          }
+        }
 
-        b.emit(raw ? bc_opcode::emit_var_raw : bc_opcode::emit_var, vridx);
-       break;
-     }
+        b.emit(use_raw ? bc_opcode::emit_var_raw : bc_opcode::emit_var, vridx);
+        break;
+      }
     case ct_chunk_kind::section: {
       auto vridx = b.add_var_ref({chunks.texts[i].data(), chunks.texts[i].size()},
                                   static_cast<std::uint32_t>(chunks.field_indices[i]));

@@ -981,6 +981,186 @@ TEST_CASE("filter: raw output", "[filter]") {
   REQUIRE(*result == "<script>");
 }
 
+// ---- 新機能フィルタテスト ----
+
+TEST_CASE("filter: default present", "[filter][default]") {
+  BcUser data{"hello", 30};
+  auto bc = injamm::engine<BcUser>("{{name | default(\"fallback\")}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "hello");
+}
+
+TEST_CASE("filter: default absent empty int", "[filter][default]") {
+  BcIfData data{"test", 0};
+  auto bc = injamm::engine<BcIfData>("{{age | default(\"zero\")}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "0");
+}
+
+TEST_CASE("filter: default absent empty string", "[filter][default]") {
+  BcUser data{"", 30};
+  auto bc = injamm::engine<BcUser>("{{name | default(\"fallback\")}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "fallback");
+}
+
+TEST_CASE("filter: json primitive", "[filter][json]") {
+  BcUser data{"hello", 42};
+  auto bc = injamm::engine<BcUser>("{{age | json}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "42");
+}
+
+TEST_CASE("filter: safe basic", "[filter][safe]") {
+  BcUser data{"<b>bold</b>", 30};
+  auto bc = injamm::engine<BcUser>("{{name | safe}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "<b>bold</b>");
+}
+
+TEST_CASE("filter: safe chained", "[filter][safe]") {
+  BcUser data{"  <b>bold</b>  ", 30};
+  auto bc = injamm::engine<BcUser>("{{name | trim | safe}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "<b>bold</b>");
+}
+
+TEST_CASE("filter: indent basic", "[filter][indent]") {
+  BcUser data{"hello\nworld", 30};
+  auto bc = injamm::engine<BcUser>("{{name | indent(4)}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "hello\n    world");
+}
+
+TEST_CASE("filter: indent no newline", "[filter][indent]") {
+  BcUser data{"hello", 30};
+  auto bc = injamm::engine<BcUser>("{{name | indent(4)}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "hello");
+}
+
+TEST_CASE("filter: pad basic", "[filter][pad]") {
+  BcUser data{"hello", 30};
+  auto bc = injamm::engine<BcUser>("{{name | pad(8)}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "hello   ");
+}
+
+TEST_CASE("filter: pad longer", "[filter][pad]") {
+  BcUser data{"hello", 30};
+  auto bc = injamm::engine<BcUser>("{{name | pad(10, \"_\")}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "hello_____");
+}
+
+TEST_CASE("filter: pad shorter", "[filter][pad]") {
+  BcUser data{"hello world", 30};
+  auto bc = injamm::engine<BcUser>("{{name | pad(5)}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "hello world");
+}
+
+TEST_CASE("filter: pluralize singular", "[filter][pluralize]") {
+  BcLlData data{1};
+  auto bc = injamm::engine<BcLlData>("{{val | pluralize(\"item\", \"items\")}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "item");
+}
+
+TEST_CASE("filter: pluralize plural", "[filter][pluralize]") {
+  BcLlData data{5};
+  auto bc = injamm::engine<BcLlData>("{{val | pluralize(\"item\", \"items\")}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "items");
+}
+
+TEST_CASE("filter: pluralize zero", "[filter][pluralize]") {
+  BcLlData data{0};
+  auto bc = injamm::engine<BcLlData>("{{val | pluralize(\"item\", \"items\")}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "items");
+}
+
+TEST_CASE("filter: pluralize zero ct", "[ct][filter][pluralize]") {
+  auto r = injamm::render<"{{val | pluralize(\"item\", \"items\")}}">(BcLlData{0});
+  REQUIRE(r.has_value());
+  CHECK(*r == "items");
+}
+
+TEST_CASE("filter: default ct", "[ct][filter][default]") {
+  BcUser data{"", 30};
+  auto r = injamm::render<"{{name | default(\"fallback\")}}">(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "fallback");
+}
+
+TEST_CASE("filter: safe ct", "[ct][filter][safe]") {
+  BcUser data{"<b>bold</b>", 30};
+  auto r = injamm::render<"{{name | safe}}">(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "<b>bold</b>");
+}
+
+TEST_CASE("filter: pad ct", "[ct][filter][pad]") {
+  BcUser data{"hi", 30};
+  auto r = injamm::render<"{{name | pad(5, \".\")}}">(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "hi...");
+}
+
+TEST_CASE("filter: indent ct", "[ct][filter][indent]") {
+  BcUser data{"a\nb", 30};
+  auto r = injamm::render<"{{name | indent(2)}}">(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "a\n  b");
+}
+
+TEST_CASE("filter: pad zero", "[filter][pad]") {
+  BcUser data{"hello", 30};
+  auto bc = injamm::engine<BcUser>("{{name | pad(0)}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "hello");
+}
+
+TEST_CASE("filter: default int present", "[filter][default]") {
+  BcIfData data{"test", 42};
+  auto bc = injamm::engine<BcIfData>("{{age | default(\"zero\")}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "42");
+}
+
+TEST_CASE("filter: indent multi line", "[filter][indent]") {
+  BcUser data{"line1\nline2\nline3", 30};
+  auto bc = injamm::engine<BcUser>("{{name | indent(2)}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "line1\n  line2\n  line3");
+}
+
+TEST_CASE("filter: pad multi char", "[filter][pad]") {
+  BcUser data{"hi", 30};
+  auto bc = injamm::engine<BcUser>("{{name | pad(5, \"-=\")}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "hi-=-");
+}
+
 // ---- 整数フィルタテスト ----
 
 TEST_CASE("int_filter: abs positive", "[int_filter]") {

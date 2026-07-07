@@ -265,6 +265,43 @@ constexpr std::size_t constexpr_find_tag(std::string_view haystack, std::string_
       }
       return string_filter_entry{string_filter::replace, 0, 0};
     }
+    if (fname == "default") {
+      auto def_str = trim_sv(args_str);
+      if (def_str.size() >= 2 && def_str.front() == '"' && def_str.back() == '"') {
+        def_str = def_str.substr(1, def_str.size() - 2);
+      }
+      return string_filter_entry{string_filter::default_value, 0, 0, def_str, {}};
+    }
+    if (fname == "indent") {
+      arg1 = parse_int_arg(args_str);
+      return string_filter_entry{string_filter::indent, arg1, 0};
+    }
+    if (fname == "pad") {
+      if (comma != std::string_view::npos) {
+        arg1 = parse_int_arg(args_str.substr(0, comma));
+        auto pad_str = trim_sv(args_str.substr(comma + 1));
+        if (pad_str.size() >= 2 && pad_str.front() == '"' && pad_str.back() == '"') {
+          pad_str = pad_str.substr(1, pad_str.size() - 2);
+        }
+        return string_filter_entry{string_filter::pad, arg1, 0, pad_str, {}};
+      }
+      arg1 = parse_int_arg(args_str);
+      return string_filter_entry{string_filter::pad, arg1, 0};
+    }
+    if (fname == "pluralize") {
+      if (comma != std::string_view::npos) {
+        auto singular = trim_sv(args_str.substr(0, comma));
+        auto plural   = trim_sv(args_str.substr(comma + 1));
+        if (singular.size() >= 2 && singular.front() == '"' && singular.back() == '"') {
+          singular = singular.substr(1, singular.size() - 2);
+        }
+        if (plural.size() >= 2 && plural.front() == '"' && plural.back() == '"') {
+          plural = plural.substr(1, plural.size() - 2);
+        }
+        return string_filter_entry{string_filter::pluralize, 0, 0, singular, plural};
+      }
+      return string_filter_entry{string_filter::pluralize, 0, 0};
+    }
   }
   // 引数なしフィルタ
   if (name == "upper")
@@ -283,6 +320,10 @@ constexpr std::size_t constexpr_find_tag(std::string_view haystack, std::string_
     return string_filter_entry{string_filter::rtrim, 0, 0};
   if (name == "replace")
     return string_filter_entry{string_filter::replace, 0, 0};
+  if (name == "json")
+    return string_filter_entry{string_filter::to_json, 0, 0};
+  if (name == "safe")
+    return string_filter_entry{string_filter::safe, 0, 0};
   return std::nullopt;
 }
 
