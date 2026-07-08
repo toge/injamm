@@ -3490,3 +3490,116 @@ TEST_CASE("partial_in_partial", "[injamm][partial]") {
   CHECK(*r == "Bob(25)/Charlie(35)/");
 }
 
+// ---- disassemble: 未カバーのオペコード形式ブランチ ----
+// 既存の disassemble テストは emit_var / emit_section / emit_if / 一部の
+// フィルタしか網羅していない。以下は残りのオペコード形式分岐を担保する。
+
+TEST_CASE("disassemble_at_index1", "[disassemble]") {
+  auto bc = injamm::engine<BcUsersData>("{{#users}}{{loop.index1}}{{/users}}");
+  auto asm_str = bc.disassemble();
+  REQUIRE(asm_str.contains("emit_at_index1"));
+  REQUIRE(asm_str.contains("@index1"));
+}
+
+TEST_CASE("disassemble_at_root", "[disassemble]") {
+  auto bc = injamm::engine<BcRootData>("{{root}}|{{root.app_name}}|{{{root.app_name}}}");
+  auto asm_str = bc.disassemble();
+  REQUIRE(asm_str.contains("emit_at_root "));
+  REQUIRE(asm_str.contains("emit_at_root_field "));
+  REQUIRE(asm_str.contains("emit_at_root_field_raw"));
+}
+
+TEST_CASE("disassemble_string_filters_with_operand", "[disassemble]") {
+  auto bc = injamm::engine<BcUser>("{{name | substr(1, 2)}}|{{name | left(5)}}|{{name | right(5)}}|{{name | center(5)}}|{{name | truncate(3)}}");
+  auto asm_str = bc.disassemble();
+  REQUIRE(asm_str.contains("filter_substr"));
+  REQUIRE(asm_str.contains("start="));
+  REQUIRE(asm_str.contains("len="));
+  REQUIRE(asm_str.contains("filter_left"));
+  REQUIRE(asm_str.contains("filter_right"));
+  REQUIRE(asm_str.contains("filter_center"));
+  REQUIRE(asm_str.contains("filter_truncate"));
+}
+
+TEST_CASE("disassemble_int_arith_filters", "[disassemble]") {
+  auto bc = injamm::engine<BcUser>("{{age | add(1)}}|{{age | sub(1)}}|{{age | mul(2)}}|{{age | div(2)}}|{{age | mod(2)}}");
+  auto asm_str = bc.disassemble();
+  REQUIRE(asm_str.contains("filter_int_add"));
+  REQUIRE(asm_str.contains("filter_int_sub"));
+  REQUIRE(asm_str.contains("filter_int_mul"));
+  REQUIRE(asm_str.contains("filter_int_div"));
+  REQUIRE(asm_str.contains("filter_int_mod"));
+}
+
+TEST_CASE("disassemble_int_comparison_filters", "[disassemble]") {
+  auto bc = injamm::engine<BcUser>("{{age | eq(1)}}|{{age | ne(2)}}|{{age | gt(0)}}|{{age | gte(0)}}|{{age | lt(5)}}|{{age | lte(5)}}|{{age | zerofill(3)}}");
+  auto asm_str = bc.disassemble();
+  REQUIRE(asm_str.contains("filter_int_eq"));
+  REQUIRE(asm_str.contains("filter_int_ne"));
+  REQUIRE(asm_str.contains("filter_int_gt"));
+  REQUIRE(asm_str.contains("filter_int_gte"));
+  REQUIRE(asm_str.contains("filter_int_lt"));
+  REQUIRE(asm_str.contains("filter_int_lte"));
+  REQUIRE(asm_str.contains("filter_int_zerofill"));
+  // var_refs テーブルでの int_filter_name 出力を担保（各 var_ref は単一フィルタ）
+  REQUIRE(asm_str.contains("filters=[eq]"));
+  REQUIRE(asm_str.contains("filters=[ne]"));
+  REQUIRE(asm_str.contains("filters=[gt]"));
+  REQUIRE(asm_str.contains("filters=[gte]"));
+  REQUIRE(asm_str.contains("filters=[lt]"));
+  REQUIRE(asm_str.contains("filters=[lte]"));
+  REQUIRE(asm_str.contains("filters=[zerofill]"));
+}
+
+TEST_CASE("disassemble_float_precision_filter", "[disassemble]") {
+  auto bc = injamm::engine<BcFloatData>("{{value | precision(2)}}");
+  auto asm_str = bc.disassemble();
+  REQUIRE(asm_str.contains("filter_float_precision"));
+  // var_refs テーブルでの float_filter_name 出力を担保
+  REQUIRE(asm_str.contains("filters=[precision]"));
+}
+
+TEST_CASE("disassemble_pad_pluralize_default", "[disassemble]") {
+  auto bc = injamm::engine<BcLlData>("{{val | pad(10)}}|{{val | pluralize(\"item\", \"items\")}}|{{val | default(\"x\")}}");
+  auto asm_str = bc.disassemble();
+  REQUIRE(asm_str.contains("filter_pad"));
+  REQUIRE(asm_str.contains("filter_pluralize"));
+  REQUIRE(asm_str.contains("filter_default"));
+}
+
+TEST_CASE("disassemble_partial_call", "[disassemble]") {
+  auto bc = injamm::engine<BcPartialUser>{
+    "{{#partialdef greeting}}hi{{/partialdef}}{{#partial greeting}}"
+  };
+  auto asm_str = bc.disassemble();
+  REQUIRE(asm_str.contains("call_partial"));
+  REQUIRE(asm_str.contains("partial=\"greeting\""));
+}
+
+TEST_CASE("disassemble_if_filtered", "[disassemble]") {
+  auto bc = injamm::engine<BcUser>("{{#if age | gt(1)}}yes{{/if}}");
+  auto asm_str = bc.disassemble();
+  REQUIRE(asm_str.contains("emit_if_filtered"));
+  REQUIRE(asm_str.contains("filter_int_gt"));
+}
+
+// ---- parse.hpp: 未使用(デッド)だが純粋関数として独立テスト可能なコメント除去 ----
+// {#...#} 形式のコメントを除去する constexpr ユーティリティ。
+// 先頭が {{# のように '{' が前にある場合はエスケープされコメントとみなさない。
+
+TEST_CASE("stripped_size_and_copy_stripped", "[parse][util]") {
+  auto run = [](std::string_view sv) {
+    auto sz = injamm::detail::stripped_size(sv);
+    std::array<char, 256> buf{};
+    injamm::detail::copy_stripped(sv, buf);
+    return std::string{buf.data(), sz};
+  };
+
+  CHECK(run("hello{# comment #}world") == "helloworld");
+  CHECK(run("a{# x #}b{# y #}c") == "abc");
+  CHECK(run("no comments here") == "no comments here");
+  CHECK(run("{# only comment #}") == "");
+  CHECK(run("{{{# not a comment #}}}") == "{{{# not a comment #}}}");
+  CHECK(injamm::detail::stripped_size("") == 0);
+}
+

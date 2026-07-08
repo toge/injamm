@@ -495,9 +495,12 @@ struct bytecode {
       append("  ");
 
       // オペコード名
-      append(opcode_name(instr.op));
-      auto pad = 22 - (p1 - addr_buf) - opcode_name(instr.op).size();
-      for (std::size_t j = 0; j < pad; ++j) {
+      auto const oname = opcode_name(instr.op);
+      append(oname);
+      // ponytail: pad は符号付きで計算。opcode 名が長いと 22 - ... が
+      // 桁あふれ(符号なしアンダーフロー)し無限ループになる。
+      long long const pad = 22 - static_cast<long long>(p1 - addr_buf) - static_cast<long long>(oname.size());
+      for (long long j = 0; j < pad; ++j) {
         out.push_back(' ');
       }
 
