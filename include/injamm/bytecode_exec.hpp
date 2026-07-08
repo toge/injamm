@@ -314,12 +314,17 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
       /** enum 型: enchantum で列挙子名を取得してHTMLエスケープ制御 */
       serialize_enum(out_, field, raw);
     } else if constexpr (std::is_arithmetic_v<FT> && !std::same_as<FT, bool>) {
-      /** 整数/浮動小数の高速 append: traits::copy 経由の memmove を避けて push_back ループで書き出す */
-      std::array<char, 32> buf;
-      auto [ptr, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), field);
-      if (ec == std::errc{}) {
-        auto const n = static_cast<std::size_t>(ptr - buf.data());
-        out_.append(buf.data(), n);
+      if constexpr (std::floating_point<FT>) {
+        std::array<char, glz::zmij::double_buffer_size> buf;
+        auto end = glz::to_chars(buf.data(), field);
+        out_.append(buf.data(), static_cast<std::size_t>(end - buf.data()));
+      } else {
+        std::array<char, 32> buf;
+        auto [ptr, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), field);
+        if (ec == std::errc{}) {
+          auto const n = static_cast<std::size_t>(ptr - buf.data());
+          out_.append(buf.data(), n);
+        }
       }
     } else if constexpr (is_std_optional_v<FT>) {
       if (field.has_value()) {

@@ -4,6 +4,7 @@
 #include <array>
 #include <charconv>
 #include <concepts>
+#include <glaze/util/zmij.hpp>
 #include <map>
 #include <optional>
 #include <string>
@@ -109,7 +110,7 @@ inline void serialize_value(Buffer& out, std::optional<T> const& opt) {
 
 /** @brief 浮動小数点型をバッファに変換して追記する
  *
- *  64バイトの固定長バッファを使用し、to_chars で変換する。
+ *  glaze 7.5.0 で統合された zmij による高速 float/double 文字列化。
  *
  *  @tparam Buffer 出力バッファ型
  *  @tparam T 浮動小数点型
@@ -119,11 +120,9 @@ inline void serialize_value(Buffer& out, std::optional<T> const& opt) {
 template <class Buffer, class T>
   requires std::floating_point<T>
 inline void serialize_value(Buffer& out, T value) {
-  std::array<char, 64> buf{};
-  auto [ptr, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), value);
-  if (ec == std::errc{}) {
-    out.append(std::string_view{buf.data(), static_cast<std::size_t>(ptr - buf.data())});
-  }
+  std::array<char, glz::zmij::double_buffer_size> buf{};
+  auto end = glz::to_chars(buf.data(), value);
+  out.append(std::string_view{buf.data(), static_cast<std::size_t>(end - buf.data())});
 }
 
 /** @brief enum 型をバッファに変換して追記する（filter scratch 用、常に raw 出力）
