@@ -723,62 +723,6 @@ template <class ConstMap>
   return result;
 }
 
-constexpr std::size_t stripped_size(std::string_view sv) noexcept {
-  std::size_t sz = 0;
-  std::size_t pos = 0;
-  while (pos < sv.size()) {
-    auto cs = sv.find("{#", pos);
-    if (cs == std::string_view::npos) {
-      sz += sv.size() - pos;
-      break;
-    }
-    if (cs > 0 && sv[cs - 1] == '{') {
-      sz += cs - pos + 1;
-      pos = cs + 1;
-      continue;
-    }
-    sz += cs - pos;
-    auto ce = sv.find("#}", cs + 2);
-    if (ce == std::string_view::npos) {
-      sz += 1;
-      pos = cs + 1;
-    } else {
-      pos = ce + 2;
-    }
-  }
-  return sz;
-}
-
-template <std::size_t N>
-constexpr void copy_stripped(std::string_view src, std::array<char, N>& dst) noexcept {
-  std::size_t out = 0;
-  std::size_t pos = 0;
-  while (pos < src.size()) {
-    auto cs = src.find("{#", pos);
-    if (cs == std::string_view::npos) {
-      for (auto i = pos; i < src.size() && out < N - 1; ++i)
-        dst[out++] = src[i];
-      break;
-    }
-    if (cs > 0 && src[cs - 1] == '{') {
-      for (auto i = pos; i <= cs && out < N - 1; ++i)
-        dst[out++] = src[i];
-      pos = cs + 1;
-      continue;
-    }
-    for (auto i = pos; i < cs && out < N - 1; ++i)
-      dst[out++] = src[i];
-    auto ce = src.find("#}", cs + 2);
-    if (ce == std::string_view::npos) {
-      if (out < N - 1)
-        dst[out++] = '{';
-      pos = cs + 1;
-    } else {
-      pos = ce + 2;
-    }
-  }
-}
-
 [[nodiscard]] constexpr std::string_view trim_tail_whitespace_for_lstrip(std::string_view sv) noexcept {
   auto nl = constexpr_rfind(sv, '\n');
   if (nl == std::string_view::npos) {

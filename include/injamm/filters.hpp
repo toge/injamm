@@ -162,8 +162,8 @@ constexpr void apply_string_filter(std::string& str, string_filter_entry entry) 
   }
   case string_filter::to_json:
   case string_filter::safe:
-    /** to_json は resolve_filtered で特殊処理（glz::write_json）、
-        safe はコンパイル時に raw 出力に切り替え */
+  case string_filter::format:
+    // resolve_filtered で特殊処理済み。no-op。
     break;
   case string_filter::indent: {
     if (entry.arg1 > 0 && !str.empty()) {
@@ -211,9 +211,6 @@ constexpr void apply_string_filter(std::string& str, string_filter_entry entry) 
     }
     break;
   }
-  case string_filter::format:
-    // resolve_filtered 時点で chrono 型に対して処理済み。no-op。
-    break;
   }
 }
 

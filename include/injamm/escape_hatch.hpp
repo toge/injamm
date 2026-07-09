@@ -16,6 +16,7 @@
 #include "ct_parse.hpp"
 #include "bytecode_ct_compile.hpp"
 #include "bytecode.hpp"
+#include "bytecode_debug.hpp"
 #include "bytecode_compile.hpp"
 #include "bytecode_exec.hpp"
 #include <memory>

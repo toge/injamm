@@ -1,8 +1,10 @@
 #include "injamm.hpp"
+#include "injamm/bytecode_debug.hpp"
 #include <glaze/glaze.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <chrono>
 #include <climits>
+#include <sstream>
 #include <map>
 #include <optional>
 #include <set>
@@ -2543,6 +2545,15 @@ TEST_CASE("error: stray closing tag", "[error]") {
   CHECK(result.error().ec == injamm::error_code::syntax_error);
 }
 
+TEST_CASE("error_code ostream output", "[error]") {
+  std::ostringstream oss;
+  oss << injamm::error_code::unknown_key;
+  CHECK(oss.str() == "3");
+  oss.str("");
+  oss << injamm::error_code::division_by_zero;
+  CHECK(oss.str() == "8");
+}
+
 // ---- loop.X 旧 @var 構文の互換性破棄確認 ----
 
 TEST_CASE("legacy @index is rejected", "[injamm][loop][legacy]") {
@@ -3598,22 +3609,6 @@ TEST_CASE("disassemble_if_filtered", "[disassemble]") {
 // ---- parse.hpp: 未使用(デッド)だが純粋関数として独立テスト可能なコメント除去 ----
 // {#...#} 形式のコメントを除去する constexpr ユーティリティ。
 // 先頭が {{# のように '{' が前にある場合はエスケープされコメントとみなさない。
-
-TEST_CASE("stripped_size_and_copy_stripped", "[parse][util]") {
-  auto run = [](std::string_view sv) {
-    auto sz = injamm::detail::stripped_size(sv);
-    std::array<char, 256> buf{};
-    injamm::detail::copy_stripped(sv, buf);
-    return std::string{buf.data(), sz};
-  };
-
-  CHECK(run("hello{# comment #}world") == "helloworld");
-  CHECK(run("a{# x #}b{# y #}c") == "abc");
-  CHECK(run("no comments here") == "no comments here");
-  CHECK(run("{# only comment #}") == "");
-  CHECK(run("{{{# not a comment #}}}") == "{{{# not a comment #}}}");
-  CHECK(injamm::detail::stripped_size("") == 0);
-}
 
 // ---- chrono format filter ----
 

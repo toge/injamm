@@ -153,37 +153,10 @@ inline void serialize_value(Buffer& out, E value) {
   serialize_enum(out, value, /*raw=*/true);
 }
 
-/** @brief time_t をローカル tm に変換するヘルパー */
-inline std::tm to_local_tm(std::time_t tt) {
-  std::tm tm{};
-  localtime_r(&tt, &tm);
-  return tm;
-}
-
-/** @brief chrono time_point を ISO 8601 形式（ローカルタイム）でバッファに追記する
- *
- *  デフォルトフォーマット: %Y-%m-%dT%H:%M:%S
- *  clock_cast で system_clock に変換してから to_time_t で time_t に変換する。
- *
- *  @tparam Buffer 出力バッファ型
- *  @tparam Clock 時計型
- *  @tparam Duration 時間間隔型
- *  @param[in,out] out 出力先バッファ
- *  @param[in] tp 変換する time_point
- */
-template <class Buffer, class Clock, class Duration>
-inline void serialize_chrono(Buffer& out, std::chrono::time_point<Clock, Duration> const& tp) {
-  auto sys_tp = std::chrono::clock_cast<std::chrono::system_clock>(tp);
-  auto tt = std::chrono::system_clock::to_time_t(sys_tp);
-  auto tm = to_local_tm(tt);
-  char buf[64];
-  auto len = std::strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%S", &tm);
-  if (len > 0) out.append(std::string_view{buf, static_cast<std::size_t>(len)});
-}
-
 /** @brief chrono time_point を指定フォーマットでバッファに追記する
  *
  *  fmt には strftime スタイルの指定子を渡す（例: "%Y-%m-%d"）。
+ *  fmt 未指定時は ISO 8601 形式（%Y-%m-%dT%H:%M:%S）で出力する。
  *  strftime は null-terminated 文字列を要求するため、内部で std::string に変換する。
  *
  *  @tparam Buffer 出力バッファ型
@@ -191,13 +164,15 @@ inline void serialize_chrono(Buffer& out, std::chrono::time_point<Clock, Duratio
  *  @tparam Duration 時間間隔型
  *  @param[in,out] out 出力先バッファ
  *  @param[in] tp 変換する time_point
- *  @param[in] fmt strftime フォーマット文字列
+ *  @param[in] fmt strftime フォーマット文字列（デフォルト: ISO 8601）
  */
 template <class Buffer, class Clock, class Duration>
-inline void serialize_chrono(Buffer& out, std::chrono::time_point<Clock, Duration> const& tp, std::string_view fmt) {
+inline void serialize_chrono(Buffer& out, std::chrono::time_point<Clock, Duration> const& tp,
+                             std::string_view fmt = "%Y-%m-%dT%H:%M:%S") {
   auto sys_tp = std::chrono::clock_cast<std::chrono::system_clock>(tp);
   auto tt = std::chrono::system_clock::to_time_t(sys_tp);
-  auto tm = to_local_tm(tt);
+  std::tm tm{};
+  localtime_r(&tt, &tm);
   char buf[256];
   std::string fmt_null{fmt};
   auto len = std::strftime(buf, sizeof(buf), fmt_null.c_str(), &tm);
