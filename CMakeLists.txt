@@ -18,9 +18,21 @@ option(BUILD_FUZZ "Build fuzz targets (requires -fsanitize=fuzzer)" OFF)
 option(ENABLE_ENUM "Enable enchantum-based enum string conversion" ON)
 option(ENABLE_SQLITE3 "Build injamm-sqlite3 extension" ON)
 
+# Apple Clang の libc++ は std::vformat("{:05}", ...) 等の 0 flag を
+# 正しくパースできない既知の不具合がある。fmt を使うことで回避する。
+if(CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
+  set(_USE_FMT_DEFAULT ON)
+else()
+  set(_USE_FMT_DEFAULT OFF)
+endif()
+option(USE_FMT "Use fmt instead of std::vformat for format filter (workaround for libc++ bugs)" ${_USE_FMT_DEFAULT})
+
 # ---- 依存 ----
 find_package(glaze CONFIG REQUIRED)
 find_package(FastFloat CONFIG REQUIRED)
+if(USE_FMT)
+  find_package(fmt CONFIG REQUIRED)
+endif()
 
 if(ENABLE_ENUM)
   # enchantum: vcpkg port の enchantumConfig.cmake が enchantumTargets.cmake を
@@ -61,6 +73,10 @@ if(ENABLE_ENUM)
 else()
   target_compile_definitions(injamm INTERFACE INJAMM_NO_ENUM_REGISTRY)
   target_link_libraries(injamm INTERFACE glaze::glaze FastFloat::fast_float)
+endif()
+if(USE_FMT)
+  target_link_libraries(injamm INTERFACE fmt::fmt)
+  target_compile_definitions(injamm INTERFACE INJAMM_USE_FMT)
 endif()
 target_compile_features(injamm INTERFACE cxx_std_23)
 

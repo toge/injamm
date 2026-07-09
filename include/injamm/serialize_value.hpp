@@ -6,7 +6,11 @@
 #include <chrono>
 #include <concepts>
 #include <ctime>
+#ifdef INJAMM_USE_FMT
+#include <fmt/format.h>
+#else
 #include <format>
+#endif
 #include <glaze/util/zmij.hpp>
 #include <map>
 #include <optional>
@@ -206,9 +210,15 @@ inline void serialize_chrono(Buffer& out, std::chrono::time_point<Clock, Duratio
 template <class Buffer, class T>
   requires std::is_arithmetic_v<T> && (!std::same_as<T, bool>)
 inline void serialize_formatted(Buffer& out, T value, std::string_view fmt) {
-  // 一部の libc++ 実装（macOS 等）では "{:05}" の 0-埋めフラグが誤って解析され
-  // std::format_error となる。純粋な 0埋め幅指定（例: "05","008"）は自前で実装し、
-  // 他の指定子（"#06x",".2f" 等）は引き続き std::vformat に委譲する。
+#ifdef INJAMM_USE_FMT
+  std::string fmt_str = "{:";
+  fmt_str.append(fmt);
+  fmt_str.push_back('}');
+  auto result = fmt::vformat(fmt_str, fmt::make_format_args(value));
+  out.append(result);
+#else
+  // libc++ (macOS) では "{:05}" の 0-埋めフラグが誤って解析され std::format_error となる。
+  // 純粋な 0埋め幅指定（例: "05","008"）は自前で実装し、其他は std::vformat に委譲する。
   bool zerofill_only = std::is_integral_v<T> && !fmt.empty() && fmt.front() == '0';
   if (zerofill_only) {
     for (char c : fmt)
@@ -232,6 +242,7 @@ inline void serialize_formatted(Buffer& out, T value, std::string_view fmt) {
   fmt_str.push_back('}');
   auto result = std::vformat(fmt_str, std::make_format_args(value));
   out.append(result);
+#endif
 }
 
 /** @brief 文字列を std::format スタイルのフォーマット指定子でバッファに追記する
@@ -251,7 +262,11 @@ inline void serialize_formatted(Buffer& out, std::string_view value, std::string
   std::string fmt_str = "{:";
   fmt_str.append(fmt);
   fmt_str.push_back('}');
+#ifdef INJAMM_USE_FMT
+  auto result = fmt::vformat(fmt_str, fmt::make_format_args(value));
+#else
   auto result = std::vformat(fmt_str, std::make_format_args(value));
+#endif
   out.append(result);
 }
 
