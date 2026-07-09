@@ -427,7 +427,10 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
   /** @brief ループ内束縛の型消去リゾルバ: 現在要素を key に従って出力する */
   template <class ElemT>
   static bool resolve_binding_var(std::string& out, std::string_view key, bool raw, void const* elem, std::string_view binding_name) {
-    std::string_view sub = (key == binding_name) ? std::string_view{} : key.substr(binding_name.size() + 1);
+    std::string_view sub = (key == binding_name)
+                               ? std::string_view{}
+                               : std::string_view{key.data() + binding_name.size() + 1,
+                                                  key.size() - binding_name.size() - 1};
     auto const& e = *static_cast<ElemT const*>(elem);
     if constexpr (ct_glz_reflectable<ElemT>) {
       if (sub.empty()) {
@@ -1042,7 +1045,10 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
         for (auto* lp = ex.loop_; lp; lp = lp->parent) {
           if (lp->binding_truthy && (ref.key == lp->binding_name ||
               (ref.key.starts_with(lp->binding_name) && ref.key[lp->binding_name.size()] == '.'))) {
-            std::string_view sub = (ref.key == lp->binding_name) ? std::string_view{} : ref.key.substr(lp->binding_name.size() + 1);
+            std::string_view sub = (ref.key == lp->binding_name)
+                                       ? std::string_view{}
+                                       : std::string_view{ref.key.data() + lp->binding_name.size() + 1,
+                                                          ref.key.size() - lp->binding_name.size() - 1};
             cond = lp->binding_truthy(lp->binding_elem, sub);
             break;
           }
@@ -1116,7 +1122,10 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
       for (auto* lp = ex.loop_; lp; lp = lp->parent) {
         if (lp->binding_truthy && (key == lp->binding_name ||
             (key.starts_with(lp->binding_name) && key[lp->binding_name.size()] == '.'))) {
-          std::string_view sub = (key == lp->binding_name) ? std::string_view{} : key.substr(lp->binding_name.size() + 1);
+          std::string_view sub = (key == lp->binding_name)
+                                     ? std::string_view{}
+                                     : std::string_view{key.data() + lp->binding_name.size() + 1,
+                                                        key.size() - lp->binding_name.size() - 1};
           return lp->binding_truthy(lp->binding_elem, sub);
         }
       }
@@ -1727,7 +1736,10 @@ public:
         for (auto* lp = loop_; lp; lp = lp->parent) {
           if (lp->binding_truthy && (ref.key == lp->binding_name ||
               (ref.key.starts_with(lp->binding_name) && ref.key[lp->binding_name.size()] == '.'))) {
-            std::string_view sub = (ref.key == lp->binding_name) ? std::string_view{} : ref.key.substr(lp->binding_name.size() + 1);
+            std::string_view sub = (ref.key == lp->binding_name)
+                                       ? std::string_view{}
+                                       : std::string_view{ref.key.data() + lp->binding_name.size() + 1,
+                                                          ref.key.size() - lp->binding_name.size() - 1};
             cond = lp->binding_truthy(lp->binding_elem, sub);
             break;
           }

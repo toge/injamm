@@ -169,7 +169,15 @@ inline void serialize_value(Buffer& out, E value) {
 template <class Buffer, class Clock, class Duration>
 inline void serialize_chrono(Buffer& out, std::chrono::time_point<Clock, Duration> const& tp,
                              std::string_view fmt = "%Y-%m-%dT%H:%M:%S") {
-  auto sys_tp = std::chrono::clock_cast<std::chrono::system_clock>(tp);
+  std::chrono::system_clock::time_point sys_tp;
+  if constexpr (std::is_same_v<Clock, std::chrono::system_clock>) {
+    sys_tp = tp;
+  } else {
+    // clock_cast は macOS libc++ 旧版や emscripten 等で未実装なため直接使用しない。
+    // system_clock 以外のクロックはエポックを共有するとみなして duration をキャストする。
+    sys_tp = std::chrono::system_clock::time_point{
+        std::chrono::duration_cast<std::chrono::system_clock::duration>(tp.time_since_epoch())};
+  }
   auto tt = std::chrono::system_clock::to_time_t(sys_tp);
   std::tm tm{};
   localtime_r(&tt, &tm);
