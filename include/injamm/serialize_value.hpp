@@ -202,6 +202,27 @@ inline void serialize_chrono(Buffer& out, std::chrono::time_point<Clock, Duratio
 template <class Buffer, class T>
   requires std::is_arithmetic_v<T> && (!std::same_as<T, bool>)
 inline void serialize_formatted(Buffer& out, T value, std::string_view fmt) {
+  // 一部の libc++ 実装（macOS 等）では "{:05}" の 0-埋めフラグが誤って解析され
+  // std::format_error となる。純粋な 0埋め幅指定（例: "05","008"）は自前で実装し、
+  // 他の指定子（"#06x",".2f" 等）は引き続き std::vformat に委譲する。
+  bool zerofill_only = std::is_integral_v<T> && !fmt.empty() && fmt.front() == '0';
+  if (zerofill_only) {
+    for (char c : fmt)
+      if (c < '0' || c > '9') { zerofill_only = false; break; }
+  }
+  if (zerofill_only) {
+    int width = 0;
+    for (char c : fmt) width = width * 10 + (c - '0');
+    std::string s = std::to_string(value);
+    bool const  neg = !s.empty() && s[0] == '-';
+    std::string digits = neg ? s.substr(1) : s;
+    if (static_cast<int>(digits.size()) < width) {
+      s = std::string(static_cast<std::size_t>(width) - digits.size(), '0') + digits;
+    }
+    if (neg) s = "-" + s;
+    out.append(s);
+    return;
+  }
   std::string fmt_str = "{:";
   fmt_str.append(fmt);
   fmt_str.push_back('}');
