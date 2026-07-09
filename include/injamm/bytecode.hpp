@@ -194,6 +194,7 @@ struct bc_var_ref {
   std::string key;                         /**< 変数名 */
   std::uint32_t field_index = UINT32_MAX;  /**< コンパイル時解決済みフィールドインデックス */
   bool has_dot = false;                    /**< ドット区切りパス（ネスト）を持つか */
+  bool is_loop_parent = false;             /**< コンパイル時解決: key が "loop.parent." 始まりか（ホットパスの文字列比較排除用） */
   compare_operand_kind compare_rhs_kind = compare_operand_kind::none; /**< if 比較の右オペランド種別 */
   std::string compare_rhs_text;            /**< 右オペランド文字列（文字列リテラル or 変数名） */
   std::uint32_t compare_rhs_field_index = UINT32_MAX; /**< 右オペランドの解決済みフィールドインデックス */
@@ -246,6 +247,7 @@ struct bytecode {
   error_ctx error{};                         /**< コンパイル時エラー（非ゼロ ec でエラー） */
   std::string template_storage;              /**< テンプレート文字列（string_view の生存期間保証用） */
   std::vector<partial_entry> partial_entries;/**< プリコンパイル済みpartialエントリ（call_partial 用） */
+  bool is_simple = false;                   /**< コンパイル時解決: 単純テンプレ（litvar/literal/halt のみ）なら高速パスを使用 */
 
   /**
    * @brief 命令を追加する
@@ -290,6 +292,7 @@ struct bytecode {
     ref.key = std::string{key};
     ref.field_index = UINT32_MAX;
     ref.has_dot = (key.find('.') != std::string_view::npos);
+    ref.is_loop_parent = key.starts_with("loop.parent.");
     var_refs.push_back(std::move(ref));
     return idx;
   }
