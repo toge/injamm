@@ -194,6 +194,13 @@ if(BUILD_EXAMPLE)
   target_include_directories(injamm_example PRIVATE include)
   target_compile_features(injamm_example PRIVATE cxx_std_23)
 
+  add_executable(injamm_example_zip
+    examples/example_zip.cpp
+  )
+  target_link_libraries(injamm_example_zip PRIVATE injamm)
+  target_include_directories(injamm_example_zip PRIVATE include)
+  target_compile_features(injamm_example_zip PRIVATE cxx_std_23)
+
   add_executable(injamm_benchmark
     examples/benchmark.cpp
   )

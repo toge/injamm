@@ -51,6 +51,14 @@ struct bc_loop_state {
   /**< break 要求フラグ（子 executor からセット） */
   mutable bool continue_flag = false;
   /**< continue 要求フラグ（子 executor からセット） */
+  std::string_view binding_name{};
+  /**< 現在ループのセクションキー名（ループ内で配列名＝現在要素として束縛） */
+  void const* binding_elem = nullptr;
+  /**< 現在要素へのポインタ（ループ内束縛用） */
+  bool (*binding_resolve)(std::string&, std::string_view, bool, void const*, std::string_view) = nullptr;
+  /**< 現在要素を key に従って出力する型消去リゾルバ */
+  bool (*binding_truthy)(void const*, std::string_view) = nullptr;
+  /**< 現在要素の真偽を評価する型消去リゾルバ */
 };
 
 /**
@@ -316,45 +324,46 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
    *          - std::string / std::string_view → raw フラグに応じてエスケープ有無
    *          - 算術型 → std::to_chars による高速変換
    */
-  void emit_var_value(auto const& field, bool raw) {
+  /** @brief フィールド値を指定バッファに追記する（束縛リゾルバ兼用の静的版） */
+  static void emit_value_static(std::string& out, auto const& field, bool raw) {
     using FT = std::remove_cvref_t<decltype(field)>;
     if constexpr (std::same_as<FT, bool>) {
       if (field) {
-        out_.append("true", 4);
+        out.append("true", 4);
       } else {
-        out_.append("false", 5);
+        out.append("false", 5);
       }
     } else if constexpr (std::same_as<FT, std::string> || std::same_as<FT, std::string_view>) {
       if (raw) {
-        out_.append(field.data(), field.size());
+        out.append(field.data(), field.size());
       } else {
-        html_escape_into(out_, field);
+        html_escape_into(out, field);
       }
     } else if constexpr (std::is_enum_v<FT>) {
-      /** enum 型: enchantum で列挙子名を取得してHTMLエスケープ制御 */
-      serialize_enum(out_, field, raw);
+      serialize_enum(out, field, raw);
     } else if constexpr (is_chrono_time_point_v<FT>) {
-      /** chrono time_point: ISO 8601 形式で出力（フィルタなしの場合のデフォルト） */
-      serialize_chrono(out_, field);
+      serialize_chrono(out, field);
     } else if constexpr (std::is_arithmetic_v<FT> && !std::same_as<FT, bool>) {
       if constexpr (std::floating_point<FT>) {
         std::array<char, glz::zmij::double_buffer_size> buf;
         auto end = glz::to_chars(buf.data(), field);
-        out_.append(buf.data(), static_cast<std::size_t>(end - buf.data()));
+        out.append(buf.data(), static_cast<std::size_t>(end - buf.data()));
       } else {
         std::array<char, 32> buf;
         auto [ptr, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), field);
         if (ec == std::errc{}) {
           auto const n = static_cast<std::size_t>(ptr - buf.data());
-          out_.append(buf.data(), n);
+          out.append(buf.data(), n);
         }
       }
     } else if constexpr (is_std_optional_v<FT>) {
       if (field.has_value()) {
-        emit_var_value(*field, raw);
+        emit_value_static(out, *field, raw);
       }
     }
   }
+
+  void emit_var_value(auto const& field, bool raw) { emit_value_static(out_, field, raw); }
 
   /** @brief loop.parent.* 変数の解決。解決できれば true を返す */
   static auto resolve_loop_parent_var(bc_executor const& ex, std::string_view key, bool raw) -> bool {
@@ -415,6 +424,72 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
     return false;
   }
 
+  /** @brief ループ内束縛の型消去リゾルバ: 現在要素を key に従って出力する */
+  template <class ElemT>
+  static bool resolve_binding_var(std::string& out, std::string_view key, bool raw, void const* elem, std::string_view binding_name) {
+    std::string_view sub = (key == binding_name) ? std::string_view{} : key.substr(binding_name.size() + 1);
+    auto const& e = *static_cast<ElemT const*>(elem);
+    if constexpr (ct_glz_reflectable<ElemT>) {
+      if (sub.empty()) {
+        if constexpr (serializable_v<ElemT>) serialize_value(out, e);
+        return true;
+      }
+      bool found = false;
+      (void)for_each_field(e, sub, UINT32_MAX, sub.find('.') != std::string_view::npos,
+        [&](auto const& f) { emit_value_static(out, f, raw); found = true; });
+      return found;
+    } else {
+      if (!sub.empty()) return false;
+      emit_value_static(out, e, raw);
+      return true;
+    }
+  }
+
+  /** @brief ループ内束縛の型消去リゾルバ: 現在要素の真偽を評価する */
+  template <class ElemT>
+  static bool eval_binding_truthy(void const* elem, std::string_view sub) {
+    auto const& e = *static_cast<ElemT const*>(elem);
+    if constexpr (ct_glz_reflectable<ElemT>) {
+      if (!sub.empty()) {
+        bool res = false;
+        (void)for_each_field(e, sub, UINT32_MAX, sub.find('.') != std::string_view::npos, [&](auto const& f) {
+          using FT = std::remove_cvref_t<decltype(f)>;
+          if constexpr (std::same_as<FT, bool>) res = f;
+          else if constexpr (ct_is_vector_like<FT>) res = !f.empty();
+          else if constexpr (std::same_as<FT, std::string> || std::same_as<FT, std::string_view>) res = !f.empty();
+          else if constexpr (std::is_arithmetic_v<FT>) res = (f != 0);
+          else if constexpr (std::is_enum_v<FT>) res = (static_cast<std::underlying_type_t<FT>>(f) != 0);
+          else if constexpr (is_std_optional_v<FT>) res = f.has_value();
+          else if constexpr (ct_is_map_like<FT> || ct_is_set_like<FT>) res = !f.empty();
+        });
+        return res;
+      }
+      return true;
+    } else {
+      if (!sub.empty()) return false;
+      if constexpr (std::same_as<ElemT, bool>) return e;
+      else if constexpr (ct_is_vector_like<ElemT>) return !e.empty();
+      else if constexpr (std::same_as<ElemT, std::string> || std::same_as<ElemT, std::string_view>) return !e.empty();
+      else if constexpr (std::is_arithmetic_v<ElemT>) return (e != 0);
+      else if constexpr (std::is_enum_v<ElemT>) return (static_cast<std::underlying_type_t<ElemT>>(e) != 0);
+      else if constexpr (is_std_optional_v<ElemT>) return e.has_value();
+      else if constexpr (ct_is_map_like<ElemT> || ct_is_set_like<ElemT>) return !e.empty();
+      else return true;
+    }
+  }
+
+  /** @brief ループスコープの束縛を探索し、key が配列名に一致すれば現在要素を出力する */
+  static bool try_resolve_loop_binding(bc_executor const& ex, bc_var_ref const& ref, bool raw) {
+    for (auto* lp = ex.loop_; lp; lp = lp->parent) {
+      if (!lp->binding_resolve) continue;
+      if (ref.key == lp->binding_name ||
+          (ref.key.starts_with(lp->binding_name) && ref.key[lp->binding_name.size()] == '.')) {
+        return lp->binding_resolve(ex.out_, ref.key, raw, lp->binding_elem, lp->binding_name);
+      }
+    }
+    return false;
+  }
+
   // -- handler functions (shared by both dispatch paths) --
 
   static std::expected<void, error_ctx> handle_emit_literal(bc_executor& ex, std::size_t& pc, std::string&) {
@@ -426,10 +501,12 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
   static std::expected<void, error_ctx> handle_emit_var(bc_executor& ex, std::size_t& pc, std::string&) {
     bool raw = ex.bc_.instructions[pc].op == bc_opcode::emit_var_raw;
     auto const& ref = ex.bc_.var_refs[ex.bc_.instructions[pc].operand];
-    if (!ref.is_loop_parent || !resolve_loop_parent_var(ex, ref.key, raw)) {
-      auto r = for_each_field(ex.value_, ref.key, ref.field_index, ref.has_dot, [&](auto const& field) { ex.emit_var_value(field, raw); });
-      if (!r) return std::unexpected(r.error());
-    }
+    if (ref.is_loop_parent && resolve_loop_parent_var(ex, ref.key, raw)) { ++pc; return {}; }
+    bool        found = false;
+    auto        r = for_each_field(ex.value_, ref.key, ref.field_index, ref.has_dot, [&](auto const& field) { found = true; ex.emit_var_value(field, raw); });
+    if (!r) return std::unexpected(r.error());
+    if (found) { ++pc; return {}; }
+    if (try_resolve_loop_binding(ex, ref, raw)) { ++pc; return {}; }
     ++pc;
     return {};
   }
@@ -438,10 +515,12 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
     bool raw = ex.bc_.instructions[pc].op == bc_opcode::emit_litvar_raw;
     ex.out_.append(ex.bc_.literals[ex.bc_.instructions[pc].operand]);
     auto const& ref = ex.bc_.var_refs[ex.bc_.instructions[pc].operand2];
-    if (!ref.is_loop_parent || !resolve_loop_parent_var(ex, ref.key, raw)) {
-      auto r = for_each_field(ex.value_, ref.key, ref.field_index, ref.has_dot, [&](auto const& field) { ex.emit_var_value(field, raw); });
-      if (!r) return std::unexpected(r.error());
-    }
+    if (ref.is_loop_parent && resolve_loop_parent_var(ex, ref.key, raw)) { ++pc; return {}; }
+    bool        found = false;
+    auto        r = for_each_field(ex.value_, ref.key, ref.field_index, ref.has_dot, [&](auto const& field) { found = true; ex.emit_var_value(field, raw); });
+    if (!r) return std::unexpected(r.error());
+    if (found) { ++pc; return {}; }
+    if (try_resolve_loop_binding(ex, ref, raw)) { ++pc; return {}; }
     ++pc;
     return {};
   }
@@ -788,9 +867,11 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
     auto        body_end = instr.operand;
     auto        else_pc  = instr.operand3;
     bool        is_falsy = true;
+    bool        entered = false;
     if (body_end <= pc + 1 || body_end > ex.bc_.instructions.size())
       return std::unexpected(error_ctx{.position = pc, .ec = error_code::syntax_error});
-    auto r = for_each_field(ex.value_, ref.key, ref.field_index, ref.has_dot, [&](auto const& field) -> std::expected<void, error_ctx> {
+    auto section_body = [&](auto const& field) -> std::expected<void, error_ctx> {
+      entered = true;
       using FT = std::remove_cvref_t<decltype(field)>;
       if constexpr (ct_is_vector_like<FT>) {
         if (!field.empty()) is_falsy = false;
@@ -800,6 +881,10 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
         ls.count = static_cast<std::uint32_t>(field.size());
         for (ls.index = 0; ls.index < static_cast<std::uint32_t>(field.size()); ++ls.index) {
           ls.continue_flag = false;
+          ls.binding_name = ref.key;
+          ls.binding_elem = &field[ls.index];
+          ls.binding_resolve = &resolve_binding_var<elem_t>;
+          ls.binding_truthy = &eval_binding_truthy<elem_t>;
           bc_executor<elem_t, RootT> child_exec(ex.bc_, field[ls.index], ex.root_value_, &ls, ex.out_);
           auto r2 = child_exec.execute_impl(pc + 1, body_end - 1);
           if (!r2) return r2;
@@ -825,6 +910,10 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
         for (auto const& [k, v] : field) {
           ls.key = std::string_view{k};
           using val_t = std::remove_cvref_t<decltype(v)>;
+          ls.binding_name = ref.key;
+          ls.binding_elem = &v;
+          ls.binding_resolve = &resolve_binding_var<val_t>;
+          ls.binding_truthy = &eval_binding_truthy<val_t>;
           bc_executor<val_t, RootT> child_exec(ex.bc_, v, ex.root_value_, &ls, ex.out_);
           auto r2 = child_exec.execute_impl(pc + 1, body_end - 1);
           if (!r2) return r2;
@@ -839,6 +928,10 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
         ls.count = static_cast<std::uint32_t>(field.size());
         for (auto const& elem : field) {
           ls.continue_flag = false;
+          ls.binding_name = ref.key;
+          ls.binding_elem = &elem;
+          ls.binding_resolve = &resolve_binding_var<elem_t>;
+          ls.binding_truthy = &eval_binding_truthy<elem_t>;
           bc_executor<elem_t, RootT> child_exec(ex.bc_, elem, ex.root_value_, &ls, ex.out_);
           auto r2 = child_exec.execute_impl(pc + 1, body_end - 1);
           if (!r2) return r2;
@@ -853,20 +946,29 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
         std::expected<void, error_ctx> res{};
         [&]<std::size_t... I>(std::index_sequence<I...>) {
           (([&] {
-            if (!res) return;
-            bc_loop_state ls;
-            ls.parent = ex.loop_;
-            ls.count = sz; ls.index = I; ls.key = glz::reflect<FT>::keys[I];
-            using elem_t = std::remove_cvref_t<decltype(glz::get<I>(tied))>;
-            bc_executor<elem_t, RootT> child_exec(ex.bc_, glz::get<I>(tied), ex.root_value_, &ls, ex.out_);
-            res = child_exec.execute_impl(pc + 1, body_end - 1);
-          }()), ...);
+             if (!res) return;
+             using elem_t = std::remove_cvref_t<decltype(glz::get<I>(tied))>;
+             bc_loop_state ls;
+             ls.parent = ex.loop_;
+             ls.count = sz; ls.index = I; ls.key = glz::reflect<FT>::keys[I];
+             ls.binding_name = ref.key;
+             ls.binding_elem = &glz::get<I>(tied);
+             ls.binding_resolve = &resolve_binding_var<elem_t>;
+             ls.binding_truthy = &eval_binding_truthy<elem_t>;
+             bc_executor<elem_t, RootT> child_exec(ex.bc_, glz::get<I>(tied), ex.root_value_, &ls, ex.out_);
+             res = child_exec.execute_impl(pc + 1, body_end - 1);
+           }()), ...);
         }(std::make_index_sequence<sz>{});
         return res;
       }
       return {};
-    });
+    };
+    auto r = for_each_field(ex.value_, ref.key, ref.field_index, ref.has_dot, section_body);
     if (!r) return std::unexpected(r.error());
+    if (!entered) {
+      auto r2 = for_each_field(ex.root_value_, ref.key, ref.field_index, ref.has_dot, section_body);
+      if (!r2) return std::unexpected(r2.error());
+    }
     if (else_pc > 0 && is_falsy) {
       pc = else_pc;
     } else {
@@ -923,6 +1025,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
         else if (ref.key == "loop.key") { cond = !ex.loop_->key.empty(); }
       }
     } else {
+      bool found = false;
       (void)for_each_field(ex.value_, ref.key, ref.field_index, ref.has_dot, [&](auto const& field) {
         using FT = std::remove_cvref_t<decltype(field)>;
         if constexpr (std::same_as<FT, bool>) { cond = field; }
@@ -933,7 +1036,18 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
         else if constexpr (is_std_optional_v<FT>) { cond = field.has_value(); }
         else if constexpr (ct_is_map_like<FT>) { cond = !field.empty(); }
         else if constexpr (ct_is_set_like<FT>) { cond = !field.empty(); }
+        found = true;
       });
+      if (!found) {
+        for (auto* lp = ex.loop_; lp; lp = lp->parent) {
+          if (lp->binding_truthy && (ref.key == lp->binding_name ||
+              (ref.key.starts_with(lp->binding_name) && ref.key[lp->binding_name.size()] == '.'))) {
+            std::string_view sub = (ref.key == lp->binding_name) ? std::string_view{} : ref.key.substr(lp->binding_name.size() + 1);
+            cond = lp->binding_truthy(lp->binding_elem, sub);
+            break;
+          }
+        }
+      }
     }
     if (!cond) { pc = instr.operand; } else { ++pc; }
     return {};
@@ -983,6 +1097,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
     bool cond = false;
     auto eval_truthy = [&](std::string_view key, std::uint32_t field_idx, bool has_dot) -> bool {
       bool result = false;
+      bool found = false;
       if (!eval_loop_parent_truthy(ex, key, result)) {
         (void)for_each_field(ex.value_, key, field_idx, has_dot, [&](auto const& field) {
           using FT = std::remove_cvref_t<decltype(field)>;
@@ -994,9 +1109,18 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
           else if constexpr (is_std_optional_v<FT>) { result = field.has_value(); }
           else if constexpr (ct_is_map_like<FT>) { result = !field.empty(); }
           else if constexpr (ct_is_set_like<FT>) { result = !field.empty(); }
+          found = true;
         });
       }
-      return result;
+      if (found) return result;
+      for (auto* lp = ex.loop_; lp; lp = lp->parent) {
+        if (lp->binding_truthy && (key == lp->binding_name ||
+            (key.starts_with(lp->binding_name) && key[lp->binding_name.size()] == '.'))) {
+          std::string_view sub = (key == lp->binding_name) ? std::string_view{} : key.substr(lp->binding_name.size() + 1);
+          return lp->binding_truthy(lp->binding_elem, sub);
+        }
+      }
+      return false;
     };
     bool lhs = eval_truthy(lhs_ref.key, lhs_ref.field_index, lhs_ref.has_dot);
     if (instr.op == bc_opcode::emit_if_not) {
@@ -1247,11 +1371,12 @@ public:
   L_emit_var_raw: {
     auto const& ref = bc_.var_refs[bc_.instructions[pc].operand];
     bool        raw = (bc_.instructions[pc].op == bc_opcode::emit_var_raw);
-    if (!ref.is_loop_parent || !resolve_loop_parent_var(*this, ref.key, raw)) {
-      auto r = for_each_field(value_, ref.key, ref.field_index, ref.has_dot, [&](auto const& field) { emit_var_value(field, raw); });
-      if (!r)
-        return r;
-    }
+    if (ref.is_loop_parent && resolve_loop_parent_var(*this, ref.key, raw)) { ++pc; DISPATCH(); }
+    bool        found = false;
+    auto        r = for_each_field(value_, ref.key, ref.field_index, ref.has_dot, [&](auto const& field) { found = true; emit_var_value(field, raw); });
+    if (!r) return r;
+    if (found) { ++pc; DISPATCH(); }
+    if (try_resolve_loop_binding(*this, ref, raw)) { ++pc; DISPATCH(); }
     ++pc;
     DISPATCH();
   }
@@ -1272,7 +1397,9 @@ public:
     }
 
     bool is_falsy = true;
-    auto r = for_each_field(value_, ref.key, ref.field_index, ref.has_dot, [&](auto const& field) -> std::expected<void, error_ctx> {
+    bool entered = false;
+    auto section_iterate = [&](auto const& field) -> std::expected<void, error_ctx> {
+      entered = true;
       using FT = std::remove_cvref_t<decltype(field)>;
       if constexpr (ct_is_vector_like<FT>) {
         if (!field.empty()) is_falsy = false;
@@ -1283,6 +1410,10 @@ public:
 
         for (ls.index = 0; ls.index < static_cast<std::uint32_t>(field.size()); ++ls.index) {
           ls.continue_flag = false;
+          ls.binding_name = ref.key;
+          ls.binding_elem = &field[ls.index];
+          ls.binding_resolve = &resolve_binding_var<elem_t>;
+          ls.binding_truthy = &eval_binding_truthy<elem_t>;
           bc_executor<elem_t, RootT> child_exec(bc_, field[ls.index], root_value_, &ls, out_);
           auto                       r2 = child_exec.execute_impl(pc + 1, body_end - 1);
           if (!r2)
@@ -1318,6 +1449,10 @@ public:
         for (auto const& [k, v] : field) {
           ls.key      = std::string_view{k};
           using val_t = std::remove_cvref_t<decltype(v)>;
+          ls.binding_name = ref.key;
+          ls.binding_elem = &v;
+          ls.binding_resolve = &resolve_binding_var<val_t>;
+          ls.binding_truthy = &eval_binding_truthy<val_t>;
           bc_executor<val_t, RootT> child_exec(bc_, v, root_value_, &ls, out_);
           auto                      r2 = child_exec.execute_impl(pc + 1, body_end - 1);
           if (!r2)
@@ -1334,6 +1469,10 @@ public:
         ls.count = static_cast<std::uint32_t>(field.size());
         for (auto const& elem : field) {
           ls.continue_flag = false;
+          ls.binding_name = ref.key;
+          ls.binding_elem = &elem;
+          ls.binding_resolve = &resolve_binding_var<elem_t>;
+          ls.binding_truthy = &eval_binding_truthy<elem_t>;
           bc_executor<elem_t, RootT> child_exec(bc_, elem, root_value_, &ls, out_);
           auto                       r2 = child_exec.execute_impl(pc + 1, body_end - 1);
           if (!r2)
@@ -1355,12 +1494,16 @@ public:
           (([&] {
              if (!res)
                return;
+             using elem_t = std::remove_cvref_t<decltype(glz::get<I>(tied))>;
              bc_loop_state ls;
              ls.parent = loop_;
              ls.count     = sz;
              ls.index     = I;
              ls.key       = glz::reflect<FT>::keys[I];
-             using elem_t = std::remove_cvref_t<decltype(glz::get<I>(tied))>;
+             ls.binding_name = ref.key;
+             ls.binding_elem = &glz::get<I>(tied);
+             ls.binding_resolve = &resolve_binding_var<elem_t>;
+             ls.binding_truthy = &eval_binding_truthy<elem_t>;
              bc_executor<elem_t, RootT> child_exec(bc_, glz::get<I>(tied), root_value_, &ls, out_);
              res = child_exec.execute_impl(pc + 1, body_end - 1);
            }()),
@@ -1369,9 +1512,16 @@ public:
         return res;
       }
       return {};
-    });
+    };
+
+    auto r = for_each_field(value_, ref.key, ref.field_index, ref.has_dot, section_iterate);
     if (!r)
       return r;
+    if (!entered) {
+      auto r2 = for_each_field(root_value_, ref.key, ref.field_index, ref.has_dot, section_iterate);
+      if (!r2)
+        return r2;
+    }
 
     if (else_pc > 0 && is_falsy) {
       pc = else_pc;
@@ -1550,7 +1700,7 @@ public:
         }
       }
     } else {
-      /** 通常のフィールド参照による truthiness 判定 */
+      bool found = false;
       (void)for_each_field(value_, ref.key, ref.field_index, ref.has_dot, [&](auto const& field) {
         using FT = std::remove_cvref_t<decltype(field)>;
         if constexpr (std::same_as<FT, bool>) {
@@ -1571,7 +1721,18 @@ public:
         } else if constexpr (ct_is_set_like<FT>) {
           cond = !field.empty();
         }
+        found = true;
       });
+      if (!found) {
+        for (auto* lp = loop_; lp; lp = lp->parent) {
+          if (lp->binding_truthy && (ref.key == lp->binding_name ||
+              (ref.key.starts_with(lp->binding_name) && ref.key[lp->binding_name.size()] == '.'))) {
+            std::string_view sub = (ref.key == lp->binding_name) ? std::string_view{} : ref.key.substr(lp->binding_name.size() + 1);
+            cond = lp->binding_truthy(lp->binding_elem, sub);
+            break;
+          }
+        }
+      }
     }
 
     if (!cond) {
@@ -1635,6 +1796,7 @@ public:
     auto const& instr = bc_.instructions[pc];
     auto const& ref   = bc_.var_refs[instr.operand2];
     bool result = false;
+    bool found = false;
     (void)for_each_field(value_, ref.key, ref.field_index, ref.has_dot, [&](auto const& field) {
       using FT = std::remove_cvref_t<decltype(field)>;
       if constexpr (std::same_as<FT, bool>) { result = field; }
@@ -1645,7 +1807,18 @@ public:
       else if constexpr (is_std_optional_v<FT>) { result = field.has_value(); }
       else if constexpr (ct_is_map_like<FT>) { result = !field.empty(); }
       else if constexpr (ct_is_set_like<FT>) { result = !field.empty(); }
+      found = true;
     });
+    if (!found) {
+      for (auto* lp = loop_; lp; lp = lp->parent) {
+        if (lp->binding_truthy && (ref.key == lp->binding_name ||
+            (ref.key.starts_with(lp->binding_name) && ref.key[lp->binding_name.size()] == '.'))) {
+          std::string_view sub = (ref.key == lp->binding_name) ? std::string_view{} : ref.key.substr(lp->binding_name.size() + 1);
+          result = lp->binding_truthy(lp->binding_elem, sub);
+          break;
+        }
+      }
+    }
     if (!result) {
       ++pc;
     } else {
@@ -1658,31 +1831,34 @@ public:
   L_emit_if_logic: {
     auto const& instr  = bc_.instructions[pc];
     auto const& lhs_ref = bc_.var_refs[instr.operand2];
-    bool lhs = false;
-    (void)for_each_field(value_, lhs_ref.key, lhs_ref.field_index, lhs_ref.has_dot, [&](auto const& field) {
-      using FT = std::remove_cvref_t<decltype(field)>;
-      if constexpr (std::same_as<FT, bool>) { lhs = field; }
-      else if constexpr (ct_is_vector_like<FT>) { lhs = !field.empty(); }
-      else if constexpr (std::same_as<FT, std::string> || std::same_as<FT, std::string_view>) { lhs = !field.empty(); }
-      else if constexpr (std::is_arithmetic_v<FT>) { lhs = (field != 0); }
-      else if constexpr (std::is_enum_v<FT>) { lhs = (static_cast<std::underlying_type_t<FT>>(field) != 0); }
-      else if constexpr (is_std_optional_v<FT>) { lhs = field.has_value(); }
-      else if constexpr (ct_is_map_like<FT>) { lhs = !field.empty(); }
-      else if constexpr (ct_is_set_like<FT>) { lhs = !field.empty(); }
-    });
+    auto eval_truthy = [&](bc_var_ref const& ref) -> bool {
+      bool result = false;
+      bool found = false;
+      (void)for_each_field(value_, ref.key, ref.field_index, ref.has_dot, [&](auto const& field) {
+        using FT = std::remove_cvref_t<decltype(field)>;
+        if constexpr (std::same_as<FT, bool>) { result = field; }
+        else if constexpr (ct_is_vector_like<FT>) { result = !field.empty(); }
+        else if constexpr (std::same_as<FT, std::string> || std::same_as<FT, std::string_view>) { result = !field.empty(); }
+        else if constexpr (std::is_arithmetic_v<FT>) { result = (field != 0); }
+        else if constexpr (std::is_enum_v<FT>) { result = (static_cast<std::underlying_type_t<FT>>(field) != 0); }
+        else if constexpr (is_std_optional_v<FT>) { result = field.has_value(); }
+        else if constexpr (ct_is_map_like<FT>) { result = !field.empty(); }
+        else if constexpr (ct_is_set_like<FT>) { result = !field.empty(); }
+        found = true;
+      });
+      if (found) return result;
+      for (auto* lp = loop_; lp; lp = lp->parent) {
+        if (lp->binding_truthy && (ref.key == lp->binding_name ||
+            (ref.key.starts_with(lp->binding_name) && ref.key[lp->binding_name.size()] == '.'))) {
+          std::string_view sub = (ref.key == lp->binding_name) ? std::string_view{} : ref.key.substr(lp->binding_name.size() + 1);
+          return lp->binding_truthy(lp->binding_elem, sub);
+        }
+      }
+      return false;
+    };
+    bool lhs = eval_truthy(lhs_ref);
     auto const& rhs_ref = bc_.var_refs[instr.operand3];
-    bool rhs = false;
-    (void)for_each_field(value_, rhs_ref.key, rhs_ref.field_index, rhs_ref.has_dot, [&](auto const& field) {
-      using FT = std::remove_cvref_t<decltype(field)>;
-      if constexpr (std::same_as<FT, bool>) { rhs = field; }
-      else if constexpr (ct_is_vector_like<FT>) { rhs = !field.empty(); }
-      else if constexpr (std::same_as<FT, std::string> || std::same_as<FT, std::string_view>) { rhs = !field.empty(); }
-      else if constexpr (std::is_arithmetic_v<FT>) { rhs = (field != 0); }
-      else if constexpr (std::is_enum_v<FT>) { rhs = (static_cast<std::underlying_type_t<FT>>(field) != 0); }
-      else if constexpr (is_std_optional_v<FT>) { rhs = field.has_value(); }
-      else if constexpr (ct_is_map_like<FT>) { rhs = !field.empty(); }
-      else if constexpr (ct_is_set_like<FT>) { rhs = !field.empty(); }
-    });
+    bool rhs = eval_truthy(rhs_ref);
     bool cond = (instr.op == bc_opcode::emit_if_or) ? (lhs || rhs) : (lhs && rhs);
     if (!cond) {
       pc = instr.operand;
@@ -1779,11 +1955,12 @@ public:
     /** 変数部分を出力 */
     auto const& ref = bc_.var_refs[instr.operand2];
     bool        raw = (instr.op == bc_opcode::emit_litvar_raw);
-    if (!ref.is_loop_parent || !resolve_loop_parent_var(*this, ref.key, raw)) {
-      auto r = for_each_field(value_, ref.key, ref.field_index, ref.has_dot, [&](auto const& field) { emit_var_value(field, raw); });
-      if (!r)
-        return r;
-    }
+    if (ref.is_loop_parent && resolve_loop_parent_var(*this, ref.key, raw)) { ++pc; DISPATCH(); }
+    bool        found = false;
+    auto        r = for_each_field(value_, ref.key, ref.field_index, ref.has_dot, [&](auto const& field) { found = true; emit_var_value(field, raw); });
+    if (!r) return r;
+    if (found) { ++pc; DISPATCH(); }
+    if (try_resolve_loop_binding(*this, ref, raw)) { ++pc; DISPATCH(); }
     ++pc;
     DISPATCH();
   }

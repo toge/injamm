@@ -3731,3 +3731,48 @@ TEST_CASE("string: format center fill", "[filter][format]") {
   CHECK(*result == "***hi***");
 }
 
+// ---- ループ内配列名束縛（複数配列の並行アクセス） ----
+
+struct BcZipData {
+  std::vector<int> row;
+  std::vector<int> col;
+  std::vector<BcUser> users;
+};
+
+template <>
+struct glz::meta<BcZipData> {
+  static constexpr auto value = glz::object("row", &BcZipData::row, "col", &BcZipData::col, "users", &BcZipData::users);
+};
+
+TEST_CASE("zip: nested scalar arrays bind to current element", "[injamm][zip]") {
+  BcZipData d{{1, 2}, {3, 4}, {}};
+  auto bc = injamm::engine<BcZipData>("{{#row}}{{#col}}{{row}}×{{col}} {{/col}}{{/row}}");
+  auto r = bc.render(d);
+  REQUIRE(r);
+  CHECK(*r == "1×3 1×4 2×3 2×4 ");
+}
+
+TEST_CASE("zip: outer binding visible from inner loop", "[injamm][zip]") {
+  BcZipData d{{1, 2}, {9}, {}};
+  auto bc = injamm::engine<BcZipData>("{{#row}}{{#col}}{{row}}{{col}}{{/col}}{{/row}}");
+  auto r = bc.render(d);
+  REQUIRE(r);
+  CHECK(*r == "1929");
+}
+
+TEST_CASE("zip: binding in if truthiness", "[injamm][zip][if]") {
+  BcZipData d{{0, 5}, {}, {}};
+  auto bc = injamm::engine<BcZipData>("{{#row}}{{#if row}}X{{/if}}{{/row}}");
+  auto r = bc.render(d);
+  REQUIRE(r);
+  CHECK(*r == "X");
+}
+
+TEST_CASE("zip: reflectable element field access via binding", "[injamm][zip]") {
+  BcZipData d{{}, {}, {{"Alice", 30}, {"Bob", 25}}};
+  auto bc = injamm::engine<BcZipData>("{{#users}}{{users.name}}{{/users}}");
+  auto r = bc.render(d);
+  REQUIRE(r);
+  CHECK(*r == "AliceBob");
+}
+

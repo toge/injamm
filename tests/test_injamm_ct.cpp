@@ -2052,3 +2052,37 @@ TEST_CASE("ct_chrono_default", "[injamm][ct][chrono]") {
   CHECK(result->find("T") != std::string::npos);
 }
 
+// ---- ループ内配列名束縛（NTTP パス） ----
+
+struct CtZipData {
+  std::vector<int> row;
+  std::vector<int> col;
+  std::vector<CtUser> users;
+};
+
+template <>
+struct glz::meta<CtZipData> {
+  static constexpr auto value = glz::object("row", &CtZipData::row, "col", &CtZipData::col, "users", &CtZipData::users);
+};
+
+TEST_CASE("ct_zip: nested scalar arrays bind to current element", "[injamm][ct][zip]") {
+  CtZipData d{{1, 2}, {3, 4}, {}};
+  auto r = injamm::render<"{{#row}}{{#col}}{{row}}×{{col}} {{/col}}{{/row}}">(d);
+  REQUIRE(r);
+  CHECK(*r == "1×3 1×4 2×3 2×4 ");
+}
+
+TEST_CASE("ct_zip: if truthiness via binding", "[injamm][ct][zip]") {
+  CtZipData d{{0, 5}, {}, {}};
+  auto r = injamm::render<"{{#row}}{{#if row}}X{{/if}}{{/row}}">(d);
+  REQUIRE(r);
+  CHECK(*r == "X");
+}
+
+TEST_CASE("ct_zip: reflectable element field access", "[injamm][ct][zip]") {
+  CtZipData d{{}, {}, {{"Alice", 30}, {"Bob", 25}}};
+  auto r = injamm::render<"{{#users}}{{users.name}}{{/users}}">(d);
+  REQUIRE(r);
+  CHECK(*r == "AliceBob");
+}
+
