@@ -692,6 +692,18 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
         } else {
           serialize_chrono(filtered, field);
         }
+      } else if constexpr (std::is_arithmetic_v<FT> && !std::same_as<FT, bool>) {
+        if (use_chrono_format) {
+          serialize_formatted(filtered, field, chrono_fmt);
+        } else {
+          serialize_value(filtered, field);
+        }
+      } else if constexpr (std::same_as<FT, std::string> || std::same_as<FT, std::string_view>) {
+        if (use_chrono_format) {
+          serialize_formatted(filtered, field, chrono_fmt);
+        } else {
+          serialize_value(filtered, field);
+        }
       } else if constexpr (is_std_optional_v<FT>) {
         if (field.has_value()) {
           using inner_t = std::remove_cvref_t<decltype(*field)>;
@@ -700,6 +712,18 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
               serialize_chrono(filtered, *field, chrono_fmt);
             } else {
               serialize_chrono(filtered, *field);
+            }
+          } else if constexpr (std::is_arithmetic_v<inner_t> && !std::same_as<inner_t, bool>) {
+            if (use_chrono_format) {
+              serialize_formatted(filtered, *field, chrono_fmt);
+            } else {
+              serialize_value(filtered, *field);
+            }
+          } else if constexpr (std::same_as<inner_t, std::string> || std::same_as<inner_t, std::string_view>) {
+            if (use_chrono_format) {
+              serialize_formatted(filtered, *field, chrono_fmt);
+            } else {
+              serialize_value(filtered, *field);
             }
           } else {
             serialize_value(filtered, *field);
@@ -1831,6 +1855,18 @@ public:
         } else {
           serialize_chrono(filtered_value_, field);
         }
+      } else if constexpr (std::is_arithmetic_v<FT> && !std::same_as<FT, bool>) {
+        if (use_chrono_format) {
+          serialize_formatted(filtered_value_, field, chrono_fmt);
+        } else {
+          serialize_value(filtered_value_, field);
+        }
+      } else if constexpr (std::same_as<FT, std::string> || std::same_as<FT, std::string_view>) {
+        if (use_chrono_format) {
+          serialize_formatted(filtered_value_, field, chrono_fmt);
+        } else {
+          serialize_value(filtered_value_, field);
+        }
       } else if constexpr (is_std_optional_v<FT>) {
         if (field.has_value()) {
           using inner_t = std::remove_cvref_t<decltype(*field)>;
@@ -1839,6 +1875,18 @@ public:
               serialize_chrono(filtered_value_, *field, chrono_fmt);
             } else {
               serialize_chrono(filtered_value_, *field);
+            }
+          } else if constexpr (std::is_arithmetic_v<inner_t> && !std::same_as<inner_t, bool>) {
+            if (use_chrono_format) {
+              serialize_formatted(filtered_value_, *field, chrono_fmt);
+            } else {
+              serialize_value(filtered_value_, *field);
+            }
+          } else if constexpr (std::same_as<inner_t, std::string> || std::same_as<inner_t, std::string_view>) {
+            if (use_chrono_format) {
+              serialize_formatted(filtered_value_, *field, chrono_fmt);
+            } else {
+              serialize_value(filtered_value_, *field);
             }
           } else {
             serialize_value(filtered_value_, *field);

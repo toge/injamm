@@ -3647,11 +3647,69 @@ TEST_CASE("chrono: format with time", "[filter][chrono]") {
   CHECK_FALSE(result->empty());
 }
 
-TEST_CASE("chrono: format on non-chrono is noop", "[filter][chrono]") {
-  BcUser data{"hello", 42};
-  auto bc = injamm::engine<BcUser>("{{ name | format(\"%Y\") }}");
+TEST_CASE("chrono: format on non-formattable is noop", "[filter][chrono]") {
+  BcBoolData data{true};
+  auto bc = injamm::engine<BcBoolData>("{{ flag | format(\"05\") }}");
   auto result = bc.render(data);
   REQUIRE(result);
-  CHECK(*result == "hello");
+  CHECK(*result == "true");
+}
+
+TEST_CASE("int: format zerofill", "[filter][format]") {
+  BcUser data{"hello", 42};
+  auto bc = injamm::engine<BcUser>("{{ age | format(\"05\") }}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  CHECK(*result == "00042");
+}
+
+TEST_CASE("int: format hex", "[filter][format]") {
+  BcUser data{"hello", 255};
+  auto bc = injamm::engine<BcUser>("{{ age | format(\"#06x\") }}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  CHECK(*result == "0x00ff");
+}
+
+TEST_CASE("float: format precision", "[filter][format]") {
+  struct FData { double val; };
+  // glz::meta は既存の BcFloatData を利用
+  BcFloatData data{3.14159};
+  auto bc = injamm::engine<BcFloatData>("{{ value | format(\".2f\") }}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  CHECK(*result == "3.14");
+}
+
+TEST_CASE("float: format scientific", "[filter][format]") {
+  BcFloatData data{1234.5};
+  auto bc = injamm::engine<BcFloatData>("{{ value | format(\".2e\") }}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  CHECK(result->find("1.23") != std::string::npos);
+}
+
+TEST_CASE("string: format left align", "[filter][format]") {
+  BcUser data{"hi", 0};
+  auto bc = injamm::engine<BcUser>("{{ name | format(\"<6\") }}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  CHECK(*result == "hi    ");
+}
+
+TEST_CASE("string: format right align", "[filter][format]") {
+  BcUser data{"hi", 0};
+  auto bc = injamm::engine<BcUser>("{{ name | format(\">6\") }}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  CHECK(*result == "    hi");
+}
+
+TEST_CASE("string: format center fill", "[filter][format]") {
+  BcUser data{"hi", 0};
+  auto bc = injamm::engine<BcUser>("{{ name | format(\"*^8\") }}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  CHECK(*result == "***hi***");
 }
 

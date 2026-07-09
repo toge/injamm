@@ -6,6 +6,7 @@
 #include <chrono>
 #include <concepts>
 #include <ctime>
+#include <format>
 #include <glaze/util/zmij.hpp>
 #include <map>
 #include <optional>
@@ -201,6 +202,49 @@ inline void serialize_chrono(Buffer& out, std::chrono::time_point<Clock, Duratio
   std::string fmt_null{fmt};
   auto len = std::strftime(buf, sizeof(buf), fmt_null.c_str(), &tm);
   if (len > 0) out.append(std::string_view{buf, static_cast<std::size_t>(len)});
+}
+
+/** @brief 算術型を std::format スタイルのフォーマット指定子でバッファに追記する
+ *
+ *  fmt には std::format のフォーマットスペックを指定する（引数の部分のみ）。
+ *  例: "05" → "{:05}" → std::format("{:05}", 42) → "00042"
+ *  例: ".2f" → "{:.2f}" → std::format("{:.2f}", 3.14) → "3.14"
+ *
+ *  @tparam Buffer 出力バッファ型
+ *  @tparam T 算術型
+ *  @param[in,out] out 出力先バッファ
+ *  @param[in] value 変換する値
+ *  @param[in] fmt std::format フォーマットスペック
+ */
+template <class Buffer, class T>
+  requires std::is_arithmetic_v<T> && (!std::same_as<T, bool>)
+inline void serialize_formatted(Buffer& out, T value, std::string_view fmt) {
+  std::string fmt_str = "{:";
+  fmt_str.append(fmt);
+  fmt_str.push_back('}');
+  auto result = std::vformat(fmt_str, std::make_format_args(value));
+  out.append(result);
+}
+
+/** @brief 文字列を std::format スタイルのフォーマット指定子でバッファに追記する
+ *
+ *  fmt には std::format のフォーマットスペックを指定する（引数の部分のみ）。
+ *  例: "<20" → "{:<20}" → 左寄せ幅20
+ *  例: ">20" → "{:>20}" → 右寄せ幅20
+ *  例: "*^20" → "{:*^20}" → 中央寄せ '*' 埋め幅20
+ *
+ *  @tparam Buffer 出力バッファ型
+ *  @param[in,out] out 出力先バッファ
+ *  @param[in] value 変換する文字列
+ *  @param[in] fmt std::format フォーマットスペック
+ */
+template <class Buffer>
+inline void serialize_formatted(Buffer& out, std::string_view value, std::string_view fmt) {
+  std::string fmt_str = "{:";
+  fmt_str.append(fmt);
+  fmt_str.push_back('}');
+  auto result = std::vformat(fmt_str, std::make_format_args(value));
+  out.append(result);
 }
 
 } // namespace injamm::detail
