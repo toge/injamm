@@ -28,9 +28,25 @@ enum class error_code : int {
   division_by_zero = 8,    /**< 除数ゼロエラー */
 };
 
+/** @brief error_code から対応するエラーメッセージを取得する */
+inline std::string_view error_code_to_message(error_code ec) {
+  switch (ec) {
+    case error_code::none: return "No error";
+    case error_code::no_read_input: return "No input provided";
+    case error_code::unexpected_end: return "Unexpected end of template";
+    case error_code::unknown_key: return "Unknown key or field name";
+    case error_code::syntax_error: return "Template syntax error";
+    case error_code::type_mismatch: return "Type mismatch";
+    case error_code::invalid_utf8: return "Invalid UTF-8 sequence";
+    case error_code::unknown_filter: return "Unknown filter name";
+    case error_code::division_by_zero: return "Division by zero";
+    default: return "Unknown error";
+  }
+}
+
 /** @brief error_code をストリームに出力するためのオーバーロード */
 inline std::ostream& operator<<(std::ostream& os, error_code ec) {
-  return os << static_cast<int>(ec);
+  return os << error_code_to_message(ec);
 }
 
 /** @brief エラーコンテキスト
@@ -41,6 +57,19 @@ struct error_ctx {
   std::size_t position{};                   /**< エラー発生位置（バイトオフセット） */
   error_code ec{error_code::none};          /**< エラーコード */
   std::string_view custom_error_message;    /**< カスタムエラーメッセージ */
+
+  /** @brief エラーメッセージを生成する */
+  [[nodiscard]] std::string message() const {
+    if (!custom_error_message.empty()) {
+      return std::string(custom_error_message);
+    }
+    return std::string(error_code_to_message(ec));
+  }
+
+  /** @brief エラーが発生しているか判定する */
+  [[nodiscard]] bool has_error() const noexcept {
+    return ec != error_code::none;
+  }
 };
 
 /** @brief レンダリングモードタグ: エスケープなし（デフォルト） */

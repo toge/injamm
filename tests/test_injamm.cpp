@@ -1,5 +1,6 @@
 #include "injamm.hpp"
 #include "injamm/bytecode_debug.hpp"
+#include "injamm/types.hpp"
 #include <glaze/glaze.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <chrono>
@@ -2548,10 +2549,32 @@ TEST_CASE("error: stray closing tag", "[error]") {
 TEST_CASE("error_code ostream output", "[error]") {
   std::ostringstream oss;
   oss << injamm::error_code::unknown_key;
-  CHECK(oss.str() == "3");
+  CHECK(oss.str() == "Unknown key or field name");
   oss.str("");
   oss << injamm::error_code::division_by_zero;
-  CHECK(oss.str() == "8");
+  CHECK(oss.str() == "Division by zero");
+}
+
+TEST_CASE("error_code_to_message function", "[error]") {
+  using namespace injamm;
+  CHECK(error_code_to_message(error_code::none) == "No error");
+  CHECK(error_code_to_message(error_code::unknown_key) == "Unknown key or field name");
+  CHECK(error_code_to_message(error_code::division_by_zero) == "Division by zero");
+}
+
+TEST_CASE("error_ctx message method", "[error]") {
+  using namespace injamm;
+  error_ctx ctx1{.ec = error_code::unknown_key};
+  CHECK(ctx1.message() == "Unknown key or field name");
+  CHECK(ctx1.has_error() == true);
+
+  error_ctx ctx2{.ec = error_code::none};
+  CHECK(ctx2.message() == "No error");
+  CHECK(ctx2.has_error() == false);
+
+  error_ctx ctx3{.ec = error_code::syntax_error, .custom_error_message = "Custom error"};
+  CHECK(ctx3.message() == "Custom error");
+  CHECK(ctx3.has_error() == true);
 }
 
 // ---- loop.X 旧 @var 構文の互換性破棄確認 ----

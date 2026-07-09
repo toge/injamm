@@ -105,7 +105,10 @@ constexpr std::string_view nttp_string_view(S const& s) noexcept {
   } else if constexpr (requires { s.data(); }) {
     return {s.data(), s.size()};
   } else {
-    static_assert(always_false<S>, "not a supported NTTP string type (needs .data or .data())");
+    static_assert(always_false<S>, 
+      "injamm: Unsupported NTTP string type. "
+      "Expected injamm::fixed_string or frozenchars::FrozenString. "
+      "Ensure your type has either a '.data' member or a '.data()' method.");
   }
 }
 
@@ -140,7 +143,9 @@ consteval auto parse_fixed_impl() -> ct_parsed_template<Tmpl.size() + 1> {
 template <auto... Entries>
 struct ct_var_table {
   static constexpr std::size_t num = sizeof...(Entries);
-  static_assert(num % 2 == 0, "@var entries must be key-value pairs (even count)");
+  static_assert(num % 2 == 0, 
+    "injamm: @var entries must be key-value pairs (even count). "
+    "Example: render<tmpl, \"key1\", \"value1\", \"key2\", \"value2\">(data)");
 
   static constexpr std::array<std::string_view, num> entries{
     nttp_string_view(Entries)...
@@ -360,8 +365,11 @@ template <fixed_string Tmpl, int TrimBlocks = 0, int LstripBlocks = 0, typename 
  * @return expected<std::string> レンダリング結果、またはエラー
  */
 template <fixed_string Tmpl, fixed_string... Entries, typename T>
-  requires(sizeof...(Entries) > 0 && sizeof...(Entries) % 2 == 0)
+  requires(sizeof...(Entries) > 0)
 [[nodiscard]] expected<std::string> render(T const& value) {
+  static_assert(sizeof...(Entries) % 2 == 0,
+    "injamm: @var entries must be key-value pairs (even count). "
+    "Example: render<tmpl, \"key1\", \"value1\", \"key2\", \"value2\">(data)");
   using D = detail::nttp_atvar_data<Tmpl, T, Entries...>;
   if constexpr (D::ct_bc.error.ec != error_code::none)
     return std::unexpected(D::ct_bc.error);
@@ -383,8 +391,11 @@ template <fixed_string Tmpl, fixed_string... Entries, typename T>
  * @return expected<void> 実行結果、またはエラー
  */
 template <fixed_string Tmpl, fixed_string... Entries, typename T>
-  requires(sizeof...(Entries) > 0 && sizeof...(Entries) % 2 == 0)
+  requires(sizeof...(Entries) > 0)
 [[nodiscard]] expected<void> render(T const& value, std::string& out) {
+  static_assert(sizeof...(Entries) % 2 == 0,
+    "injamm: @var entries must be key-value pairs (even count). "
+    "Example: render<tmpl, \"key1\", \"value1\", \"key2\", \"value2\">(data, out)");
   using D = detail::nttp_atvar_data<Tmpl, T, Entries...>;
   if constexpr (D::ct_bc.error.ec != error_code::none)
     return std::unexpected(D::ct_bc.error);
@@ -408,7 +419,8 @@ template <fixed_string... Names, typename... Containers>
   -> detail::bound_context<detail::name_list<Names...>, Containers...>
 {
   static_assert(sizeof...(Names) == sizeof...(Containers),
-                "bind: Names count must match Containers count");
+                "injamm: bind() requires the same number of names and containers. "
+                "Example: bind<\"items\", \"user\">(items, user)");
   return detail::bound_context<detail::name_list<Names...>, Containers...>{std::forward_as_tuple(values...)};
 }
 
