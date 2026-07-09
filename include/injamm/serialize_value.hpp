@@ -3,7 +3,9 @@
 #include "enum_io.hpp"
 #include <array>
 #include <charconv>
+#include <chrono>
 #include <concepts>
+#include <ctime>
 #include <glaze/util/zmij.hpp>
 #include <map>
 #include <optional>
@@ -41,6 +43,16 @@ inline constexpr bool is_std_map_like_v<std::map<K, V, Comp, Alloc>> = true;
 
 template <class K, class V, class Hash, class Eq, class Alloc>
 inline constexpr bool is_std_map_like_v<std::unordered_map<K, V, Hash, Eq, Alloc>> = true;
+
+/** @brief std::chrono::time_point かどうかを判定する型特性 */
+template <class T>
+struct is_chrono_time_point : std::false_type {};
+
+template <class Clock, class Duration>
+struct is_chrono_time_point<std::chrono::time_point<Clock, Duration>> : std::true_type {};
+
+template <class T>
+inline constexpr bool is_chrono_time_point_v = is_chrono_time_point<T>::value;
 
 /** @brief 整数型（bool除く）をバッファに変換して追記する
  *
@@ -138,6 +150,57 @@ template <class Buffer, class E>
   requires std::is_enum_v<E>
 inline void serialize_value(Buffer& out, E value) {
   serialize_enum(out, value, /*raw=*/true);
+}
+
+/** @brief time_t をローカル tm に変換するヘルパー */
+inline std::tm to_local_tm(std::time_t tt) {
+  std::tm tm{};
+  localtime_r(&tt, &tm);
+  return tm;
+}
+
+/** @brief chrono time_point を ISO 8601 形式（ローカルタイム）でバッファに追記する
+ *
+ *  デフォルトフォーマット: %Y-%m-%dT%H:%M:%S
+ *  clock_cast で system_clock に変換してから to_time_t で time_t に変換する。
+ *
+ *  @tparam Buffer 出力バッファ型
+ *  @tparam Clock 時計型
+ *  @tparam Duration 時間間隔型
+ *  @param[in,out] out 出力先バッファ
+ *  @param[in] tp 変換する time_point
+ */
+template <class Buffer, class Clock, class Duration>
+inline void serialize_chrono(Buffer& out, std::chrono::time_point<Clock, Duration> const& tp) {
+  auto sys_tp = std::chrono::clock_cast<std::chrono::system_clock>(tp);
+  auto tt = std::chrono::system_clock::to_time_t(sys_tp);
+  auto tm = to_local_tm(tt);
+  char buf[64];
+  auto len = std::strftime(buf, sizeof(buf), "%Y-%m-%dT%H:%M:%S", &tm);
+  if (len > 0) out.append(std::string_view{buf, static_cast<std::size_t>(len)});
+}
+
+/** @brief chrono time_point を指定フォーマットでバッファに追記する
+ *
+ *  fmt には strftime スタイルの指定子を渡す（例: "%Y-%m-%d"）。
+ *  strftime は null-terminated 文字列を要求するため、内部で std::string に変換する。
+ *
+ *  @tparam Buffer 出力バッファ型
+ *  @tparam Clock 時計型
+ *  @tparam Duration 時間間隔型
+ *  @param[in,out] out 出力先バッファ
+ *  @param[in] tp 変換する time_point
+ *  @param[in] fmt strftime フォーマット文字列
+ */
+template <class Buffer, class Clock, class Duration>
+inline void serialize_chrono(Buffer& out, std::chrono::time_point<Clock, Duration> const& tp, std::string_view fmt) {
+  auto sys_tp = std::chrono::clock_cast<std::chrono::system_clock>(tp);
+  auto tt = std::chrono::system_clock::to_time_t(sys_tp);
+  auto tm = to_local_tm(tt);
+  char buf[256];
+  std::string fmt_null{fmt};
+  auto len = std::strftime(buf, sizeof(buf), fmt_null.c_str(), &tm);
+  if (len > 0) out.append(std::string_view{buf, static_cast<std::size_t>(len)});
 }
 
 } // namespace injamm::detail

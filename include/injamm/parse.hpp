@@ -302,6 +302,13 @@ constexpr std::size_t constexpr_find_tag(std::string_view haystack, std::string_
       }
       return string_filter_entry{string_filter::pluralize, 0, 0};
     }
+    if (fname == "format") {
+      auto fmt_str = trim_sv(args_str);
+      if (fmt_str.size() >= 2 && fmt_str.front() == '"' && fmt_str.back() == '"') {
+        fmt_str = fmt_str.substr(1, fmt_str.size() - 2);
+      }
+      return string_filter_entry{string_filter::format, 0, 0, fmt_str, {}};
+    }
   }
   // 引数なしフィルタ
   if (name == "upper")

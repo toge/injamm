@@ -127,7 +127,7 @@ bytecode to_bytecode(ct_bytecode<N> const& ct) {
       while (j < bc.instructions.size()) {
         auto op = bc.instructions[j].op;
         auto const& fi = bc.instructions[j];
-        if (op >= bc_opcode::filter_upper && op <= bc_opcode::filter_pluralize) {
+        if (op >= bc_opcode::filter_upper && op <= bc_opcode::filter_format) {
           switch (op) {
           case bc_opcode::filter_upper:      ref.filters.push_back({.filter = string_filter::upper}); break;
           case bc_opcode::filter_lower:      ref.filters.push_back({.filter = string_filter::lower}); break;
@@ -174,6 +174,10 @@ bytecode to_bytecode(ct_bytecode<N> const& ct) {
             ref.filters.push_back({.filter = string_filter::pluralize, .str_arg1 = bc.literals[fi.operand], .str_arg2 = bc.literals[fi.operand2]});
             break;
           }
+          case bc_opcode::filter_format: {
+            ref.filters.push_back({.filter = string_filter::format, .str_arg1 = bc.literals[fi.operand]});
+            break;
+          }
           default: break;
           }
           ++j;
@@ -206,6 +210,13 @@ bytecode to_bytecode(ct_bytecode<N> const& ct) {
           break;
         }
       }
+      // filter_flags を計算（ホットパスのループ排除用）
+      std::uint8_t flags = 0;
+      for (auto const& f : ref.filters) {
+        if (f.filter == string_filter::to_json) flags |= 1;
+        else if (f.filter == string_filter::format) flags |= 2;
+      }
+      ref.filter_flags = flags;
     }
   }
   bc.error = ct.error;
@@ -372,6 +383,11 @@ consteval void compile_chunk_range(ct_bytecode_builder<N>& b,
           auto s_idx = b.add_literal({sf.str_arg1.data(), sf.str_arg1.size()});
           auto p_idx = b.add_literal({sf.str_arg2.data(), sf.str_arg2.size()});
           b.emit(bc_opcode::filter_pluralize, s_idx, p_idx);
+          break;
+        }
+        case string_filter::format: {
+          auto fmt_idx = b.add_literal({sf.str_arg1.data(), sf.str_arg1.size()});
+          b.emit(bc_opcode::filter_format, fmt_idx);
           break;
         }
        }

@@ -64,6 +64,7 @@ enum class bc_opcode : std::uint8_t {
   filter_indent,      /**< インデント（引数: 空白数） */
   filter_pad,         /**< パディング（引数1: 幅, 引数2: 埋め文字literal index） */
   filter_pluralize,   /**< 単数形/複数形（引数1: 単数literal index, 引数2: 複数literal index） */
+  filter_format,      /**< strftime 形式 chrono フォーマット（dispatch 時は no-op） */
   emit_filtered,      /**< フィルタ後の文字列出力（エスケープあり） */
   emit_filtered_raw,  /**< フィルタ後の文字列出力（生出力） */
   filter_int_abs,     /**< 整数絶対値変換 */
@@ -148,6 +149,7 @@ enum class bc_opcode : std::uint8_t {
   case bc_opcode::filter_indent:           return "filter_indent";
   case bc_opcode::filter_pad:              return "filter_pad";
   case bc_opcode::filter_pluralize:        return "filter_pluralize";
+  case bc_opcode::filter_format:           return "filter_format";
   case bc_opcode::emit_filtered:           return "emit_filtered";
   case bc_opcode::emit_filtered_raw:       return "emit_filtered_raw";
   case bc_opcode::filter_int_abs:          return "filter_int_abs";
@@ -208,7 +210,8 @@ enum class string_filter : std::uint8_t {
   safe,        /**< 生出力マーク（エスケープ抑制、コンパイル時処理） */
   indent,      /**< 各行にインデント追加（引数: 空白数） */
   pad,         /**< パディング（引数1: 幅, 引数2: 埋め文字） */
-  pluralize    /**< 単数形/複数形（引数1: 単数形, 引数2: 複数形） */
+  pluralize,   /**< 単数形/複数形（引数1: 単数形, 引数2: 複数形） */
+  format       /**< strftime 形式 chrono フォーマット（dispatch 時は no-op） */
 };
 
 [[nodiscard]] inline std::string_view string_filter_name(string_filter f) noexcept {
@@ -232,6 +235,7 @@ enum class string_filter : std::uint8_t {
   case string_filter::indent:        return "indent";
   case string_filter::pad:           return "pad";
   case string_filter::pluralize:     return "pluralize";
+  case string_filter::format:        return "format";
   }
   return "unknown";
 }
@@ -355,6 +359,11 @@ struct bc_var_ref {
   std::string compare_rhs_text;            /**< 右オペランド文字列（文字列リテラル or 変数名） */
   std::uint32_t compare_rhs_field_index = UINT32_MAX; /**< 右オペランドの解決済みフィールドインデックス */
   bool compare_rhs_has_dot = false;        /**< 右オペランドがドット区切りパスか */
+  /** @brief コンパイル時に事前計算されたフィルタ特殊フラグ（ホットパスのループ排除用）
+   *  bit 0: json フィルタ含有
+   *  bit 1: chrono format フィルタ含有
+   */
+  std::uint8_t filter_flags = 0;
   std::vector<string_filter_entry> filters; /**< 文字列フィルタチェーン */
   std::vector<int_filter_entry> int_filters; /**< 整数フィルタチェーン */
   std::vector<float_filter_entry> float_filters; /**< 実数フィルタチェーン */

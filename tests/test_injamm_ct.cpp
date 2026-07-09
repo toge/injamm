@@ -1,6 +1,7 @@
 #include "injamm.hpp"
 #include <glaze/glaze.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <chrono>
 #include <climits>
 #include <map>
 #include <optional>
@@ -162,6 +163,15 @@ struct CtMapWrapper {
 template <>
 struct glz::meta<CtMapWrapper> {
   static constexpr auto value = glz::object("config", &CtMapWrapper::config);
+};
+
+struct CtChronoData {
+  std::chrono::system_clock::time_point ts;
+};
+
+template <>
+struct glz::meta<CtChronoData> {
+  static constexpr auto value = glz::object("ts", &CtChronoData::ts);
 };
 
 // ---- リテラル ----
@@ -2023,5 +2033,22 @@ TEST_CASE("ct_render_into_error_propagated", "[injamm][ct][buffer_reuse][error]"
   auto r = injamm::render<tmpl>(user, buf);
   REQUIRE_FALSE(r.has_value());
   CHECK(r.error().ec == injamm::error_code::unknown_key);
+}
+
+// ---- chrono format filter (NTTP) ----
+
+TEST_CASE("ct_chrono_format", "[injamm][ct][chrono]") {
+  CtChronoData d{std::chrono::system_clock::from_time_t(1705312200)};
+  auto result = injamm::render<"{{ ts | format(\"%Y-%m-%d\") }}">(d);
+  REQUIRE(result);
+  CHECK(result->find("2024-01-") != std::string::npos);
+}
+
+TEST_CASE("ct_chrono_default", "[injamm][ct][chrono]") {
+  CtChronoData d{std::chrono::system_clock::from_time_t(1705312200)};
+  auto result = injamm::render<"{{ ts }}">(d);
+  REQUIRE(result);
+  CHECK(result->find("2024-01-") != std::string::npos);
+  CHECK(result->find("T") != std::string::npos);
 }
 

@@ -211,6 +211,9 @@ constexpr void apply_string_filter(std::string& str, string_filter_entry entry) 
     }
     break;
   }
+  case string_filter::format:
+    // resolve_filtered 時点で chrono 型に対して処理済み。no-op。
+    break;
   }
 }
 

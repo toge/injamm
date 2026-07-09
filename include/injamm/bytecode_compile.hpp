@@ -37,6 +37,7 @@ void emit_filter_chain(Emitter&& emit, std::vector<string_filter_entry> const& f
         emit(bc_opcode::filter_pad, static_cast<std::uint32_t>(f.arg1), UINT32_MAX);
         break;
       case string_filter::pluralize:     emit(bc_opcode::filter_pluralize); break;
+      case string_filter::format:        emit(bc_opcode::filter_format); break;
     }
   }
   for (auto f : int_filters) {
@@ -169,12 +170,20 @@ class bc_compiler {
     bc_.var_refs[idx].filters = filters;
     bc_.var_refs[idx].int_filters = int_filters;
     bc_.var_refs[idx].float_filters = float_filters;
-    // safe filter detection: force raw output
+    // safe/json/format filter detection
     bool has_safe = false;
+    bool has_json = false;
+    bool has_chrono_format = false;
     for (auto const& f : filters) {
-      if (f.filter == string_filter::safe) { has_safe = true; break; }
+      if (f.filter == string_filter::safe) { has_safe = true; }
+      else if (f.filter == string_filter::to_json) { has_json = true; }
+      else if (f.filter == string_filter::format) { has_chrono_format = true; }
     }
     bool use_raw = raw || has_safe;
+    // filter_flags を設定（ホットパスのループ排除）
+    std::uint8_t flags = 0;
+    if (has_json) flags |= 1;
+    if (has_chrono_format) flags |= 2;
     // フィルタの有無で分岐
     if (filters.empty() && int_filters.empty() && float_filters.empty()) {
       // 既存の高速パス（変更なし）
@@ -189,6 +198,7 @@ class bc_compiler {
       bc_.add_instruction(use_raw ? bc_opcode::emit_var_raw : bc_opcode::emit_var, idx);
     } else {
       // フィルタ専用パス: 後続フィルタ命令数を operand に格納（executor がスキップ用に使用）
+      bc_.var_refs[idx].filter_flags = flags;
       auto filter_count = static_cast<std::uint32_t>(filters.size() + int_filters.size() + float_filters.size());
       bc_.add_instruction(bc_opcode::resolve_filtered, filter_count, idx);
       emit_filter_chain([this](bc_opcode op, std::uint32_t a = 0, std::uint32_t a2 = 0) {

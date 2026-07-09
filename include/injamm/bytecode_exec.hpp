@@ -313,6 +313,9 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
     } else if constexpr (std::is_enum_v<FT>) {
       /** enum 型: enchantum で列挙子名を取得してHTMLエスケープ制御 */
       serialize_enum(out_, field, raw);
+    } else if constexpr (is_chrono_time_point_v<FT>) {
+      /** chrono time_point: ISO 8601 形式で出力（フィルタなしの場合のデフォルト） */
+      serialize_chrono(out_, field);
     } else if constexpr (std::is_arithmetic_v<FT> && !std::same_as<FT, bool>) {
       if constexpr (std::floating_point<FT>) {
         std::array<char, glz::zmij::double_buffer_size> buf;
@@ -670,21 +673,40 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
     auto const& instr  = ex.bc_.instructions[pc];
     auto const& var_ref = ex.bc_.var_refs[instr.operand2];
     filtered.clear();
-    // json filter detection
-    bool use_json = false;
-    for (auto const& f : var_ref.filters) {
-      if (f.filter == string_filter::to_json) { use_json = true; break; }
+    // コンパイル時事前計算済みフラグで判定（ループ不要）
+    bool use_json = (var_ref.filter_flags & 1) != 0;
+    bool use_chrono_format = (var_ref.filter_flags & 2) != 0;
+    std::string_view chrono_fmt;
+    if (use_chrono_format) {
+      for (auto const& f : var_ref.filters) {
+        if (f.filter == string_filter::format) { chrono_fmt = f.str_arg1; break; }
+      }
     }
     auto r = for_each_field(ex.value_, var_ref.key, var_ref.field_index, var_ref.has_dot, [&](auto const& field) {
       using FT = std::remove_cvref_t<decltype(field)>;
       if (use_json) {
         json_serialize_value(filtered, field);
-      } else {
-        if constexpr (serializable_v<FT>) {
-          serialize_value(filtered, field);
-        } else if constexpr (is_std_optional_v<FT>) {
-          if (field.has_value()) serialize_value(filtered, *field);
+      } else if constexpr (is_chrono_time_point_v<FT>) {
+        if (use_chrono_format) {
+          serialize_chrono(filtered, field, chrono_fmt);
+        } else {
+          serialize_chrono(filtered, field);
         }
+      } else if constexpr (is_std_optional_v<FT>) {
+        if (field.has_value()) {
+          using inner_t = std::remove_cvref_t<decltype(*field)>;
+          if constexpr (is_chrono_time_point_v<inner_t>) {
+            if (use_chrono_format) {
+              serialize_chrono(filtered, *field, chrono_fmt);
+            } else {
+              serialize_chrono(filtered, *field);
+            }
+          } else {
+            serialize_value(filtered, *field);
+          }
+        }
+      } else if constexpr (serializable_v<FT>) {
+        serialize_value(filtered, field);
       }
     });
     if (!r) return std::unexpected(r.error());
@@ -1130,39 +1152,40 @@ public:
         &&L_filter_indent,           // 44
         &&L_filter_pad,              // 45
         &&L_filter_pluralize,        // 46
-        &&L_emit_filtered,           // 47
-        &&L_emit_filtered_raw,       // 48
-        &&L_filter_int_abs,          // 49
-        &&L_filter_int_hex,          // 50
-        &&L_filter_int_oct,          // 51
-        &&L_filter_int_bin,          // 52
-        &&L_filter_int_neg,          // 53
-        &&L_filter_int_mod,          // 54
-        &&L_filter_int_numify,       // 55
-        &&L_filter_int_is_neg,       // 56
-        &&L_filter_int_eq,           // 57
-        &&L_filter_int_ne,           // 58
-        &&L_filter_int_gt,           // 59
-        &&L_filter_int_gte,          // 60
-        &&L_filter_int_lt,           // 61
-        &&L_filter_int_lte,          // 62
-        &&L_filter_int_zerofill,     // 63
-        &&L_filter_int_add,          // 64
-        &&L_filter_int_sub,          // 65
-        &&L_filter_int_mul,          // 66
-        &&L_filter_int_div,          // 67
-        &&L_filter_float_precision,  // 68
-        &&L_emit_if_filtered,        // 69
-        &&L_emit_break,              // 70
-        &&L_emit_continue,           // 71
-        &&L_emit_at_index1,          // 72
-        &&L_emit_at_size,            // 73
-        &&L_emit_var_size,           // 74
-        &&L_emit_if_logic,           // 75 emit_if_or
-        &&L_emit_if_logic,           // 76 emit_if_and
-        &&L_emit_if_not,             // 77 emit_if_not
-        &&L_call_partial,            // 78
-        &&L_halt,                    // 79
+        &&L_filter_format,           // 47
+        &&L_emit_filtered,           // 48
+        &&L_emit_filtered_raw,       // 49
+        &&L_filter_int_abs,          // 50
+        &&L_filter_int_hex,          // 51
+        &&L_filter_int_oct,          // 52
+        &&L_filter_int_bin,          // 53
+        &&L_filter_int_neg,          // 54
+        &&L_filter_int_mod,          // 55
+        &&L_filter_int_numify,       // 56
+        &&L_filter_int_is_neg,       // 57
+        &&L_filter_int_eq,           // 58
+        &&L_filter_int_ne,           // 59
+        &&L_filter_int_gt,           // 60
+        &&L_filter_int_gte,          // 61
+        &&L_filter_int_lt,           // 62
+        &&L_filter_int_lte,          // 63
+        &&L_filter_int_zerofill,     // 64
+        &&L_filter_int_add,          // 65
+        &&L_filter_int_sub,          // 66
+        &&L_filter_int_mul,          // 67
+        &&L_filter_int_div,          // 68
+        &&L_filter_float_precision,  // 69
+        &&L_emit_if_filtered,        // 70
+        &&L_emit_break,              // 71
+        &&L_emit_continue,           // 72
+        &&L_emit_at_index1,          // 73
+        &&L_emit_at_size,            // 74
+        &&L_emit_var_size,           // 75
+        &&L_emit_if_logic,           // 76 emit_if_or
+        &&L_emit_if_logic,           // 77 emit_if_and
+        &&L_emit_if_not,             // 78 emit_if_not
+        &&L_call_partial,            // 79
+        &&L_halt,                    // 80
     };
 
 /** @brief 現在の命令のオペコードに対応するラベルにジャンプする（実行範囲外なら終了） */
@@ -1789,23 +1812,40 @@ public:
     auto const& instr   = bc_.instructions[pc];
     auto const& var_ref = bc_.var_refs[instr.operand2];
     filtered_value_.clear();
-    // json filter detection
-    bool use_json = false;
-    for (auto const& f : var_ref.filters) {
-      if (f.filter == string_filter::to_json) { use_json = true; break; }
+    // コンパイル時事前計算済みフラグで判定（ループ不要）
+    bool use_json = (var_ref.filter_flags & 1) != 0;
+    bool use_chrono_format = (var_ref.filter_flags & 2) != 0;
+    std::string_view chrono_fmt;
+    if (use_chrono_format) {
+      for (auto const& f : var_ref.filters) {
+        if (f.filter == string_filter::format) { chrono_fmt = f.str_arg1; break; }
+      }
     }
     auto r = for_each_field(value_, var_ref.key, var_ref.field_index, var_ref.has_dot, [&](auto const& field) {
       using FT = std::remove_cvref_t<decltype(field)>;
       if (use_json) {
         json_serialize_value(filtered_value_, field);
-      } else {
-        if constexpr (serializable_v<FT>) {
-          serialize_value(filtered_value_, field);
-        } else if constexpr (is_std_optional_v<FT>) {
-          if (field.has_value()) {
+      } else if constexpr (is_chrono_time_point_v<FT>) {
+        if (use_chrono_format) {
+          serialize_chrono(filtered_value_, field, chrono_fmt);
+        } else {
+          serialize_chrono(filtered_value_, field);
+        }
+      } else if constexpr (is_std_optional_v<FT>) {
+        if (field.has_value()) {
+          using inner_t = std::remove_cvref_t<decltype(*field)>;
+          if constexpr (is_chrono_time_point_v<inner_t>) {
+            if (use_chrono_format) {
+              serialize_chrono(filtered_value_, *field, chrono_fmt);
+            } else {
+              serialize_chrono(filtered_value_, *field);
+            }
+          } else {
             serialize_value(filtered_value_, *field);
           }
         }
+      } else if constexpr (serializable_v<FT>) {
+        serialize_value(filtered_value_, field);
       }
     });
     if (!r)
@@ -1955,6 +1995,12 @@ public:
   /** @brief 単数形/複数形 */
   L_filter_pluralize: {
     apply_string_filter(filtered_value_, {.filter = string_filter::pluralize, .str_arg1 = bc_.literals[bc_.instructions[pc].operand], .str_arg2 = bc_.literals[bc_.instructions[pc].operand2]});
+    ++pc;
+    DISPATCH();
+  }
+
+  /** @brief strftime 形式 chrono フォーマット（L_resolve_filtered で処理済み、no-op） */
+  L_filter_format: {
     ++pc;
     DISPATCH();
   }
@@ -2240,39 +2286,40 @@ public:
       &handle_string_filter_arg,  // 40 filter_indent
       &handle_string_filter_arg_pad, // 41 filter_pad
       &handle_string_filter_arg_pluralize, // 42 filter_pluralize
-      &handle_emit_filtered,      // 43
-      &handle_emit_filtered,      // 44 emit_filtered_raw
-      &handle_int_filter,         // 45 filter_int_abs
-      &handle_int_filter,         // 46 filter_int_hex
-      &handle_int_filter,         // 47 filter_int_oct
-      &handle_int_filter,         // 48 filter_int_bin
-      &handle_int_filter,         // 49 filter_int_neg
-      &handle_int_filter,         // 50 filter_int_mod
-      &handle_int_filter,         // 51 filter_int_numify
-      &handle_int_filter,         // 52 filter_int_is_neg
-      &handle_int_filter,         // 53 filter_int_eq
-      &handle_int_filter,         // 54 filter_int_ne
-      &handle_int_filter,         // 55 filter_int_gt
-      &handle_int_filter,         // 56 filter_int_gte
-      &handle_int_filter,         // 57 filter_int_lt
-      &handle_int_filter,         // 58 filter_int_lte
-      &handle_int_filter,         // 59 filter_int_zerofill
-      &handle_int_filter,         // 60 filter_int_add
-      &handle_int_filter,         // 61 filter_int_sub
-      &handle_int_filter,         // 62 filter_int_mul
-      &handle_int_filter,         // 63 filter_int_div
-      &handle_float_filter,       // 64 filter_float_precision
-      &handle_emit_if_filtered,   // 65
-      &handle_emit_break,         // 66
-      &handle_emit_continue,      // 67
-      &handle_emit_at_index1,     // 68
-      &handle_emit_at_size,       // 69
-      &handle_emit_var_size,      // 70
-      &handle_emit_if_logic,      // 71 emit_if_or
-      &handle_emit_if_logic,      // 72 emit_if_and
-      &handle_emit_if_logic,      // 73 emit_if_not
-      &handle_call_partial,       // 74
-      &handle_emit_halt,          // 75
+      &handle_noop,                        // 43 filter_format (no-op)
+      &handle_emit_filtered,               // 44
+      &handle_emit_filtered,               // 45 emit_filtered_raw
+      &handle_int_filter,                  // 46 filter_int_abs
+      &handle_int_filter,                  // 47 filter_int_hex
+      &handle_int_filter,                  // 48 filter_int_oct
+      &handle_int_filter,                  // 49 filter_int_bin
+      &handle_int_filter,                  // 50 filter_int_neg
+      &handle_int_filter,                  // 51 filter_int_mod
+      &handle_int_filter,                  // 52 filter_int_numify
+      &handle_int_filter,                  // 53 filter_int_is_neg
+      &handle_int_filter,                  // 54 filter_int_eq
+      &handle_int_filter,                  // 55 filter_int_ne
+      &handle_int_filter,                  // 56 filter_int_gt
+      &handle_int_filter,                  // 57 filter_int_gte
+      &handle_int_filter,                  // 58 filter_int_lt
+      &handle_int_filter,                  // 59 filter_int_lte
+      &handle_int_filter,                  // 60 filter_int_zerofill
+      &handle_int_filter,                  // 61 filter_int_add
+      &handle_int_filter,                  // 62 filter_int_sub
+      &handle_int_filter,                  // 63 filter_int_mul
+      &handle_int_filter,                  // 64 filter_int_div
+      &handle_float_filter,                // 65 filter_float_precision
+      &handle_emit_if_filtered,            // 66
+      &handle_emit_break,                  // 67
+      &handle_emit_continue,               // 68
+      &handle_emit_at_index1,              // 69
+      &handle_emit_at_size,                // 70
+      &handle_emit_var_size,               // 71
+      &handle_emit_if_logic,               // 72 emit_if_or
+      &handle_emit_if_logic,               // 73 emit_if_and
+      &handle_emit_if_logic,               // 74 emit_if_not
+      &handle_call_partial,                // 75
+      &handle_emit_halt,                   // 76
     };
 
     while (pc < end) {

@@ -1,6 +1,7 @@
 #include "injamm.hpp"
 #include <glaze/glaze.hpp>
 #include <catch2/catch_test_macros.hpp>
+#include <chrono>
 #include <climits>
 #include <map>
 #include <optional>
@@ -172,6 +173,17 @@ struct BcFloatData {
 template <>
 struct glz::meta<BcFloatData> {
   static constexpr auto value = glz::object("value", &BcFloatData::value);
+};
+
+/** @brief chrono フィルタテスト用データ型 */
+struct ChronoData {
+  std::chrono::system_clock::time_point ts; /**< タイムスタンプ */
+};
+
+/** @brief Glaze メタ情報: ChronoData の JSON シリアライズ定義 */
+template <>
+struct glz::meta<ChronoData> {
+  static constexpr auto value = glz::object("ts", &ChronoData::ts);
 };
 
 // ---- テストケース ----
@@ -3601,5 +3613,45 @@ TEST_CASE("stripped_size_and_copy_stripped", "[parse][util]") {
   CHECK(run("{# only comment #}") == "");
   CHECK(run("{{{# not a comment #}}}") == "{{{# not a comment #}}}");
   CHECK(injamm::detail::stripped_size("") == 0);
+}
+
+// ---- chrono format filter ----
+
+TEST_CASE("chrono: format filter basic", "[filter][chrono]") {
+  // 2024-01-15 10:30:00 UTC = 1705312200
+  auto tp = std::chrono::system_clock::from_time_t(1705312200);
+  ChronoData d{tp};
+  auto bc = injamm::engine<ChronoData>("{{ ts | format(\"%Y-%m-%d\") }}");
+  auto result = bc.render(d);
+  REQUIRE(result);
+  // ローカルタイムゾーン依存のため日付プレフィックス検証
+  CHECK(result->find("2024-01-") != std::string::npos);
+}
+
+TEST_CASE("chrono: default ISO 8601", "[filter][chrono]") {
+  auto tp = std::chrono::system_clock::from_time_t(1705312200);
+  ChronoData d{tp};
+  auto bc = injamm::engine<ChronoData>("{{ ts }}");
+  auto result = bc.render(d);
+  REQUIRE(result);
+  CHECK(result->find("2024-01-") != std::string::npos);
+  CHECK(result->find("T") != std::string::npos);
+}
+
+TEST_CASE("chrono: format with time", "[filter][chrono]") {
+  auto tp = std::chrono::system_clock::from_time_t(1705312200);
+  ChronoData d{tp};
+  auto bc = injamm::engine<ChronoData>("{{ ts | format(\"%H:%M\") }}");
+  auto result = bc.render(d);
+  REQUIRE(result);
+  CHECK_FALSE(result->empty());
+}
+
+TEST_CASE("chrono: format on non-chrono is noop", "[filter][chrono]") {
+  BcUser data{"hello", 42};
+  auto bc = injamm::engine<BcUser>("{{ name | format(\"%Y\") }}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  CHECK(*result == "hello");
 }
 
