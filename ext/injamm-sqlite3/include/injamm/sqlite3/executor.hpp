@@ -671,7 +671,7 @@ class bc_executor {
       std::array<char, 16> buf;
       auto [ptr, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), loop_->index);
       if (ec == std::errc{}) {
-        out_.append(buf.data(), ptr);
+        out_.append(buf.data(), static_cast<std::size_t>(ptr - buf.data()));
       }
     }
     ++pc;
@@ -684,7 +684,7 @@ class bc_executor {
       std::array<char, 16> buf;
       auto [ptr, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), loop_->index + 1);
       if (ec == std::errc{}) {
-        out_.append(buf.data(), ptr);
+        out_.append(buf.data(), static_cast<std::size_t>(ptr - buf.data()));
       }
     }
     ++pc;
@@ -697,7 +697,7 @@ class bc_executor {
       std::array<char, 16> buf;
       auto [ptr, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), loop_->count);
       if (ec == std::errc{}) {
-        out_.append(buf.data(), ptr);
+        out_.append(buf.data(), static_cast<std::size_t>(ptr - buf.data()));
       }
     }
     ++pc;
@@ -720,7 +720,7 @@ class bc_executor {
       std::array<char, 16> buf;
       auto [ptr, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), sz);
       if (ec == std::errc{}) {
-        out_.append(buf.data(), ptr);
+        out_.append(buf.data(), static_cast<std::size_t>(ptr - buf.data()));
       }
     });
     if (!r)
@@ -1039,7 +1039,7 @@ class bc_executor {
         std::array<char, 16> buf;
         auto [ptr, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), loop_->index);
         if (ec == std::errc{}) {
-          out_.append(buf.data(), ptr);
+          out_.append(buf.data(), static_cast<std::size_t>(ptr - buf.data()));
         }
       }
     }
@@ -1693,7 +1693,7 @@ class bc_executor {
           std::array<char, 16> buf;
           auto [ptr, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), loop_->index);
           if (ec == std::errc{}) {
-            out_.append(buf.data(), ptr);
+            out_.append(buf.data(), static_cast<std::size_t>(ptr - buf.data()));
           }
         }
         ++pc;
@@ -1905,7 +1905,7 @@ class bc_executor {
             std::array<char, 16> buf;
             auto [ptr, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), loop_->index);
             if (ec == std::errc{}) {
-              out_.append(buf.data(), ptr);
+              out_.append(buf.data(), static_cast<std::size_t>(ptr - buf.data()));
             }
           }
         }
@@ -2239,7 +2239,7 @@ class bc_executor {
           std::array<char, 16> buf;
           auto [ptr, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), loop_->index + 1);
           if (ec == std::errc{}) {
-            out_.append(buf.data(), ptr);
+            out_.append(buf.data(), static_cast<std::size_t>(ptr - buf.data()));
           }
         }
         ++pc;
@@ -2252,7 +2252,7 @@ class bc_executor {
           std::array<char, 16> buf;
           auto [ptr, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), loop_->count);
           if (ec == std::errc{}) {
-            out_.append(buf.data(), ptr);
+            out_.append(buf.data(), static_cast<std::size_t>(ptr - buf.data()));
           }
         }
         ++pc;
@@ -2275,7 +2275,7 @@ class bc_executor {
           std::array<char, 16> buf;
           auto [ptr, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), sz);
           if (ec == std::errc{}) {
-            out_.append(buf.data(), ptr);
+            out_.append(buf.data(), static_cast<std::size_t>(ptr - buf.data()));
           }
         });
         if (!r)

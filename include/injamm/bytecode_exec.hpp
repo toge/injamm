@@ -367,19 +367,19 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
     if (prop == "index") {
       std::array<char, 16> buf;
       auto [ptr, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), parent->index);
-      if (ec == std::errc{}) ex.out_.append(buf.data(), ptr);
+      if (ec == std::errc{}) ex.out_.append(buf.data(), static_cast<std::size_t>(ptr - buf.data()));
       return true;
     }
     if (prop == "index1") {
       std::array<char, 16> buf;
       auto [ptr, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), parent->index + 1);
-      if (ec == std::errc{}) ex.out_.append(buf.data(), ptr);
+      if (ec == std::errc{}) ex.out_.append(buf.data(), static_cast<std::size_t>(ptr - buf.data()));
       return true;
     }
     if (prop == "size") {
       std::array<char, 16> buf;
       auto [ptr, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), parent->count);
-      if (ec == std::errc{}) ex.out_.append(buf.data(), ptr);
+      if (ec == std::errc{}) ex.out_.append(buf.data(), static_cast<std::size_t>(ptr - buf.data()));
       return true;
     }
     if (prop == "is_first") {
@@ -494,7 +494,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
       std::array<char, 16> buf;
       auto [ptr, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), sz);
       if (ec == std::errc{}) {
-        ex.out_.append(buf.data(), ptr);
+        ex.out_.append(buf.data(), static_cast<std::size_t>(ptr - buf.data()));
       }
     });
     if (!r) return std::unexpected(r.error());
@@ -518,7 +518,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
     if (ex.loop_) {
       std::array<char, 16> buf;
       auto [ptr, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), ex.loop_->index);
-      if (ec == std::errc{}) ex.out_.append(buf.data(), ptr);
+      if (ec == std::errc{}) ex.out_.append(buf.data(), static_cast<std::size_t>(ptr - buf.data()));
     }
     ++pc;
     return {};
@@ -528,7 +528,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
     if (ex.loop_) {
       std::array<char, 16> buf;
       auto [ptr, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), ex.loop_->index + 1);
-      if (ec == std::errc{}) ex.out_.append(buf.data(), ptr);
+      if (ec == std::errc{}) ex.out_.append(buf.data(), static_cast<std::size_t>(ptr - buf.data()));
     }
     ++pc;
     return {};
@@ -538,7 +538,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
     if (ex.loop_) {
       std::array<char, 16> buf;
       auto [ptr, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), ex.loop_->count);
-      if (ec == std::errc{}) ex.out_.append(buf.data(), ptr);
+      if (ec == std::errc{}) ex.out_.append(buf.data(), static_cast<std::size_t>(ptr - buf.data()));
     }
     ++pc;
     return {};
@@ -563,7 +563,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
       } else {
         std::array<char, 16> buf;
         auto [ptr, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), ex.loop_->index);
-        if (ec == std::errc{}) ex.out_.append(buf.data(), ptr);
+        if (ec == std::errc{}) ex.out_.append(buf.data(), static_cast<std::size_t>(ptr - buf.data()));
       }
     }
     ++pc;
@@ -1443,7 +1443,7 @@ public:
       std::array<char, 16> buf;
       auto [ptr, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), loop_->index);
       if (ec == std::errc{}) {
-        out_.append(buf.data(), ptr);
+        out_.append(buf.data(), static_cast<std::size_t>(ptr - buf.data()));
       }
     }
     ++pc;
@@ -1456,7 +1456,7 @@ public:
       std::array<char, 16> buf;
       auto [ptr, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), loop_->index + 1);
       if (ec == std::errc{}) {
-        out_.append(buf.data(), ptr);
+        out_.append(buf.data(), static_cast<std::size_t>(ptr - buf.data()));
       }
     }
     ++pc;
@@ -1469,7 +1469,7 @@ public:
       std::array<char, 16> buf;
       auto [ptr, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), loop_->count);
       if (ec == std::errc{}) {
-        out_.append(buf.data(), ptr);
+        out_.append(buf.data(), static_cast<std::size_t>(ptr - buf.data()));
       }
     }
     ++pc;
@@ -1492,7 +1492,7 @@ public:
       std::array<char, 16> buf;
       auto [ptr, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), sz);
       if (ec == std::errc{}) {
-        out_.append(buf.data(), ptr);
+        out_.append(buf.data(), static_cast<std::size_t>(ptr - buf.data()));
       }
     });
     if (!r) return r;
@@ -1819,7 +1819,7 @@ public:
         std::array<char, 16> buf;
         auto [ptr, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), loop_->index);
         if (ec == std::errc{}) {
-          out_.append(buf.data(), ptr);
+          out_.append(buf.data(), static_cast<std::size_t>(ptr - buf.data()));
         }
       }
     }
