@@ -180,7 +180,11 @@ inline void serialize_chrono(Buffer& out, std::chrono::time_point<Clock, Duratio
   }
   auto tt = std::chrono::system_clock::to_time_t(sys_tp);
   std::tm tm{};
+#if defined(_WIN32)
+  localtime_s(&tm, &tt);
+#else
   localtime_r(&tt, &tm);
+#endif
   char buf[256];
   std::string fmt_null{fmt};
   auto len = std::strftime(buf, sizeof(buf), fmt_null.c_str(), &tm);
