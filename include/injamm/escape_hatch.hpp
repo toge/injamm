@@ -23,8 +23,8 @@
 #include <array>
 #include <tuple>
 
-#if __has_include(<frozenchars.hpp>)
-#include <frozenchars.hpp>
+#if __has_include(<frozenchars/mod/core.hpp>)
+#include <frozenchars/mod/core.hpp>
 #define INJAMM_HAS_FROZENCHARS 1
 #endif
 
@@ -56,7 +56,7 @@ struct fixed_string {
     }
   }
 
-#if __has_include(<frozenchars.hpp>)
+#if INJAMM_HAS_FROZENCHARS
   /**
    * @brief FrozenString から構築する
    *
@@ -82,7 +82,7 @@ struct fixed_string {
   }
 };
 
-#if __has_include(<frozenchars.hpp>)
+#if INJAMM_HAS_FROZENCHARS
 template <std::size_t M>
 fixed_string(frozenchars::FrozenString<M>) -> fixed_string<M>;
 #endif
