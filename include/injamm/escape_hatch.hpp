@@ -75,7 +75,7 @@ struct fixed_string {
    *
    * @return std::size_t 文字数（N - 1）
    */
-  [[nodiscard]] consteval std::size_t size() const noexcept {
+  [[nodiscard]] constexpr std::size_t size() const noexcept {
     std::size_t len = 0;
     while (len < N && data[len] != '\0') ++len;
     return len;
