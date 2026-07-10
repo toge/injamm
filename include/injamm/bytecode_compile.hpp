@@ -142,6 +142,26 @@ class bc_compiler {
     }
   }
 
+  /** @brief フィルタ文字列引数を bc_.literals へ移して string_view の安定性を確保
+   *
+   *  string_filter_entry::str_arg1/str_arg2 はテンプレート文字列の一部を指す
+   *  string_view であり、bc_ の move 後はダングリングしうる。bc_.literals
+   *  にコピーして string_view を再設定することで、move 後も有効な参照を維持する。
+   */
+  void stabilize_filter_strings(std::uint32_t var_ref_idx) {
+    std::size_t count = 0;
+    for (auto const& f : bc_.var_refs[var_ref_idx].filters) {
+      if (!f.str_arg1.empty()) ++count;
+      if (!f.str_arg2.empty()) ++count;
+    }
+    if (count == 0) return;
+    bc_.literals.reserve(bc_.literals.size() + count);
+    for (auto& f : bc_.var_refs[var_ref_idx].filters) {
+      if (!f.str_arg1.empty()) f.str_arg1 = bc_.literals[bc_.add_literal(f.str_arg1)];
+      if (!f.str_arg2.empty()) f.str_arg2 = bc_.literals[bc_.add_literal(f.str_arg2)];
+    }
+  }
+
   /**
    * @brief リテラル出力命令を発行する
    * @param lit 出力するリテラル文字列
@@ -170,6 +190,7 @@ class bc_compiler {
     bc_.var_refs[idx].filters = filters;
     bc_.var_refs[idx].int_filters = int_filters;
     bc_.var_refs[idx].float_filters = float_filters;
+    stabilize_filter_strings(idx);
     // safe/json/format filter detection
     bool has_safe = false;
     bool has_json = false;
@@ -574,6 +595,7 @@ class bc_compiler {
     bc_.var_refs[idx].filters = filters;
     bc_.var_refs[idx].int_filters = int_filters;
     bc_.var_refs[idx].float_filters = float_filters;
+    stabilize_filter_strings(idx);
 
     /** {{#if x == N}} / {{#if x != N}} の比較演算子検出 */
     bc_opcode compare_op = bc_opcode::emit_if;
