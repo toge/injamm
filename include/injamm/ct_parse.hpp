@@ -180,6 +180,18 @@ struct ct_parse_context {
   constexpr void push_continue() {
     tmpl.push_continue();
   }
+
+  /**
+   * @brief partial 参照チャンクを追加する
+   * @param partial_index 事前スキャンされた partial 定義のインデックス
+   * @param name          partial 名
+   * @return 追加されたチャンクのインデックス
+   */
+  constexpr std::size_t push_partial_ref(std::size_t partial_index, std::string_view name) {
+    auto idx = tmpl.size;
+    tmpl.push_partial_ref(partial_index, name);
+    return idx;
+  }
 };
 
 /**
@@ -287,6 +299,32 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
       continue;
     }
 
+    // -- {{! comment }} をスキップ（ネストした {{ }} を考慮） --
+    if (tag_start + 2 < tmpl.size() && tmpl[tag_start + 2] == '!') {
+      std::size_t comment_pos = tag_start + 3;
+      bool comment_closed = false;
+      while (comment_pos < tmpl.size()) {
+        auto next_dbl_open  = constexpr_find(tmpl, "{{", comment_pos);
+        auto next_dbl_close = constexpr_find(tmpl, "}}", comment_pos);
+        if (next_dbl_close == std::string_view::npos) break;
+        if (next_dbl_open != std::string_view::npos && next_dbl_open < next_dbl_close) {
+          auto inner_close = constexpr_find(tmpl, "}}", next_dbl_open + 2);
+          if (inner_close == std::string_view::npos) break;
+          comment_pos = inner_close + 2;
+        } else {
+          pos = next_dbl_close + 2;
+          if (trim_blocks && pos < tmpl.size() && tmpl[pos] == '\n') ++pos;
+          comment_closed = true;
+          break;
+        }
+      }
+      if (!comment_closed) {
+        ctx.push_literal(tmpl.substr(tag_start, 1));
+        pos = tag_start + 1;
+      }
+      continue;
+    }
+
     // -- `}}` 終了タグの検索 --
     /** @brief 対応する `}}` の位置 */
     auto tag_end = constexpr_find(tmpl, "}}", tag_start + 2);
@@ -297,8 +335,15 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
       continue;
     }
 
-    /** @brief `{{` と `}}` の間の内容（前後の空白除去済み） */
-    auto inner = trim_sv(tmpl.substr(tag_start + 2, tag_end - tag_start - 2));
+    /** @brief `{{` と `}}` の間の内容（前後の空白除去済み、tilde 除去） */
+    auto inner_raw = tmpl.substr(tag_start + 2, tag_end - tag_start - 2);
+    bool leading_tilde = inner_raw.starts_with("~");
+    bool trailing_tilde = inner_raw.ends_with("~") && inner_raw.size() > 1;
+    auto inner = trim_sv(inner_raw);
+    if (leading_tilde && inner.size() > 1 && inner.front() == '~')
+      inner = trim_sv(inner.substr(1));
+    if (trailing_tilde && inner.size() > 1 && inner.back() == '~')
+      inner = trim_sv(inner.substr(0, inner.size() - 1));
     pos = tag_end + 2;
     if (trim_blocks && pos < tmpl.size() && tmpl[pos] == '\n') ++pos;
 
@@ -338,6 +383,31 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
        *          条件式 X が真と評価される場合は then 節、偽の場合は else 節が描画される。
        *          else 節は省略可能。
        */
+      // -- {{#partialdef name}} をスキップ（事前スキャン済み） --
+      if (key.starts_with("partialdef ")) {
+        auto close_tag = constexpr_find(tmpl, "{{/partialdef}}", pos);
+        if (close_tag != std::string_view::npos) {
+          pos = close_tag + 15;
+          if (trim_blocks && pos < tmpl.size() && tmpl[pos] == '\n') ++pos;
+        }
+        continue;
+      }
+
+      // -- {{#partial name}} を解決 --
+      if (key.starts_with("partial ")) {
+        auto partial_name = trim_sv(key.substr(8));
+        std::size_t pidx = 0;
+        bool found = false;
+        for (; pidx < ctx.tmpl.partial_count; ++pidx) {
+          if (ctx.tmpl.partial_names[pidx] == partial_name) {
+            found = true;
+            break;
+          }
+        }
+        ctx.push_partial_ref(found ? pidx : SIZE_MAX, partial_name);
+        continue;
+      }
+
       if (key.starts_with("if") && (key.size() == 2 || key[2] == ' ')) {
         /** @brief if の条件式 */
         auto expr_raw = key.size() > 2 ? trim_sv(key.substr(3)) : std::string_view{};
@@ -345,6 +415,12 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
         /** フィルタチェーンの解析 */
         auto parts = split_by_pipe(expr_raw);
         auto expr = parts.empty() ? std::string_view{} : parts[0];
+        bool negate_if = false;
+        auto check_expr = expr;
+        if (check_expr.starts_with("!")) {
+          negate_if = true;
+          check_expr = trim_sv(check_expr.substr(1));
+        }
         std::vector<string_filter_entry> if_filters;
         std::vector<int_filter_entry> if_int_filters;
         std::vector<float_filter_entry> if_float_filters;
@@ -431,15 +507,9 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
         /** 定数条件の最適化: リテラル整数はコンパイル時に真偽判定し、到達不可能な分岐のパースを省略 */
         bool constant_folded = false;
         if (if_filters.empty() && if_int_filters.empty() && if_float_filters.empty()) {
-          auto check_expr = expr;
-          bool negate = false;
-          if (check_expr.starts_with("!")) {
-            negate = true;
-            check_expr = trim_sv(check_expr.substr(1));
-          }
           if (auto int_val = parse_int_literal(check_expr)) {
             constant_folded = true;
-            bool cond = negate ? (*int_val == 0) : (*int_val != 0);
+            bool cond = negate_if ? (*int_val == 0) : (*int_val != 0);
             if (cond) {
               auto then_start = ctx.tmpl.size;
               ct_parse_into(ctx, then_body, trim_blocks, lstrip_blocks);
@@ -465,8 +535,11 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
           ct_parse_into(ctx, else_body, trim_blocks, lstrip_blocks);
           auto else_end = ctx.tmpl.size;
 
-          /** @brief 仮追加したチャンクの範囲を更新 */
+          /** @brief 仮追加したチャンクの範囲を更新（check_expr で ! を除去） */
           ctx.update_if(chunk_idx, then_start, then_end, else_start, else_end);
+          /** @brief テキストを check_expr（!除去済み）に置換し、否定フラグを設定 */
+          ctx.tmpl.texts[chunk_idx] = check_expr;
+          if (negate_if) ctx.tmpl.flags[chunk_idx] |= 0x80;
         }
         continue;
       }
@@ -499,6 +572,16 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
         continue;
       }
 
+      // -- {{#exists var}} → {{#var}} --
+      /** @brief close tag 探索用に exists 前置詞を保持したキー */
+      auto close_key = key;
+      if (key.starts_with("exists ") || key.starts_with("exists\t")) {
+        if (key.size() == 7) continue;
+        close_key = key; // keep "exists name" for close tag search
+        key = trim_sv(key.substr(7));
+        if (key.empty()) continue;
+      }
+
       // -- {{#key}} 通常セクションの処理 --
       /**
        * @brief 通常セクションの解析
@@ -508,7 +591,7 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
        */
       {
         /** @brief 閉じタグと同一キーの開きタグの位置を直接探索 */
-        auto const tag_size = 5 + key.size();
+        auto const tag_size = 5 + close_key.size();
         auto body_start_pos = pos;
 
         /** @brief ネストした同一キーのセクションを考慮して深さをカウント */
@@ -517,8 +600,8 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
         std::size_t close_pos = std::string_view::npos;
 
         while (search < tmpl.size()) {
-          auto next_open = constexpr_find_tag(tmpl, "{{#", key, "}}", search);
-          auto next_close = constexpr_find_tag(tmpl, "{{/", key, "}}", search);
+          auto next_open = constexpr_find_tag(tmpl, "{{#", close_key, "}}", search);
+          auto next_close = constexpr_find_tag(tmpl, "{{/", close_key, "}}", search);
           if (next_close == std::string_view::npos) {
             break;
           }
@@ -605,9 +688,18 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
         continue;
       }
 
+      // -- {{^exists var}} → {{^var}} --
+      auto close_key = key;
+      if (key.starts_with("exists ") || key.starts_with("exists\t")) {
+        if (key.size() == 7) continue;
+        close_key = key;
+        key = trim_sv(key.substr(7));
+        if (key.empty()) continue;
+      }
+
       // -- {{^key}} 通常の逆セクションの処理 --
       {
-        auto const tag_size = 5 + key.size();
+        auto const tag_size = 5 + close_key.size();
         auto body_start_pos = pos;
 
         int depth2 = 1;
@@ -615,8 +707,8 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
         std::size_t close_pos = std::string_view::npos;
 
         while (search < tmpl.size()) {
-          auto next_open = constexpr_find_tag(tmpl, "{{^", key, "}}", search);
-          auto next_close = constexpr_find_tag(tmpl, "{{/", key, "}}", search);
+          auto next_open = constexpr_find_tag(tmpl, "{{^", close_key, "}}", search);
+          auto next_close = constexpr_find_tag(tmpl, "{{/", close_key, "}}", search);
           if (next_close == std::string_view::npos) {
             break;
           }
@@ -671,6 +763,12 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
           ctx.update_section(chunk_idx, body_start_idx, body_end_idx);
         }
       }
+      continue;
+    }
+
+    // -- {{root}} — ルートコンテキスト全体 --
+    if (inner == "root") {
+      ctx.push_placeholder(inner, false);
       continue;
     }
 

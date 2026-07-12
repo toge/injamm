@@ -31,6 +31,8 @@ struct ct_var_ref {
   int compare_rhs = 0;
   /** @brief compare_rhs が有効かどうか */
   bool has_compare_rhs = false;
+  /** @brief 文字列比較用 RHS（非空 = 文字列比較） */
+  string_ref compare_rhs_str{};
 };
 
 struct ct_lit_entry {
@@ -83,6 +85,14 @@ struct ct_bytecode_builder {
     return idx;
   }
 
+  /** @brief 文字列比較 RHS を保持する var_ref を追加する（emit_if_cmp 用） */
+  constexpr std::uint32_t add_var_ref_cmp_str(string_ref key, std::uint32_t field_index, string_ref compare_rhs_str) {
+    auto idx = static_cast<std::uint32_t>(bc.var_ref_count);
+    bc.var_refs[bc.var_ref_count] = {key, field_index, 0, false, compare_rhs_str};
+    ++bc.var_ref_count;
+    return idx;
+  }
+
   constexpr void emit(bc_opcode op, std::uint32_t operand = 0, std::uint32_t operand2 = 0) {
     bc.instructions[bc.instr_count] = {op, operand, operand2};
     ++bc.instr_count;
@@ -112,6 +122,11 @@ bytecode to_bytecode(ct_bytecode<N> const& ct) {
     /** 比較演算子の RHS 整数値が設定されている場合は int_filters に追加（emit_if_cmp 用） */
     if (ct.var_refs[i].has_compare_rhs) {
       ref.int_filters.push_back({int_filter::eq, ct.var_refs[i].compare_rhs});
+    }
+    /** 文字列比較 RHS（string_literal） */
+    if (ct.var_refs[i].compare_rhs_str.size > 0) {
+      ref.compare_rhs_kind = compare_operand_kind::string_literal;
+      ref.compare_rhs_text.assign(ct.var_refs[i].compare_rhs_str.data, ct.var_refs[i].compare_rhs_str.size);
     }
     bc.var_refs.push_back(std::move(ref));
   }
@@ -275,7 +290,8 @@ constexpr ct_parsed_template<N> resolve_field_indices(ct_parsed_template<N> tmpl
 
           if (lhs_idx < 0) break;
 
-          /** LHS フィールドが enum 型かどうか判定し、enchantum で RHS を解決 */
+          /** LHS フィールドが enum 型かどうか判定し、enum で RHS を解決 */
+          bool resolved = false;
 #ifndef INJAMM_NO_ENUM_REGISTRY
           [&]<std::size_t... I>(std::index_sequence<I...>) {
             (([&] {
@@ -288,12 +304,21 @@ constexpr ct_parsed_template<N> resolve_field_indices(ct_parsed_template<N> tmpl
                    tmpl.int_filters[i][0] = int_filter_entry{int_filter::eq, static_cast<int>(*ev)};
                    tmpl.int_filter_count[i] = 1;
                    idx = lhs_idx;
+                   resolved = true;
                  }
                }
              }()),
              ...);
           }(std::make_index_sequence<count>{});
 #endif
+          if (!resolved && (cmp.op == bc_opcode::emit_if_eq || cmp.op == bc_opcode::emit_if_ne)) {
+            /** 非 enum → 文字列比較として扱う（RHS はテンプレート内引用符除去済みビュー） */
+            auto rhs_unescaped = rhs.substr(1, rhs.size() - 2);
+            tmpl.texts[i] = lhs;
+            tmpl.flags[i] = static_cast<std::uint8_t>(cmp.op);
+            tmpl.compare_rhs_strs[i] = rhs_unescaped;
+            idx = lhs_idx;
+          }
           break;
         }
       }
@@ -449,6 +474,12 @@ consteval void compile_chunk_range(ct_bytecode_builder<N>& b,
           break;
         }
 
+        // {{root}} → emit_at_root
+        if (sv == "root") {
+          b.emit(bc_opcode::emit_at_root);
+          break;
+        }
+
         // root.field → resolve_filtered or emit_at_root_field
         if (sv.starts_with("root.")) {
          auto rest = sv.substr(5);
@@ -600,15 +631,28 @@ consteval void compile_chunk_range(ct_bytecode_builder<N>& b,
 
       bool has_else = (chunks.else_starts[i] != 0 || chunks.else_ends[i] != 0);
       auto field_idx = static_cast<std::uint32_t>(chunks.field_indices[i]);
+      bool negated = (chunks.flags[i] & 0x80) != 0;
 
       auto if_instr = b.current_offset();
 
-      if (chunks.flags[i] != 0 && chunks.int_filter_count[i] > 0) {
+      auto effective_flags = chunks.flags[i] & ~static_cast<std::uint8_t>(0x80);
+      if (effective_flags != 0 && chunks.int_filter_count[i] > 0) {
         /** 比較演算子が解決済み（enum 文字列→int 変換済み）: emit_if_cmp を発行 */
-        auto cmp_op = static_cast<bc_opcode>(chunks.flags[i]);
+        auto cmp_op = static_cast<bc_opcode>(effective_flags);
         auto vridx  = b.add_var_ref_cmp({sv.data(), sv.size()}, field_idx,
                                         chunks.int_filters[i][0].arg);
         b.emit(cmp_op, 0, vridx);
+      } else if (effective_flags != 0 && !chunks.compare_rhs_strs[i].empty()) {
+        /** 文字列比較: emit_if_cmp（runtime で compare_rhs_kind == string_literal として解決） */
+        auto cmp_op = static_cast<bc_opcode>(effective_flags);
+        auto rhs_str = chunks.compare_rhs_strs[i];
+        auto vridx = b.add_var_ref_cmp_str({sv.data(), sv.size()}, field_idx,
+                                           {rhs_str.data(), rhs_str.size()});
+        b.emit(cmp_op, 0, vridx);
+      } else if (negated) {
+        /** 否定: emit_if_not */
+        auto vridx = b.add_var_ref({sv.data(), sv.size()}, field_idx);
+        b.emit(bc_opcode::emit_if_not, 0, vridx);
       } else {
         /** 通常の真偽判定 */
         auto vridx = b.add_var_ref({sv.data(), sv.size()}, field_idx);
@@ -640,6 +684,15 @@ consteval void compile_chunk_range(ct_bytecode_builder<N>& b,
      case ct_chunk_kind::ct_continue:
        b.emit(bc_opcode::emit_continue);
        break;
+     case ct_chunk_kind::partial_ref: {
+       auto pidx = chunks.else_starts[i];
+       if (pidx >= chunks.partial_count) {
+         b.bc.error = error_ctx{0, error_code::unknown_key, chunks.texts[i]};
+         break;
+       }
+       b.emit(bc_opcode::call_partial, static_cast<std::uint32_t>(pidx));
+       break;
+     }
      default: break;
     }
   }

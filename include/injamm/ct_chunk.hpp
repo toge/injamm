@@ -21,7 +21,8 @@ enum class ct_chunk_kind : std::uint8_t {
   at_section,
   if_else,
   ct_break,
-  ct_continue
+  ct_continue,
+  partial_ref
 };
 
 /** @brief @変数種別は types.hpp の at_var_kind を使用 */
@@ -51,6 +52,11 @@ struct ct_parsed_template {
   std::array<std::uint8_t, N> int_filter_count{};   /**< @brief 整数フィルタの有効数 */
   std::array<std::uint8_t, N> float_filter_count{}; /**< @brief 実数フィルタの有効数 */
   std::array<int, N> field_indices{};               /**< @brief 事前解決されたフィールドインデックス（-1 = 未解決、resolve_field_indices で fill(-1)） */
+  std::array<std::string_view, N> partial_names{};   /**< @brief 事前スキャンされた partial 定義の名前 */
+  std::array<std::size_t, N> partial_body_starts{};   /**< @brief partial 本体のテンプレート内開始位置 */
+  std::array<std::size_t, N> partial_body_ends{};     /**< @brief partial 本体のテンプレート内終了位置 */
+  std::size_t partial_count{};                       /**< @brief 登録された partial 定義の数 */
+  std::array<std::string_view, N> compare_rhs_strs{};  /**< @brief if_else の文字列比較 RHS（空 = 不使用） */
   std::size_t size = 0;                          /**< @brief 現在の有効チャンク数 */
 
   /**
@@ -255,6 +261,22 @@ struct ct_parsed_template {
       throw std::overflow_error("ct_parsed_template: chunk buffer overflow");
     }
     kinds[size] = ct_chunk_kind::ct_continue;
+    ++size;
+  }
+
+  /**
+   * @brief partial 参照チャンクを追加する
+   *
+   * @param partial_index 事前スキャンされた partial 定義のインデックス
+   * @param name          partial 名
+   */
+  constexpr void push_partial_ref(std::size_t partial_index, std::string_view name) {
+    if (size >= N) {
+      throw std::overflow_error("ct_parsed_template: chunk buffer overflow");
+    }
+    kinds[size] = ct_chunk_kind::partial_ref;
+    texts[size] = name;
+    else_starts[size] = partial_index; /**< else_starts を partial インデックスとして流用 */
     ++size;
   }
 };

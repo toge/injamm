@@ -255,7 +255,187 @@ TEST_CASE("ct_section", "[injamm][ct]") {
   data.users.push_back(CtUser{"bob", 25});
   auto r = injamm::render<tmpl>(data);
   REQUIRE(r.has_value());
-  REQUIRE(*r == "alice-30/bob-25/");
+  CHECK(*r == "alice-30/bob-25/");
+}
+
+// ---- {{! comment}} ----
+
+TEST_CASE("ct_bang_comment_basic", "[injamm][ct][bang_comment]") {
+  CtUser user{"Alice", 30};
+  auto r = injamm::render<"before{{! this is a comment }}after">(user);
+  REQUIRE(r.has_value());
+  CHECK(*r == "beforeafter");
+}
+
+TEST_CASE("ct_bang_comment_between_tags", "[injamm][ct][bang_comment]") {
+  CtUser user{"Alice", 30};
+  auto r = injamm::render<"Hello {{! comment }}{{name}}!">(user);
+  REQUIRE(r.has_value());
+  CHECK(*r == "Hello Alice!");
+}
+
+TEST_CASE("ct_bang_comment_ignore_inner_tags", "[injamm][ct][bang_comment]") {
+  CtUser user{"Alice", 30};
+  auto r = injamm::render<"{{name}}{{! {{inner}} should be ignored }}!">(user);
+  REQUIRE(r.has_value());
+  CHECK(*r == "Alice!");
+}
+
+TEST_CASE("ct_bang_comment_multiple", "[injamm][ct][bang_comment]") {
+  CtUser user{"Alice", 30};
+  auto r = injamm::render<"{{!c1}}a{{!c2}}b{{!c3}}c">(user);
+  REQUIRE(r.has_value());
+  CHECK(*r == "abc");
+}
+
+// ---- {{#exists var}} / {{^exists var}} ----
+
+TEST_CASE("ct_exists_section_truthy", "[injamm][ct][exists]") {
+  CtIfData data{"hello", 42};
+  auto r = injamm::render<"{{#exists name}}YES{{else}}NO{{/exists name}}">(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "YES");
+}
+
+TEST_CASE("ct_exists_section_falsy", "[injamm][ct][exists]") {
+  CtIfData data{"", 42};
+  auto r = injamm::render<"{{#exists name}}YES{{else}}NO{{/exists name}}">(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "NO");
+}
+
+TEST_CASE("ct_exists_inverted_falsy", "[injamm][ct][exists]") {
+  CtIfData data{"", 42};
+  auto r = injamm::render<"{{^exists name}}MISSING{{/exists name}}">(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "MISSING");
+}
+
+TEST_CASE("ct_exists_inverted_truthy", "[injamm][ct][exists]") {
+  CtIfData data{"hello", 42};
+  auto r = injamm::render<"{{^exists name}}MISSING{{/exists name}}">(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "");
+}
+
+// ---- {{root}} ----
+
+TEST_CASE("ct_root_placeholder", "[injamm][ct][root]") {
+  CtRootData data;
+  auto r = injamm::render<"app={{root}}">(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "app=");
+}
+
+TEST_CASE("ct_root_field_works_as_before", "[injamm][ct][root]") {
+  CtRootData data;
+  auto r = injamm::render<"{{root.app_name}}">(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "injamm");
+}
+
+// ---- {{#if !X}} negation ----
+
+TEST_CASE("ct_if_not_var_truthy", "[injamm][ct][if_not]") {
+  CtBoolData data{true};
+  auto r = injamm::render<"{{#if !flag}}YES{{else}}NO{{/if}}">(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "NO");
+}
+
+TEST_CASE("ct_if_not_var_falsy", "[injamm][ct][if_not]") {
+  CtBoolData data{false};
+  auto r = injamm::render<"{{#if !flag}}YES{{else}}NO{{/if}}">(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "YES");
+}
+
+TEST_CASE("ct_if_not_int_nonzero", "[injamm][ct][if_not]") {
+  CtIfData data{"x", 42};
+  auto r = injamm::render<"{{#if !age}}ZERO{{else}}NONZERO{{/if}}">(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "NONZERO");
+}
+
+TEST_CASE("ct_if_not_int_zero", "[injamm][ct][if_not]") {
+  CtIfData data{"x", 0};
+  auto r = injamm::render<"{{#if !age}}ZERO{{else}}NONZERO{{/if}}">(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "ZERO");
+}
+
+TEST_CASE("ct_if_not_string_nonempty", "[injamm][ct][if_not]") {
+  CtUser data{"hello", 0};
+  auto r = injamm::render<"{{#if !name}}EMPTY{{else}}NONEMPTY{{/if}}">(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "NONEMPTY");
+}
+
+TEST_CASE("ct_if_not_string_empty", "[injamm][ct][if_not]") {
+  CtUser data{"", 0};
+  auto r = injamm::render<"{{#if !name}}EMPTY{{else}}NONEMPTY{{/if}}">(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "EMPTY");
+}
+
+// ---- {{#if name == "hello"}} string comparison ----
+
+TEST_CASE("ct_if_string_eq_true", "[injamm][ct][string_cmp]") {
+  CtUser data{"hello", 0};
+  auto r = injamm::render<"{{#if name == \"hello\"}}YES{{else}}NO{{/if}}">(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "YES");
+}
+
+TEST_CASE("ct_if_string_eq_false", "[injamm][ct][string_cmp]") {
+  CtUser data{"world", 0};
+  auto r = injamm::render<"{{#if name == \"hello\"}}YES{{else}}NO{{/if}}">(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "NO");
+}
+
+TEST_CASE("ct_if_string_ne_true", "[injamm][ct][string_cmp]") {
+  CtUser data{"hello", 0};
+  auto r = injamm::render<"{{#if name != \"world\"}}YES{{else}}NO{{/if}}">(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "YES");
+}
+
+TEST_CASE("ct_if_string_ne_false", "[injamm][ct][string_cmp]") {
+  CtUser data{"hello", 0};
+  auto r = injamm::render<"{{#if name != \"hello\"}}YES{{else}}NO{{/if}}">(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "NO");
+}
+
+TEST_CASE("ct_if_string_eq_with_else", "[injamm][ct][string_cmp]") {
+  CtUser data{"hello", 42};
+  auto r = injamm::render<"{{#if name == \"hello\"}}{{age}}{{else}}no{{/if}}">(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "42");
+}
+
+// ---- {{~...~}} tilde whitespace control ----
+
+TEST_CASE("ct_tilde_stripped_from_inner", "[injamm][ct][tilde]") {
+  CtBoolData data{true};
+  auto r = injamm::render<"{{~#if flag~}}yes{{~/if~}}">(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "yes");
+}
+
+TEST_CASE("ct_tilde_leading_only", "[injamm][ct][tilde]") {
+  CtBoolData data{true};
+  auto r = injamm::render<"before{{~#if flag}}yes{{/if}}after">(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "beforeyesafter");
+}
+
+TEST_CASE("ct_tilde_trailing_only", "[injamm][ct][tilde]") {
+  CtBoolData data{true};
+  auto r = injamm::render<"before{{#if flag~}}yes{{/if}}after">(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "beforeyesafter");
 }
 
 TEST_CASE("ct_section_empty", "[injamm][ct]") {
@@ -2084,5 +2264,92 @@ TEST_CASE("ct_zip: reflectable element field access", "[injamm][ct][zip]") {
   auto r = injamm::render<"{{#users}}{{users.name}}{{/users}}">(d);
   REQUIRE(r);
   CHECK(*r == "AliceBob");
+}
+
+// ---- partials ----
+
+TEST_CASE("ct_partial_literal_only", "[injamm][ct][partial]") {
+  CtUser user{"Alice", 30};
+  auto constexpr tmpl = injamm::fixed_string(
+    "|{{#partialdef greeting}}HELLO{{/partialdef}}{{#partial greeting}}|");
+  auto r = injamm::render<tmpl>(user);
+  REQUIRE(r.has_value());
+  CHECK(*r == "|HELLO|");
+}
+
+TEST_CASE("ct_partial_with_vars", "[injamm][ct][partial]") {
+  CtUser user{"Alice", 30};
+  auto constexpr tmpl = injamm::fixed_string(
+    "{{#partialdef greeting}}{{name}}-{{age}}{{/partialdef}}{{#partial greeting}}|");
+  auto r = injamm::render<tmpl>(user);
+  REQUIRE(r.has_value());
+  CHECK(*r == "Alice-30|");
+}
+
+TEST_CASE("ct_partial_multiple_uses", "[injamm][ct][partial]") {
+  CtUser user{"Alice", 30};
+  auto constexpr tmpl = injamm::fixed_string(
+    "{{#partialdef nameplate}}{{name}}({{age}}){{/partialdef}}"
+    "{{#partial nameplate}} {{#partial nameplate}} {{#partial nameplate}}");
+  auto r = injamm::render<tmpl>(user);
+  REQUIRE(r.has_value());
+  CHECK(*r == "Alice(30) Alice(30) Alice(30)");
+}
+
+TEST_CASE("ct_partial_forward_reference", "[injamm][ct][partial]") {
+  CtUser user{"Bob", 25};
+  auto constexpr tmpl = injamm::fixed_string(
+    "before {{#partial info}} after{{#partialdef info}}{{name}}({{age}}){{/partialdef}}");
+  auto r = injamm::render<tmpl>(user);
+  REQUIRE(r.has_value());
+  CHECK(*r == "before Bob(25) after");
+}
+
+TEST_CASE("ct_partial_with_loop", "[injamm][ct][partial]") {
+  CtUsersData data{};
+  data.users.push_back(CtUser{"Bob", 25});
+  data.users.push_back(CtUser{"Charlie", 35});
+  auto constexpr tmpl = injamm::fixed_string(
+    "{{#partialdef card}}{{name}}({{age}})/{{/partialdef}}"
+    "{{#users}}{{#partial card}}{{/users}}");
+  auto r = injamm::render<tmpl>(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "Bob(25)/Charlie(35)/");
+}
+
+TEST_CASE("ct_partial_render_by_name", "[injamm][ct][partial]") {
+  CtUser user{"Dave", 40};
+  auto constexpr tmpl = injamm::fixed_string(
+    "{{#partialdef sidebar}}{{name}}'s page{{/partialdef}}full: {{#partial sidebar}}|end");
+  auto full = injamm::render<tmpl>(user);
+  REQUIRE(full.has_value());
+  CHECK(*full == "full: Dave's page|end");
+
+  auto side = injamm::render_partial<tmpl>(user, "sidebar");
+  REQUIRE(side.has_value());
+  CHECK(*side == "Dave's page");
+}
+
+TEST_CASE("ct_partial_unknown_name_error", "[injamm][ct][partial]") {
+  CtUser user{"Alice", 30};
+  auto constexpr tmpl = injamm::fixed_string(
+    "{{#partialdef greeting}}HELLO{{/partialdef}}"
+    "{{#partial missing}}");
+  auto r = injamm::render<tmpl>(user);
+  REQUIRE_FALSE(r.has_value());
+  CHECK(r.error().ec == injamm::error_code::unknown_key);
+}
+
+TEST_CASE("ct_partial_in_partial", "[injamm][ct][partial]") {
+  CtUsersData data{};
+  data.users.push_back(CtUser{"Bob", 25});
+  data.users.push_back(CtUser{"Charlie", 35});
+  auto constexpr tmpl = injamm::fixed_string(
+    "{{#partialdef name}}{{name}}{{/partialdef}}"
+    "{{#partialdef card}}{{#partial name}}({{age}})/{{/partialdef}}"
+    "{{#users}}{{#partial card}}{{/users}}");
+  auto r = injamm::render<tmpl>(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "Bob(25)/Charlie(35)/");
 }
 

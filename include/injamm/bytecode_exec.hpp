@@ -942,6 +942,17 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
           if (ls.break_flag) break;
           ++ls.index;
         }
+      } else if constexpr (std::same_as<FT, std::string> || std::same_as<FT, std::string_view>) {
+        if (!field.empty()) {
+          is_falsy = false;
+          bc_loop_state guard;
+          guard.parent = ex.loop_;
+          bc_loop_state const* save = ex.loop_;
+          const_cast<bc_loop_state const*&>(ex.loop_) = &guard;
+          auto r2 = ex.execute_impl(pc + 1, body_end - 1);
+          const_cast<bc_loop_state const*&>(ex.loop_) = save;
+          if (!r2) return r2;
+        }
       } else if constexpr (ct_glz_reflectable<FT>) {
         is_falsy = false;
         constexpr auto sz = glz::reflect<FT>::size;
@@ -952,15 +963,15 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
              if (!res) return;
              using elem_t = std::remove_cvref_t<decltype(glz::get<I>(tied))>;
              bc_loop_state ls;
-             ls.parent = ex.loop_;
+             ls.parent = loop_;
              ls.count = sz; ls.index = I; ls.key = glz::reflect<FT>::keys[I];
              ls.binding_name = ref.key;
              ls.binding_elem = &glz::get<I>(tied);
              ls.binding_resolve = &resolve_binding_var<elem_t>;
              ls.binding_truthy = &eval_binding_truthy<elem_t>;
-             bc_executor<elem_t, RootT> child_exec(ex.bc_, glz::get<I>(tied), ex.root_value_, &ls, ex.out_);
+             bc_executor<elem_t, RootT> child_exec(bc_, glz::get<I>(tied), root_value_, &ls, out_);
              res = child_exec.execute_impl(pc + 1, body_end - 1);
-           }()), ...);
+          }()), ...);
         }(std::make_index_sequence<sz>{});
         return res;
       }
@@ -1090,6 +1101,14 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
         case bc_opcode::emit_if_lt:  cond = (lv < rv);  break;
         case bc_opcode::emit_if_lte: cond = (lv <= rv); break;
         default: break;
+        }
+      } else if constexpr (std::same_as<FT, std::string> || std::same_as<FT, std::string_view>) {
+        if (ref.compare_rhs_kind == compare_operand_kind::string_literal) {
+          switch (instr.op) {
+          case bc_opcode::emit_if_eq: cond = (field == ref.compare_rhs_text); break;
+          case bc_opcode::emit_if_ne: cond = (field != ref.compare_rhs_text); break;
+          default: break;
+          }
         }
       }
     });
@@ -1494,6 +1513,17 @@ public:
             break;
           ++ls.index;
         }
+      } else if constexpr (std::same_as<FT, std::string> || std::same_as<FT, std::string_view>) {
+        if (!field.empty()) {
+          is_falsy = false;
+          bc_loop_state guard;
+          guard.parent = loop_;
+          bc_loop_state const* save = loop_;
+          loop_ = &guard;
+          auto r2 = execute_impl(pc + 1, body_end - 1);
+          loop_ = save;
+          if (!r2) return r2;
+        }
       } else if constexpr (ct_glz_reflectable<FT>) {
         is_falsy = false;
         constexpr auto                 sz   = glz::reflect<FT>::size;
@@ -1780,21 +1810,29 @@ public:
         case bc_opcode::emit_if_lte: cond = (lv <= rv); break;
         default: break;
         }
-      } else if constexpr (std::is_enum_v<FT>) {
-        /** enum LHS: underlying 整数に変換して算術比較と同じロジックで評価 */
-        auto lv = static_cast<long long>(static_cast<std::underlying_type_t<FT>>(field));
-        auto rv = static_cast<long long>(rhs);
-        switch (instr.op) {
-        case bc_opcode::emit_if_eq:  cond = (lv == rv); break;
-        case bc_opcode::emit_if_ne:  cond = (lv != rv); break;
-        case bc_opcode::emit_if_gt:  cond = (lv > rv);  break;
-        case bc_opcode::emit_if_gte: cond = (lv >= rv); break;
-        case bc_opcode::emit_if_lt:  cond = (lv < rv);  break;
-        case bc_opcode::emit_if_lte: cond = (lv <= rv); break;
-        default: break;
+        } else if constexpr (std::is_enum_v<FT>) {
+          /** enum LHS: underlying 整数に変換して算術比較と同じロジックで評価 */
+          auto lv = static_cast<long long>(static_cast<std::underlying_type_t<FT>>(field));
+          auto rv = static_cast<long long>(rhs);
+          switch (instr.op) {
+          case bc_opcode::emit_if_eq:  cond = (lv == rv); break;
+          case bc_opcode::emit_if_ne:  cond = (lv != rv); break;
+          case bc_opcode::emit_if_gt:  cond = (lv > rv);  break;
+          case bc_opcode::emit_if_gte: cond = (lv >= rv); break;
+          case bc_opcode::emit_if_lt:  cond = (lv < rv);  break;
+          case bc_opcode::emit_if_lte: cond = (lv <= rv); break;
+          default: break;
+          }
+        } else if constexpr (std::same_as<FT, std::string> || std::same_as<FT, std::string_view>) {
+          if (ref.compare_rhs_kind == compare_operand_kind::string_literal) {
+            switch (instr.op) {
+            case bc_opcode::emit_if_eq: cond = (field == ref.compare_rhs_text); break;
+            case bc_opcode::emit_if_ne: cond = (field != ref.compare_rhs_text); break;
+            default: break;
+            }
+          }
         }
-      }
-    });
+      });
     if (!cond) {
       pc = instr.operand;
     } else {

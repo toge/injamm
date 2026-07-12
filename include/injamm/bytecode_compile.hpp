@@ -1015,11 +1015,22 @@ class bc_compiler {
     return compile_body_impl(reached_end) != body_result::eof;
   }
 
+ public:
+  /**
+   * @brief partial エントリを注入して forward reference を可能にする
+   *
+   * @details 現在の partial_entries を compiler に渡すことで、
+   *          後に宣言された partial が以前の partial を参照できるようになる。
+   *          nttp_partial_bytecode_holder からも使用される。
+   *
+   * @param entries 注入する partial エントリのリスト
+   */
   void set_partial_entries(std::vector<partial_entry> const& entries) {
     bc_.partial_entries = entries;
   }
 
- public:
+  /** @cond private */
+
   /**
    * @brief テンプレート文字列をバイトコードにコンパイルする
    * @param tmpl Mustache 形式のテンプレート文字列

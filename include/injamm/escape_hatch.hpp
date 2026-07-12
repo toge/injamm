@@ -129,8 +129,32 @@ constexpr std::string_view nttp_string_view(S const& s) noexcept {
  */
 template <auto Tmpl, bool TrimBlocks = false, bool LstripBlocks = false>
 consteval auto parse_fixed_impl() -> ct_parsed_template<Tmpl.size() + 1> {
+  auto sv = nttp_string_view(Tmpl);
   ct_parse_context<Tmpl.size() + 1> ctx;
-  ct_parse_into(ctx, nttp_string_view(Tmpl), TrimBlocks, LstripBlocks);
+
+  // 事前スキャン: {{#partialdef name}}...{{/partialdef}} を抽出
+  {
+    std::size_t pos = 0;
+    while (pos < sv.size()) {
+      auto pdef_start = constexpr_find(sv, "{{#partialdef", pos);
+      if (pdef_start == std::string_view::npos) break;
+      auto tag_end = constexpr_find(sv, "}}", pdef_start);
+      if (tag_end == std::string_view::npos) break;
+      auto inner = trim_sv(sv.substr(pdef_start + 2, tag_end - pdef_start - 2));
+      if (!inner.starts_with("#partialdef ")) { pos = tag_end + 2; continue; }
+      auto name = trim_sv(inner.substr(12));
+      auto close_tag = constexpr_find(sv, "{{/partialdef}}", tag_end + 2);
+      if (close_tag == std::string_view::npos) break;
+      auto& tmpl = ctx.tmpl;
+      tmpl.partial_names[tmpl.partial_count] = name;
+      tmpl.partial_body_starts[tmpl.partial_count] = tag_end + 2;
+      tmpl.partial_body_ends[tmpl.partial_count] = close_tag;
+      ++tmpl.partial_count;
+      pos = close_tag + 15;
+    }
+  }
+
+  ct_parse_into(ctx, sv, TrimBlocks, LstripBlocks);
   return ctx.tmpl;
 }
 
@@ -288,6 +312,7 @@ struct ct_expanded_template {
 
 template <auto Tmpl, bool Trim, bool Lstrip, typename T>
 struct nttp_render_data {
+  static constexpr std::string_view tmpl_sv = nttp_string_view(Tmpl);
   static constexpr auto parsed   = detail::parse_fixed_impl<Tmpl, Trim, Lstrip>();
   static constexpr auto resolved = detail::resolve_field_indices<T>(parsed);
   static constexpr auto ct_bc    = detail::ct_chunks_to_bytecode<T>(resolved);
@@ -307,6 +332,32 @@ struct nttp_atvar_data {
 template <typename Data>
 detail::bytecode const& nttp_bytecode_holder() {
   static detail::bytecode const bc = detail::to_bytecode(Data::ct_bc);
+  return bc;
+}
+
+template <typename Data, typename T>
+detail::bytecode const& nttp_partial_bytecode_holder() {
+  static auto const bc = [] {
+    auto bc = detail::to_bytecode(Data::ct_bc);
+    if constexpr (Data::parsed.partial_count > 0) {
+      auto tmpl_sv = Data::tmpl_sv;
+      for (std::size_t i = 0; i < Data::parsed.partial_count; ++i) {
+        auto body = tmpl_sv.substr(Data::parsed.partial_body_starts[i],
+                                   Data::parsed.partial_body_ends[i] - Data::parsed.partial_body_starts[i]);
+        detail::bc_compiler<T> compiler;
+        compiler.set_partial_entries(bc.partial_entries);
+        auto partial_bc = compiler.compile(std::string(body));
+        if (partial_bc.error.ec != error_code::none) {
+          bc.error = partial_bc.error;
+          break;
+        }
+        bc.partial_entries.push_back(
+          {std::string(Data::parsed.partial_names[i]),
+           std::make_shared<detail::bytecode>(std::move(partial_bc))});
+      }
+    }
+    return bc;
+  }();
   return bc;
 }
 
@@ -330,7 +381,7 @@ template <fixed_string Tmpl, int TrimBlocks = 0, int LstripBlocks = 0, typename 
   using D = detail::nttp_render_data<Tmpl, TrimBlocks != 0, LstripBlocks != 0, T>;
   if constexpr (D::ct_bc.error.ec != error_code::none)
     return std::unexpected(D::ct_bc.error);
-  return detail::bc_execute(detail::nttp_bytecode_holder<D>(), value);
+  return detail::bc_execute(detail::nttp_partial_bytecode_holder<D, T>(), value);
 }
 
 /**
@@ -352,7 +403,7 @@ template <fixed_string Tmpl, int TrimBlocks = 0, int LstripBlocks = 0, typename 
   using D = detail::nttp_render_data<Tmpl, TrimBlocks != 0, LstripBlocks != 0, T>;
   if constexpr (D::ct_bc.error.ec != error_code::none)
     return std::unexpected(D::ct_bc.error);
-  return detail::bc_execute_into(detail::nttp_bytecode_holder<D>(), value, out);
+  return detail::bc_execute_into(detail::nttp_partial_bytecode_holder<D, T>(), value, out);
 }
 
 /**
@@ -404,6 +455,34 @@ template <fixed_string Tmpl, fixed_string... Entries, typename T>
   if constexpr (D::ct_bc.error.ec != error_code::none)
     return std::unexpected(D::ct_bc.error);
   return detail::bc_execute_into(detail::nttp_bytecode_holder<D>(), value, out);
+}
+
+/**
+ * @brief NTTP ベースの名前付き partial レンダリング
+ *
+ * @details コンパイル時にパースされたテンプレートから、指定された名前の
+ *          {{#partialdef name}}...{{/partialdef}} だけをレンダリングする。
+ *          engine::render(value, partial_name) の CT 版相当。
+ *
+ * @tparam Tmpl コンパイル時テンプレート文字列（fixed_string リテラル）
+ * @tparam T    コンテキスト値の型（glz::meta<T> 要特殊化）
+ * @param value       コンテキスト値の const 参照
+ * @param partial_name レンダリングする partial の名前
+ * @return expected<std::string> レンダリング結果、またはエラー
+ */
+template <fixed_string Tmpl, int TrimBlocks = 0, int LstripBlocks = 0, typename T>
+[[nodiscard]] expected<std::string> render_partial(T const& value, std::string_view partial_name) {
+  using D = detail::nttp_render_data<Tmpl, TrimBlocks != 0, LstripBlocks != 0, T>;
+  if constexpr (D::ct_bc.error.ec != error_code::none)
+    return std::unexpected(D::ct_bc.error);
+  auto& bc = detail::nttp_partial_bytecode_holder<D, T>();
+  if (bc.error.ec != error_code::none)
+    return std::unexpected(bc.error);
+  auto it = std::find_if(bc.partial_entries.begin(), bc.partial_entries.end(),
+                          [&](auto const& e) { return e.name == partial_name; });
+  if (it == bc.partial_entries.end())
+    return std::unexpected(error_ctx{0, error_code::unknown_key, partial_name});
+  return detail::bc_execute(*it->bc, value);
 }
 
 /**
