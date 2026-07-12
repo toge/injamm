@@ -2506,6 +2506,15 @@ TEST_CASE("error: @var circular reference detected", "[error][atvar]") {
   CHECK(result.error().ec == injamm::error_code::syntax_error);
 }
 
+TEST_CASE("@var value as full tag (no double-wrap)", "[injamm][atvar]") {
+  AtVarUser ctx{"Alice", 30};
+  std::map<std::string, std::string, std::less<>> consts{{"GREET", "{{name}}"}};
+  injamm::engine<AtVarUser> eng{"{{ @var(GREET) }}", consts};
+  auto result = eng.render(ctx);
+  REQUIRE(result.has_value());
+  CHECK(*result == "Alice");
+}
+
 TEST_CASE("error: unclosed section", "[error]") {
   auto bc = injamm::engine<BcUsersData>("{{#users}}hello");
   BcUsersData data;
@@ -2867,6 +2876,14 @@ TEST_CASE("filter_replace_args_twice", "[injamm][filter]") {
   auto r = bc.render(data);
   REQUIRE(r.has_value());
   CHECK(*r == "yoyo");
+}
+
+TEST_CASE("filter_replace_args_quoted", "[injamm][filter]") {
+  BcUser data{"banana", 30};
+  auto bc = injamm::engine<BcUser>(R"({{name | replace("a", "b")}})");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "bbnbnb");
 }
 
 TEST_CASE("comment_multiline", "[injamm][comment]") {

@@ -257,10 +257,14 @@ constexpr std::size_t constexpr_find_tag(std::string_view haystack, std::string_
     if (fname == "substr")
       return string_filter_entry{string_filter::substr, arg1, arg2};
     if (fname == "replace") {
-      /** replace(old,new): カンマで分割して文字列引数を保持 */
+      /** replace(old,new): カンマで分割して文字列引数を保持（引用符は除去） */
       if (comma != std::string_view::npos) {
         auto old_str = trim_sv(args_str.substr(0, comma));
         auto new_str = trim_sv(args_str.substr(comma + 1));
+        if (old_str.size() >= 2 && old_str.front() == '"' && old_str.back() == '"')
+          old_str = old_str.substr(1, old_str.size() - 2);
+        if (new_str.size() >= 2 && new_str.front() == '"' && new_str.back() == '"')
+          new_str = new_str.substr(1, new_str.size() - 2);
         return string_filter_entry{string_filter::replace, 0, 0, old_str, new_str};
       }
       return string_filter_entry{string_filter::replace, 0, 0};
@@ -556,9 +560,17 @@ template <class ConstMap>
       if (!expanded) {
         return std::unexpected(expanded.error());
       }
-      result += "{{{";
-      result += *expanded;
-      result += "}}}";
+      // ponytail: @var 値が既に {{{...}}} / {{...}} タグならそのまま差し込み（二重ラップ回避）、
+      // さもなくば既存の裸名前規約に合わせて {{{...}}} で包む。値はトリムして
+      // 元タグの内部パディング空白を落とす。
+      auto raw_trim = trim_sv(*expanded);
+      if (raw_trim.starts_with("{{{") || raw_trim.starts_with("{{")) {
+        result += raw_trim;
+      } else {
+        result += "{{{";
+        result += *expanded;
+        result += "}}}";
+      }
       pos = raw_end + 3;
       continue;
     }
@@ -575,9 +587,17 @@ template <class ConstMap>
       return std::unexpected(expanded.error());
     }
 
-    result += "{{";
-    result += *expanded;
-    result += "}}";
+    // ponytail: @var 値が既に {{...}} タグならそのまま差し込み（二重ラップ回避）、
+    // さもなくば既存の裸名前規約に合わせて {{...}} で包む。値はトリムして
+    // 元タグの内部パディング空白を落とす。
+    auto norm_trim = trim_sv(*expanded);
+    if (norm_trim.starts_with("{{")) {
+      result += norm_trim;
+    } else {
+      result += "{{";
+      result += *expanded;
+      result += "}}";
+    }
 
     pos = tag_end + 2;
   }
