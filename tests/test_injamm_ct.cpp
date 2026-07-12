@@ -1,8 +1,8 @@
 #include "injamm.hpp"
-#include <glaze/glaze.hpp>
 #include <catch2/catch_test_macros.hpp>
 #include <chrono>
 #include <climits>
+#include <glaze/glaze.hpp>
 #include <map>
 #include <optional>
 #include <set>
@@ -12,7 +12,7 @@
 
 struct CtUser {
   std::string name;
-  int age{};
+  int         age{};
 };
 
 template <>
@@ -63,12 +63,12 @@ struct CtAddress {
 
 struct CtFounder {
   std::string name;
-  CtAddress address;
+  CtAddress   address;
 };
 
 struct CtCompany {
   std::string name;
-  CtFounder founder;
+  CtFounder   founder;
 };
 
 template <>
@@ -88,7 +88,7 @@ struct glz::meta<CtCompany> {
 
 struct CtIfData {
   std::string name;
-  int age{};
+  int         age{};
 };
 
 template <>
@@ -108,7 +108,7 @@ struct glz::meta<CtOptionalData> {
 /** @brief セクション＋後続コンテンツの結合テスト用データ型 */
 struct CtSectionWithPostData {
   std::vector<CtUser> users;
-  std::string title{};
+  std::string         title{};
 };
 
 struct CtFloatData {
@@ -148,7 +148,7 @@ struct glz::meta<CtRootData::Inner> {
 
 struct CtMapData {
   std::string host{"localhost"};
-  int port{8080};
+  int         port{8080};
 };
 
 template <>
@@ -178,7 +178,7 @@ struct glz::meta<CtChronoData> {
 
 TEST_CASE("ct_literal", "[injamm][ct]") {
   auto constexpr tmpl = injamm::fixed_string("hello world");
-  auto r = injamm::render<tmpl>(CtBoolData{true});
+  auto r              = injamm::render<tmpl>(CtBoolData{true});
   REQUIRE(r.has_value());
   REQUIRE(*r == "hello world");
 }
@@ -187,28 +187,28 @@ TEST_CASE("ct_literal", "[injamm][ct]") {
 
 TEST_CASE("ct_var_string", "[injamm][ct]") {
   auto constexpr tmpl = injamm::fixed_string("{{name}}");
-  auto r = injamm::render<tmpl>(CtUser{"alice", 30});
+  auto r              = injamm::render<tmpl>(CtUser{"alice", 30});
   REQUIRE(r.has_value());
   REQUIRE(*r == "alice");
 }
 
 TEST_CASE("ct_var_int", "[injamm][ct]") {
   auto constexpr tmpl = injamm::fixed_string("{{age}}");
-  auto r = injamm::render<tmpl>(CtUser{"alice", 30});
+  auto r              = injamm::render<tmpl>(CtUser{"alice", 30});
   REQUIRE(r.has_value());
   REQUIRE(*r == "30");
 }
 
 TEST_CASE("ct_multiple_vars", "[injamm][ct]") {
   auto constexpr tmpl = injamm::fixed_string("{{name}}:{{age}}");
-  auto r = injamm::render<tmpl>(CtUser{"alice", 30});
+  auto r              = injamm::render<tmpl>(CtUser{"alice", 30});
   REQUIRE(r.has_value());
   REQUIRE(*r == "alice:30");
 }
 
 TEST_CASE("ct_var_mixed_literal", "[injamm][ct]") {
   auto constexpr tmpl = injamm::fixed_string("Hello {{name}}! You are {{age}}.");
-  auto r = injamm::render<tmpl>(CtUser{"Bob", 25});
+  auto r              = injamm::render<tmpl>(CtUser{"Bob", 25});
   REQUIRE(r.has_value());
   REQUIRE(*r == "Hello Bob! You are 25.");
 }
@@ -217,14 +217,14 @@ TEST_CASE("ct_var_mixed_literal", "[injamm][ct]") {
 
 TEST_CASE("ct_escaped_output", "[injamm][ct]") {
   auto constexpr tmpl = injamm::fixed_string("{{name}}");
-  auto r = injamm::render<tmpl>(CtUser{"<b>alice</b>", 30});
+  auto r              = injamm::render<tmpl>(CtUser{"<b>alice</b>", 30});
   REQUIRE(r.has_value());
   REQUIRE(*r == "&lt;b&gt;alice&lt;/b&gt;");
 }
 
 TEST_CASE("ct_raw_output", "[injamm][ct]") {
   auto constexpr tmpl = injamm::fixed_string("{{{name}}}");
-  auto r = injamm::render<tmpl>(CtUser{"<b>alice</b>", 30});
+  auto r              = injamm::render<tmpl>(CtUser{"<b>alice</b>", 30});
   REQUIRE(r.has_value());
   REQUIRE(*r == "<b>alice</b>");
 }
@@ -233,7 +233,7 @@ TEST_CASE("ct_raw_output", "[injamm][ct]") {
 
 TEST_CASE("ct_this", "[injamm][ct]") {
   auto constexpr tmpl = injamm::fixed_string("{{this}}");
-  auto r = injamm::render<tmpl>(CtUser{"alice", 30});
+  auto r              = injamm::render<tmpl>(CtUser{"alice", 30});
   REQUIRE(r.has_value());
   // Struct {{this}} serializes as JSON, HTML-escaped
   REQUIRE(*r == "{&quot;name&quot;:&quot;alice&quot;,&quot;age&quot;:30}");
@@ -241,7 +241,7 @@ TEST_CASE("ct_this", "[injamm][ct]") {
 
 TEST_CASE("ct_this_struct", "[injamm][ct]") {
   auto constexpr tmpl = injamm::fixed_string("[{{this}}]");
-  auto r = injamm::render<tmpl>(CtUser{"alice", 30});
+  auto r              = injamm::render<tmpl>(CtUser{"alice", 30});
   REQUIRE(r.has_value());
   REQUIRE(*r == "[{&quot;name&quot;:&quot;alice&quot;,&quot;age&quot;:30}]");
 }
@@ -262,28 +262,28 @@ TEST_CASE("ct_section", "[injamm][ct]") {
 
 TEST_CASE("ct_bang_comment_basic", "[injamm][ct][bang_comment]") {
   CtUser user{"Alice", 30};
-  auto r = injamm::render<"before{{! this is a comment }}after">(user);
+  auto   r = injamm::render<"before{{! this is a comment }}after">(user);
   REQUIRE(r.has_value());
   CHECK(*r == "beforeafter");
 }
 
 TEST_CASE("ct_bang_comment_between_tags", "[injamm][ct][bang_comment]") {
   CtUser user{"Alice", 30};
-  auto r = injamm::render<"Hello {{! comment }}{{name}}!">(user);
+  auto   r = injamm::render<"Hello {{! comment }}{{name}}!">(user);
   REQUIRE(r.has_value());
   CHECK(*r == "Hello Alice!");
 }
 
 TEST_CASE("ct_bang_comment_ignore_inner_tags", "[injamm][ct][bang_comment]") {
   CtUser user{"Alice", 30};
-  auto r = injamm::render<"{{name}}{{! {{inner}} should be ignored }}!">(user);
+  auto   r = injamm::render<"{{name}}{{! {{inner}} should be ignored }}!">(user);
   REQUIRE(r.has_value());
   CHECK(*r == "Alice!");
 }
 
 TEST_CASE("ct_bang_comment_multiple", "[injamm][ct][bang_comment]") {
   CtUser user{"Alice", 30};
-  auto r = injamm::render<"{{!c1}}a{{!c2}}b{{!c3}}c">(user);
+  auto   r = injamm::render<"{{!c1}}a{{!c2}}b{{!c3}}c">(user);
   REQUIRE(r.has_value());
   CHECK(*r == "abc");
 }
@@ -292,28 +292,28 @@ TEST_CASE("ct_bang_comment_multiple", "[injamm][ct][bang_comment]") {
 
 TEST_CASE("ct_exists_section_truthy", "[injamm][ct][exists]") {
   CtIfData data{"hello", 42};
-  auto r = injamm::render<"{{#exists name}}YES{{else}}NO{{/exists name}}">(data);
+  auto     r = injamm::render<"{{#exists name}}YES{{else}}NO{{/exists name}}">(data);
   REQUIRE(r.has_value());
   CHECK(*r == "YES");
 }
 
 TEST_CASE("ct_exists_section_falsy", "[injamm][ct][exists]") {
   CtIfData data{"", 42};
-  auto r = injamm::render<"{{#exists name}}YES{{else}}NO{{/exists name}}">(data);
+  auto     r = injamm::render<"{{#exists name}}YES{{else}}NO{{/exists name}}">(data);
   REQUIRE(r.has_value());
   CHECK(*r == "NO");
 }
 
 TEST_CASE("ct_exists_inverted_falsy", "[injamm][ct][exists]") {
   CtIfData data{"", 42};
-  auto r = injamm::render<"{{^exists name}}MISSING{{/exists name}}">(data);
+  auto     r = injamm::render<"{{^exists name}}MISSING{{/exists name}}">(data);
   REQUIRE(r.has_value());
   CHECK(*r == "MISSING");
 }
 
 TEST_CASE("ct_exists_inverted_truthy", "[injamm][ct][exists]") {
   CtIfData data{"hello", 42};
-  auto r = injamm::render<"{{^exists name}}MISSING{{/exists name}}">(data);
+  auto     r = injamm::render<"{{^exists name}}MISSING{{/exists name}}">(data);
   REQUIRE(r.has_value());
   CHECK(*r == "");
 }
@@ -322,14 +322,14 @@ TEST_CASE("ct_exists_inverted_truthy", "[injamm][ct][exists]") {
 
 TEST_CASE("ct_root_placeholder", "[injamm][ct][root]") {
   CtRootData data;
-  auto r = injamm::render<"app={{root}}">(data);
+  auto       r = injamm::render<"app={{root}}">(data);
   REQUIRE(r.has_value());
   CHECK(*r == "app=");
 }
 
 TEST_CASE("ct_root_field_works_as_before", "[injamm][ct][root]") {
   CtRootData data;
-  auto r = injamm::render<"{{root.app_name}}">(data);
+  auto       r = injamm::render<"{{root.app_name}}">(data);
   REQUIRE(r.has_value());
   CHECK(*r == "injamm");
 }
@@ -338,42 +338,42 @@ TEST_CASE("ct_root_field_works_as_before", "[injamm][ct][root]") {
 
 TEST_CASE("ct_if_not_var_truthy", "[injamm][ct][if_not]") {
   CtBoolData data{true};
-  auto r = injamm::render<"{{#if !flag}}YES{{else}}NO{{/if}}">(data);
+  auto       r = injamm::render<"{{#if !flag}}YES{{else}}NO{{/if}}">(data);
   REQUIRE(r.has_value());
   CHECK(*r == "NO");
 }
 
 TEST_CASE("ct_if_not_var_falsy", "[injamm][ct][if_not]") {
   CtBoolData data{false};
-  auto r = injamm::render<"{{#if !flag}}YES{{else}}NO{{/if}}">(data);
+  auto       r = injamm::render<"{{#if !flag}}YES{{else}}NO{{/if}}">(data);
   REQUIRE(r.has_value());
   CHECK(*r == "YES");
 }
 
 TEST_CASE("ct_if_not_int_nonzero", "[injamm][ct][if_not]") {
   CtIfData data{"x", 42};
-  auto r = injamm::render<"{{#if !age}}ZERO{{else}}NONZERO{{/if}}">(data);
+  auto     r = injamm::render<"{{#if !age}}ZERO{{else}}NONZERO{{/if}}">(data);
   REQUIRE(r.has_value());
   CHECK(*r == "NONZERO");
 }
 
 TEST_CASE("ct_if_not_int_zero", "[injamm][ct][if_not]") {
   CtIfData data{"x", 0};
-  auto r = injamm::render<"{{#if !age}}ZERO{{else}}NONZERO{{/if}}">(data);
+  auto     r = injamm::render<"{{#if !age}}ZERO{{else}}NONZERO{{/if}}">(data);
   REQUIRE(r.has_value());
   CHECK(*r == "ZERO");
 }
 
 TEST_CASE("ct_if_not_string_nonempty", "[injamm][ct][if_not]") {
   CtUser data{"hello", 0};
-  auto r = injamm::render<"{{#if !name}}EMPTY{{else}}NONEMPTY{{/if}}">(data);
+  auto   r = injamm::render<"{{#if !name}}EMPTY{{else}}NONEMPTY{{/if}}">(data);
   REQUIRE(r.has_value());
   CHECK(*r == "NONEMPTY");
 }
 
 TEST_CASE("ct_if_not_string_empty", "[injamm][ct][if_not]") {
   CtUser data{"", 0};
-  auto r = injamm::render<"{{#if !name}}EMPTY{{else}}NONEMPTY{{/if}}">(data);
+  auto   r = injamm::render<"{{#if !name}}EMPTY{{else}}NONEMPTY{{/if}}">(data);
   REQUIRE(r.has_value());
   CHECK(*r == "EMPTY");
 }
@@ -382,35 +382,35 @@ TEST_CASE("ct_if_not_string_empty", "[injamm][ct][if_not]") {
 
 TEST_CASE("ct_if_string_eq_true", "[injamm][ct][string_cmp]") {
   CtUser data{"hello", 0};
-  auto r = injamm::render<"{{#if name == \"hello\"}}YES{{else}}NO{{/if}}">(data);
+  auto   r = injamm::render<"{{#if name == \"hello\"}}YES{{else}}NO{{/if}}">(data);
   REQUIRE(r.has_value());
   CHECK(*r == "YES");
 }
 
 TEST_CASE("ct_if_string_eq_false", "[injamm][ct][string_cmp]") {
   CtUser data{"world", 0};
-  auto r = injamm::render<"{{#if name == \"hello\"}}YES{{else}}NO{{/if}}">(data);
+  auto   r = injamm::render<"{{#if name == \"hello\"}}YES{{else}}NO{{/if}}">(data);
   REQUIRE(r.has_value());
   CHECK(*r == "NO");
 }
 
 TEST_CASE("ct_if_string_ne_true", "[injamm][ct][string_cmp]") {
   CtUser data{"hello", 0};
-  auto r = injamm::render<"{{#if name != \"world\"}}YES{{else}}NO{{/if}}">(data);
+  auto   r = injamm::render<"{{#if name != \"world\"}}YES{{else}}NO{{/if}}">(data);
   REQUIRE(r.has_value());
   CHECK(*r == "YES");
 }
 
 TEST_CASE("ct_if_string_ne_false", "[injamm][ct][string_cmp]") {
   CtUser data{"hello", 0};
-  auto r = injamm::render<"{{#if name != \"hello\"}}YES{{else}}NO{{/if}}">(data);
+  auto   r = injamm::render<"{{#if name != \"hello\"}}YES{{else}}NO{{/if}}">(data);
   REQUIRE(r.has_value());
   CHECK(*r == "NO");
 }
 
 TEST_CASE("ct_if_string_eq_with_else", "[injamm][ct][string_cmp]") {
   CtUser data{"hello", 42};
-  auto r = injamm::render<"{{#if name == \"hello\"}}{{age}}{{else}}no{{/if}}">(data);
+  auto   r = injamm::render<"{{#if name == \"hello\"}}{{age}}{{else}}no{{/if}}">(data);
   REQUIRE(r.has_value());
   CHECK(*r == "42");
 }
@@ -419,21 +419,21 @@ TEST_CASE("ct_if_string_eq_with_else", "[injamm][ct][string_cmp]") {
 
 TEST_CASE("ct_tilde_stripped_from_inner", "[injamm][ct][tilde]") {
   CtBoolData data{true};
-  auto r = injamm::render<"{{~#if flag~}}yes{{~/if~}}">(data);
+  auto       r = injamm::render<"{{~#if flag~}}yes{{~/if~}}">(data);
   REQUIRE(r.has_value());
   CHECK(*r == "yes");
 }
 
 TEST_CASE("ct_tilde_leading_only", "[injamm][ct][tilde]") {
   CtBoolData data{true};
-  auto r = injamm::render<"before{{~#if flag}}yes{{/if}}after">(data);
+  auto       r = injamm::render<"before{{~#if flag}}yes{{/if}}after">(data);
   REQUIRE(r.has_value());
   CHECK(*r == "beforeyesafter");
 }
 
 TEST_CASE("ct_tilde_trailing_only", "[injamm][ct][tilde]") {
   CtBoolData data{true};
-  auto r = injamm::render<"before{{#if flag~}}yes{{/if}}after">(data);
+  auto       r = injamm::render<"before{{#if flag~}}yes{{/if}}after">(data);
   REQUIRE(r.has_value());
   CHECK(*r == "beforeyesafter");
 }
@@ -441,56 +441,56 @@ TEST_CASE("ct_tilde_trailing_only", "[injamm][ct][tilde]") {
 TEST_CASE("ct_section_empty", "[injamm][ct]") {
   auto constexpr tmpl = injamm::fixed_string("{{#users}}{{name}}{{/users}}none");
   CtUsersData data;
-  auto r = injamm::render<tmpl>(data);
+  auto        r = injamm::render<tmpl>(data);
   REQUIRE(r.has_value());
   REQUIRE(*r == "none");
 }
 
 TEST_CASE("ct_section_bool_true", "[injamm][ct]") {
   auto constexpr tmpl = injamm::fixed_string("{{#flag}}yes{{/flag}}");
-  auto r = injamm::render<tmpl>(CtBoolData{true});
+  auto r              = injamm::render<tmpl>(CtBoolData{true});
   REQUIRE(r.has_value());
   REQUIRE(*r == "yes");
 }
 
 TEST_CASE("ct_section_bool_false", "[injamm][ct]") {
   auto constexpr tmpl = injamm::fixed_string("{{#flag}}yes{{/flag}}");
-  auto r = injamm::render<tmpl>(CtBoolData{false});
+  auto r              = injamm::render<tmpl>(CtBoolData{false});
   REQUIRE(r.has_value());
   REQUIRE(*r == "");
 }
 
 TEST_CASE("ct_section_else_truthy", "[injamm][ct][else]") {
   auto constexpr tmpl = injamm::fixed_string("{{#flag}}yes{{else}}no{{/flag}}");
-  auto r = injamm::render<tmpl>(CtBoolData{true});
+  auto r              = injamm::render<tmpl>(CtBoolData{true});
   REQUIRE(r.has_value());
   REQUIRE(*r == "yes");
 }
 
 TEST_CASE("ct_section_else_falsy", "[injamm][ct][else]") {
   auto constexpr tmpl = injamm::fixed_string("{{#flag}}yes{{else}}no{{/flag}}");
-  auto r = injamm::render<tmpl>(CtBoolData{false});
+  auto r              = injamm::render<tmpl>(CtBoolData{false});
   REQUIRE(r.has_value());
   REQUIRE(*r == "no");
 }
 
 TEST_CASE("ct_inverted_else_falsy", "[injamm][ct][else]") {
   auto constexpr tmpl = injamm::fixed_string("{{^flag}}inverted{{else}}truthy{{/flag}}");
-  auto r = injamm::render<tmpl>(CtBoolData{false});
+  auto r              = injamm::render<tmpl>(CtBoolData{false});
   REQUIRE(r.has_value());
   REQUIRE(*r == "inverted");
 }
 
 TEST_CASE("ct_inverted_else_truthy", "[injamm][ct][else]") {
   auto constexpr tmpl = injamm::fixed_string("{{^flag}}inverted{{else}}truthy{{/flag}}");
-  auto r = injamm::render<tmpl>(CtBoolData{true});
+  auto r              = injamm::render<tmpl>(CtBoolData{true});
   REQUIRE(r.has_value());
   REQUIRE(*r == "truthy");
 }
 
 TEST_CASE("ct_section_else_empty_vector", "[injamm][ct][else]") {
   auto constexpr tmpl = injamm::fixed_string("{{#users}}body{{else}}empty{{/users}}");
-  auto r = injamm::render<tmpl>(CtUsersData{});
+  auto r              = injamm::render<tmpl>(CtUsersData{});
   REQUIRE(r.has_value());
   REQUIRE(*r == "empty");
 }
@@ -507,58 +507,54 @@ TEST_CASE("ct_section_else_non_empty_vector", "[injamm][ct][else]") {
 // ── セクション＋else ＋ 前後コンテンツ（回帰テスト） ──
 
 TEST_CASE("ct_section_else_empty_with_post_content", "[injamm][ct][else][regression]") {
-  auto constexpr tmpl = injamm::fixed_string(
-    "before{{#users}}name={{name}}{{else}}empty{{/users}}after");
+  auto constexpr tmpl = injamm::fixed_string("before{{#users}}name={{name}}{{else}}empty{{/users}}after");
   CtSectionWithPostData data;
   data.title = "Users";
-  auto r = injamm::render<tmpl>(data);
+  auto r     = injamm::render<tmpl>(data);
   REQUIRE(r.has_value());
   REQUIRE(*r == "beforeemptyafter");
 }
 
 TEST_CASE("ct_section_else_non_empty_with_post_content", "[injamm][ct][else][regression]") {
-  auto constexpr tmpl = injamm::fixed_string(
-    "before{{#users}}name={{name}}{{else}}empty{{/users}}after");
+  auto constexpr tmpl = injamm::fixed_string("before{{#users}}name={{name}}{{else}}empty{{/users}}after");
   CtSectionWithPostData data;
   data.users.push_back(CtUser{"alice", 30});
   data.title = "Users";
-  auto r = injamm::render<tmpl>(data);
+  auto r     = injamm::render<tmpl>(data);
   REQUIRE(r.has_value());
   REQUIRE(*r == "beforename=aliceafter");
 }
 
 TEST_CASE("ct_section_else_empty_post_scope", "[injamm][ct][else][regression]") {
-  auto constexpr tmpl = injamm::fixed_string(
-    "{{#users}}{{name}}{{else}}empty{{/users}} title={{title}}");
+  auto constexpr tmpl = injamm::fixed_string("{{#users}}{{name}}{{else}}empty{{/users}} title={{title}}");
   CtSectionWithPostData data;
   data.title = "Users";
-  auto r = injamm::render<tmpl>(data);
+  auto r     = injamm::render<tmpl>(data);
   REQUIRE(r.has_value());
   REQUIRE(*r == "empty title=Users");
 }
 
 TEST_CASE("ct_section_else_non_empty_post_scope", "[injamm][ct][else][regression]") {
-  auto constexpr tmpl = injamm::fixed_string(
-    "{{#users}}{{name}}{{else}}empty{{/users}} title={{title}}");
+  auto constexpr tmpl = injamm::fixed_string("{{#users}}{{name}}{{else}}empty{{/users}} title={{title}}");
   CtSectionWithPostData data;
   data.users.push_back(CtUser{"alice", 30});
   data.users.push_back(CtUser{"bob", 20});
   data.title = "Users";
-  auto r = injamm::render<tmpl>(data);
+  auto r     = injamm::render<tmpl>(data);
   REQUIRE(r.has_value());
   REQUIRE(*r == "alicebob title=Users");
 }
 
 TEST_CASE("ct_section_else_optional_present", "[injamm][ct][else]") {
   auto constexpr tmpl = injamm::fixed_string("{{#opt_str}}present{{else}}absent{{/opt_str}}");
-  auto r = injamm::render<tmpl>(CtOptionalData{std::optional<std::string>{"hello"}});
+  auto r              = injamm::render<tmpl>(CtOptionalData{std::optional<std::string>{"hello"}});
   REQUIRE(r.has_value());
   REQUIRE(*r == "present");
 }
 
 TEST_CASE("ct_section_else_optional_empty", "[injamm][ct][else]") {
   auto constexpr tmpl = injamm::fixed_string("{{#opt_str}}present{{else}}absent{{/opt_str}}");
-  auto r = injamm::render<tmpl>(CtOptionalData{std::nullopt});
+  auto r              = injamm::render<tmpl>(CtOptionalData{std::nullopt});
   REQUIRE(r.has_value());
   REQUIRE(*r == "absent");
 }
@@ -567,42 +563,42 @@ TEST_CASE("ct_section_else_optional_empty", "[injamm][ct][else]") {
 
 TEST_CASE("ct_inverted_true", "[injamm][ct]") {
   auto constexpr tmpl = injamm::fixed_string("{{^flag}}no{{/flag}}");
-  auto r = injamm::render<tmpl>(CtBoolData{true});
+  auto r              = injamm::render<tmpl>(CtBoolData{true});
   REQUIRE(r.has_value());
   REQUIRE(*r == "");
 }
 
 TEST_CASE("ct_inverted_false", "[injamm][ct]") {
   auto constexpr tmpl = injamm::fixed_string("{{^flag}}no{{/flag}}");
-  auto r = injamm::render<tmpl>(CtBoolData{false});
+  auto r              = injamm::render<tmpl>(CtBoolData{false});
   REQUIRE(r.has_value());
   REQUIRE(*r == "no");
 }
 
 TEST_CASE("ct_inverted_string_nonempty", "[injamm][ct]") {
   auto constexpr tmpl = injamm::fixed_string("{{^name}}empty{{/name}}");
-  auto r = injamm::render<tmpl>(CtUser{"Alice", 30});
+  auto r              = injamm::render<tmpl>(CtUser{"Alice", 30});
   REQUIRE(r.has_value());
   REQUIRE(*r == "");
 }
 
 TEST_CASE("ct_inverted_string_empty", "[injamm][ct]") {
   auto constexpr tmpl = injamm::fixed_string("{{^name}}empty{{/name}}");
-  auto r = injamm::render<tmpl>(CtUser{"", 30});
+  auto r              = injamm::render<tmpl>(CtUser{"", 30});
   REQUIRE(r.has_value());
   REQUIRE(*r == "empty");
 }
 
 TEST_CASE("ct_inverted_int_nonzero", "[injamm][ct]") {
   auto constexpr tmpl = injamm::fixed_string("{{^age}}zero{{/age}}");
-  auto r = injamm::render<tmpl>(CtUser{"Alice", 30});
+  auto r              = injamm::render<tmpl>(CtUser{"Alice", 30});
   REQUIRE(r.has_value());
   REQUIRE(*r == "");
 }
 
 TEST_CASE("ct_inverted_int_zero", "[injamm][ct]") {
   auto constexpr tmpl = injamm::fixed_string("{{^age}}zero{{/age}}");
-  auto r = injamm::render<tmpl>(CtUser{"Alice", 0});
+  auto r              = injamm::render<tmpl>(CtUser{"Alice", 0});
   REQUIRE(r.has_value());
   REQUIRE(*r == "zero");
 }
@@ -673,7 +669,7 @@ TEST_CASE("ct_at_key_array", "[injamm][ct]") {
 TEST_CASE("ct_at_key_struct", "[injamm][ct]") {
   auto constexpr tmpl = injamm::fixed_string("{{#config}}{{loop.key}}={{this}};{{/config}}");
   CtMapWrapper data;
-  auto r = injamm::render<tmpl>(data);
+  auto         r = injamm::render<tmpl>(data);
   REQUIRE(r.has_value());
   REQUIRE(*r == "host=localhost;port=8080;");
 }
@@ -750,7 +746,7 @@ TEST_CASE("ct_nested_section", "[injamm][ct]") {
 TEST_CASE("ct_nested_path_simple", "[injamm][ct]") {
   auto constexpr tmpl = injamm::fixed_string("{{founder.name}}");
   CtCompany data{.name = "Acme", .founder = CtFounder{.name = "John", .address = {"NYC", "USA"}}};
-  auto r = injamm::render<tmpl>(data);
+  auto      r = injamm::render<tmpl>(data);
   REQUIRE(r.has_value());
   REQUIRE(*r == "John");
 }
@@ -758,7 +754,7 @@ TEST_CASE("ct_nested_path_simple", "[injamm][ct]") {
 TEST_CASE("ct_nested_path_deep", "[injamm][ct]") {
   auto constexpr tmpl = injamm::fixed_string("{{founder.address.city}}");
   CtCompany data{.name = "Acme", .founder = CtFounder{.name = "John", .address = {"NYC", "USA"}}};
-  auto r = injamm::render<tmpl>(data);
+  auto      r = injamm::render<tmpl>(data);
   REQUIRE(r.has_value());
   REQUIRE(*r == "NYC");
 }
@@ -768,7 +764,7 @@ TEST_CASE("ct_nested_path_deep", "[injamm][ct]") {
 TEST_CASE("ct_at_root_field_simple", "[injamm][ct]") {
   auto constexpr tmpl = injamm::fixed_string("{{root.app_name}}");
   CtRootData data;
-  auto r = injamm::render<tmpl>(data);
+  auto       r = injamm::render<tmpl>(data);
   REQUIRE(r.has_value());
   REQUIRE(*r == "injamm");
 }
@@ -776,7 +772,7 @@ TEST_CASE("ct_at_root_field_simple", "[injamm][ct]") {
 TEST_CASE("ct_at_root_field_nested", "[injamm][ct]") {
   auto constexpr tmpl = injamm::fixed_string("{{root.info.version}}");
   CtRootData data;
-  auto r = injamm::render<tmpl>(data);
+  auto       r = injamm::render<tmpl>(data);
   REQUIRE(r.has_value());
   REQUIRE(*r == "1.0");
 }
@@ -785,42 +781,42 @@ TEST_CASE("ct_at_root_field_nested", "[injamm][ct]") {
 
 TEST_CASE("ct_if_true", "[injamm][ct]") {
   auto constexpr tmpl = injamm::fixed_string("{{#if age}}adult{{/if}}");
-  auto r = injamm::render<tmpl>(CtIfData{"alice", 20});
+  auto r              = injamm::render<tmpl>(CtIfData{"alice", 20});
   REQUIRE(r.has_value());
   REQUIRE(*r == "adult");
 }
 
 TEST_CASE("ct_if_false", "[injamm][ct]") {
   auto constexpr tmpl = injamm::fixed_string("{{#if age}}adult{{/if}}");
-  auto r = injamm::render<tmpl>(CtIfData{"alice", 0});
+  auto r              = injamm::render<tmpl>(CtIfData{"alice", 0});
   REQUIRE(r.has_value());
   REQUIRE(*r == "");
 }
 
 TEST_CASE("ct_if_else_true", "[injamm][ct]") {
   auto constexpr tmpl = injamm::fixed_string("{{#if age}}A{{else}}B{{/if}}");
-  auto r = injamm::render<tmpl>(CtIfData{"alice", 20});
+  auto r              = injamm::render<tmpl>(CtIfData{"alice", 20});
   REQUIRE(r.has_value());
   REQUIRE(*r == "A");
 }
 
 TEST_CASE("ct_if_else_false", "[injamm][ct]") {
   auto constexpr tmpl = injamm::fixed_string("{{#if age}}A{{else}}B{{/if}}");
-  auto r = injamm::render<tmpl>(CtIfData{"alice", 0});
+  auto r              = injamm::render<tmpl>(CtIfData{"alice", 0});
   REQUIRE(r.has_value());
   REQUIRE(*r == "B");
 }
 
 TEST_CASE("ct_if_with_at_last", "[injamm][ct]") {
   auto constexpr tmpl = injamm::fixed_string("{{#users}}{{name}}{{#if loop.is_last}}.{{/if}}{{/users}}");
-  auto r = injamm::render<tmpl>(CtUsersData{.users = {{"a", 1}, {"b", 2}}});
+  auto r              = injamm::render<tmpl>(CtUsersData{.users = {{"a", 1}, {"b", 2}}});
   REQUIRE(r.has_value());
   REQUIRE(*r == "ab.");
 }
 
 TEST_CASE("ct_if_else_with_section", "[injamm][ct]") {
   auto constexpr tmpl = injamm::fixed_string("{{#users}}{{name}}{{#if loop.is_last}}.{{else}},{{/if}}{{/users}}");
-  auto r = injamm::render<tmpl>(CtUsersData{.users = {{"a", 1}, {"b", 2}, {"c", 3}}});
+  auto r              = injamm::render<tmpl>(CtUsersData{.users = {{"a", 1}, {"b", 2}, {"c", 3}}});
   REQUIRE(r.has_value());
   REQUIRE(*r == "a,b,c.");
 }
@@ -829,21 +825,21 @@ TEST_CASE("ct_if_else_with_section", "[injamm][ct]") {
 
 TEST_CASE("ct_optional_present", "[injamm][ct]") {
   auto constexpr tmpl = injamm::fixed_string("{{#opt_str}}yes{{/opt_str}}");
-  auto r = injamm::render<tmpl>(CtOptionalData{std::optional<std::string>{"hello"}});
+  auto r              = injamm::render<tmpl>(CtOptionalData{std::optional<std::string>{"hello"}});
   REQUIRE(r.has_value());
   REQUIRE(*r == "yes");
 }
 
 TEST_CASE("ct_optional_empty", "[injamm][ct]") {
   auto constexpr tmpl = injamm::fixed_string("{{#opt_str}}yes{{/opt_str}}");
-  auto r = injamm::render<tmpl>(CtOptionalData{std::nullopt});
+  auto r              = injamm::render<tmpl>(CtOptionalData{std::nullopt});
   REQUIRE(r.has_value());
   REQUIRE(*r == "");
 }
 
 TEST_CASE("ct_optional_var", "[injamm][ct]") {
   auto constexpr tmpl = injamm::fixed_string("{{opt_str}}");
-  auto r = injamm::render<tmpl>(CtOptionalData{std::optional<std::string>{"hello"}});
+  auto r              = injamm::render<tmpl>(CtOptionalData{std::optional<std::string>{"hello"}});
   REQUIRE(r.has_value());
   REQUIRE(*r == "hello");
 }
@@ -852,77 +848,77 @@ TEST_CASE("ct_optional_var", "[injamm][ct]") {
 
 TEST_CASE("ct_filter_upper", "[injamm][ct]") {
   auto constexpr tmpl = injamm::fixed_string("{{name | upper}}");
-  auto r = injamm::render<tmpl>(CtUser{"hello", 0});
+  auto r              = injamm::render<tmpl>(CtUser{"hello", 0});
   REQUIRE(r.has_value());
   REQUIRE(*r == "HELLO");
 }
 
 TEST_CASE("ct_filter_lower", "[injamm][ct]") {
   auto constexpr tmpl = injamm::fixed_string("{{name | lower}}");
-  auto r = injamm::render<tmpl>(CtUser{"HELLO", 0});
+  auto r              = injamm::render<tmpl>(CtUser{"HELLO", 0});
   REQUIRE(r.has_value());
   REQUIRE(*r == "hello");
 }
 
 TEST_CASE("ct_filter_capitalize", "[injamm][ct]") {
   auto constexpr tmpl = injamm::fixed_string("{{name | capitalize}}");
-  auto r = injamm::render<tmpl>(CtUser{"hello world", 0});
+  auto r              = injamm::render<tmpl>(CtUser{"hello world", 0});
   REQUIRE(r.has_value());
   REQUIRE(*r == "Hello world");
 }
 
 TEST_CASE("ct_filter_title", "[injamm][ct]") {
   auto constexpr tmpl = injamm::fixed_string("{{name | title}}");
-  auto r = injamm::render<tmpl>(CtUser{"hello world", 0});
+  auto r              = injamm::render<tmpl>(CtUser{"hello world", 0});
   REQUIRE(r.has_value());
   REQUIRE(*r == "Hello World");
 }
 
 TEST_CASE("ct_filter_trim", "[injamm][ct]") {
   auto constexpr tmpl = injamm::fixed_string("{{name | trim}}");
-  auto r = injamm::render<tmpl>(CtUser{"  hello  ", 0});
+  auto r              = injamm::render<tmpl>(CtUser{"  hello  ", 0});
   REQUIRE(r.has_value());
   REQUIRE(*r == "hello");
 }
 
 TEST_CASE("ct_filter_left", "[injamm][ct]") {
   auto constexpr tmpl = injamm::fixed_string("{{name | left(5)}}");
-  auto r = injamm::render<tmpl>(CtUser{"hi", 0});
+  auto r              = injamm::render<tmpl>(CtUser{"hi", 0});
   REQUIRE(r.has_value());
   REQUIRE(*r == "   hi");
 }
 
 TEST_CASE("ct_filter_right", "[injamm][ct]") {
   auto constexpr tmpl = injamm::fixed_string("{{name | right(5)}}");
-  auto r = injamm::render<tmpl>(CtUser{"hi", 0});
+  auto r              = injamm::render<tmpl>(CtUser{"hi", 0});
   REQUIRE(r.has_value());
   REQUIRE(*r == "hi   ");
 }
 
 TEST_CASE("ct_filter_truncate", "[injamm][ct]") {
   auto constexpr tmpl = injamm::fixed_string("{{name | truncate(8)}}");
-  auto r = injamm::render<tmpl>(CtUser{"hello world", 0});
+  auto r              = injamm::render<tmpl>(CtUser{"hello world", 0});
   REQUIRE(r.has_value());
   REQUIRE(*r == "hello...");
 }
 
 TEST_CASE("ct_filter_substr", "[injamm][ct]") {
   auto constexpr tmpl = injamm::fixed_string("{{name | substr(1,3)}}");
-  auto r = injamm::render<tmpl>(CtUser{"hello", 0});
+  auto r              = injamm::render<tmpl>(CtUser{"hello", 0});
   REQUIRE(r.has_value());
   REQUIRE(*r == "ell");
 }
 
 TEST_CASE("ct_filter_chaining", "[injamm][ct]") {
   auto constexpr tmpl = injamm::fixed_string("{{name | trim | upper}}");
-  auto r = injamm::render<tmpl>(CtUser{"  hello  ", 0});
+  auto r              = injamm::render<tmpl>(CtUser{"  hello  ", 0});
   REQUIRE(r.has_value());
   REQUIRE(*r == "HELLO");
 }
 
 TEST_CASE("ct_filter_raw_output", "[injamm][ct]") {
   auto constexpr tmpl = injamm::fixed_string("{{{name | trim}}}");
-  auto r = injamm::render<tmpl>(CtUser{"  <script>  ", 0});
+  auto r              = injamm::render<tmpl>(CtUser{"  <script>  ", 0});
   REQUIRE(r.has_value());
   REQUIRE(*r == "<script>");
 }
@@ -930,7 +926,7 @@ TEST_CASE("ct_filter_raw_output", "[injamm][ct]") {
 TEST_CASE("ct_filter_replace_newlines", "[injamm][ct]") {
   auto constexpr tmpl = injamm::fixed_string("{{name | replace}}");
   CtUser data{"line1\nline2\nline3", 0};
-  auto r = injamm::render<tmpl>(data);
+  auto   r = injamm::render<tmpl>(data);
   REQUIRE(r.has_value());
   REQUIRE(*r == "line1 line2 line3");
 }
@@ -938,7 +934,7 @@ TEST_CASE("ct_filter_replace_newlines", "[injamm][ct]") {
 TEST_CASE("ct_filter_replace_args", "[injamm][ct]") {
   auto constexpr tmpl = injamm::fixed_string("{{name | replace(world, injamm)}}");
   CtUser data{"hello world!", 0};
-  auto r = injamm::render<tmpl>(data);
+  auto   r = injamm::render<tmpl>(data);
   REQUIRE(r.has_value());
   REQUIRE(*r == "hello injamm!");
 }
@@ -947,77 +943,77 @@ TEST_CASE("ct_filter_replace_args", "[injamm][ct]") {
 
 TEST_CASE("ct_int_filter_abs_pos", "[injamm][ct]") {
   auto constexpr tmpl = injamm::fixed_string("{{age | abs}}");
-  auto r = injamm::render<tmpl>(CtIfData{"t", 42});
+  auto r              = injamm::render<tmpl>(CtIfData{"t", 42});
   REQUIRE(r.has_value());
   REQUIRE(*r == "42");
 }
 
 TEST_CASE("ct_int_filter_abs_neg", "[injamm][ct]") {
   auto constexpr tmpl = injamm::fixed_string("{{age | abs}}");
-  auto r = injamm::render<tmpl>(CtIfData{"t", -42});
+  auto r              = injamm::render<tmpl>(CtIfData{"t", -42});
   REQUIRE(r.has_value());
   REQUIRE(*r == "42");
 }
 
 TEST_CASE("ct_int_filter_hex", "[injamm][ct]") {
   auto constexpr tmpl = injamm::fixed_string("{{age | hex}}");
-  auto r = injamm::render<tmpl>(CtIfData{"t", 255});
+  auto r              = injamm::render<tmpl>(CtIfData{"t", 255});
   REQUIRE(r.has_value());
   REQUIRE(*r == "ff");
 }
 
 TEST_CASE("ct_int_filter_bin", "[injamm][ct]") {
   auto constexpr tmpl = injamm::fixed_string("{{age | bin}}");
-  auto r = injamm::render<tmpl>(CtIfData{"t", 10});
+  auto r              = injamm::render<tmpl>(CtIfData{"t", 10});
   REQUIRE(r.has_value());
   REQUIRE(*r == "1010");
 }
 
 TEST_CASE("ct_int_filter_mod", "[injamm][ct]") {
   auto constexpr tmpl = injamm::fixed_string("{{age | mod(4)}}");
-  auto r = injamm::render<tmpl>(CtIfData{"t", 10});
+  auto r              = injamm::render<tmpl>(CtIfData{"t", 10});
   REQUIRE(r.has_value());
   REQUIRE(*r == "2");
 }
 
 TEST_CASE("ct_int_filter_mod_by_zero", "[injamm][ct]") {
   auto constexpr tmpl = injamm::fixed_string("{{age | mod(0)}}");
-  auto r = injamm::render<tmpl>(CtIfData{"t", 17});
+  auto r              = injamm::render<tmpl>(CtIfData{"t", 17});
   REQUIRE(!r.has_value());
   REQUIRE(r.error().ec == injamm::error_code::division_by_zero);
 }
 
 TEST_CASE("ct_int_filter_numify", "[injamm][ct]") {
   auto constexpr tmpl = injamm::fixed_string("{{age | numify}}");
-  auto r = injamm::render<tmpl>(CtIfData{"t", 1234567});
+  auto r              = injamm::render<tmpl>(CtIfData{"t", 1234567});
   REQUIRE(r.has_value());
   REQUIRE(*r == "1,234,567");
 }
 
 TEST_CASE("ct_int_filter_zerofill", "[injamm][ct]") {
   auto constexpr tmpl = injamm::fixed_string("{{age | zerofill(5)}}");
-  auto r = injamm::render<tmpl>(CtIfData{"t", 42});
+  auto r              = injamm::render<tmpl>(CtIfData{"t", 42});
   REQUIRE(r.has_value());
   REQUIRE(*r == "00042");
 }
 
 TEST_CASE("ct_int_filter_zerofill_exact", "[injamm][ct]") {
   auto constexpr tmpl = injamm::fixed_string("{{age | zerofill(3)}}");
-  auto r = injamm::render<tmpl>(CtIfData{"t", 123});
+  auto r              = injamm::render<tmpl>(CtIfData{"t", 123});
   REQUIRE(r.has_value());
   REQUIRE(*r == "123");
 }
 
 TEST_CASE("ct_int_filter_zerofill_negative", "[injamm][ct]") {
   auto constexpr tmpl = injamm::fixed_string("{{age | zerofill(5)}}");
-  auto r = injamm::render<tmpl>(CtIfData{"t", -42});
+  auto r              = injamm::render<tmpl>(CtIfData{"t", -42});
   REQUIRE(r.has_value());
   REQUIRE(*r == "-0042");
 }
 
 TEST_CASE("ct_int_filter_zerofill_zero", "[injamm][ct]") {
   auto constexpr tmpl = injamm::fixed_string("{{age | zerofill(4)}}");
-  auto r = injamm::render<tmpl>(CtIfData{"t", 0});
+  auto r              = injamm::render<tmpl>(CtIfData{"t", 0});
   REQUIRE(r.has_value());
   REQUIRE(*r == "0000");
 }
@@ -1026,84 +1022,84 @@ TEST_CASE("ct_int_filter_zerofill_zero", "[injamm][ct]") {
 
 TEST_CASE("ct_int_filter_abs LLONG_MIN", "[injamm][ct]") {
   auto constexpr tmpl = injamm::fixed_string("{{val | abs}}");
-  auto r = injamm::render<tmpl>(CtLlData{LLONG_MIN});
+  auto r              = injamm::render<tmpl>(CtLlData{LLONG_MIN});
   REQUIRE(r.has_value());
   REQUIRE(*r == "9223372036854775808");
 }
 
 TEST_CASE("ct_int_filter_neg LLONG_MIN", "[injamm][ct]") {
   auto constexpr tmpl = injamm::fixed_string("{{val | neg}}");
-  auto r = injamm::render<tmpl>(CtLlData{LLONG_MIN});
+  auto r              = injamm::render<tmpl>(CtLlData{LLONG_MIN});
   REQUIRE(r.has_value());
   REQUIRE(*r == "9223372036854775808");
 }
 
 TEST_CASE("ct_int_filter_numify LLONG_MIN", "[injamm][ct]") {
   auto constexpr tmpl = injamm::fixed_string("{{val | numify}}");
-  auto r = injamm::render<tmpl>(CtLlData{LLONG_MIN});
+  auto r              = injamm::render<tmpl>(CtLlData{LLONG_MIN});
   REQUIRE(r.has_value());
   REQUIRE(*r == "-9,223,372,036,854,775,808");
 }
 
 TEST_CASE("ct_int_filter_zerofill LLONG_MIN", "[injamm][ct]") {
   auto constexpr tmpl = injamm::fixed_string("{{val | zerofill(25)}}");
-  auto r = injamm::render<tmpl>(CtLlData{LLONG_MIN});
+  auto r              = injamm::render<tmpl>(CtLlData{LLONG_MIN});
   REQUIRE(r.has_value());
   REQUIRE(*r == "-000009223372036854775808");
 }
 
 TEST_CASE("ct_int_filter_add", "[injamm][ct]") {
   auto constexpr tmpl = injamm::fixed_string("{{age | add(5)}}");
-  auto r = injamm::render<tmpl>(CtIfData{"t", 10});
+  auto r              = injamm::render<tmpl>(CtIfData{"t", 10});
   REQUIRE(r.has_value());
   REQUIRE(*r == "15");
 }
 
 TEST_CASE("ct_int_filter_add_neg", "[injamm][ct]") {
   auto constexpr tmpl = injamm::fixed_string("{{age | add(-3)}}");
-  auto r = injamm::render<tmpl>(CtIfData{"t", 10});
+  auto r              = injamm::render<tmpl>(CtIfData{"t", 10});
   REQUIRE(r.has_value());
   REQUIRE(*r == "7");
 }
 
 TEST_CASE("ct_int_filter_sub", "[injamm][ct]") {
   auto constexpr tmpl = injamm::fixed_string("{{age | sub(5)}}");
-  auto r = injamm::render<tmpl>(CtIfData{"t", 10});
+  auto r              = injamm::render<tmpl>(CtIfData{"t", 10});
   REQUIRE(r.has_value());
   REQUIRE(*r == "5");
 }
 
 TEST_CASE("ct_int_filter_mul", "[injamm][ct]") {
   auto constexpr tmpl = injamm::fixed_string("{{age | mul(5)}}");
-  auto r = injamm::render<tmpl>(CtIfData{"t", 10});
+  auto r              = injamm::render<tmpl>(CtIfData{"t", 10});
   REQUIRE(r.has_value());
   REQUIRE(*r == "50");
 }
 
 TEST_CASE("ct_int_filter_mul_zero", "[injamm][ct]") {
   auto constexpr tmpl = injamm::fixed_string("{{age | mul(0)}}");
-  auto r = injamm::render<tmpl>(CtIfData{"t", 10});
+  auto r              = injamm::render<tmpl>(CtIfData{"t", 10});
   REQUIRE(r.has_value());
   REQUIRE(*r == "0");
 }
 
 TEST_CASE("ct_int_filter_div", "[injamm][ct]") {
   auto constexpr tmpl = injamm::fixed_string("{{age | div(3)}}");
-  auto r = injamm::render<tmpl>(CtIfData{"t", 10});
+  auto r              = injamm::render<tmpl>(CtIfData{"t", 10});
   REQUIRE(r.has_value());
   REQUIRE(*r == "3");
 }
 
 TEST_CASE("ct_int_filter_div_neg", "[injamm][ct]") {
   auto constexpr tmpl = injamm::fixed_string("{{age | div(2)}}");
-  auto r = injamm::render<tmpl>(CtIfData{"t", -7});
+  auto r              = injamm::render<tmpl>(CtIfData{"t", -7});
   REQUIRE(r.has_value());
   REQUIRE(*r == "-3");
 }
 
 TEST_CASE("ct_int_filter_div_by_zero", "[injamm][ct]") {
   auto constexpr tmpl = injamm::fixed_string("{{age | div(0)}}");
-  auto r = injamm::render<tmpl>(CtIfData{"t", 10});
+  auto r              = injamm::render<tmpl>(CtIfData{"t", 10});
   REQUIRE(!r.has_value());
   REQUIRE(r.error().ec == injamm::error_code::division_by_zero);
 }
@@ -1112,7 +1108,7 @@ TEST_CASE("ct_int_filter_div_by_zero", "[injamm][ct]") {
 
 TEST_CASE("ct_float_filter_precision", "[injamm][ct]") {
   auto constexpr tmpl = injamm::fixed_string("{{value | precision(2)}}");
-  auto r = injamm::render<tmpl>(CtFloatData{3.14159});
+  auto r              = injamm::render<tmpl>(CtFloatData{3.14159});
   REQUIRE(r.has_value());
   REQUIRE(*r == "3.14");
 }
@@ -1121,21 +1117,21 @@ TEST_CASE("ct_float_filter_precision", "[injamm][ct]") {
 
 TEST_CASE("ct_if_filter_is_neg", "[injamm][ct]") {
   auto constexpr tmpl = injamm::fixed_string("{{#if age | is_neg}}neg{{else}}pos{{/if}}");
-  auto r = injamm::render<tmpl>(CtIfData{"t", -5});
+  auto r              = injamm::render<tmpl>(CtIfData{"t", -5});
   REQUIRE(r.has_value());
   REQUIRE(*r == "neg");
 }
 
 TEST_CASE("ct_if_filter_eq", "[injamm][ct]") {
   auto constexpr tmpl = injamm::fixed_string("{{#if age | eq(25)}}yes{{/if}}");
-  auto r = injamm::render<tmpl>(CtIfData{"t", 25});
+  auto r              = injamm::render<tmpl>(CtIfData{"t", 25});
   REQUIRE(r.has_value());
   REQUIRE(*r == "yes");
 }
 
 TEST_CASE("ct_if_filter_chain", "[injamm][ct]") {
   auto constexpr tmpl = injamm::fixed_string("{{#if age | mod(4) | eq(2)}}yes{{/if}}");
-  auto r = injamm::render<tmpl>(CtIfData{"t", 10});
+  auto r              = injamm::render<tmpl>(CtIfData{"t", 10});
   REQUIRE(r.has_value());
   REQUIRE(*r == "yes");
 }
@@ -1144,77 +1140,77 @@ TEST_CASE("ct_if_filter_chain", "[injamm][ct]") {
 
 TEST_CASE("ct_int_filter_ne", "[injamm][ct]") {
   auto constexpr tmpl = injamm::fixed_string("{{age | ne(10)}}");
-  auto r = injamm::render<tmpl>(CtIfData{"t", 42});
+  auto r              = injamm::render<tmpl>(CtIfData{"t", 42});
   REQUIRE(r.has_value());
   REQUIRE(*r == "true");
 }
 
 TEST_CASE("ct_int_filter_gt", "[injamm][ct]") {
   auto constexpr tmpl = injamm::fixed_string("{{age | gt(18)}}");
-  auto r = injamm::render<tmpl>(CtIfData{"t", 25});
+  auto r              = injamm::render<tmpl>(CtIfData{"t", 25});
   REQUIRE(r.has_value());
   REQUIRE(*r == "true");
 }
 
 TEST_CASE("ct_int_filter_gte_equal", "[injamm][ct]") {
   auto constexpr tmpl = injamm::fixed_string("{{age | gte(18)}}");
-  auto r = injamm::render<tmpl>(CtIfData{"t", 18});
+  auto r              = injamm::render<tmpl>(CtIfData{"t", 18});
   REQUIRE(r.has_value());
   REQUIRE(*r == "true");
 }
 
 TEST_CASE("ct_int_filter_lt", "[injamm][ct]") {
   auto constexpr tmpl = injamm::fixed_string("{{age | lt(10)}}");
-  auto r = injamm::render<tmpl>(CtIfData{"t", 5});
+  auto r              = injamm::render<tmpl>(CtIfData{"t", 5});
   REQUIRE(r.has_value());
   REQUIRE(*r == "true");
 }
 
 TEST_CASE("ct_int_filter_lte_equal", "[injamm][ct]") {
   auto constexpr tmpl = injamm::fixed_string("{{age | lte(10)}}");
-  auto r = injamm::render<tmpl>(CtIfData{"t", 10});
+  auto r              = injamm::render<tmpl>(CtIfData{"t", 10});
   REQUIRE(r.has_value());
   REQUIRE(*r == "true");
 }
 
 TEST_CASE("ct_int_filter_float_ne", "[injamm][ct]") {
   auto constexpr tmpl = injamm::fixed_string("{{value | ne(3)}}");
-  auto r = injamm::render<tmpl>(CtFloatData{2.5});
+  auto r              = injamm::render<tmpl>(CtFloatData{2.5});
   REQUIRE(r.has_value());
   REQUIRE(*r == "true");
 }
 
 TEST_CASE("ct_int_filter_gt_float", "[injamm][ct]") {
   auto constexpr tmpl = injamm::fixed_string("{{value | gt(3)}}");
-  auto r = injamm::render<tmpl>(CtFloatData{3.14});
+  auto r              = injamm::render<tmpl>(CtFloatData{3.14});
   REQUIRE(r.has_value());
   REQUIRE(*r == "true");
 }
 
 TEST_CASE("ct_int_filter_parse_failure_false", "[injamm][ct]") {
   auto constexpr tmpl = injamm::fixed_string("{{name | gt(0)}}");
-  auto r = injamm::render<tmpl>(CtIfData{"hello", 42});
+  auto r              = injamm::render<tmpl>(CtIfData{"hello", 42});
   REQUIRE(r.has_value());
   REQUIRE(*r == "false");
 }
 
 TEST_CASE("ct_if_filter_gt", "[injamm][ct]") {
   auto constexpr tmpl = injamm::fixed_string("{{#if age | gt(18)}}adult{{else}}minor{{/if}}");
-  auto r = injamm::render<tmpl>(CtIfData{"t", 25});
+  auto r              = injamm::render<tmpl>(CtIfData{"t", 25});
   REQUIRE(r.has_value());
   REQUIRE(*r == "adult");
 }
 
 TEST_CASE("ct_if_filter_lte", "[injamm][ct]") {
   auto constexpr tmpl = injamm::fixed_string("{{#if age | lte(10)}}small{{/if}}");
-  auto r = injamm::render<tmpl>(CtIfData{"t", 5});
+  auto r              = injamm::render<tmpl>(CtIfData{"t", 5});
   REQUIRE(r.has_value());
   REQUIRE(*r == "small");
 }
 
 TEST_CASE("ct_if_filter_chain_ne", "[injamm][ct]") {
   auto constexpr tmpl = injamm::fixed_string("{{#if age | mod(4) | ne(0)}}not_divisible{{/if}}");
-  auto r = injamm::render<tmpl>(CtIfData{"t", 5});
+  auto r              = injamm::render<tmpl>(CtIfData{"t", 5});
   REQUIRE(r.has_value());
   REQUIRE(*r == "not_divisible");
 }
@@ -1245,8 +1241,7 @@ TEST_CASE("ct_continue", "[injamm][ct]") {
 // ---- ネスト if/section ----
 
 TEST_CASE("ct_nested_if_section", "[injamm][ct]") {
-  auto constexpr tmpl =
-      injamm::fixed_string("{{#if users}}{{#users}}{{name}},{{/users}}{{/if}}");
+  auto constexpr tmpl = injamm::fixed_string("{{#if users}}{{#users}}{{name}},{{/users}}{{/if}}");
   CtUsersData data;
   data.users.push_back(CtUser{"alice", 30});
   data.users.push_back(CtUser{"bob", 25});
@@ -1260,7 +1255,7 @@ TEST_CASE("ct_nested_if_section", "[injamm][ct]") {
 TEST_CASE("ct_struct_iteration", "[injamm][ct]") {
   auto constexpr tmpl = injamm::fixed_string("{{#config}}{{loop.key}}={{this}};{{/config}}");
   CtMapWrapper data;
-  auto r = injamm::render<tmpl>(data);
+  auto         r = injamm::render<tmpl>(data);
   REQUIRE(r.has_value());
   // Iterates over config's field members
   REQUIRE(*r == "host=localhost;port=8080;");
@@ -1270,7 +1265,7 @@ TEST_CASE("ct_struct_iteration", "[injamm][ct]") {
 
 TEST_CASE("ct_unknown_key", "[injamm][ct]") {
   auto constexpr tmpl = injamm::fixed_string("{{nonexistent}}");
-  auto r = injamm::render<tmpl>(CtBoolData{true});
+  auto r              = injamm::render<tmpl>(CtBoolData{true});
   REQUIRE(!r.has_value());
   REQUIRE(r.error().ec == injamm::error_code::unknown_key);
 }
@@ -1297,7 +1292,7 @@ struct glz::meta<CtMapStrData> {
 
 struct CtMapItem {
   std::string name;
-  int score{};
+  int         score{};
 };
 
 template <>
@@ -1318,24 +1313,24 @@ struct glz::meta<CtMapStructData> {
 
 TEST_CASE("ct_map_section_basic", "[injamm][ct][map]") {
   auto constexpr tmpl = injamm::fixed_string("{{#values}}{{loop.key}}={{this}} {{/values}}");
-  CtMapIntData data{{ {"a", 1}, {"b", 2}, {"c", 3} }};
-  auto r = injamm::render<tmpl>(data);
+  CtMapIntData data{{{"a", 1}, {"b", 2}, {"c", 3}}};
+  auto         r = injamm::render<tmpl>(data);
   REQUIRE(r.has_value());
   REQUIRE(*r == "a=1 b=2 c=3 ");
 }
 
 TEST_CASE("ct_map_section_string_values", "[injamm][ct][map]") {
   auto constexpr tmpl = injamm::fixed_string("{{#labels}}{{loop.key}}:{{this}} {{/labels}}");
-  CtMapStrData data{{ {"color", "red"}, {"size", "large"} }};
-  auto r = injamm::render<tmpl>(data);
+  CtMapStrData data{{{"color", "red"}, {"size", "large"}}};
+  auto         r = injamm::render<tmpl>(data);
   REQUIRE(r.has_value());
   REQUIRE(*r == "color:red size:large ");
 }
 
 TEST_CASE("ct_map_section_struct_values", "[injamm][ct][map]") {
   auto constexpr tmpl = injamm::fixed_string("{{#items}}{{loop.key}}:{{name}}={{score}} {{/items}}");
-  CtMapStructData data{{ {"alice", {.name = "Alice", .score = 100}}, {"bob", {.name = "Bob", .score = 85}} }};
-  auto r = injamm::render<tmpl>(data);
+  CtMapStructData data{{{"alice", {.name = "Alice", .score = 100}}, {"bob", {.name = "Bob", .score = 85}}}};
+  auto            r = injamm::render<tmpl>(data);
   REQUIRE(r.has_value());
   REQUIRE(*r == "alice:Alice=100 bob:Bob=85 ");
 }
@@ -1343,7 +1338,7 @@ TEST_CASE("ct_map_section_struct_values", "[injamm][ct][map]") {
 TEST_CASE("ct_map_section_empty", "[injamm][ct][map]") {
   auto constexpr tmpl = injamm::fixed_string("before{{#values}}NEVER{{/values}}after");
   CtMapIntData data;
-  auto r = injamm::render<tmpl>(data);
+  auto         r = injamm::render<tmpl>(data);
   REQUIRE(r.has_value());
   REQUIRE(*r == "beforeafter");
 }
@@ -1351,23 +1346,23 @@ TEST_CASE("ct_map_section_empty", "[injamm][ct][map]") {
 TEST_CASE("ct_map_inverted_empty", "[injamm][ct][map]") {
   auto constexpr tmpl = injamm::fixed_string("{{^values}}empty{{/values}}");
   CtMapIntData data;
-  auto r = injamm::render<tmpl>(data);
+  auto         r = injamm::render<tmpl>(data);
   REQUIRE(r.has_value());
   REQUIRE(*r == "empty");
 }
 
 TEST_CASE("ct_map_inverted_nonempty", "[injamm][ct][map]") {
   auto constexpr tmpl = injamm::fixed_string("{{^values}}empty{{/values}}");
-  CtMapIntData data{{ {"x", 1} }};
-  auto r = injamm::render<tmpl>(data);
+  CtMapIntData data{{{"x", 1}}};
+  auto         r = injamm::render<tmpl>(data);
   REQUIRE(r.has_value());
   REQUIRE(*r == "");
 }
 
 TEST_CASE("ct_map_single_entry", "[injamm][ct][map]") {
   auto constexpr tmpl = injamm::fixed_string("{{#values}}{{loop.key}}={{this}}{{/values}}");
-  CtMapIntData data{{ {"only", 99} }};
-  auto r = injamm::render<tmpl>(data);
+  CtMapIntData data{{{"only", 99}}};
+  auto         r = injamm::render<tmpl>(data);
   REQUIRE(r.has_value());
   REQUIRE(*r == "only=99");
 }
@@ -1385,8 +1380,8 @@ struct glz::meta<CtSetIntData> {
 
 TEST_CASE("ct_set_section", "[injamm][ct][set]") {
   auto constexpr tmpl = injamm::fixed_string("{{#values}}[{{this}}]{{/values}}");
-  CtSetIntData data{{ {3, 1, 2} }};
-  auto r = injamm::render<tmpl>(data);
+  CtSetIntData data{{{3, 1, 2}}};
+  auto         r = injamm::render<tmpl>(data);
   REQUIRE(r.has_value());
   REQUIRE(*r == "[1][2][3]");
 }
@@ -1394,7 +1389,7 @@ TEST_CASE("ct_set_section", "[injamm][ct][set]") {
 TEST_CASE("ct_set_empty", "[injamm][ct][set]") {
   auto constexpr tmpl = injamm::fixed_string("{{#values}}[{{this}}]{{/values}}");
   CtSetIntData data{};
-  auto r = injamm::render<tmpl>(data);
+  auto         r = injamm::render<tmpl>(data);
   REQUIRE(r.has_value());
   REQUIRE(*r == "");
 }
@@ -1402,7 +1397,7 @@ TEST_CASE("ct_set_empty", "[injamm][ct][set]") {
 TEST_CASE("ct_set_inverted_empty", "[injamm][ct][set]") {
   auto constexpr tmpl = injamm::fixed_string("{{^values}}empty{{/values}}");
   CtSetIntData data{};
-  auto r = injamm::render<tmpl>(data);
+  auto         r = injamm::render<tmpl>(data);
   REQUIRE(r.has_value());
   REQUIRE(*r == "empty");
 }
@@ -1410,15 +1405,15 @@ TEST_CASE("ct_set_inverted_empty", "[injamm][ct][set]") {
 TEST_CASE("ct_set_inverted_nonempty", "[injamm][ct][set]") {
   auto constexpr tmpl = injamm::fixed_string("{{^values}}empty{{/values}}");
   CtSetIntData data{{1}};
-  auto r = injamm::render<tmpl>(data);
+  auto         r = injamm::render<tmpl>(data);
   REQUIRE(r.has_value());
   REQUIRE(*r == "");
 }
 
 TEST_CASE("ct_set_if", "[injamm][ct][set]") {
   auto constexpr tmpl = injamm::fixed_string("{{#values}}[{{this}}]{{/values}}");
-  CtSetIntData data{{ {1, 2} }};
-  auto r = injamm::render<tmpl>(data);
+  CtSetIntData data{{{1, 2}}};
+  auto         r = injamm::render<tmpl>(data);
   REQUIRE(r.has_value());
   REQUIRE(*r == "[1][2]");
 }
@@ -1426,7 +1421,7 @@ TEST_CASE("ct_set_if", "[injamm][ct][set]") {
 TEST_CASE("ct_set_if_empty", "[injamm][ct][set]") {
   auto constexpr tmpl = injamm::fixed_string("{{#values}}[{{this}}]{{/values}}");
   CtSetIntData data{};
-  auto r = injamm::render<tmpl>(data);
+  auto         r = injamm::render<tmpl>(data);
   REQUIRE(r.has_value());
   REQUIRE(*r == "");
 }
@@ -1457,77 +1452,77 @@ struct glz::meta<CtAtVarItemsCtx> {
 
 TEST_CASE("@var basic expansion in render (NTTP)", "[injamm][ct][atvar]") {
   CtUser ctx{"Alice", 30};
-  auto result = injamm::render<"Hello {{@var(f)}}!", "f", "name">(ctx);
+  auto   result = injamm::render<"Hello {{@var(f)}}!", "f", "name">(ctx);
   REQUIRE(result.has_value());
   CHECK(*result == "Hello Alice!");
 }
 
 TEST_CASE("@var with raw tag (NTTP)", "[injamm][ct][atvar]") {
   CtUser ctx{"Alice", 30};
-  auto result = injamm::render<"{{{@var(f)}}}", "f", "name">(ctx);
+  auto   result = injamm::render<"{{{@var(f)}}}", "f", "name">(ctx);
   REQUIRE(result.has_value());
   CHECK(*result == "Alice");
 }
 
 TEST_CASE("@var in section with NTTP", "[injamm][ct][atvar]") {
   CtAtVarItemsCtx ctx{{{"A"}, {"B"}}};
-  auto result = injamm::render<"{{#@var(s)}}{{val}}{{/@var(s)}}", "s", "items">(ctx);
+  auto            result = injamm::render<"{{#@var(s)}}{{val}}{{/@var(s)}}", "s", "items">(ctx);
   REQUIRE(result.has_value());
   CHECK(*result == "AB");
 }
 
 TEST_CASE("@var with filter (NTTP)", "[injamm][ct][atvar]") {
   CtUser ctx{"alice", 30};
-  auto result = injamm::render<"{{@var(f) | upper}}", "f", "name">(ctx);
+  auto   result = injamm::render<"{{@var(f) | upper}}", "f", "name">(ctx);
   REQUIRE(result.has_value());
   CHECK(*result == "ALICE");
 }
 
 TEST_CASE("ct_comment_basic", "[injamm][ct][comment]") {
   CtUser user{"Alice", 30};
-  auto r = injamm::render<"Hello {# this is a comment #}{{name}}!">(user);
+  auto   r = injamm::render<"Hello {# this is a comment #}{{name}}!">(user);
   REQUIRE(r.has_value());
   CHECK(*r == "Hello Alice!");
 }
 
 TEST_CASE("ct_comment_multiline", "[injamm][ct][comment]") {
   CtUser user{"Alice", 30};
-  auto r = injamm::render<"Hello {# multi\nline\ncomment #}{{name}}!">(user);
+  auto   r = injamm::render<"Hello {# multi\nline\ncomment #}{{name}}!">(user);
   REQUIRE(r.has_value());
   CHECK(*r == "Hello Alice!");
 }
 
 TEST_CASE("ct_comment_between_literals", "[injamm][ct][comment]") {
   CtUser user{"Alice", 30};
-  auto r = injamm::render<"Hello {# comment #}{{name}}!">(user);
+  auto   r = injamm::render<"Hello {# comment #}{{name}}!">(user);
   REQUIRE(r.has_value());
   CHECK(*r == "Hello Alice!");
 }
 
 TEST_CASE("ct_comment_in_section", "[injamm][ct][comment]") {
   CtUsersData data{{{"Alice", 30}, {"Bob", 25}}};
-  auto r = injamm::render<"{{#users}}{# comment #}{{name}}{{/users}}">(data);
+  auto        r = injamm::render<"{{#users}}{# comment #}{{name}}{{/users}}">(data);
   REQUIRE(r.has_value());
   CHECK(*r == "AliceBob");
 }
 
 TEST_CASE("ct_comment_in_if_body", "[injamm][ct][comment]") {
   CtIfData data{"test", 25};
-  auto r = injamm::render<"{{#if age}}{# age is nonzero #}yes{{/if}}">(data);
+  auto     r = injamm::render<"{{#if age}}{# age is nonzero #}yes{{/if}}">(data);
   REQUIRE(r.has_value());
   CHECK(*r == "yes");
 }
 
 TEST_CASE("ct_comment_ignore_inner_tags", "[injamm][ct][comment]") {
   CtUser user{"Alice", 30};
-  auto r = injamm::render<"{{name}}{# {{age}} should be ignored #}!">(user);
+  auto   r = injamm::render<"{{name}}{# {{age}} should be ignored #}!">(user);
   REQUIRE(r.has_value());
   CHECK(*r == "Alice!");
 }
 
 TEST_CASE("ct_comment_multiple", "[injamm][ct][comment]") {
   CtUser user{"Alice", 30};
-  auto r = injamm::render<"{#c1#}before{{name}}{#c2#}after">(user);
+  auto   r = injamm::render<"{#c1#}before{{name}}{#c2#}after">(user);
   REQUIRE(r.has_value());
   CHECK(*r == "beforeAliceafter");
 }
@@ -1536,49 +1531,49 @@ TEST_CASE("ct_comment_multiple", "[injamm][ct][comment]") {
 
 TEST_CASE("ct_trim_blocks removes newline after }}", "[injamm][ct][whitespace]") {
   CtUser user{"Alice", 30};
-  auto r = injamm::render<"a{{name}}\nb", true>(user);
+  auto   r = injamm::render<"a{{name}}\nb", true>(user);
   REQUIRE(r.has_value());
   CHECK(*r == "aAliceb");
 }
 
 TEST_CASE("ct_trim_blocks does nothing when no newline follows", "[injamm][ct][whitespace]") {
   CtUser user{"Alice", 30};
-  auto r = injamm::render<"{{name}}{{age}}", true>(user);
+  auto   r = injamm::render<"{{name}}{{age}}", true>(user);
   REQUIRE(r.has_value());
   CHECK(*r == "Alice30");
 }
 
 TEST_CASE("ct_trim_blocks with section open/close", "[injamm][ct][whitespace]") {
   CtBoolData data{true};
-  auto r = injamm::render<"x{{#flag}}\ny\n{{/flag}}z", true>(data);
+  auto       r = injamm::render<"x{{#flag}}\ny\n{{/flag}}z", true>(data);
   REQUIRE(r.has_value());
   CHECK(*r == "xy\nz");
 }
 
 TEST_CASE("ct_lstrip_blocks strips whitespace before section open", "[injamm][ct][whitespace]") {
   CtBoolData data{true};
-  auto r = injamm::render<"a\n  {{#flag}}y{{/flag}}", false, true>(data);
+  auto       r = injamm::render<"a\n  {{#flag}}y{{/flag}}", false, true>(data);
   REQUIRE(r.has_value());
   CHECK(*r == "a\ny");
 }
 
 TEST_CASE("ct_lstrip_blocks strips whitespace before section close", "[injamm][ct][whitespace]") {
   CtBoolData data{true};
-  auto r = injamm::render<"{{#flag}}y\n  {{/flag}}", false, true>(data);
+  auto       r = injamm::render<"{{#flag}}y\n  {{/flag}}", false, true>(data);
   REQUIRE(r.has_value());
   CHECK(*r == "y\n");
 }
 
 TEST_CASE("ct_lstrip_blocks does not affect expression tags", "[injamm][ct][whitespace]") {
   CtUser user{"Alice", 30};
-  auto r = injamm::render<"  {{name}}  {{age}}", false, true>(user);
+  auto   r = injamm::render<"  {{name}}  {{age}}", false, true>(user);
   REQUIRE(r.has_value());
   CHECK(*r == "  Alice  30");
 }
 
 TEST_CASE("ct_trim_lstrip_blocks combined", "[injamm][ct][whitespace]") {
   CtBoolData data{true};
-  auto r = injamm::render<"{{#flag}}\n  y\n{{/flag}}", true, true>(data);
+  auto       r = injamm::render<"{{#flag}}\n  y\n{{/flag}}", true, true>(data);
   REQUIRE(r.has_value());
   CHECK(*r == "  y\n");
 }
@@ -1592,7 +1587,7 @@ TEST_CASE("FrozenString basic placeholder (constexpr variable)", "[injamm][ct][f
   using namespace frozenchars::literals;
   auto constexpr tmpl = "{{name}}"_fs;
   CtUser user{"alice", 30};
-  auto r = injamm::render<tmpl>(user);
+  auto   r = injamm::render<tmpl>(user);
   REQUIRE(r.has_value());
   CHECK(*r == "alice");
 }
@@ -1601,7 +1596,7 @@ TEST_CASE("FrozenString literal NTTP", "[injamm][ct][frozen]") {
   using namespace frozenchars::literals;
   auto constexpr tmpl = "Hello {{name}}! You are {{age}}."_fs;
   CtUser user{"Bob", 25};
-  auto r = injamm::render<tmpl>(user);
+  auto   r = injamm::render<tmpl>(user);
   REQUIRE(r.has_value());
   CHECK(*r == "Hello Bob! You are 25.");
 }
@@ -1610,7 +1605,7 @@ TEST_CASE("FrozenString HTML escape", "[injamm][ct][frozen]") {
   using namespace frozenchars::literals;
   auto constexpr tmpl = "{{name}}"_fs;
   CtUser user{"<b>alice</b>", 30};
-  auto r = injamm::render<tmpl>(user);
+  auto   r = injamm::render<tmpl>(user);
   REQUIRE(r.has_value());
   CHECK(*r == "&lt;b&gt;alice&lt;/b&gt;");
 }
@@ -1619,7 +1614,7 @@ TEST_CASE("FrozenString raw output {{{var}}}", "[injamm][ct][frozen]") {
   using namespace frozenchars::literals;
   auto constexpr tmpl = "{{{name}}}"_fs;
   CtUser user{"<b>alice</b>", 30};
-  auto r = injamm::render<tmpl>(user);
+  auto   r = injamm::render<tmpl>(user);
   REQUIRE(r.has_value());
   CHECK(*r == "<b>alice</b>");
 }
@@ -1628,7 +1623,7 @@ TEST_CASE("FrozenString section", "[injamm][ct][frozen]") {
   using namespace frozenchars::literals;
   auto constexpr tmpl = "{{#users}}{{name}}-{{age}}/{{/users}}"_fs;
   CtUsersData data{{{"a", 1}, {"b", 2}}};
-  auto r = injamm::render<tmpl>(data);
+  auto        r = injamm::render<tmpl>(data);
   REQUIRE(r.has_value());
   CHECK(*r == "a-1/b-2/");
 }
@@ -1636,7 +1631,7 @@ TEST_CASE("FrozenString section", "[injamm][ct][frozen]") {
 TEST_CASE("FrozenString inverted section", "[injamm][ct][frozen]") {
   using namespace frozenchars::literals;
   auto constexpr tmpl = "{{^flag}}no{{/flag}}"_fs;
-  auto r1 = injamm::render<tmpl>(CtBoolData{false});
+  auto r1             = injamm::render<tmpl>(CtBoolData{false});
   REQUIRE(r1.has_value());
   CHECK(*r1 == "no");
   auto r2 = injamm::render<tmpl>(CtBoolData{true});
@@ -1648,7 +1643,7 @@ TEST_CASE("FrozenString @index loop", "[injamm][ct][frozen]") {
   using namespace frozenchars::literals;
   auto constexpr tmpl = "{{#users}}{{loop.index}}{{/users}}"_fs;
   CtUsersData data{{{"a", 1}, {"b", 2}}};
-  auto r = injamm::render<tmpl>(data);
+  auto        r = injamm::render<tmpl>(data);
   REQUIRE(r.has_value());
   CHECK(*r == "01");
 }
@@ -1657,7 +1652,7 @@ TEST_CASE("FrozenString nested path", "[injamm][ct][frozen]") {
   using namespace frozenchars::literals;
   auto constexpr tmpl = "{{founder.name}}"_fs;
   CtCompany ctx{"Acme", {"Alice", {"NYC", "USA"}}};
-  auto r = injamm::render<tmpl>(ctx);
+  auto      r = injamm::render<tmpl>(ctx);
   REQUIRE(r.has_value());
   CHECK(*r == "Alice");
 }
@@ -1665,7 +1660,7 @@ TEST_CASE("FrozenString nested path", "[injamm][ct][frozen]") {
 TEST_CASE("FrozenString if/else", "[injamm][ct][frozen]") {
   using namespace frozenchars::literals;
   auto constexpr tmpl = "{{#if age}}A{{else}}B{{/if}}"_fs;
-  auto r1 = injamm::render<tmpl>(CtIfData{"t", 20});
+  auto r1             = injamm::render<tmpl>(CtIfData{"t", 20});
   REQUIRE(r1.has_value());
   CHECK(*r1 == "A");
   auto r2 = injamm::render<tmpl>(CtIfData{"t", 0});
@@ -1676,15 +1671,15 @@ TEST_CASE("FrozenString if/else", "[injamm][ct][frozen]") {
 TEST_CASE("FrozenString @var expansion", "[injamm][ct][frozen][atvar]") {
   using namespace frozenchars::literals;
   auto constexpr tmpl = "Hello {{@var(f)}}!"_fs;
-  auto constexpr vk = "f"_fs;
-  auto constexpr vv = "name"_fs;
+  auto constexpr vk   = "f"_fs;
+  auto constexpr vv   = "name"_fs;
   CtUser user{"alice", 30};
-  auto result = injamm::render<tmpl, vk, vv>(user);
+  auto   result = injamm::render<tmpl, vk, vv>(user);
   REQUIRE(result.has_value());
   CHECK(*result == "Hello alice!");
 }
 
-#endif // INJAMM_HAS_FROZENCHARS
+#endif  // INJAMM_HAS_FROZENCHARS
 
 // ---- CT 配列インデックステスト用データ型 ----
 
@@ -1694,8 +1689,8 @@ struct CtGuest {
 
 struct CtParty {
   std::vector<std::string> guests;
-  std::vector<CtGuest> members;
-  std::string title;
+  std::vector<CtGuest>     members;
+  std::string              title;
 };
 
 template <>
@@ -1711,7 +1706,7 @@ struct glz::meta<CtParty> {
 TEST_CASE("ct_array_index_first", "[injamm][ct][array_index]") {
   auto constexpr tmpl = injamm::fixed_string("{{guests.0}}");
   CtParty data{{"Jeff", "Tom", "Patrick"}, {}, "Party"};
-  auto r = injamm::render<tmpl>(data);
+  auto    r = injamm::render<tmpl>(data);
   REQUIRE(r.has_value());
   CHECK(*r == "Jeff");
 }
@@ -1719,7 +1714,7 @@ TEST_CASE("ct_array_index_first", "[injamm][ct][array_index]") {
 TEST_CASE("ct_array_index_mid", "[injamm][ct][array_index]") {
   auto constexpr tmpl = injamm::fixed_string("{{guests.1}}");
   CtParty data{{"Jeff", "Tom", "Patrick"}, {}, "Party"};
-  auto r = injamm::render<tmpl>(data);
+  auto    r = injamm::render<tmpl>(data);
   REQUIRE(r.has_value());
   CHECK(*r == "Tom");
 }
@@ -1727,7 +1722,7 @@ TEST_CASE("ct_array_index_mid", "[injamm][ct][array_index]") {
 TEST_CASE("ct_array_index_last", "[injamm][ct][array_index]") {
   auto constexpr tmpl = injamm::fixed_string("{{guests.2}}");
   CtParty data{{"Jeff", "Tom", "Patrick"}, {}, "Party"};
-  auto r = injamm::render<tmpl>(data);
+  auto    r = injamm::render<tmpl>(data);
   REQUIRE(r.has_value());
   CHECK(*r == "Patrick");
 }
@@ -1735,7 +1730,7 @@ TEST_CASE("ct_array_index_last", "[injamm][ct][array_index]") {
 TEST_CASE("ct_array_index_out_of_bounds", "[injamm][ct][array_index]") {
   auto constexpr tmpl = injamm::fixed_string("{{guests.99}}");
   CtParty data{{"Jeff", "Tom", "Patrick"}, {}, "Party"};
-  auto r = injamm::render<tmpl>(data);
+  auto    r = injamm::render<tmpl>(data);
   REQUIRE(r.has_value());
   CHECK(*r == "");
 }
@@ -1743,7 +1738,7 @@ TEST_CASE("ct_array_index_out_of_bounds", "[injamm][ct][array_index]") {
 TEST_CASE("ct_array_index_nested_field", "[injamm][ct][array_index]") {
   auto constexpr tmpl = injamm::fixed_string("{{members.1.name}}");
   CtParty data{{}, {{"Alice"}, {"Bob"}, {"Charlie"}}, ""};
-  auto r = injamm::render<tmpl>(data);
+  auto    r = injamm::render<tmpl>(data);
   REQUIRE(r.has_value());
   CHECK(*r == "Bob");
 }
@@ -1751,7 +1746,7 @@ TEST_CASE("ct_array_index_nested_field", "[injamm][ct][array_index]") {
 TEST_CASE("ct_array_index_raw", "[injamm][ct][array_index]") {
   auto constexpr tmpl = injamm::fixed_string("{{{guests.0}}}");
   CtParty data{{"<Jeff>", "<Tom>"}, {}, ""};
-  auto r = injamm::render<tmpl>(data);
+  auto    r = injamm::render<tmpl>(data);
   REQUIRE(r.has_value());
   CHECK(*r == "<Jeff>");
 }
@@ -1759,7 +1754,7 @@ TEST_CASE("ct_array_index_raw", "[injamm][ct][array_index]") {
 TEST_CASE("ct_array_index_with_literal", "[injamm][ct][array_index]") {
   auto constexpr tmpl = injamm::fixed_string("Hello {{guests.1}}!");
   CtParty data{{"Jeff", "Tom", "Patrick"}, {}, "Party"};
-  auto r = injamm::render<tmpl>(data);
+  auto    r = injamm::render<tmpl>(data);
   REQUIRE(r.has_value());
   CHECK(*r == "Hello Tom!");
 }
@@ -1767,7 +1762,7 @@ TEST_CASE("ct_array_index_with_literal", "[injamm][ct][array_index]") {
 TEST_CASE("ct_array_index_empty_vec", "[injamm][ct][array_index]") {
   auto constexpr tmpl = injamm::fixed_string("{{guests.0}}");
   CtParty data{{}, {}, ""};
-  auto r = injamm::render<tmpl>(data);
+  auto    r = injamm::render<tmpl>(data);
   REQUIRE(r.has_value());
   CHECK(*r == "");
 }
@@ -1775,7 +1770,7 @@ TEST_CASE("ct_array_index_empty_vec", "[injamm][ct][array_index]") {
 TEST_CASE("ct_array_index_nested_deep", "[injamm][ct][array_index]") {
   auto constexpr tmpl = injamm::fixed_string("{{members.0.name}}-{{members.1.name}}");
   CtParty data{{}, {{"Alice"}, {"Bob"}}, ""};
-  auto r = injamm::render<tmpl>(data);
+  auto    r = injamm::render<tmpl>(data);
   REQUIRE(r.has_value());
   CHECK(*r == "Alice-Bob");
 }
@@ -1783,7 +1778,7 @@ TEST_CASE("ct_array_index_nested_deep", "[injamm][ct][array_index]") {
 TEST_CASE("ct_array_index_in_if", "[injamm][ct][array_index]") {
   auto constexpr tmpl = injamm::fixed_string("{{#if guests.1}}has_second{{/if}}");
   CtParty data{{"Jeff", "Tom", "Patrick"}, {}, "Party"};
-  auto r = injamm::render<tmpl>(data);
+  auto    r = injamm::render<tmpl>(data);
   REQUIRE(r.has_value());
   CHECK(*r == "has_second");
 }
@@ -1791,7 +1786,7 @@ TEST_CASE("ct_array_index_in_if", "[injamm][ct][array_index]") {
 TEST_CASE("ct_array_index_in_if_empty", "[injamm][ct][array_index]") {
   auto constexpr tmpl = injamm::fixed_string("{{#if guests.0}}has_first{{/if}}");
   CtParty data{{}, {}, ""};
-  auto r = injamm::render<tmpl>(data);
+  auto    r = injamm::render<tmpl>(data);
   REQUIRE(r.has_value());
   CHECK(*r == "");
 }
@@ -1824,96 +1819,92 @@ TEST_CASE("ct_trim_blocks single var with no newline", "[injamm][ct][whitespace]
 
 TEST_CASE("CT: bind - vector of strings", "[injamm][ct][bind]") {
   std::vector<std::string> items = {"apple", "banana", "cherry"};
-  auto res = injamm::render<"{{#items}}{{this}} {{/items}}">(injamm::bind<"items">(items));
+  auto                     res   = injamm::render<"{{#items}}{{this}} {{/items}}">(injamm::bind<"items">(items));
   REQUIRE(res);
   CHECK(*res == "apple banana cherry ");
 }
 
 TEST_CASE("CT: bind - vector of structs", "[injamm][ct][bind]") {
   std::vector<CtUser> users = {{"Alice", 30}, {"Bob", 25}};
-  auto res = injamm::render<"{{#users}}{{name}}:{{age}} {{/users}}">(injamm::bind<"users">(users));
+  auto                res   = injamm::render<"{{#users}}{{name}}:{{age}} {{/users}}">(injamm::bind<"users">(users));
   REQUIRE(res);
   CHECK(*res == "Alice:30 Bob:25 ");
 }
 
 TEST_CASE("CT: bind - map", "[injamm][ct][bind]") {
   std::map<std::string, int> scores = {{"math", 90}, {"english", 85}};
-  auto res = injamm::render<"{{#scores}}{{loop.key}}={{this}} {{/scores}}">(injamm::bind<"scores">(scores));
+  auto                       res    = injamm::render<"{{#scores}}{{loop.key}}={{this}} {{/scores}}">(injamm::bind<"scores">(scores));
   REQUIRE(res);
   CHECK(*res == "english=85 math=90 ");
 }
 
 TEST_CASE("CT: bind - multiple containers", "[injamm][ct][bind]") {
-  std::vector<CtUser> users = {{"Hello", 0}};
+  std::vector<CtUser>      users = {{"Hello", 0}};
   std::vector<std::string> items = {"a", "b"};
-  auto res = injamm::render<"{{#users}}{{name}}{{/users}}: {{#items}}{{this}} {{/items}}">(
-    injamm::bind<"users", "items">(users, items));
+  auto                     res   = injamm::render<"{{#users}}{{name}}{{/users}}: {{#items}}{{this}} {{/items}}">(injamm::bind<"users", "items">(users, items));
   REQUIRE(res);
   CHECK(*res == "Hello: a b ");
 }
 
 TEST_CASE("CT: bind - loop.index", "[injamm][ct][bind]") {
   std::vector<int> nums = {10, 20, 30};
-  auto res = injamm::render<"{{#nums}}{{loop.index}}={{this}} {{/nums}}">(injamm::bind<"nums">(nums));
+  auto             res  = injamm::render<"{{#nums}}{{loop.index}}={{this}} {{/nums}}">(injamm::bind<"nums">(nums));
   REQUIRE(res);
   CHECK(*res == "0=10 1=20 2=30 ");
 }
 
 TEST_CASE("CT: bind - empty vector inverted section", "[injamm][ct][bind]") {
   std::vector<std::string> items;
-  auto res = injamm::render<"{{^items}}empty{{/items}}">(injamm::bind<"items">(items));
+  auto                     res = injamm::render<"{{^items}}empty{{/items}}">(injamm::bind<"items">(items));
   REQUIRE(res);
   CHECK(*res == "empty");
 }
 
 TEST_CASE("CT: bind - set", "[injamm][ct][bind]") {
   std::set<int> nums = {3, 1, 2};
-  auto res = injamm::render<"{{#nums}}{{this}} {{/nums}}">(injamm::bind<"nums">(nums));
+  auto          res  = injamm::render<"{{#nums}}{{this}} {{/nums}}">(injamm::bind<"nums">(nums));
   REQUIRE(res);
   CHECK(*res == "1 2 3 ");
 }
 
 TEST_CASE("CT: bind - set with loop.is_first/is_last", "[injamm][ct][bind]") {
   std::set<int> nums = {10, 20};
-  auto res = injamm::render<"{{#nums}}{{#if loop.is_first}}[{{/if}}{{this}}{{#if loop.is_last}}]{{/if}} {{/nums}}">(
-    injamm::bind<"nums">(nums));
+  auto          res  = injamm::render<"{{#nums}}{{#if loop.is_first}}[{{/if}}{{this}}{{#if loop.is_last}}]{{/if}} {{/nums}}">(injamm::bind<"nums">(nums));
   REQUIRE(res);
   CHECK(*res == "[10 20] ");
 }
 
 TEST_CASE("CT: bind - loop.is_first/is_last with vector", "[injamm][ct][bind]") {
   std::vector<int> nums = {10, 20, 30};
-  auto res = injamm::render<"{{#nums}}{{#if loop.is_first}}FIRST{{/if}}{{this}} {{#if loop.is_last}}LAST{{/if}}{{/nums}}">(
-    injamm::bind<"nums">(nums));
+  auto             res  = injamm::render<"{{#nums}}{{#if loop.is_first}}FIRST{{/if}}{{this}} {{#if loop.is_last}}LAST{{/if}}{{/nums}}">(injamm::bind<"nums">(nums));
   REQUIRE(res);
   CHECK(*res == "FIRST10 20 30 LAST");
 }
 
 TEST_CASE("CT: bind - title and items", "[injamm][ct][bind]") {
   std::vector<std::string> items = {"a", "b"};
-  std::string title = "Title";
-  auto res = injamm::render<"{{title}}: {{#items}}{{this}} {{/items}}">(
-    injamm::bind<"title", "items">(title, items));
+  std::string              title = "Title";
+  auto                     res   = injamm::render<"{{title}}: {{#items}}{{this}} {{/items}}">(injamm::bind<"title", "items">(title, items));
   REQUIRE(res);
   CHECK(*res == "Title: a b ");
 }
 
 TEST_CASE("CT: bind - string scalar", "[injamm][ct][bind]") {
   std::string name = "World";
-  auto res = injamm::render<"Hello {{name}}!">(injamm::bind<"name">(name));
+  auto        res  = injamm::render<"Hello {{name}}!">(injamm::bind<"name">(name));
   REQUIRE(res);
   CHECK(*res == "Hello World!");
 }
 
 TEST_CASE("CT: bind - int scalar", "[injamm][ct][bind]") {
-  int count = 42;
-  auto res = injamm::render<"Count: {{count}}">(injamm::bind<"count">(count));
+  int  count = 42;
+  auto res   = injamm::render<"Count: {{count}}">(injamm::bind<"count">(count));
   REQUIRE(res);
   CHECK(*res == "Count: 42");
 }
 
 TEST_CASE("CT: bind - implicit value", "[injamm][ct][bind]") {
-  int val = 99;
+  int  val = 99;
   auto res = injamm::render<"Got {{_}}">(injamm::bind(val));
   REQUIRE(res);
   CHECK(*res == "Got 99");
@@ -1921,7 +1912,7 @@ TEST_CASE("CT: bind - implicit value", "[injamm][ct][bind]") {
 
 TEST_CASE("CT: bind - implicit value string", "[injamm][ct][bind]") {
   std::string val = "hello";
-  auto res = injamm::render<"{{_}} world">(injamm::bind(val));
+  auto        res = injamm::render<"{{_}} world">(injamm::bind(val));
   REQUIRE(res);
   CHECK(*res == "hello world");
 }
@@ -1937,7 +1928,7 @@ enum class CtStatus : int {
 };
 
 struct CtEnumData {
-  CtStatus status{CtStatus::Active};
+  CtStatus                status{CtStatus::Active};
   std::optional<CtStatus> opt_status{};
 };
 
@@ -1950,14 +1941,14 @@ struct glz::meta<CtEnumData> {
 TEST_CASE("CT: enum basic output", "[injamm][ct][enum]") {
   /** NTTP render で enum 列挙子名を出力 */
   CtEnumData data{.status = CtStatus::Active};
-  auto r = injamm::render<"{{status}}">(data);
+  auto       r = injamm::render<"{{status}}">(data);
   REQUIRE(r.has_value());
   CHECK(*r == "Active");
 }
 
 TEST_CASE("CT: enum pending output", "[injamm][ct][enum]") {
   CtEnumData data{.status = CtStatus::Pending};
-  auto r = injamm::render<"Status: {{status}}">(data);
+  auto       r = injamm::render<"Status: {{status}}">(data);
   REQUIRE(r.has_value());
   CHECK(*r == "Status: Pending");
 }
@@ -1966,21 +1957,21 @@ TEST_CASE("CT: enum pending output", "[injamm][ct][enum]") {
 TEST_CASE("CT: enum unknown value fallback", "[injamm][ct][enum]") {
   /** 未知 enum 値 → underlying 整数を10進出力 */
   CtEnumData data{.status = static_cast<CtStatus>(99)};
-  auto r = injamm::render<"{{status}}">(data);
+  auto       r = injamm::render<"{{status}}">(data);
   REQUIRE(r.has_value());
   CHECK(*r == "99");
 }
 
 TEST_CASE("CT: enum truthiness truthy", "[injamm][ct][enum]") {
   CtEnumData data{.status = CtStatus::Active};
-  auto r = injamm::render<"{{#if status}}YES{{else}}NO{{/if}}">(data);
+  auto       r = injamm::render<"{{#if status}}YES{{else}}NO{{/if}}">(data);
   REQUIRE(r.has_value());
   CHECK(*r == "YES");
 }
 
 TEST_CASE("CT: enum truthiness falsy", "[injamm][ct][enum]") {
   CtEnumData data{.status = CtStatus::Unknown};
-  auto r = injamm::render<"{{#if status}}YES{{else}}NO{{/if}}">(data);
+  auto       r = injamm::render<"{{#if status}}YES{{else}}NO{{/if}}">(data);
   REQUIRE(r.has_value());
   CHECK(*r == "NO");
 }
@@ -1988,21 +1979,21 @@ TEST_CASE("CT: enum truthiness falsy", "[injamm][ct][enum]") {
 #ifndef INJAMM_NO_ENUM_REGISTRY
 TEST_CASE("CT: enum compare eq string literal true", "[injamm][ct][enum]") {
   CtEnumData data{.status = CtStatus::Pending};
-  auto r = injamm::render<"{{#if status == \"Pending\"}}YES{{else}}NO{{/if}}">(data);
+  auto       r = injamm::render<"{{#if status == \"Pending\"}}YES{{else}}NO{{/if}}">(data);
   REQUIRE(r.has_value());
   CHECK(*r == "YES");
 }
 
 TEST_CASE("CT: enum compare eq string literal false", "[injamm][ct][enum]") {
   CtEnumData data{.status = CtStatus::Pending};
-  auto r = injamm::render<"{{#if status == \"Active\"}}YES{{else}}NO{{/if}}">(data);
+  auto       r = injamm::render<"{{#if status == \"Active\"}}YES{{else}}NO{{/if}}">(data);
   REQUIRE(r.has_value());
   CHECK(*r == "NO");
 }
 
 TEST_CASE("CT: enum optional value", "[injamm][ct][enum]") {
   CtEnumData data{.opt_status = CtStatus::Inactive};
-  auto r = injamm::render<"{{opt_status}}">(data);
+  auto       r = injamm::render<"{{opt_status}}">(data);
   REQUIRE(r.has_value());
   CHECK(*r == "Inactive");
 }
@@ -2010,7 +2001,7 @@ TEST_CASE("CT: enum optional value", "[injamm][ct][enum]") {
 
 TEST_CASE("CT: enum optional empty", "[injamm][ct][enum]") {
   CtEnumData data{.opt_status = std::nullopt};
-  auto r = injamm::render<"{{opt_status}}">(data);
+  auto       r = injamm::render<"{{opt_status}}">(data);
   REQUIRE(r.has_value());
   CHECK(*r == "");
 }
@@ -2018,42 +2009,42 @@ TEST_CASE("CT: enum optional empty", "[injamm][ct][enum]") {
 #ifndef INJAMM_NO_ENUM_REGISTRY
 TEST_CASE("CT: enum raw output", "[injamm][ct][enum]") {
   CtEnumData data{.status = CtStatus::Active};
-  auto r = injamm::render<"{{{status}}}">(data);
+  auto       r = injamm::render<"{{{status}}}">(data);
   REQUIRE(r.has_value());
   CHECK(*r == "Active");
 }
 
 TEST_CASE("CT: enum inverted section truthy", "[injamm][ct][enum]") {
   CtEnumData data{.status = CtStatus::Active};
-  auto r = injamm::render<"{{^status}}EMPTY{{/status}}">(data);
+  auto       r = injamm::render<"{{^status}}EMPTY{{/status}}">(data);
   REQUIRE(r.has_value());
   CHECK(*r == "");
 }
 
 TEST_CASE("CT: enum inverted section falsy", "[injamm][ct][enum]") {
   CtEnumData data{.status = CtStatus::Unknown};
-  auto r = injamm::render<"{{^status}}EMPTY{{/status}}">(data);
+  auto       r = injamm::render<"{{^status}}EMPTY{{/status}}">(data);
   REQUIRE(r.has_value());
   CHECK(*r == "EMPTY");
 }
 
 TEST_CASE("CT: enum compare ne string literal true", "[injamm][ct][enum]") {
   CtEnumData data{.status = CtStatus::Pending};
-  auto r = injamm::render<"{{#if status != \"Active\"}}YES{{else}}NO{{/if}}">(data);
+  auto       r = injamm::render<"{{#if status != \"Active\"}}YES{{else}}NO{{/if}}">(data);
   REQUIRE(r.has_value());
   CHECK(*r == "YES");
 }
 
 TEST_CASE("CT: enum compare ne string literal false", "[injamm][ct][enum]") {
   CtEnumData data{.status = CtStatus::Pending};
-  auto r = injamm::render<"{{#if status != \"Pending\"}}YES{{else}}NO{{/if}}">(data);
+  auto       r = injamm::render<"{{#if status != \"Pending\"}}YES{{else}}NO{{/if}}">(data);
   REQUIRE(r.has_value());
   CHECK(*r == "NO");
 }
 
 TEST_CASE("CT: enum compare unknown string no match", "[injamm][ct][enum]") {
   CtEnumData data{.status = CtStatus::Active};
-  auto r = injamm::render<"{{#if status == \"Nonexistent\"}}YES{{else}}NO{{/if}}">(data);
+  auto       r = injamm::render<"{{#if status == \"Nonexistent\"}}YES{{else}}NO{{/if}}">(data);
   REQUIRE(r.has_value());
   CHECK(*r == "NO");
 }
@@ -2079,91 +2070,91 @@ struct glz::meta<CtEnumWrapper> {
 
 TEST_CASE("CT: enum nested path", "[injamm][ct][enum]") {
   CtEnumWrapper data{.task = {CtStatus::Pending}};
-  auto r = injamm::render<"{{task.status}}">(data);
+  auto          r = injamm::render<"{{task.status}}">(data);
   REQUIRE(r.has_value());
   CHECK(*r == "Pending");
 }
 
 TEST_CASE("ct_const_if_0_no_else", "[injamm][ct][const_if]") {
   auto constexpr tmpl = injamm::fixed_string("{{#if 0}}yes{{/if}}");
-  auto r = injamm::render<tmpl>(CtIfData{"alice", 42});
+  auto r              = injamm::render<tmpl>(CtIfData{"alice", 42});
   REQUIRE(r.has_value());
   CHECK(*r == "");
 }
 
 TEST_CASE("ct_const_if_1_no_else", "[injamm][ct][const_if]") {
   auto constexpr tmpl = injamm::fixed_string("{{#if 1}}yes{{/if}}");
-  auto r = injamm::render<tmpl>(CtIfData{"alice", 42});
+  auto r              = injamm::render<tmpl>(CtIfData{"alice", 42});
   REQUIRE(r.has_value());
   CHECK(*r == "yes");
 }
 
 TEST_CASE("ct_const_if_0_with_else", "[injamm][ct][const_if]") {
   auto constexpr tmpl = injamm::fixed_string("{{#if 0}}yes{{else}}no{{/if}}");
-  auto r = injamm::render<tmpl>(CtIfData{"alice", 42});
+  auto r              = injamm::render<tmpl>(CtIfData{"alice", 42});
   REQUIRE(r.has_value());
   CHECK(*r == "no");
 }
 
 TEST_CASE("ct_const_if_1_with_else", "[injamm][ct][const_if]") {
   auto constexpr tmpl = injamm::fixed_string("{{#if 1}}yes{{else}}no{{/if}}");
-  auto r = injamm::render<tmpl>(CtIfData{"alice", 42});
+  auto r              = injamm::render<tmpl>(CtIfData{"alice", 42});
   REQUIRE(r.has_value());
   CHECK(*r == "yes");
 }
 
 TEST_CASE("ct_const_if_neg0", "[injamm][ct][const_if]") {
   auto constexpr tmpl = injamm::fixed_string("{{#if !0}}yes{{else}}no{{/if}}");
-  auto r = injamm::render<tmpl>(CtIfData{"alice", 42});
+  auto r              = injamm::render<tmpl>(CtIfData{"alice", 42});
   REQUIRE(r.has_value());
   CHECK(*r == "yes");
 }
 
 TEST_CASE("ct_const_if_neg1", "[injamm][ct][const_if]") {
   auto constexpr tmpl = injamm::fixed_string("{{#if !1}}yes{{else}}no{{/if}}");
-  auto r = injamm::render<tmpl>(CtIfData{"alice", 42});
+  auto r              = injamm::render<tmpl>(CtIfData{"alice", 42});
   REQUIRE(r.has_value());
   CHECK(*r == "no");
 }
 
 TEST_CASE("ct_const_if_surrounded", "[injamm][ct][const_if]") {
   auto constexpr tmpl = injamm::fixed_string("pre{{#if 0}}mid{{/if}}post");
-  auto r = injamm::render<tmpl>(CtIfData{"alice", 0});
+  auto r              = injamm::render<tmpl>(CtIfData{"alice", 0});
   REQUIRE(r.has_value());
   CHECK(*r == "prepost");
 }
 
 TEST_CASE("ct_const_if_42", "[injamm][ct][const_if]") {
   auto constexpr tmpl = injamm::fixed_string("{{#if 42}}yes{{else}}no{{/if}}");
-  auto r = injamm::render<tmpl>(CtIfData{"alice", 0});
+  auto r              = injamm::render<tmpl>(CtIfData{"alice", 0});
   REQUIRE(r.has_value());
   CHECK(*r == "yes");
 }
 
 TEST_CASE("ct_const_if_negative", "[injamm][ct][const_if]") {
   auto constexpr tmpl = injamm::fixed_string("{{#if -1}}yes{{else}}no{{/if}}");
-  auto r = injamm::render<tmpl>(CtIfData{"alice", 0});
+  auto r              = injamm::render<tmpl>(CtIfData{"alice", 0});
   REQUIRE(r.has_value());
   CHECK(*r == "yes");
 }
 
 TEST_CASE("ct_const_if_else_with_var", "[injamm][ct][const_if]") {
   auto constexpr tmpl = injamm::fixed_string("{{#if 0}}{{name}}{{else}}found{{/if}}");
-  auto r = injamm::render<tmpl>(CtIfData{"alice", 42});
+  auto r              = injamm::render<tmpl>(CtIfData{"alice", 42});
   REQUIRE(r.has_value());
   CHECK(*r == "found");
 }
 
 TEST_CASE("ct_const_if_via_atvar_0", "[injamm][ct][const_if][atvar]") {
   auto constexpr tmpl = injamm::fixed_string("{{#if @var(flag)}}yes{{else}}no{{/if}}");
-  auto r = injamm::render<tmpl, "flag", "0">(CtIfData{"alice", 42});
+  auto r              = injamm::render<tmpl, "flag", "0">(CtIfData{"alice", 42});
   REQUIRE(r.has_value());
   CHECK(*r == "no");
 }
 
 TEST_CASE("ct_const_if_via_atvar_1", "[injamm][ct][const_if][atvar]") {
   auto constexpr tmpl = injamm::fixed_string("{{#if @var(flag)}}yes{{else}}no{{/if}}");
-  auto r = injamm::render<tmpl, "flag", "1">(CtIfData{"alice", 42});
+  auto r              = injamm::render<tmpl, "flag", "1">(CtIfData{"alice", 42});
   REQUIRE(r.has_value());
   CHECK(*r == "yes");
 }
@@ -2171,8 +2162,8 @@ TEST_CASE("ct_const_if_via_atvar_1", "[injamm][ct][const_if][atvar]") {
 TEST_CASE("ct_render_into_basic", "[injamm][ct][buffer_reuse]") {
   auto constexpr tmpl = injamm::fixed_string("{{name}}:{{age}}");
   CtUser const user{"Alice", 30};
-  std::string buf;
-  auto r = injamm::render<tmpl>(user, buf);
+  std::string  buf;
+  auto         r = injamm::render<tmpl>(user, buf);
   REQUIRE(r.has_value());
   CHECK(buf == "Alice:30");
 }
@@ -2180,13 +2171,13 @@ TEST_CASE("ct_render_into_basic", "[injamm][ct][buffer_reuse]") {
 TEST_CASE("ct_render_into_buffer_reuse", "[injamm][ct][buffer_reuse]") {
   auto constexpr tmpl = injamm::fixed_string("{{name}}:{{age}}");
   CtUser const user{"Alice", 30};
-  std::string buf;
+  std::string  buf;
   buf.reserve(128);
   auto r1 = injamm::render<tmpl>(user, buf);
   REQUIRE(r1.has_value());
   CHECK(buf == "Alice:30");
   CtUser const user2{"Bob", 25};
-  auto r2 = injamm::render<tmpl>(user2, buf);
+  auto         r2 = injamm::render<tmpl>(user2, buf);
   REQUIRE(r2.has_value());
   CHECK(buf == "Bob:25");
 }
@@ -2201,7 +2192,7 @@ TEST_CASE("ct_render_into_atvar", "[injamm][ct][buffer_reuse][atvar]") {
   CHECK(*r0 == "Alice:30");
   // buffer-reuse version
   std::string buf;
-  auto r = injamm::render<tmpl, "field", "name">(user, buf);
+  auto        r = injamm::render<tmpl, "field", "name">(user, buf);
   REQUIRE(r.has_value());
   CHECK(buf == "Alice:30");
 }
@@ -2209,8 +2200,8 @@ TEST_CASE("ct_render_into_atvar", "[injamm][ct][buffer_reuse][atvar]") {
 TEST_CASE("ct_render_into_error_propagated", "[injamm][ct][buffer_reuse][error]") {
   auto constexpr tmpl = injamm::fixed_string("{{nonexistent}}");
   CtUser const user{"Alice", 30};
-  std::string buf;
-  auto r = injamm::render<tmpl>(user, buf);
+  std::string  buf;
+  auto         r = injamm::render<tmpl>(user, buf);
   REQUIRE_FALSE(r.has_value());
   CHECK(r.error().ec == injamm::error_code::unknown_key);
 }
@@ -2219,14 +2210,14 @@ TEST_CASE("ct_render_into_error_propagated", "[injamm][ct][buffer_reuse][error]"
 
 TEST_CASE("ct_chrono_format", "[injamm][ct][chrono]") {
   CtChronoData d{std::chrono::system_clock::from_time_t(1705312200)};
-  auto result = injamm::render<"{{ ts | format(\"%Y-%m-%d\") }}">(d);
+  auto         result = injamm::render<"{{ ts | format(\"%Y-%m-%d\") }}">(d);
   REQUIRE(result);
   CHECK(result->find("2024-01-") != std::string::npos);
 }
 
 TEST_CASE("ct_chrono_default", "[injamm][ct][chrono]") {
   CtChronoData d{std::chrono::system_clock::from_time_t(1705312200)};
-  auto result = injamm::render<"{{ ts }}">(d);
+  auto         result = injamm::render<"{{ ts }}">(d);
   REQUIRE(result);
   CHECK(result->find("2024-01-") != std::string::npos);
   CHECK(result->find("T") != std::string::npos);
@@ -2235,8 +2226,8 @@ TEST_CASE("ct_chrono_default", "[injamm][ct][chrono]") {
 // ---- ループ内配列名束縛（NTTP パス） ----
 
 struct CtZipData {
-  std::vector<int> row;
-  std::vector<int> col;
+  std::vector<int>    row;
+  std::vector<int>    col;
   std::vector<CtUser> users;
 };
 
@@ -2247,21 +2238,21 @@ struct glz::meta<CtZipData> {
 
 TEST_CASE("ct_zip: nested scalar arrays bind to current element", "[injamm][ct][zip]") {
   CtZipData d{{1, 2}, {3, 4}, {}};
-  auto r = injamm::render<"{{#row}}{{#col}}{{row}}×{{col}} {{/col}}{{/row}}">(d);
+  auto      r = injamm::render<"{{#row}}{{#col}}{{row}}×{{col}} {{/col}}{{/row}}">(d);
   REQUIRE(r);
   CHECK(*r == "1×3 1×4 2×3 2×4 ");
 }
 
 TEST_CASE("ct_zip: if truthiness via binding", "[injamm][ct][zip]") {
   CtZipData d{{0, 5}, {}, {}};
-  auto r = injamm::render<"{{#row}}{{#if row}}X{{/if}}{{/row}}">(d);
+  auto      r = injamm::render<"{{#row}}{{#if row}}X{{/if}}{{/row}}">(d);
   REQUIRE(r);
   CHECK(*r == "X");
 }
 
 TEST_CASE("ct_zip: reflectable element field access", "[injamm][ct][zip]") {
   CtZipData d{{}, {}, {{"Alice", 30}, {"Bob", 25}}};
-  auto r = injamm::render<"{{#users}}{{users.name}}{{/users}}">(d);
+  auto      r = injamm::render<"{{#users}}{{users.name}}{{/users}}">(d);
   REQUIRE(r);
   CHECK(*r == "AliceBob");
 }
@@ -2270,37 +2261,33 @@ TEST_CASE("ct_zip: reflectable element field access", "[injamm][ct][zip]") {
 
 TEST_CASE("ct_partial_literal_only", "[injamm][ct][partial]") {
   CtUser user{"Alice", 30};
-  auto constexpr tmpl = injamm::fixed_string(
-    "|{{#partialdef greeting}}HELLO{{/partialdef}}{{#partial greeting}}|");
-  auto r = injamm::render<tmpl>(user);
+  auto constexpr tmpl = injamm::fixed_string("|{{#partialdef greeting}}HELLO{{/partialdef}}{{#partial greeting}}|");
+  auto r              = injamm::render<tmpl>(user);
   REQUIRE(r.has_value());
   CHECK(*r == "|HELLO|");
 }
 
 TEST_CASE("ct_partial_with_vars", "[injamm][ct][partial]") {
   CtUser user{"Alice", 30};
-  auto constexpr tmpl = injamm::fixed_string(
-    "{{#partialdef greeting}}{{name}}-{{age}}{{/partialdef}}{{#partial greeting}}|");
-  auto r = injamm::render<tmpl>(user);
+  auto constexpr tmpl = injamm::fixed_string("{{#partialdef greeting}}{{name}}-{{age}}{{/partialdef}}{{#partial greeting}}|");
+  auto r              = injamm::render<tmpl>(user);
   REQUIRE(r.has_value());
   CHECK(*r == "Alice-30|");
 }
 
 TEST_CASE("ct_partial_multiple_uses", "[injamm][ct][partial]") {
   CtUser user{"Alice", 30};
-  auto constexpr tmpl = injamm::fixed_string(
-    "{{#partialdef nameplate}}{{name}}({{age}}){{/partialdef}}"
-    "{{#partial nameplate}} {{#partial nameplate}} {{#partial nameplate}}");
-  auto r = injamm::render<tmpl>(user);
+  auto constexpr tmpl = injamm::fixed_string("{{#partialdef nameplate}}{{name}}({{age}}){{/partialdef}}"
+                                             "{{#partial nameplate}} {{#partial nameplate}} {{#partial nameplate}}");
+  auto r              = injamm::render<tmpl>(user);
   REQUIRE(r.has_value());
   CHECK(*r == "Alice(30) Alice(30) Alice(30)");
 }
 
 TEST_CASE("ct_partial_forward_reference", "[injamm][ct][partial]") {
   CtUser user{"Bob", 25};
-  auto constexpr tmpl = injamm::fixed_string(
-    "before {{#partial info}} after{{#partialdef info}}{{name}}({{age}}){{/partialdef}}");
-  auto r = injamm::render<tmpl>(user);
+  auto constexpr tmpl = injamm::fixed_string("before {{#partial info}} after{{#partialdef info}}{{name}}({{age}}){{/partialdef}}");
+  auto r              = injamm::render<tmpl>(user);
   REQUIRE(r.has_value());
   CHECK(*r == "before Bob(25) after");
 }
@@ -2309,19 +2296,17 @@ TEST_CASE("ct_partial_with_loop", "[injamm][ct][partial]") {
   CtUsersData data{};
   data.users.push_back(CtUser{"Bob", 25});
   data.users.push_back(CtUser{"Charlie", 35});
-  auto constexpr tmpl = injamm::fixed_string(
-    "{{#partialdef card}}{{name}}({{age}})/{{/partialdef}}"
-    "{{#users}}{{#partial card}}{{/users}}");
-  auto r = injamm::render<tmpl>(data);
+  auto constexpr tmpl = injamm::fixed_string("{{#partialdef card}}{{name}}({{age}})/{{/partialdef}}"
+                                             "{{#users}}{{#partial card}}{{/users}}");
+  auto r              = injamm::render<tmpl>(data);
   REQUIRE(r.has_value());
   CHECK(*r == "Bob(25)/Charlie(35)/");
 }
 
 TEST_CASE("ct_partial_render_by_name", "[injamm][ct][partial]") {
   CtUser user{"Dave", 40};
-  auto constexpr tmpl = injamm::fixed_string(
-    "{{#partialdef sidebar}}{{name}}'s page{{/partialdef}}full: {{#partial sidebar}}|end");
-  auto full = injamm::render<tmpl>(user);
+  auto constexpr tmpl = injamm::fixed_string("{{#partialdef sidebar}}{{name}}'s page{{/partialdef}}full: {{#partial sidebar}}|end");
+  auto full           = injamm::render<tmpl>(user);
   REQUIRE(full.has_value());
   CHECK(*full == "full: Dave's page|end");
 
@@ -2332,10 +2317,9 @@ TEST_CASE("ct_partial_render_by_name", "[injamm][ct][partial]") {
 
 TEST_CASE("ct_partial_unknown_name_error", "[injamm][ct][partial]") {
   CtUser user{"Alice", 30};
-  auto constexpr tmpl = injamm::fixed_string(
-    "{{#partialdef greeting}}HELLO{{/partialdef}}"
-    "{{#partial missing}}");
-  auto r = injamm::render<tmpl>(user);
+  auto constexpr tmpl = injamm::fixed_string("{{#partialdef greeting}}HELLO{{/partialdef}}"
+                                             "{{#partial missing}}");
+  auto r              = injamm::render<tmpl>(user);
   REQUIRE_FALSE(r.has_value());
   CHECK(r.error().ec == injamm::error_code::unknown_key);
 }
@@ -2344,12 +2328,118 @@ TEST_CASE("ct_partial_in_partial", "[injamm][ct][partial]") {
   CtUsersData data{};
   data.users.push_back(CtUser{"Bob", 25});
   data.users.push_back(CtUser{"Charlie", 35});
-  auto constexpr tmpl = injamm::fixed_string(
-    "{{#partialdef name}}{{name}}{{/partialdef}}"
-    "{{#partialdef card}}{{#partial name}}({{age}})/{{/partialdef}}"
-    "{{#users}}{{#partial card}}{{/users}}");
-  auto r = injamm::render<tmpl>(data);
+  auto constexpr tmpl = injamm::fixed_string("{{#partialdef name}}{{name}}{{/partialdef}}"
+                                             "{{#partialdef card}}{{#partial name}}({{age}})/{{/partialdef}}"
+                                             "{{#users}}{{#partial card}}{{/users}}");
+  auto r              = injamm::render<tmpl>(data);
   REQUIRE(r.has_value());
   CHECK(*r == "Bob(25)/Charlie(35)/");
 }
 
+
+// ============================================================================
+// CT Eval (compile-time evaluation)
+// ============================================================================
+
+TEST_CASE("ct_render literal only", "[injamm][ct_eval]") {
+  auto r = injamm::ct_render<"Hello world!">(CtUser{});
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "Hello world!");
+}
+
+TEST_CASE("ct_render string variable", "[injamm][ct_eval]") {
+  auto user = CtUser{.name = "Alice", .age = 30};
+  auto r    = injamm::ct_render<"Hello {{name}}!">(user);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "Hello Alice!");
+}
+
+TEST_CASE("ct_render integer variable", "[injamm][ct_eval]") {
+  auto user = CtUser{.name = "Bob", .age = 42};
+  auto r    = injamm::ct_render<"{{name}} is {{age}} years old">(user);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "Bob is 42 years old");
+}
+
+TEST_CASE("ct_render raw variable", "[injamm][ct_eval]") {
+  auto user    = CtUser{.name = "<b>Alice</b>", .age = 30};
+  auto escaped = injamm::ct_render<"{{name}}">(user);
+  auto raw     = injamm::ct_render<"{{{name}}}">(user);
+  REQUIRE(*escaped == "&lt;b&gt;Alice&lt;/b&gt;");
+  REQUIRE(*raw == "<b>Alice</b>");
+}
+
+TEST_CASE("ct_render truthy section", "[injamm][ct_eval]") {
+  auto user = CtUser{.name = "Alice", .age = 30};
+  auto r    = injamm::ct_render<"{{#name}}present{{/name}}">(user);
+  REQUIRE(*r == "present");
+}
+
+TEST_CASE("ct_render falsy section", "[injamm][ct_eval]") {
+  auto user = CtUser{.name = "", .age = 0};
+  auto r    = injamm::ct_render<"{{#name}}present{{/name}}">(user);
+  REQUIRE(*r == "");
+}
+
+TEST_CASE("ct_render inverted section", "[injamm][ct_eval]") {
+  auto user = CtUser{.name = "", .age = 30};
+  auto r    = injamm::ct_render<"{{^name}}empty{{/name}}">(user);
+  REQUIRE(*r == "empty");
+}
+
+TEST_CASE("ct_render section else", "[injamm][ct_eval]") {
+  auto user = CtUser{.name = "Alice", .age = 30};
+  auto r    = injamm::ct_render<"{{#name}}yes{{else}}no{{/name}}">(user);
+  REQUIRE(*r == "yes");
+}
+
+TEST_CASE("ct_render inverted section else", "[injamm][ct_eval]") {
+  auto user = CtUser{.name = "", .age = 30};
+  auto r    = injamm::ct_render<"{{^name}}yes{{else}}no{{/name}}">(user);
+  REQUIRE(*r == "yes");
+}
+
+TEST_CASE("ct_render if int", "[injamm][ct_eval]") {
+  auto adult = CtUser{.name = "Alice", .age = 30};
+  auto child = CtUser{.name = "Bob", .age = 0};
+  auto r1    = injamm::ct_render<"{{#if age}}adult{{/if}}">(adult);
+  auto r2    = injamm::ct_render<"{{#if age}}adult{{/if}}">(child);
+  REQUIRE(*r1 == "adult");
+  REQUIRE(*r2 == "");
+}
+
+TEST_CASE("ct_render if string", "[injamm][ct_eval]") {
+  auto named   = CtUser{.name = "Alice", .age = 30};
+  auto unnamed = CtUser{.name = "", .age = 30};
+  auto r1      = injamm::ct_render<"{{#if name}}named{{else}}unnamed{{/if}}">(named);
+  auto r2      = injamm::ct_render<"{{#if name}}named{{else}}unnamed{{/if}}">(unnamed);
+  REQUIRE(*r1 == "named");
+  REQUIRE(*r2 == "unnamed");
+}
+
+TEST_CASE("ct_render bool section", "[injamm][ct_eval]") {
+  auto t  = CtBoolData{.flag = true};
+  auto f  = CtBoolData{.flag = false};
+  auto r1 = injamm::ct_render<"{{#flag}}on{{/flag}}">(t);
+  auto r2 = injamm::ct_render<"{{#flag}}on{{/flag}}">(f);
+  REQUIRE(*r1 == "on");
+  REQUIRE(*r2 == "");
+}
+
+TEST_CASE("ct_render partial", "[injamm][ct_eval][partial]") {
+  auto constexpr tmpl = injamm::fixed_string("{{#partialdef greet}}Hi {{name}}{{/partialdef}}"
+                                             "{{#partial greet}}");
+  auto user           = CtUser{.name = "Alice", .age = 30};
+  auto r              = injamm::ct_render<tmpl>(user);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "Hi Alice");
+}
+
+TEST_CASE("ct_render partial with multiple vars", "[injamm][ct_eval][partial]") {
+  auto constexpr tmpl = injamm::fixed_string("{{#partialdef greet}}{{name}}-{{age}}{{/partialdef}}"
+                                             "{{#partial greet}}");
+  auto user           = CtUser{.name = "Alice", .age = 30};
+  auto r              = injamm::ct_render<tmpl>(user);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "Alice-30");
+}
