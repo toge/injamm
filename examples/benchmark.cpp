@@ -249,6 +249,45 @@ static int bench_ct_render() {
   return 0;
 }
 
+static int bench_ct_partial_selected() {
+  Person dave{"Dave", 40};
+
+  // テンプレート: 3つの partialdef (leaf, transitive_child, unused) + 選択レンダリング
+  auto constexpr kTmpl = injamm::fixed_string(
+    "{{#partialdef leaf}}{{name}}/{{age}}{{/partialdef}}"
+    "{{#partialdef transitive_child}}CHILD:{{#partial leaf}}{{/partialdef}}"
+    "{{#partialdef unused}}NEVER{{/partialdef}}");
+
+  // warmup
+  for (int i = 0; i < 1000; ++i)
+    (void)injamm::render_partial<kTmpl, "leaf">(dave);
+
+  constexpr int ITERS = 50000;
+  auto start = std::chrono::high_resolution_clock::now();
+  for (int i = 0; i < ITERS; ++i)
+    (void)injamm::render_partial<kTmpl, "leaf">(dave);
+  auto end = std::chrono::high_resolution_clock::now();
+  auto us = elapsed_us(start, end);
+  std::printf("  ct_partial_selected(leaf)  x %d: %.0f us  (%.1f ns/call)\n", ITERS, us, us * 1000.0 / ITERS);
+
+  start = std::chrono::high_resolution_clock::now();
+  for (int i = 0; i < ITERS; ++i)
+    (void)injamm::render_partial<kTmpl, "transitive_child">(dave);
+  end = std::chrono::high_resolution_clock::now();
+  us = elapsed_us(start, end);
+  std::printf("  ct_partial_selected(child) x %d: %.0f us  (%.1f ns/call)\n", ITERS, us, us * 1000.0 / ITERS);
+
+  // 比較用: 実行時名前版（全partialコンパイル）
+  start = std::chrono::high_resolution_clock::now();
+  for (int i = 0; i < ITERS; ++i)
+    (void)injamm::render_partial<kTmpl>(dave, "leaf");
+  end = std::chrono::high_resolution_clock::now();
+  us = elapsed_us(start, end);
+  std::printf("  ct_partial_old(leaf)       x %d: %.0f us  (%.1f ns/call)  — 全コンパイル\n", ITERS, us, us * 1000.0 / ITERS);
+
+  return 0;
+}
+
 int main() {
   std::printf("=== Benchmark ===\n\n");
 
@@ -276,6 +315,9 @@ int main() {
 
   std::printf("\n--- CT render ---\n");
   bench_ct_render();
+
+  std::printf("\n--- CT partial (selective compile) ---\n");
+  bench_ct_partial_selected();
 
   std::printf("\n--- wide struct (P3 field-index dispatch) ---\n");
   bench_wide_struct();

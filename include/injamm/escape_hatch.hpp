@@ -322,6 +322,94 @@ namespace detail {
     return bc;
   }
 
+  // 指定 partial から推移的に到達可能な partial を後行順 DFS で列挙。
+  // order は依存先が先頭に来るトポロジカル順（実行時コンパイラは前方参照不可のため必須）。
+  template <std::size_t N>
+  struct partial_closure {
+    std::array<std::size_t, N> order{};
+    std::size_t count = 0;
+    bool found = false;
+  };
+
+  template <std::size_t N>
+  consteval partial_closure<N> compute_partial_closure(ct_parsed_template<N> const& p, std::string_view sv, std::string_view target) {
+    partial_closure<N> result;
+    std::size_t target_idx = static_cast<std::size_t>(-1);
+    for (std::size_t i = 0; i < p.partial_count; ++i) {
+      if (p.partial_names[i] == target) {
+        target_idx = i;
+        break;
+      }
+    }
+    if (target_idx == static_cast<std::size_t>(-1))
+      return result;  // found == false
+    result.found = true;
+
+    std::array<bool, N> visited{};
+    std::array<bool, N> in_stack{};
+    auto dfs = [&](auto& self, std::size_t node) -> void {
+      if (visited[node])
+        return;
+      visited[node] = true;
+      in_stack[node] = true;
+      std::string_view body = sv.substr(p.partial_body_starts[node], p.partial_body_ends[node] - p.partial_body_starts[node]);
+      std::size_t pos = 0;
+      while (pos < body.size()) {
+        auto at = constexpr_find(body, "{{#partial ", pos);
+        if (at == std::string_view::npos)
+          break;
+        auto end = constexpr_find(body, "}}", at);
+        if (end == std::string_view::npos)
+          break;
+        std::string_view ref = trim_sv(body.substr(at + 11, end - (at + 11)));  // "{{#partial " は 11 文字
+        for (std::size_t j = 0; j < p.partial_count; ++j) {
+          if (p.partial_names[j] == ref) {
+            if (!in_stack[j])
+              self(self, j);
+            break;
+          }
+        }
+        pos = end + 2;
+      }
+      in_stack[node] = false;
+      result.order[result.count++] = node;  // 後行順：依存先の後
+    };
+    dfs(dfs, target_idx);
+    return result;
+  }
+
+  // ponytail: 循環参照（A→B→A）は visited で無限ループを回避するがトポ順が付かず、
+  // 実行時コンパイルで unknown_key になる。前方参照不可という現行制約の範囲内。
+
+  // 指定 partial とその推移的依存だけをコンパイルし、それ以外を byte コードから捨てる。
+  template <typename Data, fixed_string PartialName, typename T>
+  detail::bytecode const& nttp_selected_partial_holder() {
+    static auto const bc = [] {
+      constexpr auto target_sv = detail::nttp_string_view(PartialName);
+      constexpr auto closure = detail::compute_partial_closure(Data::parsed, Data::tmpl_sv, target_sv);
+      detail::bytecode bc;
+      if constexpr (!closure.found) {
+        bc.error = error_ctx{0, error_code::unknown_key, target_sv};
+        return bc;
+      }
+      auto tmpl_sv = Data::tmpl_sv;
+      for (std::size_t k = 0; k < closure.count; ++k) {
+        std::size_t i = closure.order[k];  // 依存先が先
+        auto body = tmpl_sv.substr(Data::parsed.partial_body_starts[i], Data::parsed.partial_body_ends[i] - Data::parsed.partial_body_starts[i]);
+        detail::bc_compiler<T> compiler;
+        compiler.set_partial_entries(bc.partial_entries);  // 既コンパイル済み依存先を渡す
+        auto partial_bc = compiler.compile(std::string(body));
+        if (partial_bc.error.ec != error_code::none) {
+          bc.error = partial_bc.error;
+          break;
+        }
+        bc.partial_entries.push_back({std::string(Data::parsed.partial_names[i]), std::make_shared<detail::bytecode>(std::move(partial_bc))});
+      }
+      return bc;
+    }();
+    return bc;
+  }
+
 }  // namespace detail
 
 /**
@@ -440,6 +528,37 @@ template <fixed_string Tmpl, int TrimBlocks = 0, int LstripBlocks = 0, typename 
   auto it = std::find_if(bc.partial_entries.begin(), bc.partial_entries.end(), [&](auto const& e) { return e.name == partial_name; });
   if (it == bc.partial_entries.end())
     return std::unexpected(error_ctx{0, error_code::unknown_key, partial_name});
+  return detail::bc_execute(*it->bc, value);
+}
+
+/**
+ * @brief NTTP ベースの名前付き partial レンダリング（partial 名をテンプレート引数で指定）
+ *
+ * @details レンダリングする partial 名をテンプレート引数 PartialName で指定する。
+ *          指定 partial とそれが推移的に参照する partial だけをバイトコードにコンパイルし、
+ *          それ以外の {{#partialdef}} は生成されるバイトコードから捨てる。
+ *          前方参照不可の制約から、依存先を先にコンパイルするトポロジカル順で構成される。
+ *
+ * @tparam Tmpl       コンパイル時テンプレート文字列（fixed_string リテラル）
+ * @tparam PartialName レンダリングする partial の名前（fixed_string リテラル）
+ * @tparam TrimBlocks   先頭/末尾ホワイトスペーストリム（0=無効）
+ * @tparam LstripBlocks 左ストリップブロック（0=無効）
+ * @tparam T          コンテキスト値の型（glz::meta<T> 要特殊化）
+ * @param value       コンテキスト値の const 参照
+ * @return expected<std::string> レンダリング結果、またはエラー
+ */
+template <fixed_string Tmpl, fixed_string PartialName, int TrimBlocks = 0, int LstripBlocks = 0, typename T>
+[[nodiscard]] expected<std::string> render_partial(T const& value) {
+  using D = detail::nttp_render_data<Tmpl, TrimBlocks != 0, LstripBlocks != 0, T>;
+  constexpr auto target_sv = detail::nttp_string_view(PartialName);
+  constexpr auto closure = detail::compute_partial_closure(D::parsed, D::tmpl_sv, target_sv);
+  static_assert(closure.found, "injamm: {{#partialdef <PartialName>}} not found in the template.");
+  if constexpr (D::ct_bc.error.ec != error_code::none)
+    return std::unexpected(D::ct_bc.error);
+  auto& bc = detail::nttp_selected_partial_holder<D, PartialName, T>();
+  if (bc.error.ec != error_code::none)
+    return std::unexpected(bc.error);
+  auto it = std::find_if(bc.partial_entries.begin(), bc.partial_entries.end(), [&](auto const& e) { return e.name == target_sv; });
   return detail::bc_execute(*it->bc, value);
 }
 

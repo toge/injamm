@@ -2335,3 +2335,59 @@ TEST_CASE("ct_partial_in_partial", "[injamm][ct][partial]") {
   REQUIRE(r.has_value());
   CHECK(*r == "Bob(25)/Charlie(35)/");
 }
+
+// ---- render_partial<Tmpl, PartialName>（使う partial だけをコンパイル）----
+
+TEST_CASE("ct_partial_render_selected_transitive", "[injamm][ct][partial]") {
+  CtUser user{"Bob", 25};
+  // card が name を推移参照。unused はいずれにも依存されない。
+  auto constexpr tmpl = injamm::fixed_string("{{#partialdef name}}{{name}}{{/partialdef}}"
+                                             "{{#partialdef card}}{{#partial name}}:{{age}}/{{/partialdef}}"
+                                             "{{#partialdef unused}}NEVER{{/partialdef}}");
+  // 指定 partial とその推移的依存（card -> name）だけがコンパイルされる。
+  // unused は byte コードから捨てられる。
+  auto card = injamm::render_partial<tmpl, "card">(user);
+  REQUIRE(card.has_value());
+  CHECK(*card == "Bob:25/");
+
+  auto name = injamm::render_partial<tmpl, "name">(user);
+  REQUIRE(name.has_value());
+  CHECK(*name == "Bob");
+}
+
+TEST_CASE("ct_partial_render_selected_skip_unrelated", "[injamm][ct][partial]") {
+  CtUser user{"Alice", 30};
+  // unused を参照しない leaf partial を指定 → 他はコンパイルされない
+  auto constexpr tmpl = injamm::fixed_string("{{#partialdef leaf}}LEAF:{{name}}{{/partialdef}}"
+                                             "{{#partialdef unused}}UNUSED:{{age}}{{/partialdef}}");
+  auto leaf = injamm::render_partial<tmpl, "leaf">(user);
+  REQUIRE(leaf.has_value());
+  CHECK(*leaf == "LEAF:Alice");
+}
+
+TEST_CASE("ct_partial_render_selected_unknown_name", "[injamm][ct][partial]") {
+  // 存在しない partial 名を指定 → コンパイル時 static_assert で検出されるため、
+  // こちらは実行時名前版（全コンパイル）の既存エラー挙動を確認する。
+  CtUser user{"Alice", 30};
+  auto constexpr tmpl = injamm::fixed_string("{{#partialdef greets}}{{name}}{{/partialdef}}");
+  auto r              = injamm::render_partial<tmpl>(user, "nope");
+  REQUIRE_FALSE(r.has_value());
+  CHECK(r.error().ec == injamm::error_code::unknown_key);
+}
+
+TEST_CASE("ct_partial_render_selected_drops_unreachable", "[injamm][ct][partial]") {
+  // broken は存在しない partial を参照する不正な定義。
+  // それを参照しない ok を指定してレンダリングする場合、broken はコンパイルされず
+  // エラーにならない（byte コードから捨てられることを証明）。
+  CtUser user{"Alice", 30};
+  auto constexpr tmpl = injamm::fixed_string("{{#partialdef ok}}OK:{{name}}{{/partialdef}}"
+                                             "{{#partialdef broken}}{{#partial ghost}}{{/partialdef}}");
+  auto ok = injamm::render_partial<tmpl, "ok">(user);
+  REQUIRE(ok.has_value());
+  CHECK(*ok == "OK:Alice");
+
+  // 対照: broken を指定（実行時名前版は全コンパイル）するとエラーになる
+  auto broken = injamm::render_partial<tmpl>(user, "broken");
+  REQUIRE_FALSE(broken.has_value());
+  CHECK(broken.error().ec == injamm::error_code::unknown_key);
+}
