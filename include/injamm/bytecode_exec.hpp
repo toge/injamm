@@ -963,13 +963,13 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
              if (!res) return;
              using elem_t = std::remove_cvref_t<decltype(glz::get<I>(tied))>;
              bc_loop_state ls;
-             ls.parent = loop_;
+             ls.parent = ex.loop_;
              ls.count = sz; ls.index = I; ls.key = glz::reflect<FT>::keys[I];
              ls.binding_name = ref.key;
              ls.binding_elem = &glz::get<I>(tied);
              ls.binding_resolve = &resolve_binding_var<elem_t>;
              ls.binding_truthy = &eval_binding_truthy<elem_t>;
-             bc_executor<elem_t, RootT> child_exec(bc_, glz::get<I>(tied), root_value_, &ls, out_);
+             bc_executor<elem_t, RootT> child_exec(ex.bc_, glz::get<I>(tied), ex.root_value_, &ls, ex.out_);
              res = child_exec.execute_impl(pc + 1, body_end - 1);
           }()), ...);
         }(std::make_index_sequence<sz>{});

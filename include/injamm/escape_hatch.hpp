@@ -50,6 +50,13 @@ namespace detail {
   template <typename T>
   inline constexpr bool always_false = false;
 
+  template <typename T>
+  struct is_fixed_string_type : std::false_type {};
+  template <std::size_t N>
+  struct is_fixed_string_type<fixed_string<N>> : std::true_type {};
+  template <typename T>
+  constexpr bool is_fixed_string_type_v = is_fixed_string_type<std::remove_cvref_t<T>>::value;
+
   /**
    * @brief NTTP 文字列から string_view を取得する
    *
@@ -503,6 +510,50 @@ template <fixed_string Tmpl, fixed_string... Entries, typename T>
     return std::unexpected(D::ct_bc.error);
   return detail::bc_execute_into(detail::nttp_bytecode_holder<D>(), value, out);
 }
+
+#if INJAMM_HAS_FROZENCHARS
+
+template <auto Tmpl, int TrimBlocks = 0, int LstripBlocks = 0, typename T>
+  requires (!detail::is_fixed_string_type_v<decltype(Tmpl)>)
+[[nodiscard]] expected<std::string> render(T const& value) {
+  using D = detail::nttp_render_data<Tmpl, TrimBlocks != 0, LstripBlocks != 0, T>;
+  if constexpr (D::ct_bc.error.ec != error_code::none)
+    return std::unexpected(D::ct_bc.error);
+  return detail::bc_execute(detail::nttp_partial_bytecode_holder<D, T>(), value);
+}
+
+template <auto Tmpl, int TrimBlocks = 0, int LstripBlocks = 0, typename T>
+  requires (!detail::is_fixed_string_type_v<decltype(Tmpl)>)
+[[nodiscard]] expected<void> render(T const& value, std::string& out) {
+  using D = detail::nttp_render_data<Tmpl, TrimBlocks != 0, LstripBlocks != 0, T>;
+  if constexpr (D::ct_bc.error.ec != error_code::none)
+    return std::unexpected(D::ct_bc.error);
+  return detail::bc_execute_into(detail::nttp_partial_bytecode_holder<D, T>(), value, out);
+}
+
+template <auto Tmpl, auto... Entries, typename T>
+  requires(sizeof...(Entries) > 0 && !detail::is_fixed_string_type_v<decltype(Tmpl)>)
+[[nodiscard]] expected<std::string> render(T const& value) {
+  static_assert(sizeof...(Entries) % 2 == 0, "injamm: @var entries must be key-value pairs (even count). "
+                                             "Example: render<tmpl, \"key1\", \"value1\", \"key2\", \"value2\">(data)");
+  using D = detail::nttp_atvar_data<Tmpl, T, Entries...>;
+  if constexpr (D::ct_bc.error.ec != error_code::none)
+    return std::unexpected(D::ct_bc.error);
+  return detail::bc_execute(detail::nttp_bytecode_holder<D>(), value);
+}
+
+template <auto Tmpl, auto... Entries, typename T>
+  requires(sizeof...(Entries) > 0 && !detail::is_fixed_string_type_v<decltype(Tmpl)>)
+[[nodiscard]] expected<void> render(T const& value, std::string& out) {
+  static_assert(sizeof...(Entries) % 2 == 0, "injamm: @var entries must be key-value pairs (even count). "
+                                             "Example: render<tmpl, \"key1\", \"value1\", \"key2\", \"value2\">(data, out)");
+  using D = detail::nttp_atvar_data<Tmpl, T, Entries...>;
+  if constexpr (D::ct_bc.error.ec != error_code::none)
+    return std::unexpected(D::ct_bc.error);
+  return detail::bc_execute_into(detail::nttp_bytecode_holder<D>(), value, out);
+}
+
+#endif
 
 /**
  * @brief NTTP ベースの名前付き partial レンダリング
