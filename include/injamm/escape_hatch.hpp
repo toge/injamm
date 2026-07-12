@@ -2,9 +2,9 @@
 
 /**
  * @file escape_hatch.hpp
- * @brief NTTP コンパイル時パーサーとバイトコード VM の公開 API
+ * @brief NTTP コンピイル時パーサーとバイトコード VM の公開 API
  *
- * @details fixed_string（NTTP 文字列）とコンパイル時パースによる
+ * @details fixed_string（NTTP 文字列）とコンピイル時パースによる
  *          true compile-time template rendering（render 関数）、
  *          および実行時コンパイル + Bytecode VM によるランタイムレンダリング
  *          （engine クラス）の 2 系統の API を提供する。
@@ -19,8 +19,8 @@
 #include "bytecode_debug.hpp"
 #include "bytecode_compile.hpp"
 #include "bytecode_exec.hpp"
-#include <memory>
 #include <array>
+#include <memory>
 #include <tuple>
 
 #if __has_include(<frozenchars/mod/core.hpp>)
@@ -39,48 +39,6 @@ namespace injamm {
  *
  * @tparam N 文字配列の長さ（ヌル終端を含む）
  */
-template <std::size_t N>
-struct fixed_string {
-  char data[N]{}; /**< @brief 内部バッファ（ヌル終端文字列） */
-
-  fixed_string() = default;
-
-  /**
-   * @brief 文字列リテラルから構築する
-   *
-   * @param str ヌル終端された文字配列リテラル
-   */
-  consteval fixed_string(char const (&str)[N]) {
-    for (std::size_t i = 0; i < N; ++i) {
-      data[i] = str[i];
-    }
-  }
-
-#if INJAMM_HAS_FROZENCHARS
-  /**
-   * @brief FrozenString から構築する
-   *
-   * @param fs frozenchars のコンパイル時文字列
-   */
-  constexpr fixed_string(frozenchars::FrozenString<N> const& fs) noexcept {
-    for (std::size_t i = 0; i < fs.size(); ++i) {
-      data[i] = fs.data()[i];
-    }
-    data[fs.size()] = '\0';
-  }
-#endif
-
-  /**
-   * @brief 文字列長を返す（ヌル終端除く）
-   *
-   * @return std::size_t 文字数（N - 1）
-   */
-  [[nodiscard]] constexpr std::size_t size() const noexcept {
-    std::size_t len = 0;
-    while (len < N && data[len] != '\0') ++len;
-    return len;
-  }
-};
 
 #if INJAMM_HAS_FROZENCHARS
 template <std::size_t M>
@@ -89,279 +47,282 @@ fixed_string(frozenchars::FrozenString<M>) -> fixed_string<M>;
 
 namespace detail {
 
-template <typename T>
-inline constexpr bool always_false = false;
+  template <typename T>
+  inline constexpr bool always_false = false;
 
-/**
- * @brief NTTP 文字列から string_view を取得する
- *
- * @details fixed_string (data メンバ) と FrozenString (data() メソッド) の
- *          両方に対応する。auto NTTP で統一するためのブリッジ関数。
- *
- * @tparam S NTTP 文字列型
- * @param s  NTTP 文字列インスタンス
- * @return std::string_view 内部バッファを指すビュー
- */
-template <typename S>
-constexpr std::string_view nttp_string_view(S const& s) noexcept {
-  if constexpr (requires { s.data; }) {
-    return {s.data, s.size()};
-  } else if constexpr (requires { s.data(); }) {
-    return {s.data(), s.size()};
-  } else {
-    static_assert(always_false<S>, 
-      "injamm: Unsupported NTTP string type. "
-      "Expected injamm::fixed_string or frozenchars::FrozenString. "
-      "Ensure your type has either a '.data' member or a '.data()' method.");
-  }
-}
-
-/**
- * @brief コンパイル時パース実装（SoA 形式）
- *
- * @details NTTP テンプレート引数から文字列を取り出し、
- *          ct_parse_into で SoA 形式のチャンク配列にパースする。
- *          パース結果は constexpr で確定し、実行時オーバーヘッドはゼロ。
- *          fixed_string / FrozenString の両方に対応。
- *
- * @tparam Tmpl テンプレート文字列（NTTP）
- * @return ct_parsed_template<Tmpl.size() + 1> パース済みチャンク配列
- */
-template <auto Tmpl, bool TrimBlocks = false, bool LstripBlocks = false>
-consteval auto parse_fixed_impl() -> ct_parsed_template<Tmpl.size() + 1> {
-  auto sv = nttp_string_view(Tmpl);
-  ct_parse_context<Tmpl.size() + 1> ctx;
-
-  // 事前スキャン: {{#partialdef name}}...{{/partialdef}} を抽出
-  {
-    std::size_t pos = 0;
-    while (pos < sv.size()) {
-      auto pdef_start = constexpr_find(sv, "{{#partialdef", pos);
-      if (pdef_start == std::string_view::npos) break;
-      auto tag_end = constexpr_find(sv, "}}", pdef_start);
-      if (tag_end == std::string_view::npos) break;
-      auto inner = trim_sv(sv.substr(pdef_start + 2, tag_end - pdef_start - 2));
-      if (!inner.starts_with("#partialdef ")) { pos = tag_end + 2; continue; }
-      auto name = trim_sv(inner.substr(12));
-      auto close_tag = constexpr_find(sv, "{{/partialdef}}", tag_end + 2);
-      if (close_tag == std::string_view::npos) break;
-      auto& tmpl = ctx.tmpl;
-      tmpl.partial_names[tmpl.partial_count] = name;
-      tmpl.partial_body_starts[tmpl.partial_count] = tag_end + 2;
-      tmpl.partial_body_ends[tmpl.partial_count] = close_tag;
-      ++tmpl.partial_count;
-      pos = close_tag + 15;
+  /**
+   * @brief NTTP 文字列から string_view を取得する
+   *
+   * @details fixed_string (data メンバ) と FrozenString (data() メソッド) の
+   *          両方に対応する。auto NTTP で統一するためのブリッジ関数。
+   *
+   * @tparam S NTTP 文字列型
+   * @param s  NTTP 文字列インスタンス
+   * @return std::string_view 内部バッファを指すビュー
+   */
+  template <typename S>
+  constexpr std::string_view nttp_string_view(S const& s) noexcept {
+    if constexpr (requires { s.data; }) {
+      return {s.data, s.size()};
+    } else if constexpr (requires { s.data(); }) {
+      return {s.data(), s.size()};
+    } else {
+      static_assert(always_false<S>, "injamm: Unsupported NTTP string type. "
+                                     "Expected injamm::fixed_string or frozenchars::FrozenString. "
+                                     "Ensure your type has either a '.data' member or a '.data()' method.");
     }
   }
 
-  ct_parse_into(ctx, sv, TrimBlocks, LstripBlocks);
-  return ctx.tmpl;
-}
+  /**
+   * @brief コンパイル時パース実装（SoA 形式）
+   *
+   * @details NTTP テンプレート引数から文字列を取り出し、
+   *          ct_parse_into で SoA 形式のチャンク配列にパースする。
+   *          パース結果は constexpr で確定し、実行時オーバーヘッドはゼロ。
+   *          fixed_string / FrozenString の両方に対応。
+   *
+   * @tparam Tmpl テンプレート文字列（NTTP）
+   * @return ct_parsed_template<Tmpl.size() + 1> パース済みチャンク配列
+   */
+  template <auto Tmpl, bool TrimBlocks = false, bool LstripBlocks = false>
+  consteval auto parse_fixed_impl() -> ct_parsed_template<Tmpl.size() + 1> {
+    auto                              sv = nttp_string_view(Tmpl);
+    ct_parse_context<Tmpl.size() + 1> ctx;
 
-/**
- * @brief コンパイル時キー・バリュー参照テーブル
- *
- * @details NTTP 文字列のペアをキー・バリューとして格納し、文字列キーから
- *          定数値を O(n) 検索する。偶数の entries が必要（キー・バリューのペア）。
- *          見つからない場合は空の string_view を返す。
- *          fixed_string / FrozenString の両方に対応。
- *
- * @tparam Entries NTTP 文字列のパラメータパック（キー1, 値1, キー2, 値2, ...）
- */
-template <auto... Entries>
-struct ct_var_table {
-  static constexpr std::size_t num = sizeof...(Entries);
-  static_assert(num % 2 == 0, 
-    "injamm: @var entries must be key-value pairs (even count). "
-    "Example: render<tmpl, \"key1\", \"value1\", \"key2\", \"value2\">(data)");
+    // 事前スキャン: {{#partialdef name}}...{{/partialdef}} を抽出
+    {
+      std::size_t pos = 0;
+      while (pos < sv.size()) {
+        auto pdef_start = constexpr_find(sv, "{{#partialdef", pos);
+        if (pdef_start == std::string_view::npos)
+          break;
+        auto tag_end = constexpr_find(sv, "}}", pdef_start);
+        if (tag_end == std::string_view::npos)
+          break;
+        auto inner = trim_sv(sv.substr(pdef_start + 2, tag_end - pdef_start - 2));
+        if (!inner.starts_with("#partialdef ")) {
+          pos = tag_end + 2;
+          continue;
+        }
+        auto name      = trim_sv(inner.substr(12));
+        auto close_tag = constexpr_find(sv, "{{/partialdef}}", tag_end + 2);
+        if (close_tag == std::string_view::npos)
+          break;
+        auto& tmpl                                   = ctx.tmpl;
+        tmpl.partial_names[tmpl.partial_count]       = name;
+        tmpl.partial_body_starts[tmpl.partial_count] = tag_end + 2;
+        tmpl.partial_body_ends[tmpl.partial_count]   = close_tag;
+        ++tmpl.partial_count;
+        pos = close_tag + 15;
+      }
+    }
 
-  static constexpr std::array<std::string_view, num> entries{
-    nttp_string_view(Entries)...
+    ct_parse_into(ctx, sv, TrimBlocks, LstripBlocks);
+    return ctx.tmpl;
+  }
+
+  /**
+   * @brief コンパイル時キー・バリュー参照テーブル
+   *
+   * @details NTTP 文字列のペアをキー・バリューとして格納し、文字列キーから
+   *          定数値を O(n) 検索する。偶数の entries が必要（キー・バリューのペア）。
+   *          見つからない場合は空の string_view を返す。
+   *          fixed_string / FrozenString の両方に対応。
+   *
+   * @tparam Entries NTTP 文字列のパラメータパック（キー1, 値1, キー2, 値2, ...）
+   */
+  template <auto... Entries>
+  struct ct_var_table {
+    static constexpr std::size_t num = sizeof...(Entries);
+    static_assert(num % 2 == 0, "injamm: @var entries must be key-value pairs (even count). "
+                                "Example: render<tmpl, \"key1\", \"value1\", \"key2\", \"value2\">(data)");
+
+    static constexpr std::array<std::string_view, num> entries{nttp_string_view(Entries)...};
+
+    static constexpr std::string_view lookup(std::string_view key) noexcept {
+      for (std::size_t i = 0; i < num; i += 2) {
+        if (entries[i] == key)
+          return entries[i + 1];
+      }
+      return {};
+    }
   };
 
-  static constexpr std::string_view lookup(std::string_view key) noexcept {
-    for (std::size_t i = 0; i < num; i += 2) {
-      if (entries[i] == key)
-        return entries[i + 1];
-    }
-    return {};
-  }
-};
+  /**
+   * @brief コンパイル時 @var(name) 展開テンプレート
+   *
+   * @details テンプレート文字列中の @var(name) を ct_var_table の定数値に
+   *          コンパイル時に展開する。サイズ計算と実データの2段階で動作する。
+   *          fixed_string / FrozenString の両方に対応。
+   *
+   * @tparam Tmpl    元テンプレート文字列（NTTP）
+   * @tparam Entries キー・バリューペアのパラメータパック（NTTP）
+   */
+  template <auto Tmpl, auto... Entries>
+  struct ct_expanded_template {
+    using table = ct_var_table<Entries...>;
 
-/**
- * @brief コンパイル時 @var(name) 展開テンプレート
- *
- * @details テンプレート文字列中の @var(name) を ct_var_table の定数値に
- *          コンパイル時に展開する。サイズ計算と実データの2段階で動作する。
- *          fixed_string / FrozenString の両方に対応。
- *
- * @tparam Tmpl    元テンプレート文字列（NTTP）
- * @tparam Entries キー・バリューペアのパラメータパック（NTTP）
- */
-template <auto Tmpl, auto... Entries>
-struct ct_expanded_template {
-  using table = ct_var_table<Entries...>;
-
-  static constexpr std::size_t compute_size() {
-    auto sv = nttp_string_view(Tmpl);
-    std::size_t sz = 0;
-    std::size_t pos = 0;
-    while (pos < sv.size()) {
-      auto var_start = constexpr_find(sv, "@var(", pos);
-      auto partial_start = constexpr_find(sv, "{{>", pos);
-      auto next = [&] {
-        if (var_start == std::string_view::npos) return partial_start;
-        if (partial_start == std::string_view::npos) return var_start;
-        return std::min(var_start, partial_start);
-      }();
-      if (next == std::string_view::npos) {
-        sz += sv.size() - pos;
-        break;
-      }
-      sz += next - pos;
-
-      if (next == var_start) {
-        auto close = constexpr_find(sv, ')', var_start + 5);
-        if (close == std::string_view::npos) {
-          sz += sv.size() - var_start;
+    static constexpr std::size_t compute_size() {
+      auto        sv  = nttp_string_view(Tmpl);
+      std::size_t sz  = 0;
+      std::size_t pos = 0;
+      while (pos < sv.size()) {
+        auto var_start     = constexpr_find(sv, "@var(", pos);
+        auto partial_start = constexpr_find(sv, "{{>", pos);
+        auto next          = [&] {
+          if (var_start == std::string_view::npos)
+            return partial_start;
+          if (partial_start == std::string_view::npos)
+            return var_start;
+          return std::min(var_start, partial_start);
+        }();
+        if (next == std::string_view::npos) {
+          sz += sv.size() - pos;
           break;
         }
-        auto name = sv.substr(var_start + 5, close - var_start - 5);
-        auto val = table::lookup(name);
-        sz += val.empty() ? (close - var_start + 1) : val.size();
-        pos = close + 1;
-      } else {
-        auto close = constexpr_find(sv, "}}", partial_start + 3);
-        if (close == std::string_view::npos) {
-          sz += sv.size() - partial_start;
+        sz += next - pos;
+
+        if (next == var_start) {
+          auto close = constexpr_find(sv, ')', var_start + 5);
+          if (close == std::string_view::npos) {
+            sz += sv.size() - var_start;
+            break;
+          }
+          auto name = sv.substr(var_start + 5, close - var_start - 5);
+          auto val  = table::lookup(name);
+          sz += val.empty() ? (close - var_start + 1) : val.size();
+          pos = close + 1;
+        } else {
+          auto close = constexpr_find(sv, "}}", partial_start + 3);
+          if (close == std::string_view::npos) {
+            sz += sv.size() - partial_start;
+            break;
+          }
+          auto name = trim_sv(sv.substr(partial_start + 3, close - partial_start - 3));
+          auto val  = table::lookup(name);
+          sz += val.empty() ? (close - partial_start + 2) : val.size();
+          pos = close + 2;
+        }
+      }
+      return sz;
+    }
+
+    static constexpr std::size_t expanded_size = compute_size();
+
+    static constexpr std::array<char, expanded_size + 1> data = []() {
+      std::array<char, expanded_size + 1> arr{};
+      auto                                sv  = nttp_string_view(Tmpl);
+      std::size_t                         out = 0;
+      std::size_t                         pos = 0;
+      while (pos < sv.size()) {
+        auto var_start     = constexpr_find(sv, "@var(", pos);
+        auto partial_start = constexpr_find(sv, "{{>", pos);
+        auto next          = [&] {
+          if (var_start == std::string_view::npos)
+            return partial_start;
+          if (partial_start == std::string_view::npos)
+            return var_start;
+          return std::min(var_start, partial_start);
+        }();
+        if (next == std::string_view::npos) {
+          while (pos < sv.size())
+            arr[out++] = sv[pos++];
           break;
         }
-        auto name = trim_sv(sv.substr(partial_start + 3, close - partial_start - 3));
-        auto val = table::lookup(name);
-        sz += val.empty() ? (close - partial_start + 2) : val.size();
-        pos = close + 2;
-      }
-    }
-    return sz;
-  }
-
-  static constexpr std::size_t expanded_size = compute_size();
-
-  static constexpr std::array<char, expanded_size + 1> data = []() {
-    std::array<char, expanded_size + 1> arr{};
-    auto sv = nttp_string_view(Tmpl);
-    std::size_t out = 0;
-    std::size_t pos = 0;
-    while (pos < sv.size()) {
-      auto var_start = constexpr_find(sv, "@var(", pos);
-      auto partial_start = constexpr_find(sv, "{{>", pos);
-      auto next = [&] {
-        if (var_start == std::string_view::npos) return partial_start;
-        if (partial_start == std::string_view::npos) return var_start;
-        return std::min(var_start, partial_start);
-      }();
-      if (next == std::string_view::npos) {
-        while (pos < sv.size())
+        while (pos < next)
           arr[out++] = sv[pos++];
-        break;
-      }
-      while (pos < next)
-        arr[out++] = sv[pos++];
 
-      if (next == var_start) {
-        auto close = constexpr_find(sv, ')', var_start + 5);
-        if (close == std::string_view::npos) {
-          while (pos < sv.size())
-            arr[out++] = sv[pos++];
-          break;
-        }
-        auto name = sv.substr(var_start + 5, close - var_start - 5);
-        auto val = table::lookup(name);
-        if (!val.empty()) {
-          for (auto c : val)
-            arr[out++] = c;
+        if (next == var_start) {
+          auto close = constexpr_find(sv, ')', var_start + 5);
+          if (close == std::string_view::npos) {
+            while (pos < sv.size())
+              arr[out++] = sv[pos++];
+            break;
+          }
+          auto name = sv.substr(var_start + 5, close - var_start - 5);
+          auto val  = table::lookup(name);
+          if (!val.empty()) {
+            for (auto c : val)
+              arr[out++] = c;
+          } else {
+            for (auto i = var_start; i <= close; ++i)
+              arr[out++] = sv[i];
+          }
+          pos = close + 1;
         } else {
-          for (auto i = var_start; i <= close; ++i)
-            arr[out++] = sv[i];
+          auto close = constexpr_find(sv, "}}", partial_start + 3);
+          if (close == std::string_view::npos) {
+            while (pos < sv.size())
+              arr[out++] = sv[pos++];
+            break;
+          }
+          auto name = trim_sv(sv.substr(partial_start + 3, close - partial_start - 3));
+          auto val  = table::lookup(name);
+          if (!val.empty()) {
+            for (auto c : val)
+              arr[out++] = c;
+          } else {
+            for (auto i = partial_start; i < close + 2; ++i)
+              arr[out++] = sv[i];
+          }
+          pos = close + 2;
         }
-        pos = close + 1;
-      } else {
-        auto close = constexpr_find(sv, "}}", partial_start + 3);
-        if (close == std::string_view::npos) {
-          while (pos < sv.size())
-            arr[out++] = sv[pos++];
-          break;
-        }
-        auto name = trim_sv(sv.substr(partial_start + 3, close - partial_start - 3));
-        auto val = table::lookup(name);
-        if (!val.empty()) {
-          for (auto c : val)
-            arr[out++] = c;
-        } else {
-          for (auto i = partial_start; i < close + 2; ++i)
-            arr[out++] = sv[i];
-        }
-        pos = close + 2;
       }
-    }
-    return arr;
-  }();
-};
+      return arr;
+    }();
+  };
 
-// ---- constexpr 計算を保持する thin-wrapper 用構造体 ----
+  // ---- constexpr 計算を保持する thin-wrapper 用構造体 ----
 
-template <auto Tmpl, bool Trim, bool Lstrip, typename T>
-struct nttp_render_data {
-  static constexpr std::string_view tmpl_sv = nttp_string_view(Tmpl);
-  static constexpr auto parsed   = detail::parse_fixed_impl<Tmpl, Trim, Lstrip>();
-  static constexpr auto resolved = detail::resolve_field_indices<T>(parsed);
-  static constexpr auto ct_bc    = detail::ct_chunks_to_bytecode<T>(resolved);
-};
+  template <auto Tmpl, bool Trim, bool Lstrip, typename T>
+  struct nttp_render_data {
+    static constexpr std::string_view tmpl_sv  = nttp_string_view(Tmpl);
+    static constexpr auto             parsed   = detail::parse_fixed_impl<Tmpl, Trim, Lstrip>();
+    static constexpr auto             resolved = detail::resolve_field_indices<T>(parsed);
+    static constexpr auto             ct_bc    = detail::ct_chunks_to_bytecode<T>(resolved);
+  };
 
-template <auto Tmpl, typename T, auto... Entries>
-struct nttp_atvar_data {
-  using ET = detail::ct_expanded_template<Tmpl, Entries...>;
-  static constexpr auto parsed = []() {
-    detail::ct_parse_context<ET::expanded_size + 1> ctx;
-    detail::ct_parse_into(ctx, std::string_view{ET::data.data(), ET::expanded_size});
-    return detail::resolve_field_indices<T>(ctx.tmpl);
-  }();
-  static constexpr auto ct_bc = detail::ct_chunks_to_bytecode<T>(parsed);
-};
+  template <auto Tmpl, typename T, auto... Entries>
+  struct nttp_atvar_data {
+    using ET                     = detail::ct_expanded_template<Tmpl, Entries...>;
+    static constexpr auto parsed = []() {
+      detail::ct_parse_context<ET::expanded_size + 1> ctx;
+      detail::ct_parse_into(ctx, std::string_view{ET::data.data(), ET::expanded_size});
+      return detail::resolve_field_indices<T>(ctx.tmpl);
+    }();
+    static constexpr auto ct_bc = detail::ct_chunks_to_bytecode<T>(parsed);
+  };
 
-template <typename Data>
-detail::bytecode const& nttp_bytecode_holder() {
-  static detail::bytecode const bc = detail::to_bytecode(Data::ct_bc);
-  return bc;
-}
-
-template <typename Data, typename T>
-detail::bytecode const& nttp_partial_bytecode_holder() {
-  static auto const bc = [] {
-    auto bc = detail::to_bytecode(Data::ct_bc);
-    if constexpr (Data::parsed.partial_count > 0) {
-      auto tmpl_sv = Data::tmpl_sv;
-      for (std::size_t i = 0; i < Data::parsed.partial_count; ++i) {
-        auto body = tmpl_sv.substr(Data::parsed.partial_body_starts[i],
-                                   Data::parsed.partial_body_ends[i] - Data::parsed.partial_body_starts[i]);
-        detail::bc_compiler<T> compiler;
-        compiler.set_partial_entries(bc.partial_entries);
-        auto partial_bc = compiler.compile(std::string(body));
-        if (partial_bc.error.ec != error_code::none) {
-          bc.error = partial_bc.error;
-          break;
-        }
-        bc.partial_entries.push_back(
-          {std::string(Data::parsed.partial_names[i]),
-           std::make_shared<detail::bytecode>(std::move(partial_bc))});
-      }
-    }
+  template <typename Data>
+  detail::bytecode const& nttp_bytecode_holder() {
+    static detail::bytecode const bc = detail::to_bytecode(Data::ct_bc);
     return bc;
-  }();
-  return bc;
-}
+  }
 
-} // namespace detail
+  template <typename Data, typename T>
+  detail::bytecode const& nttp_partial_bytecode_holder() {
+    static auto const bc = [] {
+      auto bc = detail::to_bytecode(Data::ct_bc);
+      if constexpr (Data::parsed.partial_count > 0) {
+        auto tmpl_sv = Data::tmpl_sv;
+        for (std::size_t i = 0; i < Data::parsed.partial_count; ++i) {
+          auto                   body = tmpl_sv.substr(Data::parsed.partial_body_starts[i], Data::parsed.partial_body_ends[i] - Data::parsed.partial_body_starts[i]);
+          detail::bc_compiler<T> compiler;
+          compiler.set_partial_entries(bc.partial_entries);
+          auto partial_bc = compiler.compile(std::string(body));
+          if (partial_bc.error.ec != error_code::none) {
+            bc.error = partial_bc.error;
+            break;
+          }
+          bc.partial_entries.push_back({std::string(Data::parsed.partial_names[i]), std::make_shared<detail::bytecode>(std::move(partial_bc))});
+        }
+      }
+      return bc;
+    }();
+    return bc;
+  }
+
+}  // namespace detail
 
 /**
  * @brief NTTP ベースのレンダリング（真のコンパイル時パース、SoA 版）
@@ -422,9 +383,8 @@ template <fixed_string Tmpl, int TrimBlocks = 0, int LstripBlocks = 0, typename 
 template <fixed_string Tmpl, fixed_string... Entries, typename T>
   requires(sizeof...(Entries) > 0)
 [[nodiscard]] expected<std::string> render(T const& value) {
-  static_assert(sizeof...(Entries) % 2 == 0,
-    "injamm: @var entries must be key-value pairs (even count). "
-    "Example: render<tmpl, \"key1\", \"value1\", \"key2\", \"value2\">(data)");
+  static_assert(sizeof...(Entries) % 2 == 0, "injamm: @var entries must be key-value pairs (even count). "
+                                             "Example: render<tmpl, \"key1\", \"value1\", \"key2\", \"value2\">(data)");
   using D = detail::nttp_atvar_data<Tmpl, T, Entries...>;
   if constexpr (D::ct_bc.error.ec != error_code::none)
     return std::unexpected(D::ct_bc.error);
@@ -448,9 +408,8 @@ template <fixed_string Tmpl, fixed_string... Entries, typename T>
 template <fixed_string Tmpl, fixed_string... Entries, typename T>
   requires(sizeof...(Entries) > 0)
 [[nodiscard]] expected<void> render(T const& value, std::string& out) {
-  static_assert(sizeof...(Entries) % 2 == 0,
-    "injamm: @var entries must be key-value pairs (even count). "
-    "Example: render<tmpl, \"key1\", \"value1\", \"key2\", \"value2\">(data, out)");
+  static_assert(sizeof...(Entries) % 2 == 0, "injamm: @var entries must be key-value pairs (even count). "
+                                             "Example: render<tmpl, \"key1\", \"value1\", \"key2\", \"value2\">(data, out)");
   using D = detail::nttp_atvar_data<Tmpl, T, Entries...>;
   if constexpr (D::ct_bc.error.ec != error_code::none)
     return std::unexpected(D::ct_bc.error);
@@ -478,11 +437,32 @@ template <fixed_string Tmpl, int TrimBlocks = 0, int LstripBlocks = 0, typename 
   auto& bc = detail::nttp_partial_bytecode_holder<D, T>();
   if (bc.error.ec != error_code::none)
     return std::unexpected(bc.error);
-  auto it = std::find_if(bc.partial_entries.begin(), bc.partial_entries.end(),
-                          [&](auto const& e) { return e.name == partial_name; });
+  auto it = std::find_if(bc.partial_entries.begin(), bc.partial_entries.end(), [&](auto const& e) { return e.name == partial_name; });
   if (it == bc.partial_entries.end())
     return std::unexpected(error_ctx{0, error_code::unknown_key, partial_name});
   return detail::bc_execute(*it->bc, value);
+}
+
+/**
+ * @brief 第3 API: NTTP テンプレートのレンダリング（CT コンピイル + 評価）
+ *
+ * @details テンプレート引数 Tmpl をコンピイル時にパース・バイトコード
+ *          コンパイルし、実行時には値の埋め込みのみを行う。
+ *          内部で render<fixed_string> と同一のバイトコード VM を使用するため、
+ *          セクション / if-else / 名前付き partial（{{#partialdef}} / {{>name}}）/
+ *          ループ / フィルタ まで既存 render と同等の全機能に対応する。
+ *
+ * @tparam Tmpl        コンピイル時テンプレート文字列（fixed_string リテラル）
+ * @tparam TrimBlocks   trim_blocks を有効化（デフォルト無効）
+ * @tparam LstripBlocks lstrip_blocks を有効化（デフォルト無効）
+ * @tparam T           コンテキスト値の型（glz::meta<T> 要特殊化）
+ * @param  value       コンテキスト値の const 参照
+ * @return expected<std::string> レンダリング結果、またはエラー
+ */
+template <fixed_string Tmpl, int TrimBlocks = 0, int LstripBlocks = 0, typename T>
+  requires detail::ct_glz_reflectable<T>
+[[nodiscard]] expected<std::string> ct_render(T const& value) {
+  return render<Tmpl, TrimBlocks, LstripBlocks>(value);
 }
 
 /**
@@ -498,19 +478,14 @@ template <fixed_string Tmpl, int TrimBlocks = 0, int LstripBlocks = 0, typename 
  * @return detail::bound_context<detail::name_list<Names...>, Containers...>
  */
 template <fixed_string... Names, typename... Containers>
-[[nodiscard]] auto bind(Containers const&... values)
-  -> detail::bound_context<detail::name_list<Names...>, Containers...>
-{
-  static_assert(sizeof...(Names) == sizeof...(Containers),
-                "injamm: bind() requires the same number of names and containers. "
-                "Example: bind<\"items\", \"user\">(items, user)");
+[[nodiscard]] auto bind(Containers const&... values) -> detail::bound_context<detail::name_list<Names...>, Containers...> {
+  static_assert(sizeof...(Names) == sizeof...(Containers), "injamm: bind() requires the same number of names and containers. "
+                                                           "Example: bind<\"items\", \"user\">(items, user)");
   return detail::bound_context<detail::name_list<Names...>, Containers...>{std::forward_as_tuple(values...)};
 }
 
 template <typename T>
-[[nodiscard]] auto bind(T const& value)
-  -> detail::bound_context<detail::name_list<fixed_string{"_"}>, T>
-{
+[[nodiscard]] auto bind(T const& value) -> detail::bound_context<detail::name_list<fixed_string{"_"}>, T> {
   return detail::bound_context<detail::name_list<fixed_string{"_"}>, T>{std::forward_as_tuple(value)};
 }
 
@@ -528,7 +503,7 @@ template <class T>
 class engine {
   detail::bytecode bc_;
 
-public:
+  public:
   engine() = delete;
 
   /**
@@ -538,12 +513,10 @@ public:
    * @param trim_blocks 閉じタグ後の改行を除去する（デフォルト false）
    * @param lstrip_blocks ブロックタグ前の空白を除去する（デフォルト false）
    */
-  explicit engine(std::string_view tmpl, bool trim_blocks = false, bool lstrip_blocks = false)
-    : bc_(detail::bc_compile<T>(tmpl, trim_blocks, lstrip_blocks)) {}
+  explicit engine(std::string_view tmpl, bool trim_blocks = false, bool lstrip_blocks = false) : bc_(detail::bc_compile<T>(tmpl, trim_blocks, lstrip_blocks)) {}
 
   template <class ConstMap>
-  explicit engine(std::string_view tmpl, ConstMap const& consts, bool trim_blocks = false, bool lstrip_blocks = false)
-    : bc_(detail::bc_compile<T>(tmpl, consts, trim_blocks, lstrip_blocks)) {}
+  explicit engine(std::string_view tmpl, ConstMap const& consts, bool trim_blocks = false, bool lstrip_blocks = false) : bc_(detail::bc_compile<T>(tmpl, consts, trim_blocks, lstrip_blocks)) {}
 
   /**
    * @brief レンダリングを実行する
@@ -569,8 +542,7 @@ public:
     if (bc_.error.ec != error_code::none) {
       return std::unexpected(bc_.error);
     }
-    auto it = std::find_if(bc_.partial_entries.begin(), bc_.partial_entries.end(),
-                            [&](auto const& e) { return e.name == partial_name; });
+    auto it = std::find_if(bc_.partial_entries.begin(), bc_.partial_entries.end(), [&](auto const& e) { return e.name == partial_name; });
     if (it == bc_.partial_entries.end()) {
       return std::unexpected(error_ctx{0, error_code::unknown_key, partial_name});
     }
@@ -598,9 +570,7 @@ public:
    *          出力する。命令列・リテラルテーブル・変数参照テーブルを含む。
    * @return std::string 逆アセンブル結果
    */
-  [[nodiscard]] std::string disassemble() const {
-    return bc_.disassemble();
-  }
+  [[nodiscard]] std::string disassemble() const { return bc_.disassemble(); }
 };
 
-} // namespace injamm
+}  // namespace injamm

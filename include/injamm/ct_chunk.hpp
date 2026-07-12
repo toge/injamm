@@ -12,18 +12,7 @@ namespace injamm::detail {
 
 constexpr std::size_t max_filters_per_chunk = 4;
 
-enum class ct_chunk_kind : std::uint8_t {
-  literal,
-  placeholder,
-  section,
-  inverted,
-  at_var,
-  at_section,
-  if_else,
-  ct_break,
-  ct_continue,
-  partial_ref
-};
+enum class ct_chunk_kind : std::uint8_t { literal, placeholder, section, inverted, at_var, at_section, if_else, ct_break, ct_continue, partial_ref };
 
 /** @brief @変数種別は types.hpp の at_var_kind を使用 */
 
@@ -38,26 +27,26 @@ enum class ct_chunk_kind : std::uint8_t {
  */
 template <std::size_t N>
 struct ct_parsed_template {
-  std::array<ct_chunk_kind, N> kinds{};         /**< @brief 各チャンクの種別 */
-  std::array<std::string_view, N> texts{};       /**< @brief リテラル文字列または変数キー */
-  std::array<std::size_t, N> body_starts{};      /**< @brief セクション本体の開始インデックス */
-  std::array<std::size_t, N> body_ends{};        /**< @brief セクション本体の終了インデックス */
-  std::array<std::size_t, N> else_starts{};      /**< @brief else 節の開始インデックス（if_else 用） */
-  std::array<std::size_t, N> else_ends{};        /**< @brief else 節の終了インデックス（if_else 用） */
-  std::array<std::uint8_t, N> flags{};           /**< @brief 汎用フラグ（raw / kind / inverted の兼用） */
-  std::array<std::array<string_filter_entry, max_filters_per_chunk>, N> filters{}; /**< @brief 各プレースホルダに適用する文字列フィルタ配列 */
-  std::array<std::array<int_filter_entry, max_filters_per_chunk>, N> int_filters{}; /**< @brief 各プレースホルダに適用する整数フィルタ配列 */
-  std::array<std::array<float_filter_entry, max_filters_per_chunk>, N> float_filters{}; /**< @brief 各プレースホルダに適用する実数フィルタ配列 */
-  std::array<std::uint8_t, N> filter_count{};      /**< @brief 文字列フィルタの有効数 */
-  std::array<std::uint8_t, N> int_filter_count{};   /**< @brief 整数フィルタの有効数 */
-  std::array<std::uint8_t, N> float_filter_count{}; /**< @brief 実数フィルタの有効数 */
-  std::array<int, N> field_indices{};               /**< @brief 事前解決されたフィールドインデックス（-1 = 未解決、resolve_field_indices で fill(-1)） */
-  std::array<std::string_view, N> partial_names{};   /**< @brief 事前スキャンされた partial 定義の名前 */
-  std::array<std::size_t, N> partial_body_starts{};   /**< @brief partial 本体のテンプレート内開始位置 */
-  std::array<std::size_t, N> partial_body_ends{};     /**< @brief partial 本体のテンプレート内終了位置 */
-  std::size_t partial_count{};                       /**< @brief 登録された partial 定義の数 */
-  std::array<std::string_view, N> compare_rhs_strs{};  /**< @brief if_else の文字列比較 RHS（空 = 不使用） */
-  std::size_t size = 0;                          /**< @brief 現在の有効チャンク数 */
+  std::array<ct_chunk_kind, N>                                          kinds{};               /**< @brief 各チャンクの種別 */
+  std::array<std::string_view, N>                                       texts{};               /**< @brief リテラル文字列または変数キー */
+  std::array<std::size_t, N>                                            body_starts{};         /**< @brief セクション本体の開始インデックス */
+  std::array<std::size_t, N>                                            body_ends{};           /**< @brief セクション本体の終了インデックス */
+  std::array<std::size_t, N>                                            else_starts{};         /**< @brief else 節の開始インデックス（if_else 用） */
+  std::array<std::size_t, N>                                            else_ends{};           /**< @brief else 節の終了インデックス（if_else 用） */
+  std::array<std::uint8_t, N>                                           flags{};               /**< @brief 汎用フラグ（raw / kind / inverted の兼用） */
+  std::array<std::array<string_filter_entry, max_filters_per_chunk>, N> filters{};             /**< @brief 各プレースホルダに適用する文字列フィルタ配列 */
+  std::array<std::array<int_filter_entry, max_filters_per_chunk>, N>    int_filters{};         /**< @brief 各プレースホルダに適用する整数フィルタ配列 */
+  std::array<std::array<float_filter_entry, max_filters_per_chunk>, N>  float_filters{};       /**< @brief 各プレースホルダに適用する実数フィルタ配列 */
+  std::array<std::uint8_t, N>                                           filter_count{};        /**< @brief 文字列フィルタの有効数 */
+  std::array<std::uint8_t, N>                                           int_filter_count{};    /**< @brief 整数フィルタの有効数 */
+  std::array<std::uint8_t, N>                                           float_filter_count{};  /**< @brief 実数フィルタの有効数 */
+  std::array<int, N>                                                    field_indices{};       /**< @brief 事前解決されたフィールドインデックス（-1 = 未解決、resolve_field_indices で fill(-1)） */
+  std::array<std::string_view, N>                                       partial_names{};       /**< @brief 事前スキャンされた partial 定義の名前 */
+  std::array<std::size_t, N>                                            partial_body_starts{}; /**< @brief partial 本体のテンプレート内開始位置 */
+  std::array<std::size_t, N>                                            partial_body_ends{};   /**< @brief partial 本体のテンプレート内終了位置 */
+  std::size_t                                                           partial_count{};       /**< @brief 登録された partial 定義の数 */
+  std::array<std::string_view, N>                                       compare_rhs_strs{};    /**< @brief if_else の文字列比較 RHS（空 = 不使用） */
+  std::size_t                                                           size = 0;              /**< @brief 現在の有効チャンク数 */
 
   /**
    * @brief リテラルチャンクを追加する
@@ -81,11 +70,8 @@ struct ct_parsed_template {
    * @param filter_list 適用する文字列フィルタのリスト
    * @param int_filter_list 適用する整数フィルタのリスト
    */
-  constexpr void
-  push_placeholder(std::string_view key, bool raw,
-                   std::span<string_filter_entry const> filter_list = {},
-                   std::span<int_filter_entry const> int_filter_list = {},
-                   std::span<float_filter_entry const> float_filter_list = {}) {
+  constexpr void push_placeholder(std::string_view key, bool raw, std::span<string_filter_entry const> filter_list = {}, std::span<int_filter_entry const> int_filter_list = {},
+                                  std::span<float_filter_entry const> float_filter_list = {}) {
     if (size >= N) {
       throw std::overflow_error("ct_parsed_template: chunk buffer overflow");
     }
@@ -122,17 +108,16 @@ struct ct_parsed_template {
    * @param else_start else 節の開始インデックス（省略時は 0）
    * @param else_end   else 節の終了インデックス（省略時は 0）
    */
-  constexpr void push_section(std::string_view key, std::size_t body_start, std::size_t body_end,
-                               std::size_t else_start = 0, std::size_t else_end = 0) {
+  constexpr void push_section(std::string_view key, std::size_t body_start, std::size_t body_end, std::size_t else_start = 0, std::size_t else_end = 0) {
     if (size >= N) {
       throw std::overflow_error("ct_parsed_template: chunk buffer overflow");
     }
-    kinds[size] = ct_chunk_kind::section;
-    texts[size] = key;
+    kinds[size]       = ct_chunk_kind::section;
+    texts[size]       = key;
     body_starts[size] = body_start;
-    body_ends[size] = body_end;
+    body_ends[size]   = body_end;
     else_starts[size] = else_start;
-    else_ends[size] = else_end;
+    else_ends[size]   = else_end;
     ++size;
   }
 
@@ -145,17 +130,16 @@ struct ct_parsed_template {
    * @param else_start else 節の開始インデックス（省略時は 0）
    * @param else_end   else 節の終了インデックス（省略時は 0）
    */
-  constexpr void push_inverted(std::string_view key, std::size_t body_start, std::size_t body_end,
-                                std::size_t else_start = 0, std::size_t else_end = 0) {
+  constexpr void push_inverted(std::string_view key, std::size_t body_start, std::size_t body_end, std::size_t else_start = 0, std::size_t else_end = 0) {
     if (size >= N) {
       throw std::overflow_error("ct_parsed_template: chunk buffer overflow");
     }
-    kinds[size] = ct_chunk_kind::inverted;
-    texts[size] = key;
+    kinds[size]       = ct_chunk_kind::inverted;
+    texts[size]       = key;
     body_starts[size] = body_start;
-    body_ends[size] = body_end;
+    body_ends[size]   = body_end;
     else_starts[size] = else_start;
-    else_ends[size] = else_end;
+    else_ends[size]   = else_end;
     ++size;
   }
 
@@ -181,15 +165,14 @@ struct ct_parsed_template {
    * @param body_end   本体部分の終了インデックス
    * @param inverted   true の場合は逆セクション（{{^@last}} 相当）
    */
-  constexpr void push_at_section(at_var_kind var, std::size_t body_start, std::size_t body_end,
-                                  bool inverted) {
+  constexpr void push_at_section(at_var_kind var, std::size_t body_start, std::size_t body_end, bool inverted) {
     if (size >= N) {
       throw std::overflow_error("ct_parsed_template: chunk buffer overflow");
     }
-    kinds[size] = ct_chunk_kind::at_section;
-    flags[size] = static_cast<std::uint8_t>(var);
+    kinds[size]       = ct_chunk_kind::at_section;
+    flags[size]       = static_cast<std::uint8_t>(var);
     body_starts[size] = body_start;
-    body_ends[size] = body_end;
+    body_ends[size]   = body_end;
     else_starts[size] = inverted ? 1 : 0; /**< else_starts を inverted フラグとして流用 */
     ++size;
   }
@@ -206,21 +189,17 @@ struct ct_parsed_template {
    * @param int_filter_list 整数フィルタのリスト
    * @param float_filter_list 実数フィルタのリスト
    */
-  constexpr void
-  push_if(std::string_view expr, std::size_t then_start, std::size_t then_end,
-          std::size_t else_start, std::size_t else_end,
-          std::span<string_filter_entry const> filter_list = {},
-          std::span<int_filter_entry const> int_filter_list = {},
-          std::span<float_filter_entry const> float_filter_list = {}) {
+  constexpr void push_if(std::string_view expr, std::size_t then_start, std::size_t then_end, std::size_t else_start, std::size_t else_end, std::span<string_filter_entry const> filter_list = {},
+                         std::span<int_filter_entry const> int_filter_list = {}, std::span<float_filter_entry const> float_filter_list = {}) {
     if (size >= N) {
       throw std::overflow_error("ct_parsed_template: chunk buffer overflow");
     }
-    kinds[size] = ct_chunk_kind::if_else;
-    texts[size] = expr;
+    kinds[size]       = ct_chunk_kind::if_else;
+    texts[size]       = expr;
     body_starts[size] = then_start;
-    body_ends[size] = then_end;
+    body_ends[size]   = then_end;
     else_starts[size] = else_start;
-    else_ends[size] = else_end;
+    else_ends[size]   = else_end;
     if (filter_list.size() > max_filters_per_chunk) {
       throw std::overflow_error("injamm: too many string filters per if/else");
     }
@@ -274,11 +253,11 @@ struct ct_parsed_template {
     if (size >= N) {
       throw std::overflow_error("ct_parsed_template: chunk buffer overflow");
     }
-    kinds[size] = ct_chunk_kind::partial_ref;
-    texts[size] = name;
+    kinds[size]       = ct_chunk_kind::partial_ref;
+    texts[size]       = name;
     else_starts[size] = partial_index; /**< else_starts を partial インデックスとして流用 */
     ++size;
   }
 };
 
-} // namespace injamm::detail
+}  // namespace injamm::detail
