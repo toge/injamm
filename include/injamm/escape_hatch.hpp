@@ -444,28 +444,6 @@ template <fixed_string Tmpl, int TrimBlocks = 0, int LstripBlocks = 0, typename 
 }
 
 /**
- * @brief 第3 API: NTTP テンプレートのレンダリング（CT コンピイル + 評価）
- *
- * @details テンプレート引数 Tmpl をコンピイル時にパース・バイトコード
- *          コンパイルし、実行時には値の埋め込みのみを行う。
- *          内部で render<fixed_string> と同一のバイトコード VM を使用するため、
- *          セクション / if-else / 名前付き partial（{{#partialdef}} / {{>name}}）/
- *          ループ / フィルタ まで既存 render と同等の全機能に対応する。
- *
- * @tparam Tmpl        コンピイル時テンプレート文字列（fixed_string リテラル）
- * @tparam TrimBlocks   trim_blocks を有効化（デフォルト無効）
- * @tparam LstripBlocks lstrip_blocks を有効化（デフォルト無効）
- * @tparam T           コンテキスト値の型（glz::meta<T> 要特殊化）
- * @param  value       コンテキスト値の const 参照
- * @return expected<std::string> レンダリング結果、またはエラー
- */
-template <fixed_string Tmpl, int TrimBlocks = 0, int LstripBlocks = 0, typename T>
-  requires detail::ct_glz_reflectable<T>
-[[nodiscard]] expected<std::string> ct_render(T const& value) {
-  return render<Tmpl, TrimBlocks, LstripBlocks>(value);
-}
-
-/**
  * @brief コンテナを NTTP 名でバインドした bound_context を生成する
  *
  * @details 複数のコンテナを NTTP 文字列名と対応付けた bound_context を返す。
