@@ -64,10 +64,10 @@ namespace detail {
    */
   template <typename S>
   constexpr std::string_view nttp_string_view(S const& s) noexcept {
-    if constexpr (requires { s.data; }) {
-      return {s.data, s.size()};
-    } else if constexpr (requires { s.data(); }) {
+    if constexpr (requires { s.data(); }) {
       return {s.data(), s.size()};
+    } else if constexpr (requires { s.data; }) {
+      return {s.data, s.size()};
     } else {
       static_assert(always_false<S>, "injamm: Unsupported NTTP string type. "
                                      "Expected injamm::fixed_string or frozenchars::FrozenString. "
@@ -209,10 +209,10 @@ namespace detail {
       return sz;
     }
 
-    static constexpr std::size_t expanded_size = compute_size();
+    static consteval std::size_t expanded_size() { return compute_size(); }
 
-    static constexpr std::array<char, expanded_size + 1> data = []() {
-      std::array<char, expanded_size + 1> arr{};
+    static consteval std::array<char, expanded_size() + 1> data() {
+      std::array<char, expanded_size() + 1> arr{};
       auto                                sv  = nttp_string_view(Tmpl);
       std::size_t                         out = 0;
       std::size_t                         pos = 0;
@@ -271,7 +271,7 @@ namespace detail {
         }
       }
       return arr;
-    }();
+    }
   };
 
   // ---- constexpr 計算を保持する thin-wrapper 用構造体 ----
@@ -288,8 +288,8 @@ namespace detail {
   struct nttp_atvar_data {
     using ET                     = detail::ct_expanded_template<Tmpl, Entries...>;
     static constexpr auto parsed = []() {
-      detail::ct_parse_context<ET::expanded_size + 1> ctx;
-      detail::ct_parse_into(ctx, std::string_view{ET::data.data(), ET::expanded_size});
+      detail::ct_parse_context<ET::expanded_size() + 1> ctx;
+      detail::ct_parse_into(ctx, std::string_view{ET::data().data(), ET::expanded_size()});
       return detail::resolve_field_indices<T>(ctx.tmpl);
     }();
     static constexpr auto ct_bc = detail::ct_chunks_to_bytecode<T>(parsed);
