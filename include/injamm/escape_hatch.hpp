@@ -161,118 +161,114 @@ namespace detail {
    * @tparam Entries キー・バリューペアのパラメータパック（NTTP）
    */
   template <auto Tmpl, auto... Entries>
-  struct ct_expanded_template {
-    using table = ct_var_table<Entries...>;
+  consteval std::size_t ct_compute_expanded_size() {
+    auto        sv  = nttp_string_view(Tmpl);
+    std::size_t sz  = 0;
+    std::size_t pos = 0;
+    using table_t = ct_var_table<Entries...>;
+    while (pos < sv.size()) {
+      auto var_start     = constexpr_find(sv, "@var(", pos);
+      auto partial_start = constexpr_find(sv, "{{>", pos);
+      auto next          = (var_start == std::string_view::npos)        ? partial_start
+                         : (partial_start == std::string_view::npos) ? var_start
+                                                                   : std::min(var_start, partial_start);
+      if (next == std::string_view::npos) {
+        sz += sv.size() - pos;
+        break;
+      }
+      sz += next - pos;
 
-    static constexpr std::size_t compute_size() {
-      auto        sv  = nttp_string_view(Tmpl);
-      std::size_t sz  = 0;
-      std::size_t pos = 0;
-      while (pos < sv.size()) {
-        auto var_start     = constexpr_find(sv, "@var(", pos);
-        auto partial_start = constexpr_find(sv, "{{>", pos);
-        auto next          = [&] {
-          if (var_start == std::string_view::npos)
-            return partial_start;
-          if (partial_start == std::string_view::npos)
-            return var_start;
-          return std::min(var_start, partial_start);
-        }();
-        if (next == std::string_view::npos) {
-          sz += sv.size() - pos;
+      if (next == var_start) {
+        auto close = constexpr_find(sv, ')', var_start + 5);
+        if (close == std::string_view::npos) {
+          sz += sv.size() - var_start;
           break;
         }
-        sz += next - pos;
-
-        if (next == var_start) {
-          auto close = constexpr_find(sv, ')', var_start + 5);
-          if (close == std::string_view::npos) {
-            sz += sv.size() - var_start;
-            break;
-          }
-          auto name = sv.substr(var_start + 5, close - var_start - 5);
-          auto val  = table::lookup(name);
-          sz += val.empty() ? (close - var_start + 1) : val.size();
-          pos = close + 1;
-        } else {
-          auto close = constexpr_find(sv, "}}", partial_start + 3);
-          if (close == std::string_view::npos) {
-            sz += sv.size() - partial_start;
-            break;
-          }
-          auto name = trim_sv(sv.substr(partial_start + 3, close - partial_start - 3));
-          auto val  = table::lookup(name);
-          sz += val.empty() ? (close - partial_start + 2) : val.size();
-          pos = close + 2;
+        auto name = sv.substr(var_start + 5, close - var_start - 5);
+        auto val  = table_t::lookup(name);
+        sz += val.empty() ? (close - var_start + 1) : val.size();
+        pos = close + 1;
+      } else {
+        auto close = constexpr_find(sv, "}}", partial_start + 3);
+        if (close == std::string_view::npos) {
+          sz += sv.size() - partial_start;
+          break;
         }
+        auto name = trim_sv(sv.substr(partial_start + 3, close - partial_start - 3));
+        auto val  = table_t::lookup(name);
+        sz += val.empty() ? (close - partial_start + 2) : val.size();
+        pos = close + 2;
       }
-      return sz;
     }
+    return sz;
+  }
 
-    static consteval std::size_t expanded_size() { return compute_size(); }
+  template <auto Tmpl, auto... Entries>
+  consteval std::array<char, ct_compute_expanded_size<Tmpl, Entries...>() + 1> ct_make_expanded() {
+    std::array<char, ct_compute_expanded_size<Tmpl, Entries...>() + 1> arr{};
+    auto        sv  = nttp_string_view(Tmpl);
+    std::size_t out = 0;
+    std::size_t pos = 0;
+    using table_t = ct_var_table<Entries...>;
+    while (pos < sv.size()) {
+      auto var_start     = constexpr_find(sv, "@var(", pos);
+      auto partial_start = constexpr_find(sv, "{{>", pos);
+      auto next          = (var_start == std::string_view::npos)        ? partial_start
+                         : (partial_start == std::string_view::npos) ? var_start
+                                                                   : std::min(var_start, partial_start);
+      if (next == std::string_view::npos) {
+        while (pos < sv.size())
+          arr[out++] = sv[pos++];
+        break;
+      }
+      while (pos < next)
+        arr[out++] = sv[pos++];
 
-    static consteval std::array<char, expanded_size() + 1> data() {
-      std::array<char, expanded_size() + 1> arr{};
-      auto                                sv  = nttp_string_view(Tmpl);
-      std::size_t                         out = 0;
-      std::size_t                         pos = 0;
-      while (pos < sv.size()) {
-        auto var_start     = constexpr_find(sv, "@var(", pos);
-        auto partial_start = constexpr_find(sv, "{{>", pos);
-        auto next          = [&] {
-          if (var_start == std::string_view::npos)
-            return partial_start;
-          if (partial_start == std::string_view::npos)
-            return var_start;
-          return std::min(var_start, partial_start);
-        }();
-        if (next == std::string_view::npos) {
+      if (next == var_start) {
+        auto close = constexpr_find(sv, ')', var_start + 5);
+        if (close == std::string_view::npos) {
           while (pos < sv.size())
             arr[out++] = sv[pos++];
           break;
         }
-        while (pos < next)
-          arr[out++] = sv[pos++];
-
-        if (next == var_start) {
-          auto close = constexpr_find(sv, ')', var_start + 5);
-          if (close == std::string_view::npos) {
-            while (pos < sv.size())
-              arr[out++] = sv[pos++];
-            break;
-          }
-          auto name = sv.substr(var_start + 5, close - var_start - 5);
-          auto val  = table::lookup(name);
-          if (!val.empty()) {
-            for (auto c : val)
-              arr[out++] = c;
-          } else {
-            for (auto i = var_start; i <= close; ++i)
-              arr[out++] = sv[i];
-          }
-          pos = close + 1;
+        auto name = sv.substr(var_start + 5, close - var_start - 5);
+        auto val  = table_t::lookup(name);
+        if (!val.empty()) {
+          for (auto c : val)
+            arr[out++] = c;
         } else {
-          auto close = constexpr_find(sv, "}}", partial_start + 3);
-          if (close == std::string_view::npos) {
-            while (pos < sv.size())
-              arr[out++] = sv[pos++];
-            break;
-          }
-          auto name = trim_sv(sv.substr(partial_start + 3, close - partial_start - 3));
-          auto val  = table::lookup(name);
-          if (!val.empty()) {
-            for (auto c : val)
-              arr[out++] = c;
-          } else {
-            for (auto i = partial_start; i < close + 2; ++i)
-              arr[out++] = sv[i];
-          }
-          pos = close + 2;
+          for (auto i = var_start; i <= close; ++i)
+            arr[out++] = sv[i];
         }
+        pos = close + 1;
+      } else {
+        auto close = constexpr_find(sv, "}}", partial_start + 3);
+        if (close == std::string_view::npos) {
+          while (pos < sv.size())
+            arr[out++] = sv[pos++];
+          break;
+        }
+        auto name = trim_sv(sv.substr(partial_start + 3, close - partial_start - 3));
+        auto val  = table_t::lookup(name);
+        if (!val.empty()) {
+          for (auto c : val)
+            arr[out++] = c;
+        } else {
+          for (auto i = partial_start; i < close + 2; ++i)
+            arr[out++] = sv[i];
+        }
+        pos = close + 2;
       }
-      return arr;
     }
-  };
+    return arr;
+  }
+
+  template <auto Tmpl, typename T, auto... Entries>
+  consteval auto ct_parse_expanded(std::string_view sv) {
+    detail::ct_parse_context<ct_compute_expanded_size<Tmpl, Entries...>() + 1> ctx;
+    detail::ct_parse_into(ctx, sv);
+    return detail::resolve_field_indices<T>(ctx.tmpl);
+  }
 
   // ---- constexpr 計算を保持する thin-wrapper 用構造体 ----
 
@@ -286,16 +282,10 @@ namespace detail {
 
   template <auto Tmpl, typename T, auto... Entries>
   struct nttp_atvar_data {
-    using ET = detail::ct_expanded_template<Tmpl, Entries...>;
-
-    static consteval auto make_parsed() {
-      detail::ct_parse_context<ET::expanded_size() + 1> ctx;
-      detail::ct_parse_into(ctx, std::string_view{ET::data().data(), ET::expanded_size()});
-      return detail::resolve_field_indices<T>(ctx.tmpl);
-    }
-
-    static constexpr auto parsed = make_parsed();
-    static constexpr auto ct_bc  = detail::ct_chunks_to_bytecode<T>(parsed);
+    static constexpr std::size_t expanded_size = detail::ct_compute_expanded_size<Tmpl, Entries...>();
+    static constexpr auto             data          = detail::ct_make_expanded<Tmpl, Entries...>();
+    static constexpr auto             parsed        = detail::ct_parse_expanded<Tmpl, T, Entries...>(std::string_view{data.data(), expanded_size});
+    static constexpr auto             ct_bc         = detail::ct_chunks_to_bytecode<T>(parsed);
   };
 
   template <typename Data>
