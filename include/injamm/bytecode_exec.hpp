@@ -1722,7 +1722,12 @@ public:
     bool        cond  = false;
 
     /** loop.parent.* 変数の解決 */
-    if (ref.key.starts_with("loop.parent.")) {
+    if (ref.key == "this") {
+      /** ループ要素自身の真偽（emit_this と同義） */
+      if (loop_ && loop_->binding_truthy) {
+        cond = loop_->binding_truthy(loop_->binding_elem, std::string_view{});
+      }
+    } else if (ref.key.starts_with("loop.parent.")) {
       eval_loop_parent_truthy(*this, ref.key, cond);
     } else if (ref.key.starts_with("loop.")) {
       if (loop_) {
@@ -1733,6 +1738,11 @@ public:
         } else if (ref.key == "loop.index") {
           /** loop.index は 0 以外で真（0 は偽扱い） */
           cond = (loop_->index != 0);
+        } else if (ref.key == "loop.index1") {
+          /** loop.index1 は常に真（1 以上） */
+          cond = true;
+        } else if (ref.key == "loop.size") {
+          cond = (loop_->count != 0);
         } else if (ref.key == "loop.key") {
           /** loop.key は空でなければ真 */
           cond = !loop_->key.empty();
@@ -1796,7 +1806,7 @@ public:
       rhs = ref.int_filters[0].arg;
     }
     bool cond = false;
-    (void)for_each_field(value_, ref.key, ref.field_index, ref.has_dot, [&](auto const& field) {
+    auto do_cmp = [&](auto const& field) {
       using FT = std::remove_cvref_t<decltype(field)>;
       if constexpr (std::is_arithmetic_v<FT>) {
         auto lv = static_cast<long long>(field);
@@ -1810,29 +1820,55 @@ public:
         case bc_opcode::emit_if_lte: cond = (lv <= rv); break;
         default: break;
         }
-        } else if constexpr (std::is_enum_v<FT>) {
-          /** enum LHS: underlying 整数に変換して算術比較と同じロジックで評価 */
-          auto lv = static_cast<long long>(static_cast<std::underlying_type_t<FT>>(field));
-          auto rv = static_cast<long long>(rhs);
+      } else if constexpr (std::is_enum_v<FT>) {
+        /** enum LHS: underlying 整数に変換して算術比較と同じロジックで評価 */
+        auto lv = static_cast<long long>(static_cast<std::underlying_type_t<FT>>(field));
+        auto rv = static_cast<long long>(rhs);
+        switch (instr.op) {
+        case bc_opcode::emit_if_eq:  cond = (lv == rv); break;
+        case bc_opcode::emit_if_ne:  cond = (lv != rv); break;
+        case bc_opcode::emit_if_gt:  cond = (lv > rv);  break;
+        case bc_opcode::emit_if_gte: cond = (lv >= rv); break;
+        case bc_opcode::emit_if_lt:  cond = (lv < rv);  break;
+        case bc_opcode::emit_if_lte: cond = (lv <= rv); break;
+        default: break;
+        }
+      } else if constexpr (std::same_as<FT, std::string> || std::same_as<FT, std::string_view>) {
+        if (ref.compare_rhs_kind == compare_operand_kind::string_literal) {
           switch (instr.op) {
-          case bc_opcode::emit_if_eq:  cond = (lv == rv); break;
-          case bc_opcode::emit_if_ne:  cond = (lv != rv); break;
-          case bc_opcode::emit_if_gt:  cond = (lv > rv);  break;
-          case bc_opcode::emit_if_gte: cond = (lv >= rv); break;
-          case bc_opcode::emit_if_lt:  cond = (lv < rv);  break;
-          case bc_opcode::emit_if_lte: cond = (lv <= rv); break;
+          case bc_opcode::emit_if_eq: cond = (field == ref.compare_rhs_text); break;
+          case bc_opcode::emit_if_ne: cond = (field != ref.compare_rhs_text); break;
           default: break;
           }
-        } else if constexpr (std::same_as<FT, std::string> || std::same_as<FT, std::string_view>) {
-          if (ref.compare_rhs_kind == compare_operand_kind::string_literal) {
-            switch (instr.op) {
-            case bc_opcode::emit_if_eq: cond = (field == ref.compare_rhs_text); break;
-            case bc_opcode::emit_if_ne: cond = (field != ref.compare_rhs_text); break;
-            default: break;
-            }
-          }
         }
-      });
+      }
+    };
+    if (ref.key == "this" && loop_) {
+      /** ループ要素自身との比較: ループボディ executor の value_ が現在要素 */
+      do_cmp(value_);
+    } else if (ref.key.starts_with("loop.") && loop_) {
+      /** loop.index / loop.index1 / loop.size の数値比較 */
+      long long lv = 0;
+      bool       ok = true;
+      if (ref.key == "loop.index")       lv = loop_->index;
+      else if (ref.key == "loop.index1") lv = loop_->index + 1;
+      else if (ref.key == "loop.size")   lv = loop_->count;
+      else ok = false;
+      if (ok) {
+        auto rv = static_cast<long long>(rhs);
+        switch (instr.op) {
+        case bc_opcode::emit_if_eq:  cond = (lv == rv); break;
+        case bc_opcode::emit_if_ne:  cond = (lv != rv); break;
+        case bc_opcode::emit_if_gt:  cond = (lv > rv);  break;
+        case bc_opcode::emit_if_gte: cond = (lv >= rv); break;
+        case bc_opcode::emit_if_lt:  cond = (lv < rv);  break;
+        case bc_opcode::emit_if_lte: cond = (lv <= rv); break;
+        default: break;
+        }
+      }
+    } else {
+      (void)for_each_field(value_, ref.key, ref.field_index, ref.has_dot, do_cmp);
+    }
     if (!cond) {
       pc = instr.operand;
     } else {
