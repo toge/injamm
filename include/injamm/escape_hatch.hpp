@@ -286,13 +286,16 @@ namespace detail {
 
   template <auto Tmpl, typename T, auto... Entries>
   struct nttp_atvar_data {
-    using ET                     = detail::ct_expanded_template<Tmpl, Entries...>;
-    static constexpr auto parsed = []() {
+    using ET = detail::ct_expanded_template<Tmpl, Entries...>;
+
+    static consteval auto make_parsed() {
       detail::ct_parse_context<ET::expanded_size() + 1> ctx;
       detail::ct_parse_into(ctx, std::string_view{ET::data().data(), ET::expanded_size()});
       return detail::resolve_field_indices<T>(ctx.tmpl);
-    }();
-    static constexpr auto ct_bc = detail::ct_chunks_to_bytecode<T>(parsed);
+    }
+
+    static constexpr auto parsed = make_parsed();
+    static constexpr auto ct_bc  = detail::ct_chunks_to_bytecode<T>(parsed);
   };
 
   template <typename Data>
