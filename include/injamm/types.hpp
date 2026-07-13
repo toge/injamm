@@ -126,8 +126,12 @@ struct fixed_string {
   }
 
 #if INJAMM_HAS_FROZENCHARS
-  /** @brief frozenchars::FrozenString から構築する（NTTP 変換用） */
-  constexpr fixed_string(frozenchars::FrozenString<N> const& fs) {
+  /** @brief frozenchars::FrozenString から構築する（NTTP 変換用）
+   *
+   *  explicit にすることで、_fs リテラル（FrozenString）が render の
+   *  fixed_string オーバーロードへ暗黙変換・推定されるのを防ぐ。
+   *  FrozenString は auto NTTP オーバーロード側で直接扱われる。 */
+  explicit constexpr fixed_string(frozenchars::FrozenString<N> const& fs) {
     for (std::size_t i = 0; i < N; ++i) {
       data[i] = fs.data()[i];
     }
