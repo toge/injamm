@@ -40,11 +40,6 @@ namespace injamm {
  * @tparam N 文字配列の長さ（ヌル終端を含む）
  */
 
-#if INJAMM_HAS_FROZENCHARS
-template <std::size_t M>
-fixed_string(frozenchars::FrozenString<M>) -> fixed_string<M>;
-#endif
-
 namespace detail {
 
   template <typename T>
