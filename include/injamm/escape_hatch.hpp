@@ -597,8 +597,8 @@ template <fixed_string Tmpl, fixed_string PartialName, int TrimBlocks = 0, int L
   auto& bc = detail::nttp_selected_partial_holder<D, PartialName, T>();
   if (bc.error.ec != error_code::none)
     return std::unexpected(bc.error);
-  auto it = std::find_if(bc.partial_entries.begin(), bc.partial_entries.end(), [&](auto const& e) { return e.name == target_sv; });
-  return detail::bc_execute(*it->bc, value);
+  // ponytail: 対象 partial は post-order DFS で末尾に push されるため必ず back()
+  return detail::bc_execute(*bc.partial_entries.back().bc, value);
 }
 
 /**
