@@ -405,6 +405,37 @@ namespace detail {
     return bc;
   }
 
+  // fixed_string ではなく auto (FrozenString 等) の PartialName を受ける版。
+  // 内部は上と同一。nttp_string_view が FrozenString を string_view に橋渡しする。
+  template <typename Data, auto PartialName, typename T>
+    requires (!is_fixed_string_type_v<decltype(PartialName)>)
+  detail::bytecode const& nttp_selected_partial_holder() {
+    static auto const bc = [] {
+      constexpr auto target_sv = detail::nttp_string_view(PartialName);
+      constexpr auto closure = detail::compute_partial_closure(Data::parsed, Data::tmpl_sv, target_sv);
+      detail::bytecode bc;
+      if constexpr (!closure.found) {
+        bc.error = error_ctx{0, error_code::unknown_key, target_sv};
+        return bc;
+      }
+      auto tmpl_sv = Data::tmpl_sv;
+      for (std::size_t k = 0; k < closure.count; ++k) {
+        std::size_t i = closure.order[k];
+        auto body = tmpl_sv.substr(Data::parsed.partial_body_starts[i], Data::parsed.partial_body_ends[i] - Data::parsed.partial_body_starts[i]);
+        detail::bc_compiler<T> compiler;
+        compiler.set_partial_entries(bc.partial_entries);
+        auto partial_bc = compiler.compile(std::string(body));
+        if (partial_bc.error.ec != error_code::none) {
+          bc.error = partial_bc.error;
+          break;
+        }
+        bc.partial_entries.push_back({std::string(Data::parsed.partial_names[i]), std::make_shared<detail::bytecode>(std::move(partial_bc))});
+      }
+      return bc;
+    }();
+    return bc;
+  }
+
 }  // namespace detail
 
 /**
@@ -600,6 +631,74 @@ template <fixed_string Tmpl, fixed_string PartialName, int TrimBlocks = 0, int L
   // ponytail: 対象 partial は post-order DFS で末尾に push されるため必ず back()
   return detail::bc_execute(*bc.partial_entries.back().bc, value);
 }
+
+#if INJAMM_HAS_FROZENCHARS
+
+/**
+ * @brief NTTP ベースの名前付き partial レンダリング（FrozenString テンプレート対応）
+ *
+ * @details render の auto Tmpl オーバーロードと同様、frozenchars::FrozenString
+ *          (_fs リテラル) をテンプレート文字列として受け取れる。fixed_string 版と
+ *           overload セットを分けるため、Tmpl が fixed_string でない場合のみ選択される。
+ */
+template <auto Tmpl, int TrimBlocks = 0, int LstripBlocks = 0, typename T>
+  requires (!detail::is_fixed_string_type_v<decltype(Tmpl)>)
+[[nodiscard]] expected<std::string> render_partial(T const& value, std::string_view partial_name) {
+  using D = detail::nttp_render_data<Tmpl, TrimBlocks != 0, LstripBlocks != 0, T>;
+  if constexpr (D::ct_bc.error.ec != error_code::none)
+    return std::unexpected(D::ct_bc.error);
+  auto& bc = detail::nttp_partial_bytecode_holder<D, T>();
+  if (bc.error.ec != error_code::none)
+    return std::unexpected(bc.error);
+  auto it = std::find_if(bc.partial_entries.begin(), bc.partial_entries.end(), [&](auto const& e) { return e.name == partial_name; });
+  if (it == bc.partial_entries.end())
+    return std::unexpected(error_ctx{0, error_code::unknown_key, partial_name});
+  return detail::bc_execute(*it->bc, value);
+}
+
+/**
+ * @brief NTTP ベースの名前付き partial レンダリング（FrozenString テンプレート + 文字列リテラル名）
+ *
+ * @details Tmpl に FrozenString (_fs リテラル) を、PartialName に文字列リテラル
+ *          ("name") を指定する組み合わせ用。partial 名は fixed_string に consteval
+ *          構築される。
+ */
+template <auto Tmpl, fixed_string PartialName, int TrimBlocks = 0, int LstripBlocks = 0, typename T>
+  requires (!detail::is_fixed_string_type_v<decltype(Tmpl)>)
+[[nodiscard]] expected<std::string> render_partial(T const& value) {
+  using D = detail::nttp_render_data<Tmpl, TrimBlocks != 0, LstripBlocks != 0, T>;
+  constexpr auto target_sv = detail::nttp_string_view(PartialName);
+  constexpr auto closure = detail::compute_partial_closure(D::parsed, D::tmpl_sv, target_sv);
+  static_assert(closure.found, "injamm: {{#partialdef <PartialName>}} not found in the template.");
+  if constexpr (D::ct_bc.error.ec != error_code::none)
+    return std::unexpected(D::ct_bc.error);
+  auto& bc = detail::nttp_selected_partial_holder<D, PartialName, T>();
+  if (bc.error.ec != error_code::none)
+    return std::unexpected(bc.error);
+  // ponytail: 対象 partial は post-order DFS で末尾に push されるため必ず back()
+  return detail::bc_execute(*bc.partial_entries.back().bc, value);
+}
+
+/**
+ * @brief NTTP ベースの名前付き partial レンダリング（partial 名をテンプレート引数で指定、FrozenString 対応）
+ */
+template <auto Tmpl, auto PartialName, int TrimBlocks = 0, int LstripBlocks = 0, typename T>
+  requires (!detail::is_fixed_string_type_v<decltype(Tmpl)> && !detail::is_fixed_string_type_v<decltype(PartialName)>)
+[[nodiscard]] expected<std::string> render_partial(T const& value) {
+  using D = detail::nttp_render_data<Tmpl, TrimBlocks != 0, LstripBlocks != 0, T>;
+  constexpr auto target_sv = detail::nttp_string_view(PartialName);
+  constexpr auto closure = detail::compute_partial_closure(D::parsed, D::tmpl_sv, target_sv);
+  static_assert(closure.found, "injamm: {{#partialdef <PartialName>}} not found in the template.");
+  if constexpr (D::ct_bc.error.ec != error_code::none)
+    return std::unexpected(D::ct_bc.error);
+  auto& bc = detail::nttp_selected_partial_holder<D, PartialName, T>();
+  if (bc.error.ec != error_code::none)
+    return std::unexpected(bc.error);
+  // ponytail: 対象 partial は post-order DFS で末尾に push されるため必ず back()
+  return detail::bc_execute(*bc.partial_entries.back().bc, value);
+}
+
+#endif
 
 /**
  * @brief コンテナを NTTP 名でバインドした bound_context を生成する
