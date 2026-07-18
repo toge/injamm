@@ -2719,6 +2719,8 @@ std::size_t estimate_output_size(bytecode const& bc, T const& value) {
  */
 template <class T>
 std::expected<std::string, error_ctx> bc_execute(bytecode const& bc, T const& value) {
+  if (bc.error.ec != error_code::none)
+    return std::unexpected(bc.error);
   std::string out;
   auto        estimated = estimate_output_size(bc, value);
   if (estimated < 256) estimated = 256;

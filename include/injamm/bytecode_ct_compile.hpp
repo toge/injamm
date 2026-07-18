@@ -684,15 +684,15 @@ consteval void compile_chunk_range(ct_bytecode_builder<N>& b,
      case ct_chunk_kind::ct_continue:
        b.emit(bc_opcode::emit_continue);
        break;
-     case ct_chunk_kind::partial_ref: {
-       auto pidx = chunks.else_starts[i];
-       if (pidx >= chunks.partial_count) {
-         b.bc.error = error_ctx{0, error_code::unknown_key, chunks.texts[i]};
-         break;
-       }
-       b.emit(bc_opcode::call_partial, static_cast<std::uint32_t>(pidx));
-       break;
-     }
+      case ct_chunk_kind::partial_ref: {
+        auto pidx = chunks.else_starts[i];
+        if (pidx >= chunks.partial_total) {
+          b.bc.error = error_ctx{0, error_code::unknown_key, chunks.texts[i]};
+          break;
+        }
+        b.emit(bc_opcode::call_partial, static_cast<std::uint32_t>(pidx));
+        break;
+      }
      default: break;
     }
   }

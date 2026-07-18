@@ -2324,6 +2324,60 @@ TEST_CASE("ct_partial_unknown_name_error", "[injamm][ct][partial]") {
   CHECK(r.error().ec == injamm::error_code::unknown_key);
 }
 
+TEST_CASE("ct_partial_include_from_registry", "[injamm][ct][partial]") {
+  CtUser user{"Alice", 30};
+  using Reg = injamm::ct_partials<"header", "<h1>{{name}}({{age}})</h1>">;
+  auto constexpr tmpl = injamm::fixed_string("{{> header}} {{name}}");
+  auto r              = injamm::render<tmpl, Reg>(user);
+  REQUIRE(r.has_value());
+  CHECK(*r == "<h1>Alice(30)</h1> Alice");
+}
+
+TEST_CASE("ct_partial_include_registry_shared", "[injamm][ct][partial]") {
+  CtUser user{"Bob", 25};
+  using Reg = injamm::ct_partials<"header", "[{{name}}]", "footer", "({{age}})">;
+  auto constexpr tmplA = injamm::fixed_string("{{> header}}|");
+  auto constexpr tmplB = injamm::fixed_string("{{> footer}}|");
+  auto a = injamm::render<tmplA, Reg>(user);
+  auto b = injamm::render<tmplB, Reg>(user);
+  REQUIRE(a.has_value());
+  REQUIRE(b.has_value());
+  CHECK(*a == "[Bob]|");
+  CHECK(*b == "(25)|");
+}
+
+TEST_CASE("ct_partial_include_registry_with_partialdef", "[injamm][ct][partial]") {
+  CtUser user{"Bob", 25};
+  using Reg = injamm::ct_partials<"header", "[{{name}}]">;
+  auto constexpr tmpl = injamm::fixed_string("{{#partialdef inline}}{{name}}{{/partialdef}}"
+                                             "{{> header}}{{#partial inline}}");
+  auto r              = injamm::render<tmpl, Reg>(user);
+  REQUIRE(r.has_value());
+  CHECK(*r == "[Bob]Bob");
+}
+
+TEST_CASE("ct_partial_render_by_name_from_registry", "[injamm][ct][partial]") {
+  CtUser user{"Dave", 40};
+  using Reg = injamm::ct_partials<"sidebar", "{{name}}'s page">;
+  auto constexpr tmpl = injamm::fixed_string("full: {{> sidebar}}|end");
+  auto full           = injamm::render<tmpl, Reg>(user);
+  REQUIRE(full.has_value());
+  CHECK(*full == "full: Dave's page|end");
+
+  auto side = injamm::render_partial<tmpl, Reg>(user, "sidebar");
+  REQUIRE(side.has_value());
+  CHECK(*side == "Dave's page");
+}
+
+TEST_CASE("ct_partial_include_unknown_name_error", "[injamm][ct][partial]") {
+  CtUser user{"Alice", 30};
+  using Reg = injamm::ct_partials<"header", "x">;
+  auto constexpr tmpl = injamm::fixed_string("{{> missing}}");
+  auto r              = injamm::render<tmpl, Reg>(user);
+  REQUIRE_FALSE(r.has_value());
+  CHECK(r.error().ec == injamm::error_code::unknown_key);
+}
+
 TEST_CASE("ct_partial_in_partial", "[injamm][ct][partial]") {
   CtUsersData data{};
   data.users.push_back(CtUser{"Bob", 25});

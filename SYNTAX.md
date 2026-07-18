@@ -863,30 +863,48 @@ auto eng = injamm::engine<Data>{
 ### 19.8 制限
 
 - `{{#partialdef}}` のネストはできません
-- NTTP `render<fixed_string>` では `{{> name}}` レジストリは未対応です（CT は entry pair 方式、§20）
 - ファイルインクルード（`{% include %}`）には対応していません
 
 ---
 
 ## 20. partial / include（NTTP render 専用）
 
-`{{> partial_name}}` は NTTP `render` の compile-time entry pair で展開されます。
-runtime `engine<T>` でも `{{> name}}` は利用できますが、そちらは外部レジストリ経由（§19.7）です。
+NTTP `render` でも `{{> name}}` を利用できます。外部 partial はテンプレート引数に渡す
+`ct_partials<"name", "body", ...>` レジストリで与えます（`§19.7` の CT 版）。同一の
+`ct_partials` 型を複数の `render` 呼び出しに共有できます。
 
 ```cpp
-std::string title = "Members";
-std::string name = "Alice";
+struct User { std::string name; int age; };
+template <> struct glz::meta<User> {
+  using T = User;
+  static constexpr auto value = object(&T::name, &T::age);
+};
 
-auto ctx = injamm::bind<"title", "name">(title, name);
+using Reg = injamm::ct_partials<
+  "header", "<h1>{{name}}</h1>",
+  "footer", "<footer>{{name}}</footer>"
+>;
+
 auto r = injamm::render<
   "{{> header}} {{name}} {{> footer}}",
-  "header", "<h1>{{title}}</h1>",
-  "footer", "<footer>{{title}}</footer>"
->(ctx);
-// r == "<h1>Members</h1> Alice <footer>Members</footer>"
+  Reg
+>(User{"Alice", 30});
+// r == "<h1>Alice</h1> Alice <footer>Alice</footer>"
 ```
 
-partial の中には通常のテンプレート構文を書けます。展開はパース前に行われます。
+名前付き partial のみを単体レンダリングする `render_partial` も同様にレジストリを渡せます。
+
+```cpp
+auto side = injamm::render_partial<
+  "{{> header}}",
+  Reg
+>(User{"Dave", 40}, "header");
+// side == "<h1>Dave</h1>"
+```
+
+- 存在しない名前を `{{> }}` で指定すると `unknown_key` エラーを返します。
+- 同一テンプレート内の `{{#partialdef}}` と併用できます。
+- runtime `engine<T>` の `{{> name}}` は `§19.7` の外部レジストリ経由です。
 
 ---
 

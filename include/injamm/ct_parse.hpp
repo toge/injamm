@@ -361,6 +361,26 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
       continue;
     }
 
+    // -- `>` で始まるタグ: 外部レジストリからの partial インクルード --
+    if (inner.starts_with(">")) {
+      auto partial_name = trim_sv(inner.substr(1));
+      std::size_t pidx = 0;
+      bool found = false;
+      for (; pidx < ctx.tmpl.partial_total; ++pidx) {
+        if (ctx.tmpl.partial_names[pidx] == partial_name) {
+          found = true;
+          break;
+        }
+      }
+      if (!found) {
+        ctx.tmpl.partial_names[ctx.tmpl.partial_total] = partial_name;
+        pidx = ctx.tmpl.partial_total;
+        ++ctx.tmpl.partial_total;
+      }
+      ctx.push_partial_ref(pidx, partial_name);
+      continue;
+    }
+
     // -- `#` で始まるタグ: セクションまたは if --
     if (inner.starts_with("#")) {
       /** @brief `#` 以降のキー部分 */
@@ -398,7 +418,7 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
         auto partial_name = trim_sv(key.substr(8));
         std::size_t pidx = 0;
         bool found = false;
-        for (; pidx < ctx.tmpl.partial_count; ++pidx) {
+        for (; pidx < ctx.tmpl.partial_total; ++pidx) {
           if (ctx.tmpl.partial_names[pidx] == partial_name) {
             found = true;
             break;

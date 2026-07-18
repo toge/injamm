@@ -53,6 +53,30 @@ namespace detail {
   constexpr bool is_fixed_string_type_v = is_fixed_string_type<std::remove_cvref_t<T>>::value;
 
   /**
+   * @brief CT 用 partial レジストリ（型パック）
+   *
+   * @details 名前・本文の fixed_string ペアを可変長で保持する。
+   *          サイズ指定は不要。この型を render / render_partial のテンプレート
+   *          引数（第2引数）として渡すことで、複数の render 呼び出し間で
+   *          partial レジストリを共有できる。
+   *
+   * @tparam Pairs "name1","body1","name2","body2",... の順に並ぶ固定文字列パック
+   */
+  template <fixed_string... Pairs>
+  struct ct_partials {
+    static constexpr std::size_t count = sizeof...(Pairs) / 2;
+    static_assert(sizeof...(Pairs) % 2 == 0, "injamm: ct_partials requires name/body pairs (even count). "
+                                            "Example: ct_partials<\"name\", \"body\", \"name2\", \"body2\">");
+  };
+
+  template <typename T>
+  struct is_ct_partials : std::false_type {};
+  template <fixed_string... Pairs>
+  struct is_ct_partials<ct_partials<Pairs...>> : std::true_type {};
+  template <typename T>
+  constexpr bool is_ct_partials_v = is_ct_partials<std::remove_cvref_t<T>>::value;
+
+  /**
    * @brief NTTP 文字列から string_view を取得する
    *
    * @details fixed_string (data メンバ) と FrozenString (data() メソッド) の
@@ -115,6 +139,7 @@ namespace detail {
         tmpl.partial_body_starts[tmpl.partial_count] = tag_end + 2;
         tmpl.partial_body_ends[tmpl.partial_count]   = close_tag;
         ++tmpl.partial_count;
+        tmpl.partial_total = tmpl.partial_count;
         pos = close_tag + 15;
       }
     }
@@ -272,13 +297,27 @@ namespace detail {
 
   // ---- constexpr 計算を保持する thin-wrapper 用構造体 ----
 
-  template <auto Tmpl, bool Trim, bool Lstrip, typename T>
+  template <auto Tmpl, bool Trim, bool Lstrip, typename T, typename PartialSet = ct_partials<>>
   struct nttp_render_data {
     static constexpr std::string_view tmpl_sv  = nttp_string_view(Tmpl);
     static constexpr auto             parsed   = detail::parse_fixed_impl<Tmpl, Trim, Lstrip>();
     static constexpr auto             resolved = detail::resolve_field_indices<T>(parsed);
     static constexpr auto             ct_bc    = detail::ct_chunks_to_bytecode<T>(resolved);
+    using partial_set = PartialSet;  ///< 外部レジストリ（ct_partials<...>） */
   };
+
+  // ct_partials<Pairs...> から partial_entries を取り出すトレイト
+  template <typename T, fixed_string... Pairs>
+  std::vector<partial_entry> const& ct_partial_entries();
+
+  template <typename T, typename Set>
+  struct ct_partial_entries_trait;
+  template <typename T, fixed_string... Pairs>
+  struct ct_partial_entries_trait<T, ct_partials<Pairs...>> {
+    static std::vector<partial_entry> const& get() { return detail::ct_partial_entries<T, Pairs...>(); }
+  };
+
+
 
   template <auto Tmpl, typename T, auto... Entries>
   struct nttp_atvar_data {
@@ -287,6 +326,40 @@ namespace detail {
     static constexpr auto             parsed        = detail::ct_parse_expanded<Tmpl, T, Entries...>(std::string_view{data.data(), expanded_size});
     static constexpr auto             ct_bc         = detail::ct_chunks_to_bytecode<T>(parsed);
   };
+
+  /**
+   * @brief ct_partials から bytecode::partial_entries を構築する
+   *
+   * @details vector / shared_ptr は constexpr 構築不可のため、static ローカル初期化
+   *          （実行時）の中で bc_compile<T> を呼び出す。既存の
+   *          nttp_partial_bytecode_holder と同じ戦略。前方参照不可のため登録順にコンパイル。
+   *
+   * @tparam T コンテキスト型
+   * @tparam Pairs ct_partials の名前・本文パック（"n1","b1","n2","b2",...）
+   * @return std::vector<partial_entry> 名前解決用の partial エントリ群
+   */
+  template <typename T, fixed_string... Pairs>
+  std::vector<partial_entry> const& ct_partial_entries() {
+    static auto const entries = [] {
+      std::vector<partial_entry> v;
+      std::string pending_name;
+      auto handle = [&](auto fs) {
+        std::string_view s = nttp_string_view(fs);
+        if (pending_name.empty()) {
+          pending_name.assign(s);
+        } else {
+          bc_compiler<T> compiler;
+          compiler.set_partial_entries(v);
+          auto pbc = compiler.compile(s);
+          v.push_back({pending_name, std::make_shared<bytecode>(std::move(pbc))});
+          pending_name.clear();
+        }
+      };
+      (handle(Pairs), ...);
+      return v;
+    }();
+    return entries;
+  }
 
   template <typename Data>
   detail::bytecode const& nttp_bytecode_holder() {
@@ -298,18 +371,33 @@ namespace detail {
   detail::bytecode const& nttp_partial_bytecode_holder() {
     static auto const bc = [] {
       auto bc = detail::to_bytecode(Data::ct_bc);
-      if constexpr (Data::parsed.partial_count > 0) {
-        auto tmpl_sv = Data::tmpl_sv;
-        for (std::size_t i = 0; i < Data::parsed.partial_count; ++i) {
-          auto                   body = tmpl_sv.substr(Data::parsed.partial_body_starts[i], Data::parsed.partial_body_ends[i] - Data::parsed.partial_body_starts[i]);
-          detail::bc_compiler<T> compiler;
-          compiler.set_partial_entries(bc.partial_entries);
-          auto partial_bc = compiler.compile(std::string(body));
-          if (partial_bc.error.ec != error_code::none) {
-            bc.error = partial_bc.error;
+      // partial_entries を partial_names[0..partial_total) の順に構築し、
+      // call_partial のオペランド（名前インデックス）と一致させる。
+      // [0, partial_count) は #partialdef 本体、[partial_count, partial_total) は外部 {{> }} 参照。
+      bc.partial_entries.reserve(Data::parsed.partial_total);
+      auto tmpl_sv = Data::tmpl_sv;
+      for (std::size_t i = 0; i < Data::parsed.partial_count; ++i) {
+        auto                   body = tmpl_sv.substr(Data::parsed.partial_body_starts[i], Data::parsed.partial_body_ends[i] - Data::parsed.partial_body_starts[i]);
+        detail::bc_compiler<T> compiler;
+        compiler.set_partial_entries(bc.partial_entries);
+        auto partial_bc = compiler.compile(std::string(body));
+        if (partial_bc.error.ec != error_code::none) {
+          bc.error = partial_bc.error;
+          break;
+        }
+        bc.partial_entries.push_back({std::string(Data::parsed.partial_names[i]), std::make_shared<detail::bytecode>(std::move(partial_bc))});
+      }
+      // 外部レジストリ（ct_partials<...>）から、未定義の {{> }} 参照を名前解決して差し込む
+      if constexpr (Data::partial_set::count > 0) {
+        auto const& ext = detail::ct_partial_entries_trait<T, typename Data::partial_set>::get();
+        for (std::size_t i = Data::parsed.partial_count; i < Data::parsed.partial_total; ++i) {
+          auto const& name = Data::parsed.partial_names[i];
+          auto it = std::find_if(ext.begin(), ext.end(), [&](auto const& e) { return e.name == name; });
+          if (it == ext.end()) {
+            bc.error = error_ctx{0, error_code::unknown_key, name};
             break;
           }
-          bc.partial_entries.push_back({std::string(Data::parsed.partial_names[i]), std::make_shared<detail::bytecode>(std::move(partial_bc))});
+          bc.partial_entries.push_back(*it);
         }
       }
       return bc;
@@ -460,6 +548,28 @@ template <fixed_string Tmpl, int TrimBlocks = 0, int LstripBlocks = 0, typename 
 }
 
 /**
+ * @brief NTTP ベースのレンダリング（外部 partial レジストリ指定版）
+ *
+ * @details 第2テンプレート引数に ct_partials<...> で定義した共有レジストリを渡す。
+ *          テンプレート内の {{> name}} はレジストリから解決される（call_partial）。
+ *          同じ ct_partials 型を複数の render 呼び出しに渡すことで共有できる。
+ *
+ * @tparam Tmpl コンパイル時テンプレート文字列（fixed_string リテラル）
+ * @tparam Reg  ct_partials<"name","body",...> 型（外部 partial レジストリ）
+ * @tparam T    コンテキスト値の型（glz::meta<T> 要特殊化）
+ * @param value コンテキスト値の const 参照
+ * @return expected<std::string> レンダリング結果、またはエラー（error_ctx）
+ */
+template <fixed_string Tmpl, typename Reg, int TrimBlocks = 0, int LstripBlocks = 0, typename T>
+  requires detail::is_ct_partials_v<Reg>
+[[nodiscard]] expected<std::string> render(T const& value) {
+  using D = detail::nttp_render_data<Tmpl, TrimBlocks != 0, LstripBlocks != 0, T, Reg>;
+  if constexpr (D::ct_bc.error.ec != error_code::none)
+    return std::unexpected(D::ct_bc.error);
+  return detail::bc_execute(detail::nttp_partial_bytecode_holder<D, T>(), value);
+}
+
+/**
  * @brief NTTP ベースのレンダリング（バッファ再利用版）
  *
  * @details render() のバッファ再利用オーバーロード。
@@ -495,7 +605,7 @@ template <fixed_string Tmpl, int TrimBlocks = 0, int LstripBlocks = 0, typename 
  * @return expected<std::string> レンダリング結果、またはエラー
  */
 template <fixed_string Tmpl, fixed_string... Entries, typename T>
-  requires(sizeof...(Entries) > 0)
+  requires(sizeof...(Entries) > 0 && (detail::is_fixed_string_type_v<decltype(Entries)> && ...))
 [[nodiscard]] expected<std::string> render(T const& value) {
   static_assert(sizeof...(Entries) % 2 == 0, "injamm: @var entries must be key-value pairs (even count). "
                                              "Example: render<tmpl, \"key1\", \"value1\", \"key2\", \"value2\">(data)");
@@ -520,7 +630,7 @@ template <fixed_string Tmpl, fixed_string... Entries, typename T>
  * @return expected<void> 実行結果、またはエラー
  */
 template <fixed_string Tmpl, fixed_string... Entries, typename T>
-  requires(sizeof...(Entries) > 0)
+  requires(sizeof...(Entries) > 0 && (detail::is_fixed_string_type_v<decltype(Entries)> && ...))
 [[nodiscard]] expected<void> render(T const& value, std::string& out) {
   static_assert(sizeof...(Entries) % 2 == 0, "injamm: @var entries must be key-value pairs (even count). "
                                              "Example: render<tmpl, \"key1\", \"value1\", \"key2\", \"value2\">(data, out)");
@@ -541,6 +651,15 @@ template <auto Tmpl, int TrimBlocks = 0, int LstripBlocks = 0, typename T>
   return detail::bc_execute(detail::nttp_partial_bytecode_holder<D, T>(), value);
 }
 
+template <auto Tmpl, typename Reg, int TrimBlocks = 0, int LstripBlocks = 0, typename T>
+  requires (!detail::is_fixed_string_type_v<decltype(Tmpl)> && detail::is_ct_partials_v<Reg>)
+[[nodiscard]] expected<std::string> render(T const& value) {
+  using D = detail::nttp_render_data<Tmpl, TrimBlocks != 0, LstripBlocks != 0, T, Reg>;
+  if constexpr (D::ct_bc.error.ec != error_code::none)
+    return std::unexpected(D::ct_bc.error);
+  return detail::bc_execute(detail::nttp_partial_bytecode_holder<D, T>(), value);
+}
+
 template <auto Tmpl, int TrimBlocks = 0, int LstripBlocks = 0, typename T>
   requires (!detail::is_fixed_string_type_v<decltype(Tmpl)>)
 [[nodiscard]] expected<void> render(T const& value, std::string& out) {
@@ -551,7 +670,7 @@ template <auto Tmpl, int TrimBlocks = 0, int LstripBlocks = 0, typename T>
 }
 
 template <auto Tmpl, fixed_string... Entries, typename T>
-  requires(sizeof...(Entries) > 0 && !detail::is_fixed_string_type_v<decltype(Tmpl)>)
+  requires(sizeof...(Entries) > 0 && !detail::is_fixed_string_type_v<decltype(Tmpl)> && (detail::is_fixed_string_type_v<decltype(Entries)> && ...))
 [[nodiscard]] expected<std::string> render(T const& value) {
   static_assert(sizeof...(Entries) % 2 == 0, "injamm: @var entries must be key-value pairs (even count). "
                                              "Example: render<tmpl, \"key1\", \"value1\", \"key2\", \"value2\">(data)");
@@ -562,7 +681,7 @@ template <auto Tmpl, fixed_string... Entries, typename T>
 }
 
 template <auto Tmpl, fixed_string... Entries, typename T>
-  requires(sizeof...(Entries) > 0 && !detail::is_fixed_string_type_v<decltype(Tmpl)>)
+  requires(sizeof...(Entries) > 0 && !detail::is_fixed_string_type_v<decltype(Tmpl)> && (detail::is_fixed_string_type_v<decltype(Entries)> && ...))
 [[nodiscard]] expected<void> render(T const& value, std::string& out) {
   static_assert(sizeof...(Entries) % 2 == 0, "injamm: @var entries must be key-value pairs (even count). "
                                              "Example: render<tmpl, \"key1\", \"value1\", \"key2\", \"value2\">(data, out)");
@@ -627,6 +746,34 @@ template <fixed_string Tmpl, int TrimBlocks = 0, int LstripBlocks = 0, typename 
 }
 
 /**
+ * @brief NTTP ベースの名前付き partial レンダリング（外部レジストリ指定版）
+ *
+ * @details 第2テンプレート引数に ct_partials<...> を渡し、レジストリ内の
+ *          partial_name を単体レンダリングする。engine::render(value, "name") の CT 版相当。
+ *
+ * @tparam Tmpl コンパイル時テンプレート文字列（fixed_string リテラル）
+ * @tparam Reg  ct_partials<"name","body",...> 型
+ * @tparam T    コンテキスト値の型（glz::meta<T> 要特殊化）
+ * @param value       コンテキスト値の const 参照
+ * @param partial_name レンダリングする partial の名前
+ * @return expected<std::string> レンダリング結果、またはエラー
+ */
+template <fixed_string Tmpl, typename Reg, int TrimBlocks = 0, int LstripBlocks = 0, typename T>
+  requires detail::is_ct_partials_v<Reg>
+[[nodiscard]] expected<std::string> render_partial(T const& value, std::string_view partial_name) {
+  using D = detail::nttp_render_data<Tmpl, TrimBlocks != 0, LstripBlocks != 0, T, Reg>;
+  if constexpr (D::ct_bc.error.ec != error_code::none)
+    return std::unexpected(D::ct_bc.error);
+  auto& bc = detail::nttp_partial_bytecode_holder<D, T>();
+  if (bc.error.ec != error_code::none)
+    return std::unexpected(bc.error);
+  auto it = std::find_if(bc.partial_entries.begin(), bc.partial_entries.end(), [&](auto const& e) { return e.name == partial_name; });
+  if (it == bc.partial_entries.end())
+    return std::unexpected(error_ctx{0, error_code::unknown_key, partial_name});
+  return detail::bc_execute(*it->bc, value);
+}
+
+/**
  * @brief NTTP ベースの名前付き partial レンダリング（partial 名をテンプレート引数で指定）
  *
  * @details レンダリングする partial 名をテンプレート引数 PartialName で指定する。
@@ -670,6 +817,21 @@ template <auto Tmpl, int TrimBlocks = 0, int LstripBlocks = 0, typename T>
   requires (!detail::is_fixed_string_type_v<decltype(Tmpl)>)
 [[nodiscard]] expected<std::string> render_partial(T const& value, std::string_view partial_name) {
   using D = detail::nttp_render_data<Tmpl, TrimBlocks != 0, LstripBlocks != 0, T>;
+  if constexpr (D::ct_bc.error.ec != error_code::none)
+    return std::unexpected(D::ct_bc.error);
+  auto& bc = detail::nttp_partial_bytecode_holder<D, T>();
+  if (bc.error.ec != error_code::none)
+    return std::unexpected(bc.error);
+  auto it = std::find_if(bc.partial_entries.begin(), bc.partial_entries.end(), [&](auto const& e) { return e.name == partial_name; });
+  if (it == bc.partial_entries.end())
+    return std::unexpected(error_ctx{0, error_code::unknown_key, partial_name});
+  return detail::bc_execute(*it->bc, value);
+}
+
+template <auto Tmpl, typename Reg, int TrimBlocks = 0, int LstripBlocks = 0, typename T>
+  requires (!detail::is_fixed_string_type_v<decltype(Tmpl)> && detail::is_ct_partials_v<Reg>)
+[[nodiscard]] expected<std::string> render_partial(T const& value, std::string_view partial_name) {
+  using D = detail::nttp_render_data<Tmpl, TrimBlocks != 0, LstripBlocks != 0, T, Reg>;
   if constexpr (D::ct_bc.error.ec != error_code::none)
     return std::unexpected(D::ct_bc.error);
   auto& bc = detail::nttp_partial_bytecode_holder<D, T>();
@@ -857,5 +1019,8 @@ template <class T>
   return detail::partial_entry{std::move(name),
                                 std::make_shared<detail::bytecode>(detail::bc_compile<T>(body, trim_blocks, lstrip_blocks))};
 }
+
+// CT 用 partial レジストリ（型パック）を公開 API として露出
+using detail::ct_partials;
 
 }  // namespace injamm

@@ -44,7 +44,8 @@ struct ct_parsed_template {
   std::array<std::string_view, N>                                       partial_names{};       /**< @brief 事前スキャンされた partial 定義の名前 */
   std::array<std::size_t, N>                                            partial_body_starts{}; /**< @brief partial 本体のテンプレート内開始位置 */
   std::array<std::size_t, N>                                            partial_body_ends{};   /**< @brief partial 本体のテンプレート内終了位置 */
-  std::size_t                                                           partial_count{};       /**< @brief 登録された partial 定義の数 */
+  std::size_t                                                           partial_count{};       /**< @brief #partialdef で定義された partial の数 */
+  std::size_t                                                           partial_total{};       /**< @brief 登録された partial 名の総数（#partialdef + 外部 {{> }} 参照） */
   std::array<std::string_view, N>                                       compare_rhs_strs{};    /**< @brief if_else の文字列比較 RHS（空 = 不使用） */
   std::size_t                                                           size = 0;              /**< @brief 現在の有効チャンク数 */
 
