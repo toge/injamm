@@ -779,6 +779,16 @@ class engine {
   explicit engine(std::string_view tmpl, ConstMap const& consts, bool trim_blocks = false, bool lstrip_blocks = false) : bc_(detail::bc_compile<T>(tmpl, consts, trim_blocks, lstrip_blocks)) {}
 
   /**
+   * @brief テンプレート文字列と登録済み partial から構築（実行時コンパイル）
+   *
+   * @param tmpl テンプレート文字列（std::string_view）
+   * @param partials 外部から注入する名前付き partial のリスト（{{> name}} 用）
+   * @param trim_blocks 閉じタグ後の改行を除去する（デフォルト false）
+   * @param lstrip_blocks ブロックタグ前の空白を除去する（デフォルト false）
+   */
+  explicit engine(std::string_view tmpl, std::vector<detail::partial_entry> partials, bool trim_blocks = false, bool lstrip_blocks = false) : bc_(detail::bc_compile<T>(tmpl, std::move(partials), trim_blocks, lstrip_blocks)) {}
+
+  /**
    * @brief レンダリングを実行する
    *
    * @param value コンテキスト値の const 参照
@@ -832,5 +842,20 @@ class engine {
    */
   [[nodiscard]] std::string disassemble() const { return bc_.disassemble(); }
 };
+
+/**
+ * @brief 名前付き partial エントリを構築する（{{> name}} レジストリ用）
+ *
+ * @tparam T コンテキスト型（glz::meta<T> 要特殊化）
+ * @param name partial 名
+ * @param body partial 本文のテンプレート文字列
+ * @return detail::partial_entry engine コンストラクタへ渡すエントリ
+ */
+template <class T>
+[[nodiscard]] detail::partial_entry make_partial(std::string name, std::string_view body,
+                                                 bool trim_blocks = false, bool lstrip_blocks = false) {
+  return detail::partial_entry{std::move(name),
+                                std::make_shared<detail::bytecode>(detail::bc_compile<T>(body, trim_blocks, lstrip_blocks))};
+}
 
 }  // namespace injamm

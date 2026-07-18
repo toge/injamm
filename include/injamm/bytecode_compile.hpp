@@ -881,6 +881,19 @@ class bc_compiler {
         continue;
       }
 
+      if (inner.starts_with(">")) {
+        auto partial_name = trim_sv(inner.substr(1));
+        auto it = std::find_if(bc_.partial_entries.begin(), bc_.partial_entries.end(),
+                                [&](auto const& e) { return e.name == partial_name; });
+        if (it == bc_.partial_entries.end()) {
+          bc_.error = error_ctx{tag_start, error_code::unknown_key, partial_name};
+          return body_result::eof;
+        }
+        bc_.add_instruction(bc_opcode::call_partial,
+                             static_cast<std::uint32_t>(std::distance(bc_.partial_entries.begin(), it)));
+        continue;
+      }
+
       if (inner.starts_with("^")) {
         auto key = trim_sv(inner.substr(1));
         if (parse_loop_kind(key)) {
@@ -1083,6 +1096,14 @@ class bc_compiler {
 template <class T>
 bytecode bc_compile(std::string_view tmpl, bool trim_blocks = false, bool lstrip_blocks = false) {
   bc_compiler<T> compiler;
+  return compiler.compile(tmpl, trim_blocks, lstrip_blocks);
+}
+
+template <class T>
+bytecode bc_compile(std::string_view tmpl, std::vector<partial_entry> partials,
+                    bool trim_blocks = false, bool lstrip_blocks = false) {
+  bc_compiler<T> compiler;
+  compiler.set_partial_entries(partials);
   return compiler.compile(tmpl, trim_blocks, lstrip_blocks);
 }
 

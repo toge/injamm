@@ -3541,6 +3541,40 @@ TEST_CASE("partial_compile_undefined", "[injamm][partial]") {
   CHECK(r.error().ec == injamm::error_code::unknown_key);
 }
 
+TEST_CASE("partial_include_from_registry", "[injamm][partial]") {
+  BcPartialUser user{"Alice", 30};
+  auto eng = injamm::engine<BcPartialUser>{
+    "{{> header}} {{name}}",
+    {injamm::make_partial<BcPartialUser>("header", "<h1>{{name}}({{age}})</h1>")}
+  };
+  auto r = eng.render(user);
+  REQUIRE(r.has_value());
+  CHECK(*r == "<h1>Alice(30)</h1> Alice");
+}
+
+TEST_CASE("partial_include_registry_with_partialdef", "[injamm][partial]") {
+  BcPartialUser user{"Bob", 25};
+  auto eng = injamm::engine<BcPartialUser>{
+    "{{#partialdef inline}}{{name}}{{/partialdef}}"
+    "{{> header}}{{#partial inline}}",
+    {injamm::make_partial<BcPartialUser>("header", "[{{name}}]")}
+  };
+  auto r = eng.render(user);
+  REQUIRE(r.has_value());
+  CHECK(*r == "[Bob]Bob");
+}
+
+TEST_CASE("partial_include_unknown_name_error", "[injamm][partial]") {
+  BcPartialUser user{"Alice", 30};
+  auto eng = injamm::engine<BcPartialUser>{
+    "{{> missing}}",
+    {injamm::make_partial<BcPartialUser>("header", "x")}
+  };
+  auto r = eng.render(user);
+  REQUIRE_FALSE(r.has_value());
+  CHECK(r.error().ec == injamm::error_code::unknown_key);
+}
+
 TEST_CASE("partial_in_partial", "[injamm][partial]") {
   BcPartialUsers data{{{ "Bob", 25 }, { "Charlie", 35 }}};
   auto eng = injamm::engine<BcPartialUsers>{
