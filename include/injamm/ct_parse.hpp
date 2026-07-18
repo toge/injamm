@@ -405,21 +405,52 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
        */
       // -- {{#partialdef name}} をスキップ（事前スキャン済み） --
       if (key.starts_with("partialdef ")) {
+        // "now"/"local" 第2引数付きの場合、定義と同時に即時展開するため
+        // {{#partial name}} と同等の partial_ref チャンクを合成する。
+        bool immediate = false;
+        std::string_view imm_name;
+        {
+          auto def_name = trim_sv(key.substr(11));
+          auto sp = def_name.find(' ');
+          if (sp != std::string_view::npos) {
+            imm_name = trim_sv(def_name.substr(0, sp));
+            auto rest = def_name.substr(sp + 1);
+            while (!rest.empty()) {
+              auto nsp = rest.find(' ');
+              auto tok = trim_sv(rest.substr(0, nsp));
+              if (tok == "now" || tok == "local")
+                immediate = true;
+              rest = (nsp == std::string_view::npos) ? std::string_view{} : rest.substr(nsp + 1);
+            }
+          }
+        }
         auto close_tag = constexpr_find(tmpl, "{{/partialdef}}", pos);
         if (close_tag != std::string_view::npos) {
           pos = close_tag + 15;
           if (trim_blocks && pos < tmpl.size() && tmpl[pos] == '\n') ++pos;
         }
+        if (immediate) {
+          // 定義済みエントリ（local 含む）から名前解決して直接インデックスを参照
+          std::size_t pidx = 0;
+          bool found = false;
+          for (; pidx < ctx.tmpl.partial_count; ++pidx) {
+            if (ctx.tmpl.partial_names[pidx] == imm_name) {
+              found = true;
+              break;
+            }
+          }
+          ctx.push_partial_ref(found ? pidx : SIZE_MAX, imm_name);
+        }
         continue;
       }
 
-      // -- {{#partial name}} を解決 --
+      // -- {{#partial name}} を解決（local partial は名前検索では参照不可） --
       if (key.starts_with("partial ")) {
         auto partial_name = trim_sv(key.substr(8));
         std::size_t pidx = 0;
         bool found = false;
         for (; pidx < ctx.tmpl.partial_total; ++pidx) {
-          if (ctx.tmpl.partial_names[pidx] == partial_name) {
+          if (!ctx.tmpl.partial_local[pidx] && ctx.tmpl.partial_names[pidx] == partial_name) {
             found = true;
             break;
           }

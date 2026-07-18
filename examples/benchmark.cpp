@@ -288,6 +288,107 @@ static int bench_ct_partial_selected() {
   return 0;
 }
 
+// --- now/local 修飾子追加の性能影響（通常 partialdef パスとの比較） ---
+static int bench_partial_overhead() {
+  Person dave{"Dave", 40};
+
+  // 通常の partialdef + partial 呼び出し（修飾子なし）
+  auto constexpr kPlain = injamm::fixed_string(
+    "{{#partialdef card}}{{name}}/{{age}}{{/partialdef}}"
+    "{{#partial card}}{{#partial card}}{{#partial card}}");
+
+  // now 修飾子
+  auto constexpr kNow = injamm::fixed_string(
+    "{{#partialdef card now}}{{name}}/{{age}}{{/partialdef}}"
+    "{{#partial card}}{{#partial card}}{{#partial card}}");
+
+  // local 修飾子（即時展開のみ）
+  auto constexpr kLocal = injamm::fixed_string(
+    "{{#partialdef card local}}{{name}}/{{age}}{{/partialdef}}");
+
+  // now local 併用（即時展開のみ）
+  auto constexpr kNowLocal = injamm::fixed_string(
+    "{{#partialdef card now local}}{{name}}/{{age}}{{/partialdef}}");
+
+  constexpr int ITERS = 50000;
+
+  // 実行時 VM 版
+  auto run_vm = [&](std::string_view tmpl, char const* label) {
+    injamm::engine<Person> eng{std::string(tmpl)};
+    for (int i = 0; i < 1000; ++i)
+      (void)eng.render(dave);
+    constexpr int ITERS = 50000;
+    auto start = std::chrono::high_resolution_clock::now();
+    for (int i = 0; i < ITERS; ++i)
+      (void)eng.render(dave);
+    auto end = std::chrono::high_resolution_clock::now();
+    auto us = elapsed_us(start, end);
+    std::printf("  vm %-10s x %d: %.0f us  (%.1f ns/call)\n", label, ITERS, us, us * 1000.0 / ITERS);
+  };
+
+  // CT 版は各テンプレートを直接テンプレート引数として展開する必要がある
+  auto run_ct_plain = [&]() {
+    for (int i = 0; i < 1000; ++i)
+      (void)injamm::render<kPlain>(dave);
+    constexpr int ITERS = 50000;
+    auto start = std::chrono::high_resolution_clock::now();
+    for (int i = 0; i < ITERS; ++i)
+      (void)injamm::render<kPlain>(dave);
+    auto end = std::chrono::high_resolution_clock::now();
+    auto us = elapsed_us(start, end);
+    std::printf("  ct %-10s x %d: %.0f us  (%.1f ns/call)\n", "plain", ITERS, us, us * 1000.0 / ITERS);
+  };
+  auto run_ct_now = [&]() {
+    for (int i = 0; i < 1000; ++i)
+      (void)injamm::render<kNow>(dave);
+    constexpr int ITERS = 50000;
+    auto start = std::chrono::high_resolution_clock::now();
+    for (int i = 0; i < ITERS; ++i)
+      (void)injamm::render<kNow>(dave);
+    auto end = std::chrono::high_resolution_clock::now();
+    auto us = elapsed_us(start, end);
+    std::printf("  ct %-10s x %d: %.0f us  (%.1f ns/call)\n", "now", ITERS, us, us * 1000.0 / ITERS);
+  };
+  auto run_ct_local = [&]() {
+    for (int i = 0; i < 1000; ++i)
+      (void)injamm::render<kLocal>(dave);
+    constexpr int ITERS = 50000;
+    auto start = std::chrono::high_resolution_clock::now();
+    for (int i = 0; i < ITERS; ++i)
+      (void)injamm::render<kLocal>(dave);
+    auto end = std::chrono::high_resolution_clock::now();
+    auto us = elapsed_us(start, end);
+    std::printf("  ct %-10s x %d: %.0f us  (%.1f ns/call)\n", "local", ITERS, us, us * 1000.0 / ITERS);
+  };
+  auto run_ct_nowlocal = [&]() {
+    for (int i = 0; i < 1000; ++i)
+      (void)injamm::render<kNowLocal>(dave);
+    constexpr int ITERS = 50000;
+    auto start = std::chrono::high_resolution_clock::now();
+    for (int i = 0; i < ITERS; ++i)
+      (void)injamm::render<kNowLocal>(dave);
+    auto end = std::chrono::high_resolution_clock::now();
+    auto us = elapsed_us(start, end);
+    std::printf("  ct %-10s x %d: %.0f us  (%.1f ns/call)\n", "now_local", ITERS, us, us * 1000.0 / ITERS);
+  };
+
+  std::printf("\n--- partial modifier overhead (CT) ---\n");
+  run_ct_plain();
+  run_ct_now();
+  run_ct_local();
+  run_ct_nowlocal();
+
+  std::printf("\n--- partial modifier overhead (VM) ---\n");
+  // 各ケースで即時展開を1回だけ行い、再利用呼び出しは含めない（local/now_local は
+  // 外部から参照できないため、純粋な即時展開コストを比較する）
+  run_vm("{{#partialdef card}}{{name}}/{{age}}{{/partialdef}}", "plain");
+  run_vm("{{#partialdef card now}}{{name}}/{{age}}{{/partialdef}}", "now");
+  run_vm("{{#partialdef card local}}{{name}}/{{age}}{{/partialdef}}", "local");
+  run_vm("{{#partialdef card now local}}{{name}}/{{age}}{{/partialdef}}", "now_local");
+
+  return 0;
+}
+
 int main() {
   std::printf("=== Benchmark ===\n\n");
 
@@ -318,6 +419,9 @@ int main() {
 
   std::printf("\n--- CT partial (selective compile) ---\n");
   bench_ct_partial_selected();
+
+  std::printf("\n--- partial modifier overhead ---\n");
+  bench_partial_overhead();
 
   std::printf("\n--- wide struct (P3 field-index dispatch) ---\n");
   bench_wide_struct();

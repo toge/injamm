@@ -3587,6 +3587,120 @@ TEST_CASE("partial_in_partial", "[injamm][partial]") {
   CHECK(*r == "Bob(25)/Charlie(35)/");
 }
 
+TEST_CASE("partialdef_now_basic", "[injamm][partial]") {
+  BcPartialUser user{"Alice", 30};
+  auto eng = injamm::engine<BcPartialUser>{
+    "|{{#partialdef greeting now}}Hi {{name}}{{/partialdef}}|"
+  };
+  auto r = eng.render(user);
+  REQUIRE(r.has_value());
+  CHECK(*r == "|Hi Alice|");
+}
+
+TEST_CASE("partialdef_now_with_vars", "[injamm][partial]") {
+  BcPartialUser user{"Alice", 30};
+  auto eng = injamm::engine<BcPartialUser>{
+    "{{#partialdef greeting now}}{{name}}-{{age}}{{/partialdef}}|"
+  };
+  auto r = eng.render(user);
+  REQUIRE(r.has_value());
+  CHECK(*r == "Alice-30|");
+}
+
+TEST_CASE("partialdef_now_then_reuse", "[injamm][partial]") {
+  BcPartialUser user{"Alice", 30};
+  auto eng = injamm::engine<BcPartialUser>{
+    "{{#partialdef greeting now}}{{name}}{{/partialdef}} and {{#partial greeting}}"
+  };
+  auto r = eng.render(user);
+  REQUIRE(r.has_value());
+  CHECK(*r == "Alice and Alice");
+}
+
+TEST_CASE("partialdef_now_in_loop", "[injamm][partial]") {
+  BcPartialUsers data{{{ "Bob", 25 }, { "Charlie", 35 }}};
+  auto eng = injamm::engine<BcPartialUsers>{
+    "{{#users}}{{#partialdef name now}}{{name}}{{/partialdef}}{{/users}}"
+  };
+  auto r = eng.render(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "BobCharlie");
+}
+
+TEST_CASE("partialdef_now_disassemble", "[injamm][partial]") {
+  auto bc = injamm::engine<BcPartialUser>{
+    "{{#partialdef greeting now}}hi{{/partialdef}}"
+  };
+  auto asm_str = bc.disassemble();
+  REQUIRE(asm_str.contains("call_partial"));
+  REQUIRE(asm_str.contains("partial=\"greeting\""));
+}
+
+TEST_CASE("partialdef_local_basic", "[injamm][partial]") {
+  BcPartialUser user{"Alice", 30};
+  auto eng = injamm::engine<BcPartialUser>{
+    "|{{#partialdef greeting local}}Hi {{name}}{{/partialdef}}|"
+  };
+  auto r = eng.render(user);
+  REQUIRE(r.has_value());
+  CHECK(*r == "|Hi Alice|");
+}
+
+TEST_CASE("partialdef_local_in_loop", "[injamm][partial]") {
+  BcPartialUsers data{{{ "Bob", 25 }, { "Charlie", 35 }}};
+  auto eng = injamm::engine<BcPartialUsers>{
+    "{{#users}}{{#partialdef name local}}{{name}}{{/partialdef}}{{/users}}"
+  };
+  auto r = eng.render(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "BobCharlie");
+}
+
+TEST_CASE("partialdef_local_not_reusable", "[injamm][partial]") {
+  BcPartialUser user{"Alice", 30};
+  auto eng = injamm::engine<BcPartialUser>{
+    "{{#partialdef greeting local}}{{name}}{{/partialdef}}{{#partial greeting}}"
+  };
+  // local partial は名前検索では参照不可 → unknown_key エラー
+  auto r = eng.render(user);
+  REQUIRE_FALSE(r.has_value());
+  CHECK(r.error().ec == injamm::error_code::unknown_key);
+}
+
+TEST_CASE("partialdef_local_not_named_render", "[injamm][partial]") {
+  BcPartialUser user{"Alice", 30};
+  auto eng = injamm::engine<BcPartialUser>{
+    "{{#partialdef greeting local}}{{name}}{{/partialdef}}"
+  };
+  // engine::render(value, name) でも local は参照不可
+  auto r = eng.render(user, "greeting");
+  REQUIRE_FALSE(r.has_value());
+  CHECK(r.error().ec == injamm::error_code::unknown_key);
+}
+
+TEST_CASE("partialdef_now_local_combined", "[injamm][partial]") {
+  BcPartialUser user{"Alice", 30};
+  auto eng = injamm::engine<BcPartialUser>{
+    // now(local 順不同) + local: 即時描画し、外部からは参照不可
+    "|{{#partialdef greeting now local}}Hi {{name}}{{/partialdef}}|{{#partial greeting}}"
+  };
+  auto r = eng.render(user);
+  // 即時描画分のみ（|Hi Alice|）、後の {{#partial greeting}} は unknown_key になる
+  REQUIRE_FALSE(r.has_value());
+  CHECK(r.error().ec == injamm::error_code::unknown_key);
+}
+
+TEST_CASE("partialdef_now_local_combined_order", "[injamm][partial]") {
+  BcPartialUser user{"Alice", 30};
+  auto eng = injamm::engine<BcPartialUser>{
+    // local now の順序でも同様
+    "{{#partialdef greeting local now}}Hi {{name}}{{/partialdef}}"
+  };
+  auto r = eng.render(user);
+  REQUIRE(r.has_value());
+  CHECK(*r == "Hi Alice");
+}
+
 // ---- disassemble: 未カバーのオペコード形式ブランチ ----
 // 既存の disassemble テストは emit_var / emit_section / emit_if / 一部の
 // フィルタしか網羅していない。以下は残りのオペコード形式分岐を担保する。

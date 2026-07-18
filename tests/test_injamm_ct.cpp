@@ -2383,11 +2383,80 @@ TEST_CASE("ct_partial_in_partial", "[injamm][ct][partial]") {
   data.users.push_back(CtUser{"Bob", 25});
   data.users.push_back(CtUser{"Charlie", 35});
   auto constexpr tmpl = injamm::fixed_string("{{#partialdef name}}{{name}}{{/partialdef}}"
-                                             "{{#partialdef card}}{{#partial name}}({{age}})/{{/partialdef}}"
-                                             "{{#users}}{{#partial card}}{{/users}}");
+                                              "{{#partialdef card}}{{#partial name}}({{age}})/{{/partialdef}}"
+                                              "{{#users}}{{#partial card}}{{/users}}");
   auto r              = injamm::render<tmpl>(data);
   REQUIRE(r.has_value());
   CHECK(*r == "Bob(25)/Charlie(35)/");
+}
+
+TEST_CASE("ct_partialdef_now_basic", "[injamm][ct][partial]") {
+  CtUser user{"Alice", 30};
+  auto constexpr tmpl = injamm::fixed_string("|{{#partialdef greeting now}}Hi {{name}}{{/partialdef}}|");
+  auto r              = injamm::render<tmpl>(user);
+  REQUIRE(r.has_value());
+  CHECK(*r == "|Hi Alice|");
+}
+
+TEST_CASE("ct_partialdef_now_then_reuse", "[injamm][ct][partial]") {
+  CtUser user{"Alice", 30};
+  auto constexpr tmpl = injamm::fixed_string("{{#partialdef greeting now}}{{name}}{{/partialdef}} and {{#partial greeting}}");
+  auto r              = injamm::render<tmpl>(user);
+  REQUIRE(r.has_value());
+  CHECK(*r == "Alice and Alice");
+}
+
+TEST_CASE("ct_partialdef_now_in_loop", "[injamm][ct][partial]") {
+  CtUsersData data{};
+  data.users.push_back(CtUser{"Bob", 25});
+  data.users.push_back(CtUser{"Charlie", 35});
+  auto constexpr tmpl = injamm::fixed_string("{{#users}}{{#partialdef name now}}{{name}}{{/partialdef}}{{/users}}");
+  auto r              = injamm::render<tmpl>(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "BobCharlie");
+}
+
+TEST_CASE("ct_partialdef_local_basic", "[injamm][ct][partial]") {
+  CtUser user{"Alice", 30};
+  auto constexpr tmpl = injamm::fixed_string("|{{#partialdef greeting local}}Hi {{name}}{{/partialdef}}|");
+  auto r              = injamm::render<tmpl>(user);
+  REQUIRE(r.has_value());
+  CHECK(*r == "|Hi Alice|");
+}
+
+TEST_CASE("ct_partialdef_local_in_loop", "[injamm][ct][partial]") {
+  CtUsersData data{};
+  data.users.push_back(CtUser{"Bob", 25});
+  data.users.push_back(CtUser{"Charlie", 35});
+  auto constexpr tmpl = injamm::fixed_string("{{#users}}{{#partialdef name local}}{{name}}{{/partialdef}}{{/users}}");
+  auto r              = injamm::render<tmpl>(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "BobCharlie");
+}
+
+TEST_CASE("ct_partialdef_local_not_reusable", "[injamm][ct][partial]") {
+  CtUser user{"Alice", 30};
+  auto constexpr tmpl = injamm::fixed_string("{{#partialdef greeting local}}{{name}}{{/partialdef}}{{#partial greeting}}");
+  auto r              = injamm::render<tmpl>(user);
+  REQUIRE_FALSE(r.has_value());
+  CHECK(r.error().ec == injamm::error_code::unknown_key);
+}
+
+TEST_CASE("ct_partialdef_now_local_combined", "[injamm][ct][partial]") {
+  CtUser user{"Alice", 30};
+  // now + local: 即時描画し、外部からは参照不可
+  auto constexpr tmpl = injamm::fixed_string("|{{#partialdef greeting now local}}Hi {{name}}{{/partialdef}}|{{#partial greeting}}");
+  auto r              = injamm::render<tmpl>(user);
+  REQUIRE_FALSE(r.has_value());
+  CHECK(r.error().ec == injamm::error_code::unknown_key);
+}
+
+TEST_CASE("ct_partialdef_local_now_combined_order", "[injamm][ct][partial]") {
+  CtUser user{"Alice", 30};
+  auto constexpr tmpl = injamm::fixed_string("{{#partialdef greeting local now}}Hi {{name}}{{/partialdef}}");
+  auto r              = injamm::render<tmpl>(user);
+  REQUIRE(r.has_value());
+  CHECK(*r == "Hi Alice");
 }
 
 // ---- render_partial<Tmpl, PartialName>（使う partial だけをコンパイル）----

@@ -232,6 +232,7 @@ struct bytecode;
 struct partial_entry {
   std::string name;              /**< partial 名 */
   std::shared_ptr<bytecode> bc;  /**< プリコンパイル済みバイトコード */
+  bool local = false;            /**< local partial の場合 true（名前検索では参照不可） */
 };
 
 /**

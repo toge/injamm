@@ -134,8 +134,29 @@ namespace detail {
         auto close_tag = constexpr_find(sv, "{{/partialdef}}", tag_end + 2);
         if (close_tag == std::string_view::npos)
           break;
+        // {{#partialdef name [now] [local]}} の修飾子を検出（順不同、併用可）
+        //   now   : 即時展開し、後で {{#partial name}} で再利用可能
+        //   local : 即時展開のみ。名前検索では参照不可（外部から使えない）
+        // （実際の即時展開は ct_parse_into 内で key から判定して合成する）
+        bool is_local = false;
+        {
+          auto sp = name.find(' ');
+          if (sp != std::string_view::npos) {
+            auto base = trim_sv(name.substr(0, sp));
+            auto rest = name.substr(sp + 1);
+            while (!rest.empty()) {
+              auto nsp = rest.find(' ');
+              auto tok = trim_sv(rest.substr(0, nsp));
+              if (tok == "local")
+                is_local = true;
+              rest = (nsp == std::string_view::npos) ? std::string_view{} : rest.substr(nsp + 1);
+            }
+            name = base;
+          }
+        }
         auto& tmpl                                   = ctx.tmpl;
         tmpl.partial_names[tmpl.partial_count]       = name;
+        tmpl.partial_local[tmpl.partial_count]       = is_local;
         tmpl.partial_body_starts[tmpl.partial_count] = tag_end + 2;
         tmpl.partial_body_ends[tmpl.partial_count]   = close_tag;
         ++tmpl.partial_count;
@@ -385,7 +406,11 @@ namespace detail {
           bc.error = partial_bc.error;
           break;
         }
-        bc.partial_entries.push_back({std::string(Data::parsed.partial_names[i]), std::make_shared<detail::bytecode>(std::move(partial_bc))});
+        partial_entry e;
+        e.name = std::string(Data::parsed.partial_names[i]);
+        e.bc = std::make_shared<detail::bytecode>(std::move(partial_bc));
+        e.local = Data::parsed.partial_local[i];
+        bc.partial_entries.push_back(std::move(e));
       }
       // 外部レジストリ（ct_partials<...>）から、未定義の {{> }} 参照を名前解決して差し込む
       if constexpr (Data::partial_set::count > 0) {
@@ -739,7 +764,7 @@ template <fixed_string Tmpl, int TrimBlocks = 0, int LstripBlocks = 0, typename 
   auto& bc = detail::nttp_partial_bytecode_holder<D, T>();
   if (bc.error.ec != error_code::none)
     return std::unexpected(bc.error);
-  auto it = std::find_if(bc.partial_entries.begin(), bc.partial_entries.end(), [&](auto const& e) { return e.name == partial_name; });
+  auto it = std::find_if(bc.partial_entries.begin(), bc.partial_entries.end(), [&](auto const& e) { return !e.local && e.name == partial_name; });
   if (it == bc.partial_entries.end())
     return std::unexpected(error_ctx{0, error_code::unknown_key, partial_name});
   return detail::bc_execute(*it->bc, value);
@@ -767,7 +792,7 @@ template <fixed_string Tmpl, typename Reg, int TrimBlocks = 0, int LstripBlocks 
   auto& bc = detail::nttp_partial_bytecode_holder<D, T>();
   if (bc.error.ec != error_code::none)
     return std::unexpected(bc.error);
-  auto it = std::find_if(bc.partial_entries.begin(), bc.partial_entries.end(), [&](auto const& e) { return e.name == partial_name; });
+  auto it = std::find_if(bc.partial_entries.begin(), bc.partial_entries.end(), [&](auto const& e) { return !e.local && e.name == partial_name; });
   if (it == bc.partial_entries.end())
     return std::unexpected(error_ctx{0, error_code::unknown_key, partial_name});
   return detail::bc_execute(*it->bc, value);
@@ -822,7 +847,7 @@ template <auto Tmpl, int TrimBlocks = 0, int LstripBlocks = 0, typename T>
   auto& bc = detail::nttp_partial_bytecode_holder<D, T>();
   if (bc.error.ec != error_code::none)
     return std::unexpected(bc.error);
-  auto it = std::find_if(bc.partial_entries.begin(), bc.partial_entries.end(), [&](auto const& e) { return e.name == partial_name; });
+  auto it = std::find_if(bc.partial_entries.begin(), bc.partial_entries.end(), [&](auto const& e) { return !e.local && e.name == partial_name; });
   if (it == bc.partial_entries.end())
     return std::unexpected(error_ctx{0, error_code::unknown_key, partial_name});
   return detail::bc_execute(*it->bc, value);
@@ -837,7 +862,7 @@ template <auto Tmpl, typename Reg, int TrimBlocks = 0, int LstripBlocks = 0, typ
   auto& bc = detail::nttp_partial_bytecode_holder<D, T>();
   if (bc.error.ec != error_code::none)
     return std::unexpected(bc.error);
-  auto it = std::find_if(bc.partial_entries.begin(), bc.partial_entries.end(), [&](auto const& e) { return e.name == partial_name; });
+  auto it = std::find_if(bc.partial_entries.begin(), bc.partial_entries.end(), [&](auto const& e) { return !e.local && e.name == partial_name; });
   if (it == bc.partial_entries.end())
     return std::unexpected(error_ctx{0, error_code::unknown_key, partial_name});
   return detail::bc_execute(*it->bc, value);
@@ -974,7 +999,7 @@ class engine {
     if (bc_.error.ec != error_code::none) {
       return std::unexpected(bc_.error);
     }
-    auto it = std::find_if(bc_.partial_entries.begin(), bc_.partial_entries.end(), [&](auto const& e) { return e.name == partial_name; });
+    auto it = std::find_if(bc_.partial_entries.begin(), bc_.partial_entries.end(), [&](auto const& e) { return !e.local && e.name == partial_name; });
     if (it == bc_.partial_entries.end()) {
       return std::unexpected(error_ctx{0, error_code::unknown_key, partial_name});
     }

@@ -856,16 +856,30 @@ class bc_compiler {
         if (key.starts_with("partialdef ")) {
           continue;
         }
-        if (key.starts_with("partial ")) {
-          auto partial_name = trim_sv(key.substr(8));
+        if (key.starts_with("partiallocal ")) {
+          // 内部タグ: local partial の即時呼び出し。local エントリのみ解決する。
+          auto partial_name = trim_sv(key.substr(13));
           auto it = std::find_if(bc_.partial_entries.begin(), bc_.partial_entries.end(),
-                                  [&](auto const& e) { return e.name == partial_name; });
+                                  [&](auto const& e) { return e.local && e.name == partial_name; });
           if (it == bc_.partial_entries.end()) {
             bc_.error = error_ctx{tag_start, error_code::unknown_key, partial_name};
             return body_result::eof;
           }
           bc_.add_instruction(bc_opcode::call_partial,
-                             static_cast<std::uint32_t>(std::distance(bc_.partial_entries.begin(), it)));
+                              static_cast<std::uint32_t>(std::distance(bc_.partial_entries.begin(), it)));
+          continue;
+        }
+        if (key.starts_with("partial ")) {
+          auto partial_name = trim_sv(key.substr(8));
+          // local partial は名前検索では参照不可
+          auto it = std::find_if(bc_.partial_entries.begin(), bc_.partial_entries.end(),
+                                  [&](auto const& e) { return !e.local && e.name == partial_name; });
+          if (it == bc_.partial_entries.end()) {
+            bc_.error = error_ctx{tag_start, error_code::unknown_key, partial_name};
+            return body_result::eof;
+          }
+          bc_.add_instruction(bc_opcode::call_partial,
+                              static_cast<std::uint32_t>(std::distance(bc_.partial_entries.begin(), it)));
           continue;
         }
         if (key.starts_with("if") && (key.size() == 2 || key[2] == ' ')) {
@@ -966,6 +980,8 @@ class bc_compiler {
     struct pending_partial {
       std::string name;
       std::string body;
+      bool immediate = false;
+      bool local = false;
     };
     std::vector<pending_partial> pending;
 
@@ -993,6 +1009,31 @@ class bc_compiler {
       }
       auto name = trim_sv(inner.substr(12));
 
+      // {{#partialdef name [now] [local]}} の修飾子を検出（順不同、併用可）
+      //   now   : 定義と同時に即時展開し、後で {{#partial name}} で再利用可能
+      //   local : 即時展開のみ。名前検索では参照不可（外部から使えない）
+      bool immediate = false;
+      bool local = false;
+      {
+        auto sp = name.find(' ');
+        if (sp != std::string_view::npos) {
+          auto base = trim_sv(name.substr(0, sp));
+          auto rest = name.substr(sp + 1);
+          while (!rest.empty()) {
+            auto nsp = rest.find(' ');
+            auto tok = trim_sv(rest.substr(0, nsp));
+            if (tok == "now")
+              immediate = true;
+            else if (tok == "local") {
+              immediate = true;
+              local = true;
+            }
+            rest = (nsp == std::string_view::npos) ? std::string_view{} : rest.substr(nsp + 1);
+          }
+          name = base;
+        }
+      }
+
       auto close_tag = tmpl.find("{{/partialdef}}", tag_end + 2);
       if (close_tag == std::string_view::npos) {
         result.append(tmpl.substr(pdef_start));
@@ -1000,7 +1041,23 @@ class bc_compiler {
       }
 
       auto body = std::string_view{tmpl}.substr(tag_end + 2, close_tag - (tag_end + 2));
-      pending.push_back({std::string(trim_sv(name)), std::string(body)});
+      pending.push_back({std::string(name), std::string(body), immediate, local});
+
+      if (immediate) {
+        if (local) {
+          // 内部タグ {{#partiallocal <index>}} を残し、即時展開させる。
+          // インデックスは登録後の位置なので、ここでは {{#partiallocal name}} とし、
+          // ボディパーサが local エントリを直接解決する。
+          result += "{{#partiallocal ";
+          result += name;
+          result += "}}";
+        } else {
+          // 定義ブロックの代わりに {{#partial name}} 呼び出しタグを残し、即時展開させる
+          result += "{{#partial ";
+          result += name;
+          result += "}}";
+        }
+      }
 
       pos = close_tag + 15;
     }
@@ -1017,6 +1074,7 @@ class bc_compiler {
       partial_entry entry;
       entry.name = pp.name;
       entry.bc = std::make_shared<bytecode>(std::move(partial_bc));
+      entry.local = pp.local;
       bc_.partial_entries.push_back(std::move(entry));
     }
 
