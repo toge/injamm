@@ -6,8 +6,11 @@
 #include <ostream>
 #include <string_view>
 
-#if defined(INJAMM_HAS_FROZENCHARS) && __has_include(<frozenchars/mod/core.hpp>)
+#if __has_include(<frozenchars/mod/core.hpp>)
 #include <frozenchars/mod/core.hpp>
+#ifndef INJAMM_HAS_FROZENCHARS
+#define INJAMM_HAS_FROZENCHARS 1
+#endif
 #endif
 
 namespace injamm {
@@ -138,5 +141,15 @@ struct fixed_string {
   }
 #endif
 };
+
+// ponytail: クラステンプレート推定ガイド。injamm::fixed_string("...") で N を推定可能に。
+template <std::size_t N>
+fixed_string(char const (&str)[N]) -> fixed_string<N>;
+
+#if INJAMM_HAS_FROZENCHARS
+// FrozenString からの推定（minify_html 等のパイプ結果を fixed_string に構築する場合）。
+template <std::size_t N>
+fixed_string(frozenchars::FrozenString<N> const&) -> fixed_string<N>;
+#endif
 
 }  // namespace injamm
