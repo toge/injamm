@@ -834,17 +834,44 @@ auto side = eng.render(User{"Dave", 40}, "sidebar");
 
 存在しない partial 名を指定すると `unknown_key` エラーを返します。
 
-### 19.7 制限
+### 19.7 外部レジストリからのインクルード（`{{> name}}`）
+
+`{{> name}}` はテンプレート文字列の**外部**から注入した partial をインライン展開します。
+`engine<T>` のコンストラクタに `std::vector<partial_entry>` を渡し、`make_partial<T>`
+でエントリを組み立てます。呼び出し元のコンテキストを継承して描画されます（Mustache 互換）。
+
+```cpp
+struct Data { std::string title; std::string name; };
+template <> struct glz::meta<Data> {
+  using T = Data;
+  static constexpr auto value = object(&T::title, &T::name);
+};
+
+Data data{"Members", "Alice"};
+auto eng = injamm::engine<Data>{
+  "{{> header}} {{name}}",
+  {injamm::make_partial<Data>("header", "<h1>{{title}}</h1>")}
+};
+// eng.render(data) == "<h1>Members</h1> Alice"
+```
+
+- `make_partial<T>(name, body)` は partial 本文をプリコンパイルして `partial_entry` を返します。
+- 存在しない名前を `{{> }}` で指定すると `unknown_key` エラーを返します。
+- 同一テンプレート内の `{{#partialdef}}` と併用できます。両者とも `partial_entries` に格納されます。
+- テンプレート内の `{{> }}` は構築時に解決されるため、partial は engine 構築**前**に登録済みでなければなりません。
+
+### 19.8 制限
 
 - `{{#partialdef}}` のネストはできません
-- NTTP `render<fixed_string>` では未対応です（runtime `engine<T>` のみ）
+- NTTP `render<fixed_string>` では `{{> name}}` レジストリは未対応です（CT は entry pair 方式、§20）
 - ファイルインクルード（`{% include %}`）には対応していません
 
 ---
 
 ## 20. partial / include（NTTP render 専用）
 
-`{{> partial_name}}` は NTTP `render` の compile-time entry pair で展開されます。runtime `engine<T>` では未対応です。
+`{{> partial_name}}` は NTTP `render` の compile-time entry pair で展開されます。
+runtime `engine<T>` でも `{{> name}}` は利用できますが、そちらは外部レジストリ経由（§19.7）です。
 
 ```cpp
 std::string title = "Members";
