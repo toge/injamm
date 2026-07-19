@@ -11,14 +11,14 @@ Glaze でメタプログラミングされた C++ 構造体をコンテキスト
 
 - **ヘッダオンリー**: インクルードするだけで使用可能
 - **高速**: コンパイル時テンプレートパース、Computed goto ディスパッチ（GCC）、Glaze リフレクションによる O(1) フィールドアクセス
-- **依存最小**: [Glaze](https://github.com/stephenberry/glaze) + [FastFloat](https://github.com/lemire/fast_float) + [enchantum](https://github.com/anomalyco/enchantum) のみ必須
+- **依存最小**: [Glaze](https://github.com/stephenberry/glaze) + [FastFloat](https://github.com/lemire/fast_float) のみ必須。enum 名前解決は [enchantum](https://github.com/anomalyco/enchantum)（オプション、`ENABLE_ENUM` で切替）
 
 ## 要件
 
 - C++23 対応コンパイラ（GCC 14+ 推奨）
 - [Glaze](https://github.com/stephenberry/glaze)
 - [FastFloat](https://github.com/lemire/fast_float)（高速浮動小数点解析）
-- [enchantum](https://github.com/anomalyco/enchantum)（C++20 enum→string 反射ライブラリ）
+- [enchantum](https://github.com/anomalyco/enchantum)（C++20 enum→string 反射ライブラリ、オプション。`ENABLE_ENUM=OFF` で不要）
 
 ## ビルド・インストール
 
@@ -43,6 +43,7 @@ cmake --build build
 | `ENABLE_THREADED_DISPATCH` | ON     | 高速化のためのGCC computed gotoディスパッチ（GCC のみ） |
 | `BUILD_TEST`               | ON     | テストをビルドする                                       |
 | `BUILD_EXAMPLE`            | ON     | サンプルをビルドする                                     |
+| `ENABLE_ENUM`              | ON     | enchantum による enum 文字列出力を有効化（OFF で `INJAMM_NO_ENUM_REGISTRY` が定義され依存が外れる） |
 
 ### find_package
 

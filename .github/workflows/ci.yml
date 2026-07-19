@@ -77,6 +77,54 @@ jobs:
       - name: Test
         run: ctest --test-dir build -V
 
+  no-enum:
+    runs-on: ubuntu-latest
+    container: fedora:44
+
+    env:
+      CC: gcc
+      CXX: g++
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build tools
+        run: dnf install -y gcc-c++ cmake ninja-build git curl zip unzip tar nodejs
+
+      - name: Check GCC version
+        run: |
+          g++ --version
+          g++ -dumpversion | grep -E "^(1[4-9]|[2-9][0-9])(\.|\$)" || { echo "ERROR: GCC 14+ required, found $(g++ -dumpversion)"; exit 1; }
+
+      - name: Restore vcpkg cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/vcpkg
+            build-noenum/vcpkg_installed
+          key: ${{ runner.os }}-fedora-44-noenum-vcpkg-${{ hashFiles('vcpkg.json') }}
+          restore-keys: |
+            ${{ runner.os }}-fedora-44-noenum-vcpkg-
+
+      - name: Install vcpkg
+        run: |
+          if [ ! -d ~/vcpkg ]; then
+            git clone https://github.com/microsoft/vcpkg.git ~/vcpkg
+            ~/vcpkg/bootstrap-vcpkg.sh
+          fi
+
+      - name: Configure (ENABLE_ENUM=OFF)
+        run: |
+          cmake -B build-noenum -S . -G Ninja \
+            -DCMAKE_TOOLCHAIN_FILE=$HOME/vcpkg/scripts/buildsystems/vcpkg.cmake \
+            -DENABLE_ENUM=OFF
+
+      - name: Build
+        run: cmake --build build-noenum
+
+      - name: Test
+        run: ctest --test-dir build-noenum -V
+
   sanitizer:
     runs-on: ubuntu-latest
     container: fedora:44
@@ -159,6 +207,39 @@ jobs:
       - name: Test
         run: ctest --test-dir build -V -C Release
 
+  windows-no-enum:
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Restore vcpkg cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            C:\vcpkg
+            build-noenum\vcpkg_installed
+          key: ${{ runner.os }}-msvc-noenum-vcpkg-${{ hashFiles('vcpkg.json') }}
+          restore-keys: |
+            ${{ runner.os }}-msvc-noenum-vcpkg-
+
+      - name: Setup vcpkg
+        run: |
+          if not exist C:\vcpkg (
+            git clone https://github.com/microsoft/vcpkg.git C:\vcpkg
+            call C:\vcpkg\bootstrap-vcpkg.bat -disableMetrics
+          )
+        shell: cmd
+
+      - name: Configure
+        run: cmake -B build-noenum -S . -DCMAKE_TOOLCHAIN_FILE=C:\vcpkg\scripts\buildsystems\vcpkg.cmake -DENABLE_ENUM=OFF
+
+      - name: Build
+        run: cmake --build build-noenum --config Release
+
+      - name: Test
+        run: ctest --test-dir build-noenum -V -C Release
+
   linux-clang:
     runs-on: ubuntu-latest
 
@@ -211,6 +292,50 @@ jobs:
 
       - name: Test
         run: ctest --test-dir build -V
+
+  clang-no-enum:
+    runs-on: ubuntu-latest
+    container: fedora:44
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build tools
+        run: dnf install -y clang cmake ninja-build git curl zip unzip tar
+
+      - name: Check Clang version
+        run: clang++ --version
+
+      - name: Restore vcpkg cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/vcpkg
+            build-noenum/vcpkg_installed
+          key: ${{ runner.os }}-clang-noenum-vcpkg-${{ hashFiles('vcpkg.json') }}
+          restore-keys: |
+            ${{ runner.os }}-clang-noenum-vcpkg-
+
+      - name: Install vcpkg
+        run: |
+          if [ ! -d ~/vcpkg ]; then
+            git clone https://github.com/microsoft/vcpkg.git ~/vcpkg
+            ~/vcpkg/bootstrap-vcpkg.sh
+          fi
+
+      - name: Configure (ENABLE_ENUM=OFF)
+        run: |
+          cmake -B build-noenum -S . -G Ninja \
+            -DCMAKE_TOOLCHAIN_FILE=$HOME/vcpkg/scripts/buildsystems/vcpkg.cmake \
+            -DCMAKE_C_COMPILER=clang \
+            -DCMAKE_CXX_COMPILER=clang++ \
+            -DENABLE_ENUM=OFF
+
+      - name: Build
+        run: cmake --build build-noenum
+
+      - name: Test
+        run: ctest --test-dir build-noenum -V
 
   emscripten:
     runs-on: ubuntu-latest
@@ -291,6 +416,44 @@ jobs:
 
       - name: Test
         run: ctest --test-dir build -V
+
+  macos-no-enum:
+    runs-on: macos-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build tools
+        run: brew install cmake ninja
+
+      - name: Check compiler version
+        run: clang++ --version
+
+      - name: Restore vcpkg cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/vcpkg
+            build-noenum/vcpkg_installed
+          key: ${{ runner.os }}-noenum-vcpkg-${{ hashFiles('vcpkg.json') }}
+          restore-keys: |
+            ${{ runner.os }}-noenum-vcpkg-
+
+      - name: Install vcpkg
+        run: |
+          if [ ! -d ~/vcpkg ]; then
+            git clone https://github.com/microsoft/vcpkg.git ~/vcpkg
+            ~/vcpkg/bootstrap-vcpkg.sh
+          fi
+
+      - name: Configure (ENABLE_ENUM=OFF)
+        run: cmake -B build-noenum -S . -G Ninja -DCMAKE_TOOLCHAIN_FILE=$HOME/vcpkg/scripts/buildsystems/vcpkg.cmake -DENABLE_ENUM=OFF
+
+      - name: Build
+        run: cmake --build build-noenum
+
+      - name: Test
+        run: ctest --test-dir build-noenum -V
 
   clang-sanitizer:
     runs-on: ubuntu-latest
