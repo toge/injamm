@@ -411,12 +411,12 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
         std::string_view imm_name;
         {
           auto def_name = trim_sv(key.substr(11));
-          auto sp = def_name.find(' ');
+          auto sp = constexpr_find(def_name, ' ');
           if (sp != std::string_view::npos) {
             imm_name = trim_sv(def_name.substr(0, sp));
             auto rest = def_name.substr(sp + 1);
             while (!rest.empty()) {
-              auto nsp = rest.find(' ');
+              auto nsp = constexpr_find(rest, ' ');
               auto tok = trim_sv(rest.substr(0, nsp));
               if (tok == "now" || tok == "local")
                 immediate = true;

@@ -140,12 +140,12 @@ namespace detail {
         // （実際の即時展開は ct_parse_into 内で key から判定して合成する）
         bool is_local = false;
         {
-          auto sp = name.find(' ');
+          auto sp = constexpr_find(name, ' ');
           if (sp != std::string_view::npos) {
             auto base = trim_sv(name.substr(0, sp));
             auto rest = name.substr(sp + 1);
             while (!rest.empty()) {
-              auto nsp = rest.find(' ');
+              auto nsp = constexpr_find(rest, ' ');
               auto tok = trim_sv(rest.substr(0, nsp));
               if (tok == "local")
                 is_local = true;
