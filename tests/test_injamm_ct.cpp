@@ -2068,12 +2068,14 @@ struct glz::meta<CtEnumWrapper> {
   static constexpr auto value = glz::object("task", &CtEnumWrapper::task);
 };
 
+#ifndef INJAMM_NO_ENUM_REGISTRY
 TEST_CASE("CT: enum nested path", "[injamm][ct][enum]") {
   CtEnumWrapper data{.task = {CtStatus::Pending}};
   auto          r = injamm::render<"{{task.status}}">(data);
   REQUIRE(r.has_value());
   CHECK(*r == "Pending");
 }
+#endif
 
 TEST_CASE("ct_const_if_0_no_else", "[injamm][ct][const_if]") {
   auto constexpr tmpl = injamm::fixed_string("{{#if 0}}yes{{/if}}");
