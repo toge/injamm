@@ -8,6 +8,7 @@
 
 #include "../include/injamm/escape_hatch.hpp"
 
+// ファズ用のネスト構造アイテム（配列要素として使用）
 struct FuzzItem {
   std::string name;
   int         value;
@@ -15,6 +16,7 @@ struct FuzzItem {
   bool        active;
 };
 
+// ファズ用のルートデータ構造（各種型を含む）
 struct FuzzData {
   std::string           title;
   int                   count;
@@ -39,6 +41,7 @@ struct glz::meta<FuzzData> {
       "items", &T::items, "extra", &T::extra);
 };
 
+// ファズ入力として用いる固定のサンプルデータを構築する
 static FuzzData makeFuzzData() {
   FuzzData d;
   d.title = "fuzz";
@@ -50,6 +53,7 @@ static FuzzData makeFuzzData() {
   return d;
 }
 
+// libFuzzer エントリポイント: 任意のバイト列をテンプレートとしてレンダリングしクラッシュを検出
 extern "C" int LLVMFuzzerTestOneInput(const uint8_t* raw_data, size_t size) {
   if (size == 0) return 0;
 
@@ -63,6 +67,7 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* raw_data, size_t size) {
 }
 
 #ifdef INJAMM_FUZZ_STANDALONE
+// 単一の入力バッファを libFuzzer エントリポイントへ渡して実行する
 static int runOneInput(std::vector<uint8_t> const& buf) {
   return LLVMFuzzerTestOneInput(buf.data(), buf.size());
 }

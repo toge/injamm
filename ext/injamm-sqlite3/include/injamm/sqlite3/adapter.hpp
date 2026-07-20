@@ -8,11 +8,13 @@
 
 namespace injamm::sqlite3 {
 
+// 1 行の sqlite3 ステートメントを、キー（列名）で文字列値へアクセスできるビューとしてラップ
 struct sqlite3_row_view {
   sqlite3_stmt* stmt_;
 
   explicit sqlite3_row_view(sqlite3_stmt* stmt) : stmt_(stmt) {}
 
+  // 列名 key に対応する値を文字列で返す。見つからなければ空文字を返す。
   std::string find(std::string_view key) const {
     if (!stmt_) return "";
     int n = sqlite3_column_count(stmt_);
@@ -46,12 +48,14 @@ struct sqlite3_row_view {
   }
 };
 
+// 複数行のクエリ結果を、sqlite3_row_view を要素とする範囲for文対応のコレクションとしてラップ
 struct sqlite3_result {
   sqlite3_stmt* stmt_;
   mutable bool started_;
 
   explicit sqlite3_result(sqlite3_stmt* stmt) : stmt_(stmt), started_(false) {}
 
+  // 反復要素の型（1 行ビュー）
   using value_type = sqlite3_row_view;
 
   struct sentinel {};

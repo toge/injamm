@@ -15,7 +15,7 @@ struct glz::meta<CtUser> {
 TEST_CASE("ct overload test", "[ct][trim_blocks]") {
   CtUser user{"Alice", 30};
   
-  // This should work - explicitly passing bool flags
+  // bool フラグを明示的に渡す例（期待通り動作するはず）
   SECTION("explicit false, false") {
     auto r = injamm::render<"{{name}}{{age}}", false, false>(user);
     REQUIRE(r.has_value());

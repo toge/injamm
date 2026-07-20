@@ -22,6 +22,7 @@ sqlite3_stmt* prepare(test_db& db, const char* sql) {
 }
 
 TEST_CASE("sqlite3 adapter", "[sqlite3]") {
+  // 単一行: 名前とメールをプレースホルダで展開
   SECTION("single row rendering") {
     test_db       db;
     sqlite3_stmt* stmt = prepare(db, "SELECT name, email FROM users WHERE id = 1");
@@ -36,6 +37,7 @@ TEST_CASE("sqlite3 adapter", "[sqlite3]") {
     sqlite3_finalize(stmt);
   }
 
+  // 複数行: {{#.}} セクションで各行を展開
   SECTION("multiple rows with {{#.}}") {
     test_db       db;
     sqlite3_stmt* stmt       = prepare(db, "SELECT name FROM users ORDER BY id");
@@ -49,6 +51,7 @@ TEST_CASE("sqlite3 adapter", "[sqlite3]") {
     sqlite3_finalize(stmt);
   }
 
+  // 整数列: 数値としてそのまま出力される
   SECTION("integer column") {
     test_db       db;
     sqlite3_stmt* stmt = prepare(db, "SELECT id, name FROM users WHERE id = 2");
@@ -63,6 +66,7 @@ TEST_CASE("sqlite3 adapter", "[sqlite3]") {
     sqlite3_finalize(stmt);
   }
 
+  // NULL 列: 空文字として出力される
   SECTION("NULL column renders empty") {
     test_db       db;
     sqlite3_stmt* stmt = prepare(db, "SELECT NULL AS val");
@@ -75,6 +79,7 @@ TEST_CASE("sqlite3 adapter", "[sqlite3]") {
     sqlite3_finalize(stmt);
   }
 
+  // 非空テキスト列は if セクションで真と判定される
   SECTION("text column truthiness works in if") {
     test_db       db;
     sqlite3_stmt* stmt = prepare(db, "SELECT 'Pending' AS status");
@@ -89,6 +94,7 @@ TEST_CASE("sqlite3 adapter", "[sqlite3]") {
     sqlite3_finalize(stmt);
   }
 
+  // テキスト列の等値比較: {{#if status == "Pending"}} が評価される
   SECTION("enum-like text equality works in if") {
     test_db       db;
     sqlite3_stmt* stmt = prepare(db, "SELECT 'Pending' AS status");
@@ -103,6 +109,7 @@ TEST_CASE("sqlite3 adapter", "[sqlite3]") {
     sqlite3_finalize(stmt);
   }
 
+  // 空の結果セット: セクション内は展開されない
   SECTION("empty result set") {
     test_db       db;
     sqlite3_stmt* stmt       = prepare(db, "SELECT name FROM users WHERE id = 999");
@@ -116,6 +123,7 @@ TEST_CASE("sqlite3 adapter", "[sqlite3]") {
     sqlite3_finalize(stmt);
   }
 
+  // 空結果セットで else ブロックが描画される
   SECTION("{{#.}} with else, empty") {
     test_db       db;
     sqlite3_stmt* stmt       = prepare(db, "SELECT name FROM users WHERE id = 999");
@@ -129,6 +137,7 @@ TEST_CASE("sqlite3 adapter", "[sqlite3]") {
     sqlite3_finalize(stmt);
   }
 
+  // 非空結果セットで本体ブロックが描画される
   SECTION("{{#.}} with else, non-empty") {
     test_db       db;
     sqlite3_stmt* stmt       = prepare(db, "SELECT name FROM users WHERE id = 1");

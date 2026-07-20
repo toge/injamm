@@ -5,6 +5,7 @@
 
 using namespace injamm::sqlite3;
 
+// runtime_field_accessible を満たすモック行（キー→文字列マップ）
 struct mock_row {
   std::string find(std::string_view key) const {
     auto it = data_.find(std::string(key));
@@ -13,6 +14,7 @@ struct mock_row {
   std::map<std::string, std::string> data_;
 };
 
+// forward_iterable を満たすモック結果セット（行配列のビュー）
 struct mock_result {
   mock_row*   rows_;
   std::size_t count_;
@@ -34,12 +36,15 @@ struct mock_result {
 };
 
 TEST_CASE("concepts satisfy", "[concept]") {
+  // mock_row が runtime_field_accessible を満たすことを静的検証
   SECTION("mock_row is runtime_field_accessible") {
     static_assert(runtime_field_accessible<mock_row>);
   }
+  // mock_result が forward_iterable を満たすことを静的検証
   SECTION("mock_result is forward_iterable") {
     static_assert(forward_iterable<mock_result>);
   }
+  // find の正常系・未検出時の挙動を確認
   SECTION("mock_row find works") {
     mock_row r{{{"name", "Alice"}}};
     CHECK(r.find("name") == "Alice");
@@ -50,6 +55,7 @@ TEST_CASE("concepts satisfy", "[concept]") {
 #include <injamm/sqlite3/engine.hpp>
 
 TEST_CASE("mock rendering", "[engine]") {
+  // 単一行・単一変数の展開
   SECTION("single row, single var") {
     mock_row r{{{"name", "Alice"}, {"email", "alice@example.com"}}};
     auto     eng    = injamm::sqlite3::runtime_engine<mock_row>("Hello {{name}} ({{email}})");
@@ -58,6 +64,7 @@ TEST_CASE("mock rendering", "[engine]") {
     CHECK(*result == "Hello Alice (alice@example.com)");
   }
 
+  // 未知キーは空文字として出力される
   SECTION("unknown key renders empty") {
     mock_row r{{{"name", "Bob"}}};
     auto     eng    = injamm::sqlite3::runtime_engine<mock_row>("Hi {{name}}, age={{age}}");
@@ -66,6 +73,7 @@ TEST_CASE("mock rendering", "[engine]") {
     CHECK(*result == "Hi Bob, age=");
   }
 
+  // エスケープあり/なし（{{{}}}）の出力動作を確認
   SECTION("{{{raw}}} variable output") {
     mock_row r{{{"html", "<b>bold</b>"}}};
     auto     eng    = injamm::sqlite3::runtime_engine<mock_row>("{{html}} vs {{{html}}}");
@@ -74,6 +82,7 @@ TEST_CASE("mock rendering", "[engine]") {
     CHECK(*result == "&lt;b&gt;bold&lt;/b&gt; vs <b>bold</b>");
   }
 
+  // 文字列フィルタ（upper）が適用される
   SECTION("string filter works") {
     mock_row r{{{"name", "alice"}}};
     auto     eng    = injamm::sqlite3::runtime_engine<mock_row>("{{name | upper}}");
@@ -82,6 +91,7 @@ TEST_CASE("mock rendering", "[engine]") {
     CHECK(*result == "ALICE");
   }
 
+  // 非空文字列は if で真と判定される
   SECTION("string truthiness works in if") {
     mock_row r{{{"status", "Pending"}}};
     auto     eng    = injamm::sqlite3::runtime_engine<mock_row>("{{#if status}}YES{{else}}NO{{/if}}");
@@ -90,6 +100,7 @@ TEST_CASE("mock rendering", "[engine]") {
     CHECK(*result == "YES");
   }
 
+  // 空文字列は if で偽と判定される
   SECTION("empty string is falsy in if") {
     mock_row r{{{"status", ""}}};
     auto     eng    = injamm::sqlite3::runtime_engine<mock_row>("{{#if status}}YES{{else}}NO{{/if}}");
@@ -98,6 +109,7 @@ TEST_CASE("mock rendering", "[engine]") {
     CHECK(*result == "NO");
   }
 
+  // 文字列等値比較: {{#if status == "Pending"}} を評価
   SECTION("enum-like string equality works in if") {
     mock_row r{{{"status", "Pending"}}};
     auto     eng    = injamm::sqlite3::runtime_engine<mock_row>("{{#if status == \"Pending\"}}YES{{else}}NO{{/if}}");
@@ -106,6 +118,7 @@ TEST_CASE("mock rendering", "[engine]") {
     CHECK(*result == "YES");
   }
 
+  // 文字列不等比較: {{#if status != "Active"}} を評価
   SECTION("enum-like string inequality works in if") {
     mock_row r{{{"status", "Pending"}}};
     auto     eng    = injamm::sqlite3::runtime_engine<mock_row>("{{#if status != \"Active\"}}YES{{else}}NO{{/if}}");
@@ -116,6 +129,7 @@ TEST_CASE("mock rendering", "[engine]") {
 }
 
 TEST_CASE("forward iteration rendering", "[engine][iteration]") {
+  // 2 行を {{#.}} セクションで展開
   SECTION("two rows with {{#.}}") {
     mock_row    rows_arr[2] = {mock_row{{{"name", "Alice"}}}, mock_row{{{"name", "Bob"}}}};
     mock_result res{rows_arr, 2};
@@ -125,6 +139,7 @@ TEST_CASE("forward iteration rendering", "[engine][iteration]") {
     CHECK(*result == "<ul><li>Alice</li><li>Bob</li></ul>");
   }
 
+  // リテラル接頭なしの {{name}} は融合されず展開される
   SECTION("{{name}} without literal prefix (no fusion)") {
     mock_row    rows_arr[2] = {mock_row{{{"name", "Alice"}}}, mock_row{{{"name", "Bob"}}}};
     mock_result res{rows_arr, 2};
@@ -134,6 +149,7 @@ TEST_CASE("forward iteration rendering", "[engine][iteration]") {
     CHECK(*result == "Alice Bob ");
   }
 
+  // ループ内の loop.index が 0 始まりで出力される
   SECTION("loop.index works") {
     mock_row    rows_arr[2] = {mock_row{{{"name", "A"}}}, mock_row{{{"name", "B"}}}};
     mock_result res{rows_arr, 2};
@@ -143,6 +159,7 @@ TEST_CASE("forward iteration rendering", "[engine][iteration]") {
     CHECK(*result == "0:A 1:B ");
   }
 
+  // 空結果セットはセクション内が展開されない
   SECTION("empty result renders nothing") {
     mock_result res{nullptr, 0};
     auto        eng    = injamm::sqlite3::runtime_engine<mock_result>("before{{#.}}middle{{/.}}after");
@@ -151,6 +168,7 @@ TEST_CASE("forward iteration rendering", "[engine][iteration]") {
     CHECK(*result == "beforeafter");
   }
 
+  // 空結果セットで else ブロックが描画される
   SECTION("{{#.}} with else, empty") {
     mock_result res{nullptr, 0};
     auto        eng    = injamm::sqlite3::runtime_engine<mock_result>("{{#.}}body{{else}}empty{{/.}}");
@@ -159,6 +177,7 @@ TEST_CASE("forward iteration rendering", "[engine][iteration]") {
     CHECK(*result == "empty");
   }
 
+  // 非空結果セットで本体ブロックが描画される
   SECTION("{{#.}} with else, non-empty") {
     mock_row    rows_arr[1] = {mock_row{{{"name", "A"}}}};
     mock_result res{rows_arr, 1};

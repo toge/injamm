@@ -6,7 +6,7 @@
 #include "types.hpp"
 #include "bytecode.hpp"
 #include "bytecode_exec.hpp"
-// enum_io.hpp provides enum_name_to_int and serialize_enum
+// enum_io.hpp は enum_name_to_int と serialize_enum を提供する
 
 #include <array>
 #include <cstddef>
@@ -105,7 +105,7 @@ struct ct_bytecode_builder {
   }
 };
 
-// to_bytecode: ct_bytecode<N> → runtime bytecode
+// to_bytecode: ct_bytecode<N> を実行時 bytecode へ変換する
 template <std::size_t N>
 bytecode to_bytecode(ct_bytecode<N> const& ct) {
   bytecode bc;
@@ -130,10 +130,10 @@ bytecode to_bytecode(ct_bytecode<N> const& ct) {
     }
     bc.var_refs.push_back(std::move(ref));
   }
-  // Compute total literal size for buffer pre-allocation
+  // バッファ事前確保用に全リテラルの合計サイズを計算
   for (auto const& lit : bc.literals)
     bc.literal_total_size += lit.size();
-  // Reconstruct filter chains from instruction stream (CT path doesn't store filters in var_refs)
+  // 命令ストリームからフィルタチェーンを再構築する（CT パスは var_refs にフィルタを保持しない）
   for (std::size_t i = 0; i < bc.instructions.size(); ++i) {
     if (bc.instructions[i].op == bc_opcode::resolve_filtered) {
       auto var_idx = bc.instructions[i].operand2;
@@ -461,14 +461,14 @@ consteval void compile_chunk_range(ct_bytecode_builder<N>& b,
         bool has_filters = (chunks.filter_count[i] > 0 || chunks.int_filter_count[i] > 0
                             || chunks.float_filter_count[i] > 0);
 
-        // safe filter detection: force raw output
+        // safe フィルタ検出: 生出力を強制
         bool has_safe = false;
         for (std::uint8_t f = 0; f < chunks.filter_count[i]; ++f) {
           if (chunks.filters[i][f].filter == string_filter::safe) { has_safe = true; break; }
         }
         bool use_raw = raw || has_safe;
 
-        // {{this}} → emit_this (context serialization)
+        // {{this}} → emit_this（コンテキストのシリアライズ）
         if (sv == "this") {
           b.emit(bc_opcode::emit_this);
           break;
@@ -480,7 +480,7 @@ consteval void compile_chunk_range(ct_bytecode_builder<N>& b,
           break;
         }
 
-        // root.field → resolve_filtered or emit_at_root_field
+        // root.field → resolve_filtered または emit_at_root_field
         if (sv.starts_with("root.")) {
          auto rest = sv.substr(5);
          auto vridx = b.add_var_ref({rest.data(), rest.size()},
@@ -497,6 +497,7 @@ consteval void compile_chunk_range(ct_bytecode_builder<N>& b,
         }
 
         // {{field.size}} → emit_var_size
+        // ponytail: フィルタ非付随の .size のみ専用命令にする
         if (sv.ends_with(".size") && !has_filters) {
           auto base_key = sv.substr(0, sv.size() - 5);
           auto vridx = b.add_var_ref({base_key.data(), base_key.size()},
@@ -516,7 +517,7 @@ consteval void compile_chunk_range(ct_bytecode_builder<N>& b,
           break;
         }
 
-        // Fusion: preceding emit_literal + no-filters var → emit_litvar
+        // 融合: 直前の emit_literal + フィルタなし変数 → emit_litvar に統合
         if (b.bc.instr_count > 0) {
           auto& prev = b.bc.instructions[b.bc.instr_count - 1];
           if (prev.op == bc_opcode::emit_literal) {
@@ -589,7 +590,7 @@ consteval void compile_chunk_range(ct_bytecode_builder<N>& b,
       bool inverted = (chunks.else_starts[i] != 0);
       auto body_op = inverted ? bc_opcode::emit_at_inverted : bc_opcode::emit_at_section;
       auto sec_instr = b.current_offset();
-      // runtime kind encoding: 0=index, 1=first, 2=last
+      // 実行時の種別エンコード: 0=index, 1=first, 2=last
       std::uint32_t kind;
       switch (static_cast<at_var_kind>(chunks.flags[i])) {
         case at_var_kind::index: kind = 0; break;
