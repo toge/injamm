@@ -3941,3 +3941,123 @@ TEST_CASE("zip: reflectable element field access via binding", "[injamm][zip]") 
   CHECK(*r == "AliceBob");
 }
 
+// ---- bytecode save/load tests ----
+
+TEST_CASE("bytecode save/load round-trip: simple variable", "[bytecode_io]") {
+  auto eng = injamm::engine<BcRootData>("Hello {{app_name}} v{{info.version}}");
+  auto expected = eng.render(BcRootData{});
+  REQUIRE(expected.has_value());
+
+  std::stringstream ss;
+  auto save_result = injamm::save_bytecode(eng.get_bytecode(), ss);
+  REQUIRE(save_result == injamm::error_code::none);
+
+  auto loaded = injamm::load_bytecode<BcRootData>(ss);
+  REQUIRE(loaded.has_value());
+
+  injamm::engine<BcRootData> loaded_eng(std::move(*loaded));
+  auto result = loaded_eng.render(BcRootData{});
+  REQUIRE(result.has_value());
+  REQUIRE(*result == *expected);
+}
+
+TEST_CASE("bytecode save/load round-trip: section + if/else", "[bytecode_io]") {
+  auto eng = injamm::engine<BcUsersData>("{{#users}}{{name}}{{#if age > 20}}(old){{/if}} {{/users}}");
+  BcUsersData data{{{"Alice", 20}, {"Bob", 25}}};
+  auto expected = eng.render(data);
+  REQUIRE(expected.has_value());
+
+  std::stringstream ss;
+  REQUIRE(injamm::save_bytecode(eng.get_bytecode(), ss) == injamm::error_code::none);
+
+  auto loaded = injamm::load_bytecode<BcUsersData>(ss);
+  REQUIRE(loaded.has_value());
+
+  injamm::engine<BcUsersData> loaded_eng(std::move(*loaded));
+  auto result = loaded_eng.render(data);
+  REQUIRE(result.has_value());
+  REQUIRE(*result == *expected);
+}
+
+TEST_CASE("bytecode save/load round-trip: partials", "[bytecode_io]") {
+  auto eng = injamm::engine<BcCompany>("{{#partialdef card}}{{name}}{{/partialdef}}{{>card}}");
+  BcCompany data{.name = "Acme", .founder = {"John", {"NYC", "USA"}}};
+  auto expected = eng.render(data);
+  REQUIRE(expected.has_value());
+
+  std::stringstream ss;
+  REQUIRE(injamm::save_bytecode(eng.get_bytecode(), ss) == injamm::error_code::none);
+
+  auto loaded = injamm::load_bytecode<BcCompany>(ss);
+  REQUIRE(loaded.has_value());
+
+  injamm::engine<BcCompany> loaded_eng(std::move(*loaded));
+  auto result = loaded_eng.render(data);
+  REQUIRE(result.has_value());
+  REQUIRE(*result == *expected);
+}
+
+TEST_CASE("bytecode save/load round-trip: filters", "[bytecode_io]") {
+  auto eng = injamm::engine<BcRootData>("{{app_name|upper}}");
+  auto expected = eng.render(BcRootData{});
+  REQUIRE(expected.has_value());
+
+  std::stringstream ss;
+  REQUIRE(injamm::save_bytecode(eng.get_bytecode(), ss) == injamm::error_code::none);
+
+  auto loaded = injamm::load_bytecode<BcRootData>(ss);
+  REQUIRE(loaded.has_value());
+
+  injamm::engine<BcRootData> loaded_eng(std::move(*loaded));
+  auto result = loaded_eng.render(BcRootData{});
+  REQUIRE(result.has_value());
+  REQUIRE(*result == *expected);
+}
+
+TEST_CASE("bytecode save/load round-trip: loop variables", "[bytecode_io]") {
+  auto eng = injamm::engine<BcUsersData>("{{#users}}{{@index}}: {{name}} {{/users}}");
+  BcUsersData data{{{"Alice", 20}, {"Bob", 25}}};
+  auto expected = eng.render(data);
+  REQUIRE(expected.has_value());
+
+  std::stringstream ss;
+  REQUIRE(injamm::save_bytecode(eng.get_bytecode(), ss) == injamm::error_code::none);
+
+  auto loaded = injamm::load_bytecode<BcUsersData>(ss);
+  REQUIRE(loaded.has_value());
+
+  injamm::engine<BcUsersData> loaded_eng(std::move(*loaded));
+  auto result = loaded_eng.render(data);
+  REQUIRE(result.has_value());
+  REQUIRE(*result == *expected);
+}
+
+TEST_CASE("bytecode load: invalid magic", "[bytecode_io][error]") {
+  std::stringstream ss;
+  ss.write("XXXX", 4);
+  auto result = injamm::load_bytecode<BcRootData>(ss);
+  REQUIRE_FALSE(result.has_value());
+  REQUIRE(result.error().ec == injamm::error_code::syntax_error);
+}
+
+TEST_CASE("bytecode load: unsupported version", "[bytecode_io][error]") {
+  auto eng = injamm::engine<BcRootData>("hello");
+  std::stringstream ss;
+  constexpr char magic[] = {'I', 'J', 'B', 'C'};
+  ss.write(magic, 4);
+  injamm::detail::write_u32_le(ss, 999);
+  auto result = injamm::load_bytecode<BcRootData>(ss);
+  REQUIRE_FALSE(result.has_value());
+  REQUIRE(result.error().ec == injamm::error_code::type_mismatch);
+}
+
+TEST_CASE("bytecode load: truncated data", "[bytecode_io][error]") {
+  std::stringstream ss;
+  constexpr char magic[] = {'I', 'J', 'B', 'C'};
+  ss.write(magic, 4);
+  injamm::detail::write_u32_le(ss, 1);
+  auto result = injamm::load_bytecode<BcRootData>(ss);
+  REQUIRE_FALSE(result.has_value());
+  REQUIRE(result.error().ec == injamm::error_code::no_read_input);
+}
+

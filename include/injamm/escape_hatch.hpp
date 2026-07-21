@@ -976,6 +976,17 @@ class engine {
   explicit engine(std::string_view tmpl, std::vector<detail::partial_entry> partials, bool trim_blocks = false, bool lstrip_blocks = false) : bc_(detail::bc_compile<T>(tmpl, std::move(partials), trim_blocks, lstrip_blocks)) {}
 
   /**
+   * @brief プリコンパイル済みバイトコードから構築（デシリアライズ用）
+   *
+   * @details save_bytecode() で保存されたバイトコードを読み込んだ結果を直接渡す。
+   *          コンパイル済みのバイトコードをそのまま利用するため、テンプレート文字列の
+   *          パース/コンパイルを行わない。
+   *
+   * @param bc プリコンパイル済みバイトコード
+   */
+  explicit engine(detail::bytecode bc) : bc_(std::move(bc)) {}
+
+  /**
    * @brief レンダリングを実行する
    *
    * @param value コンテキスト値の const 参照
@@ -1028,6 +1039,16 @@ class engine {
    * @return std::string 逆アセンブル結果
    */
   [[nodiscard]] std::string disassemble() const { return bc_.disassemble(); }
+
+  /**
+   * @brief 内部バイトコードへの const 参照を取得する
+   *
+   * @details save_bytecode() に渡してシリアライズしたり、逆アセンブル結果を
+   *          取得したりするために内部のバイトコードを公開する。
+   *
+   * @return detail::bytecode const& 内部バイトコードへの const 参照
+   */
+  [[nodiscard]] detail::bytecode const& get_bytecode() const { return bc_; }
 };
 
 /**

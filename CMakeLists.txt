@@ -17,6 +17,7 @@ option(BUILD_EXAMPLE "Build examples" ON)
 option(BUILD_FUZZ "Build fuzz targets (requires -fsanitize=fuzzer)" OFF)
 option(ENABLE_ENUM "Enable enchantum-based enum string conversion" ON)
 option(ENABLE_SQLITE3 "Build injamm-sqlite3 extension" ON)
+option(BUILD_UTIL "Build CLI utilities" OFF)
 
 # Apple Clang の libc++ は std::vformat("{:05}", ...) 等の 0 flag を
 # 正しくパースできない既知の不具合がある。fmt を使うことで回避する。
@@ -254,6 +255,20 @@ if(BUILD_FUZZ)
   else()
     target_compile_definitions(injamm_fuzz PRIVATE INJAMM_FUZZ_STANDALONE)
   endif()
+endif()
+
+if(BUILD_UTIL)
+  add_executable(injamm_bc
+    util/injamm_bc.cpp
+  )
+  target_link_libraries(injamm_bc PRIVATE injamm)
+  target_include_directories(injamm_bc PRIVATE include)
+  target_compile_features(injamm_bc PRIVATE cxx_std_23)
+
+  install(
+    TARGETS injamm_bc
+    RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
+  )
 endif()
 
 if(ENABLE_SQLITE3)
