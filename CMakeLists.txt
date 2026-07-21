@@ -262,12 +262,51 @@ if(BUILD_UTIL)
   add_executable(injamm_bc
     util/injamm_bc.cpp
   )
-  target_link_libraries(injamm_bc PRIVATE injamm)            # engine<T> / save_bytecode を使用
+  target_link_libraries(injamm_bc PRIVATE injamm)
   target_include_directories(injamm_bc PRIVATE include)
   target_compile_features(injamm_bc PRIVATE cxx_std_23)
 
+  # バイトコード→C++ コードジェネレーター（glaze 非依存）
+  add_executable(injamm_codegen
+    util/injamm_codegen.cpp
+  )
+  target_compile_features(injamm_codegen PRIVATE cxx_std_23)
+
+  # codegen 動作テスト
+  if(BUILD_TEST)
+    add_executable(test_codegen
+      test_codegen/test_codegen.cpp
+    )
+    target_link_libraries(test_codegen PRIVATE injamm)
+    target_include_directories(test_codegen PRIVATE include test_codegen)
+    target_compile_features(test_codegen PRIVATE cxx_std_23)
+    add_test(NAME codegen_test COMMAND test_codegen)
+
+    add_executable(bench_codegen
+      test_codegen/bench_codegen_vs_others.cpp
+    )
+    target_link_libraries(bench_codegen PRIVATE injamm)
+    target_include_directories(bench_codegen PRIVATE include test_codegen)
+    target_compile_features(bench_codegen PRIVATE cxx_std_23)
+
+    add_executable(test_ct_if
+      util/test_ct_if.cpp
+    )
+    target_link_libraries(test_ct_if PRIVATE injamm)
+    target_include_directories(test_ct_if PRIVATE include)
+    target_compile_features(test_ct_if PRIVATE cxx_std_23)
+
+    add_executable(test_codegen_ext
+      test_codegen/test_codegen_extended.cpp
+    )
+    target_link_libraries(test_codegen_ext PRIVATE injamm)
+    target_include_directories(test_codegen_ext PRIVATE include test_codegen)
+    target_compile_features(test_codegen_ext PRIVATE cxx_std_23)
+    add_test(NAME codegen_ext_test COMMAND test_codegen_ext)
+  endif()
+
   install(
-    TARGETS injamm_bc
+    TARGETS injamm_bc injamm_codegen
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
   )
 endif()

@@ -273,10 +273,6 @@ constexpr ct_parsed_template<N> resolve_field_indices(ct_parsed_template<N> tmpl
           auto rhs = trim_sv(expr.substr(op_pos + cmp.token.size()));
           if (lhs.empty() || rhs.empty()) break;
 
-          /** RHS が文字列リテラルの場合のみ enum 解決を試みる */
-          auto str_lit = parse_string_literal(rhs);
-          if (!str_lit) break;
-
           /** LHS フィールドインデックスを検索 */
           int lhs_idx = -1;
           [&]<std::size_t... I>(std::index_sequence<I...>) {
@@ -290,34 +286,54 @@ constexpr ct_parsed_template<N> resolve_field_indices(ct_parsed_template<N> tmpl
 
           if (lhs_idx < 0) break;
 
-          /** LHS フィールドが enum 型かどうか判定し、enum で RHS を解決 */
+          /** RHS が文字列リテラルの場合: enum 解決を試みる */
+          auto str_lit = parse_string_literal(rhs);
           bool resolved = false;
 #ifndef INJAMM_NO_ENUM_REGISTRY
-          [&]<std::size_t... I>(std::index_sequence<I...>) {
-            (([&] {
-               if (static_cast<std::size_t>(lhs_idx) != I) return;
-               using FT = std::remove_cvref_t<decltype(glz::get<I>(glz::to_tie(std::declval<T const&>())))>;
-               if constexpr (std::is_enum_v<FT>) {
-                 if (auto ev = enum_name_to_int<FT>(std::string_view{str_lit->data(), str_lit->size()})) {
-                   tmpl.texts[i]    = lhs;
-                   tmpl.flags[i]    = static_cast<std::uint8_t>(cmp.op);
-                   tmpl.int_filters[i][0] = int_filter_entry{int_filter::eq, static_cast<int>(*ev)};
-                   tmpl.int_filter_count[i] = 1;
-                   idx = lhs_idx;
-                   resolved = true;
+          if (str_lit) {
+            [&]<std::size_t... I>(std::index_sequence<I...>) {
+              (([&] {
+                 if (static_cast<std::size_t>(lhs_idx) != I) return;
+                 using FT = std::remove_cvref_t<decltype(glz::get<I>(glz::to_tie(std::declval<T const&>())))>;
+                 if constexpr (std::is_enum_v<FT>) {
+                   if (auto ev = enum_name_to_int<FT>(std::string_view{str_lit->data(), str_lit->size()})) {
+                     tmpl.texts[i]    = lhs;
+                     tmpl.flags[i]    = static_cast<std::uint8_t>(cmp.op);
+                     tmpl.int_filters[i][0] = int_filter_entry{int_filter::eq, static_cast<int>(*ev)};
+                     tmpl.int_filter_count[i] = 1;
+                     idx = lhs_idx;
+                     resolved = true;
+                   }
                  }
-               }
-             }()),
-             ...);
-          }(std::make_index_sequence<count>{});
+               }()),
+               ...);
+            }(std::make_index_sequence<count>{});
+          }
 #endif
-          if (!resolved && (cmp.op == bc_opcode::emit_if_eq || cmp.op == bc_opcode::emit_if_ne)) {
-            /** 非 enum → 文字列比較として扱う（RHS はテンプレート内引用符除去済みビュー） */
+          if (resolved) break;
+
+          /** 非 enum で == / != の場合: 文字列比較として扱う */
+          if (!resolved && (cmp.op == bc_opcode::emit_if_eq || cmp.op == bc_opcode::emit_if_ne) && str_lit) {
             auto rhs_unescaped = rhs.substr(1, rhs.size() - 2);
             tmpl.texts[i] = lhs;
             tmpl.flags[i] = static_cast<std::uint8_t>(cmp.op);
             tmpl.compare_rhs_strs[i] = rhs_unescaped;
             idx = lhs_idx;
+            break;
+          }
+
+          /** 数値比較: RHS を整数リテラルとして解釈し int_filters に格納 */
+          if (!resolved && (cmp.op == bc_opcode::emit_if_gt || cmp.op == bc_opcode::emit_if_gte ||
+                            cmp.op == bc_opcode::emit_if_lt || cmp.op == bc_opcode::emit_if_lte ||
+                            cmp.op == bc_opcode::emit_if_eq || cmp.op == bc_opcode::emit_if_ne)) {
+            if (auto int_val = parse_int_literal(rhs)) {
+              tmpl.texts[i] = lhs;
+              tmpl.flags[i] = static_cast<std::uint8_t>(cmp.op);
+              tmpl.int_filters[i][0] = int_filter_entry{int_filter::eq, *int_val};
+              tmpl.int_filter_count[i] = 1;
+              idx = lhs_idx;
+              break;
+            }
           }
           break;
         }
