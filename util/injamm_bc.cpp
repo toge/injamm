@@ -14,8 +14,9 @@ struct CliContext {
 };
 
 void print_usage() {
-  std::cout << "Usage: injamm_bc -i <input.template> -o <output.bin> [options]\n"
-            << "  -i, --input   <path>    Template file to compile\n"
+  std::cout << "Usage: injamm_bc -i <input> -o <output.bin> [options]\n"
+            << "  -i, --input   <path>    Template file (-: stdin)\n"
+            << "  -e, --expr    <string>  Inline template string\n"
             << "  -o, --output  <path>    Output bytecode file\n"
             << "  -D, --define  <k>=<v>   Define @var constant (repeatable)\n"
             << "  -h, --help              Show this help\n";
@@ -31,6 +32,7 @@ struct glz::meta<CliContext> {
 int main(int argc, char* argv[]) {
   std::string input_path;
   std::string output_path;
+  std::string expr_tmpl;
   std::map<std::string, std::string, std::less<>> consts;
 
   for (int i = 1; i < argc; ++i) {
@@ -38,6 +40,9 @@ int main(int argc, char* argv[]) {
     if (arg == "-i" || arg == "--input") {
       if (++i >= argc) { std::cerr << "error: -i requires an argument\n"; return EXIT_FAILURE; }
       input_path = argv[i];
+    } else if (arg == "-e" || arg == "--expr") {
+      if (++i >= argc) { std::cerr << "error: -e requires an argument\n"; return EXIT_FAILURE; }
+      expr_tmpl = argv[i];
     } else if (arg == "-o" || arg == "--output") {
       if (++i >= argc) { std::cerr << "error: -o requires an argument\n"; return EXIT_FAILURE; }
       output_path = argv[i];
@@ -60,23 +65,29 @@ int main(int argc, char* argv[]) {
     }
   }
 
-  if (input_path.empty()) {
-    std::cerr << "error: -i <input> is required\n";
-    print_usage();
-    return EXIT_FAILURE;
-  }
   if (output_path.empty()) {
     std::cerr << "error: -o <output> is required\n";
     print_usage();
     return EXIT_FAILURE;
   }
 
-  std::ifstream ifs(input_path, std::ios::binary);
-  if (!ifs) {
-    std::cerr << "error: cannot open input file: " << input_path << "\n";
+  std::string tmpl;
+  if (!expr_tmpl.empty()) {
+    tmpl = std::move(expr_tmpl);
+  } else if (input_path.empty()) {
+    std::cerr << "error: -i <input> or -e <string> is required\n";
+    print_usage();
     return EXIT_FAILURE;
+  } else if (input_path == "-") {
+    tmpl.assign(std::istreambuf_iterator<char>(std::cin), std::istreambuf_iterator<char>());
+  } else {
+    std::ifstream ifs(input_path, std::ios::binary);
+    if (!ifs) {
+      std::cerr << "error: cannot open input file: " << input_path << "\n";
+      return EXIT_FAILURE;
+    }
+    tmpl.assign(std::istreambuf_iterator<char>(ifs), std::istreambuf_iterator<char>());
   }
-  std::string tmpl((std::istreambuf_iterator<char>(ifs)), std::istreambuf_iterator<char>());
 
   injamm::engine<CliContext> eng = consts.empty()
     ? injamm::engine<CliContext>(tmpl)
