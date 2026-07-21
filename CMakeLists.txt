@@ -257,11 +257,12 @@ if(BUILD_FUZZ)
   endif()
 endif()
 
+# テンプレート→バイトコード変換 CLI ツール
 if(BUILD_UTIL)
   add_executable(injamm_bc
     util/injamm_bc.cpp
   )
-  target_link_libraries(injamm_bc PRIVATE injamm)
+  target_link_libraries(injamm_bc PRIVATE injamm)            # engine<T> / save_bytecode を使用
   target_include_directories(injamm_bc PRIVATE include)
   target_compile_features(injamm_bc PRIVATE cxx_std_23)
 

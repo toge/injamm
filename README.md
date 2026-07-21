@@ -43,6 +43,7 @@ cmake --build build
 | `ENABLE_THREADED_DISPATCH` | ON     | 高速化のためのGCC computed gotoディスパッチ（GCC のみ） |
 | `BUILD_TEST`               | ON     | テストをビルドする                                       |
 | `BUILD_EXAMPLE`            | ON     | サンプルをビルドする                                     |
+| `BUILD_UTIL`               | OFF    | CLI ユーティリティ（`injamm_bc`）をビルドする            |
 | `ENABLE_ENUM`              | ON     | enchantum による enum 文字列出力を有効化（OFF で `INJAMM_NO_ENUM_REGISTRY` が定義され依存が外れる） |
 
 ### find_package
@@ -264,6 +265,60 @@ int main() {
   // "Hello Bob! Age: 25."
 }
 ```
+
+### 9. バイトコードの保存と読み込み
+
+コンパイル済みのバイトコードをファイルに保存し、後で読み込んで再利用できます。
+`field_index` は保存されず、読み込み時に glaze リフレクションで再解決されます。
+
+```cpp
+#include "injamm.hpp"
+#include <fstream>
+#include <sstream>
+
+// 保存
+std::ostringstream oss;
+auto ec = injamm::save_bytecode(engine.get_bytecode(), oss);
+// ec == injamm::error_code::none なら成功
+
+// 読み込み（テンプレートコンテキストと同じ型 T を指定）
+std::istringstream iss(oss.str());
+auto bc = injamm::load_bytecode<User>(iss);
+// bc → expected<bytecode>
+// bc.has_value() で成功判定、bc-> で利用
+
+// 読み込んだバイトコードから engine を構築
+auto eng = injamm::engine<User>(std::move(*bc));
+auto r = eng.render(User{"Alice", 30});
+```
+
+**フォーマット**: カスタムバイナリ形式。マジックバイト `IJBC` + バージョン 1（リトルエンディアン）。
+
+### 10. injamm_bc CLI ツール
+
+`BUILD_UTIL=ON` でビルドされるコマンドラインツール。テンプレートファイルをコンパイルしてバイトコードファイルを出力します。
+
+```bash
+# テンプレートファイルからバイトコード生成
+injamm_bc -i template.mustache -o template.bc
+
+# 標準入力から
+echo "Hello {{name}}" | injamm_bc -i - -o hello.bc
+
+# インライン文字列から
+injamm_bc -e "{{#users}}{{name}}, {{/users}}" -o users.bc
+
+# @var 定数置換付き
+injamm_bc -i page.html -o page.bc -D title="My Page" -D footer="© 2026"
+```
+
+| オプション | 説明 |
+|-----------|------|
+| `-i, --input <path>` | テンプレートファイル（`-` で標準入力） |
+| `-e, --expr <string>` | インラインテンプレート文字列 |
+| `-o, --output <path>` | 出力バイトコードファイル（必須） |
+| `-D, --define <k>=<v>` | `@var` 定数を定義（複数指定可） |
+| `-h, --help` | ヘルプ表示 |
 
 ## テンプレート構文
 
@@ -504,6 +559,23 @@ auto html = injamm::render<
 ```
 
 `{{> name}}` はテンプレート文字列の**外**（entry pair）から本文を持ってくるのに対し、`#partialdef name` は同一テンプレート文字列**内**で定義します。どちらも内部は同じ partial メカニズム（`call_partial`）で実行されるため、前方参照や partial 内からの partial 呼び出しも共通して利用できます。
+
+### `injamm::save_bytecode(bc, ostream)`
+
+バイトコードをバイナリ形式でストリームに保存します。戻り値は `error_code`。
+
+```cpp
+auto ec = injamm::save_bytecode(engine.get_bytecode(), std::ostringstream{});
+```
+
+### `injamm::load_bytecode<T>(istream)`
+
+バイナリ形式からバイトコードを読み込み、`field_index` を `T` の glaze リフレクションで再解決します。戻り値は `expected<bytecode>`。
+
+```cpp
+auto bc = injamm::load_bytecode<User>(std::istringstream{data});
+auto eng = injamm::engine<User>(std::move(*bc));
+```
 
 ### `injamm::expected<T>`
 

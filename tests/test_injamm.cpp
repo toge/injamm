@@ -3941,8 +3941,9 @@ TEST_CASE("zip: reflectable element field access via binding", "[injamm][zip]") 
   CHECK(*r == "AliceBob");
 }
 
-// ---- bytecode save/load tests ----
+// ---- バイトコード保存・読み込みテスト ----
 
+/** @brief 単純変数を含むテンプレートを保存・読込し、レンダリング結果が一致することを確認 */
 TEST_CASE("bytecode save/load round-trip: simple variable", "[bytecode_io]") {
   auto eng = injamm::engine<BcRootData>("Hello {{app_name}} v{{info.version}}");
   auto expected = eng.render(BcRootData{});
@@ -3961,6 +3962,7 @@ TEST_CASE("bytecode save/load round-trip: simple variable", "[bytecode_io]") {
   REQUIRE(*result == *expected);
 }
 
+/** @brief セクション + if/else を含むテンプレートの保存・読込 */
 TEST_CASE("bytecode save/load round-trip: section + if/else", "[bytecode_io]") {
   auto eng = injamm::engine<BcUsersData>("{{#users}}{{name}}{{#if age > 20}}(old){{/if}} {{/users}}");
   BcUsersData data{{{"Alice", 20}, {"Bob", 25}}};
@@ -3979,6 +3981,7 @@ TEST_CASE("bytecode save/load round-trip: section + if/else", "[bytecode_io]") {
   REQUIRE(*result == *expected);
 }
 
+/** @brief partial を含むテンプレートの保存・読込 */
 TEST_CASE("bytecode save/load round-trip: partials", "[bytecode_io]") {
   auto eng = injamm::engine<BcCompany>("{{#partialdef card}}{{name}}{{/partialdef}}{{>card}}");
   BcCompany data{.name = "Acme", .founder = {"John", {"NYC", "USA"}}};
@@ -3997,6 +4000,7 @@ TEST_CASE("bytecode save/load round-trip: partials", "[bytecode_io]") {
   REQUIRE(*result == *expected);
 }
 
+/** @brief フィルターを含むテンプレートの保存・読込 */
 TEST_CASE("bytecode save/load round-trip: filters", "[bytecode_io]") {
   auto eng = injamm::engine<BcRootData>("{{app_name|upper}}");
   auto expected = eng.render(BcRootData{});
@@ -4014,6 +4018,7 @@ TEST_CASE("bytecode save/load round-trip: filters", "[bytecode_io]") {
   REQUIRE(*result == *expected);
 }
 
+/** @brief ループ変数を含むテンプレートの保存・読込 */
 TEST_CASE("bytecode save/load round-trip: loop variables", "[bytecode_io]") {
   auto eng = injamm::engine<BcUsersData>("{{#users}}{{@index}}: {{name}} {{/users}}");
   BcUsersData data{{{"Alice", 20}, {"Bob", 25}}};
@@ -4032,6 +4037,7 @@ TEST_CASE("bytecode save/load round-trip: loop variables", "[bytecode_io]") {
   REQUIRE(*result == *expected);
 }
 
+/** @brief 不正なマジックで読み込んだ場合のエラーテスト */
 TEST_CASE("bytecode load: invalid magic", "[bytecode_io][error]") {
   std::stringstream ss;
   ss.write("XXXX", 4);
@@ -4040,6 +4046,7 @@ TEST_CASE("bytecode load: invalid magic", "[bytecode_io][error]") {
   REQUIRE(result.error().ec == injamm::error_code::syntax_error);
 }
 
+/** @brief 未対応バージョンで読み込んだ場合のエラーテスト */
 TEST_CASE("bytecode load: unsupported version", "[bytecode_io][error]") {
   auto eng = injamm::engine<BcRootData>("hello");
   std::stringstream ss;
@@ -4051,6 +4058,7 @@ TEST_CASE("bytecode load: unsupported version", "[bytecode_io][error]") {
   REQUIRE(result.error().ec == injamm::error_code::type_mismatch);
 }
 
+/** @brief データが途中で切れている場合のエラーテスト */
 TEST_CASE("bytecode load: truncated data", "[bytecode_io][error]") {
   std::stringstream ss;
   constexpr char magic[] = {'I', 'J', 'B', 'C'};
