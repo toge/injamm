@@ -768,4 +768,24 @@ template <class ConstMap>
   return false;
 }
 
+constexpr std::size_t constexpr_find_close_partialdef(std::string_view sv, std::size_t pos) noexcept {
+  std::size_t depth = 1;
+  while (depth > 0) {
+    auto next_open  = constexpr_find(sv, std::string_view("{{#partialdef "), pos);
+    auto next_close = constexpr_find(sv, std::string_view("{{/partialdef}}"), pos);
+    if (next_close == std::string_view::npos)
+      return std::string_view::npos;
+    if (next_open != std::string_view::npos && next_open < next_close) {
+      ++depth;
+      pos = next_open + 14;
+    } else {
+      --depth;
+      if (depth == 0)
+        return next_close;
+      pos = next_close + 15;
+    }
+  }
+  return std::string_view::npos;
+}
+
 }  // namespace injamm::detail

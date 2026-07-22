@@ -3701,6 +3701,65 @@ TEST_CASE("partialdef_now_local_combined_order", "[injamm][partial]") {
   CHECK(*r == "Hi Alice");
 }
 
+TEST_CASE("partialdef_nested_basic", "[injamm][partial]") {
+  BcPartialUser user{"Alice", 30};
+  auto eng = injamm::engine<BcPartialUser>{
+    "{{#partialdef outer}}"
+    "{{#partialdef inner}}{{name}}{{/partialdef}}"
+    "x{{#partial inner}}y"
+    "{{/partialdef}}"
+    "|{{#partial outer}}|"
+  };
+  auto r = eng.render(user);
+  REQUIRE(r.has_value());
+  CHECK(*r == "|xAlicey|");
+}
+
+TEST_CASE("partialdef_nested_three_levels", "[injamm][partial]") {
+  BcPartialUser user{"Alice", 30};
+  auto eng = injamm::engine<BcPartialUser>{
+    "{{#partialdef l1}}"
+    "{{#partialdef l2}}"
+    "{{#partialdef l3}}{{name}}{{/partialdef}}"
+    "{{#partial l3}}"
+    "{{/partialdef}}"
+    "{{#partial l2}}"
+    "{{/partialdef}}"
+    "{{#partial l1}}"
+  };
+  auto r = eng.render(user);
+  REQUIRE(r.has_value());
+  CHECK(*r == "Alice");
+}
+
+TEST_CASE("partialdef_nested_with_now", "[injamm][partial]") {
+  BcPartialUser user{"Alice", 30};
+  auto eng = injamm::engine<BcPartialUser>{
+    "{{#partialdef outer}}"
+    "{{#partialdef inner now}}{{name}}{{/partialdef}}"
+    "{{/partialdef}}"
+    "{{#partial outer}}"
+  };
+  auto r = eng.render(user);
+  REQUIRE(r.has_value());
+  CHECK(*r == "Alice");
+}
+
+TEST_CASE("partialdef_nested_in_section", "[injamm][partial]") {
+  BcPartialUsers data{};
+  data.users.push_back(BcPartialUser{"Alice", 30});
+  data.users.push_back(BcPartialUser{"Bob", 25});
+  auto eng = injamm::engine<BcPartialUsers>{
+    "{{#partialdef row}}"
+    "<tr><td>{{name}}</td></tr>"
+    "{{/partialdef}}"
+    "{{#users}}{{#partial row}}{{/users}}"
+  };
+  auto r = eng.render(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "<tr><td>Alice</td></tr><tr><td>Bob</td></tr>");
+}
+
 // ---- disassemble: 未カバーのオペコード形式ブランチ ----
 // 既存の disassemble テストは emit_var / emit_section / emit_if / 一部の
 // フィルタしか網羅していない。以下は残りのオペコード形式分岐を担保する。

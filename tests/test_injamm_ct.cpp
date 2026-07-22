@@ -2461,6 +2461,47 @@ TEST_CASE("ct_partialdef_local_now_combined_order", "[injamm][ct][partial]") {
   CHECK(*r == "Hi Alice");
 }
 
+TEST_CASE("ct_partialdef_nested_basic", "[injamm][ct][partial]") {
+  CtUser user{"Alice", 30};
+  auto constexpr tmpl = injamm::fixed_string(
+    "{{#partialdef outer}}"
+    "{{#partialdef inner}}{{name}}{{/partialdef}}"
+    "x{{#partial inner}}y"
+    "{{/partialdef}}"
+    "|{{#partial outer}}|");
+  auto r = injamm::render<tmpl>(user);
+  REQUIRE(r.has_value());
+  CHECK(*r == "|xAlicey|");
+}
+
+TEST_CASE("ct_partialdef_nested_three_levels", "[injamm][ct][partial]") {
+  CtUser user{"Alice", 30};
+  auto constexpr tmpl = injamm::fixed_string(
+    "{{#partialdef l1}}"
+    "{{#partialdef l2}}"
+    "{{#partialdef l3}}{{name}}{{/partialdef}}"
+    "{{#partial l3}}"
+    "{{/partialdef}}"
+    "{{#partial l2}}"
+    "{{/partialdef}}"
+    "{{#partial l1}}");
+  auto r = injamm::render<tmpl>(user);
+  REQUIRE(r.has_value());
+  CHECK(*r == "Alice");
+}
+
+TEST_CASE("ct_partialdef_nested_with_now", "[injamm][ct][partial]") {
+  CtUser user{"Alice", 30};
+  auto constexpr tmpl = injamm::fixed_string(
+    "{{#partialdef outer}}"
+    "{{#partialdef inner now}}{{name}}{{/partialdef}}"
+    "{{/partialdef}}"
+    "{{#partial outer}}");
+  auto r = injamm::render<tmpl>(user);
+  REQUIRE(r.has_value());
+  CHECK(*r == "Alice");
+}
+
 // ---- render_partial<Tmpl, PartialName>（使う partial だけをコンパイル）----
 
 TEST_CASE("ct_partial_render_selected_transitive", "[injamm][ct][partial]") {

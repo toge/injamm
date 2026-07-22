@@ -131,7 +131,7 @@ namespace detail {
           continue;
         }
         auto name      = trim_sv(inner.substr(12));
-        auto close_tag = constexpr_find(sv, "{{/partialdef}}", tag_end + 2);
+        auto close_tag = constexpr_find_close_partialdef(sv, tag_end + 2);
         if (close_tag == std::string_view::npos)
           break;
         // {{#partialdef name [now] [local]}} の修飾子を検出（順不同、併用可）

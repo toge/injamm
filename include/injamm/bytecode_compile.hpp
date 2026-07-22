@@ -835,6 +835,9 @@ class bc_compiler {
 
       if (inner.empty()) continue;
 
+      if (inner == "/partialdef") {
+        continue;
+      }
       if (inner.starts_with("/")) {
         return body_result::close;
       }
@@ -1034,7 +1037,7 @@ class bc_compiler {
         }
       }
 
-      auto close_tag = tmpl.find("{{/partialdef}}", tag_end + 2);
+      auto close_tag = constexpr_find_close_partialdef(tmpl, tag_end + 2);
       if (close_tag == std::string_view::npos) {
         result.append(tmpl.substr(pdef_start));
         break;

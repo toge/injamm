@@ -424,7 +424,7 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
             }
           }
         }
-        auto close_tag = constexpr_find(tmpl, "{{/partialdef}}", pos);
+        auto close_tag = constexpr_find_close_partialdef(tmpl, pos);
         if (close_tag != std::string_view::npos) {
           pos = close_tag + 15;
           if (trim_blocks && pos < tmpl.size() && tmpl[pos] == '\n') ++pos;
