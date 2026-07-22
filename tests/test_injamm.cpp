@@ -1340,6 +1340,30 @@ TEST_CASE("filter: center", "[filter]") {
   REQUIRE(*result == "  hi  ");
 }
 
+TEST_CASE("filter: repeat", "[filter]") {
+  BcUser data{"abc", 30};
+  auto bc = injamm::engine<BcUser>("{{name | repeat(3)}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "abcabcabc");
+}
+
+TEST_CASE("filter: repeat zero", "[filter]") {
+  BcUser data{"abc", 30};
+  auto bc = injamm::engine<BcUser>("{{name | repeat(0)}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "");
+}
+
+TEST_CASE("filter: repeat empty", "[filter]") {
+  BcUser data{"", 30};
+  auto bc = injamm::engine<BcUser>("{{name | repeat(5)}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "");
+}
+
 TEST_CASE("filter: truncate short", "[filter]") {
   BcUser data{"hello", 30};
   auto bc = injamm::engine<BcUser>("{{name | truncate(10)}}");

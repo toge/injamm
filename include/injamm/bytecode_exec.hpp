@@ -687,6 +687,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
     case bc_opcode::filter_center:   apply_string_filter(filtered, {.filter = string_filter::center, .arg1 = arg}); break;
     case bc_opcode::filter_truncate: apply_string_filter(filtered, {.filter = string_filter::truncate, .arg1 = arg}); break;
     case bc_opcode::filter_indent:   apply_string_filter(filtered, {.filter = string_filter::indent, .arg1 = arg}); break;
+    case bc_opcode::filter_repeat:   apply_string_filter(filtered, {.filter = string_filter::repeat, .arg1 = arg}); break;
     default: return std::unexpected(error_ctx{.position = pc, .ec = error_code::syntax_error});
     }
     ++pc;
@@ -1340,7 +1341,8 @@ public:
         &&L_filter_pad,              // 45
         &&L_filter_pluralize,        // 46
         &&L_filter_format,           // 47
-        &&L_emit_filtered,           // 48
+        &&L_filter_repeat,           // 48
+        &&L_emit_filtered,           // 49
         &&L_emit_filtered_raw,       // 49
         &&L_filter_int_abs,          // 50
         &&L_filter_int_hex,          // 51
@@ -2327,6 +2329,13 @@ public:
     DISPATCH();
   }
 
+  /** @brief 文字列繰り返し */
+  L_filter_repeat: {
+    apply_string_filter(filtered_value_, {.filter = string_filter::repeat, .arg1 = static_cast<int>(bc_.instructions[pc].operand)});
+    ++pc;
+    DISPATCH();
+  }
+
   /** @brief フィルタ後の文字列出力（エスケープあり） */
   L_emit_filtered: {
     html_escape_into(out_, std::string_view{filtered_value_});
@@ -2609,7 +2618,8 @@ public:
       &handle_string_filter_arg_pad, // 41 filter_pad
       &handle_string_filter_arg_pluralize, // 42 filter_pluralize
       &handle_noop,                        // 43 filter_format (no-op)
-      &handle_emit_filtered,               // 44
+      &handle_string_filter_arg,           // 44 filter_repeat
+      &handle_emit_filtered,               // 45
       &handle_emit_filtered,               // 45 emit_filtered_raw
       &handle_int_filter,                  // 46 filter_int_abs
       &handle_int_filter,                  // 47 filter_int_hex

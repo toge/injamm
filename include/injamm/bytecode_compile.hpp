@@ -38,6 +38,7 @@ void emit_filter_chain(Emitter&& emit, std::vector<string_filter_entry> const& f
         break;
       case string_filter::pluralize:     emit(bc_opcode::filter_pluralize); break;
       case string_filter::format:        emit(bc_opcode::filter_format); break;
+      case string_filter::repeat:        emit(bc_opcode::filter_repeat, f.arg1); break;
     }
   }
   for (auto f : int_filters) {

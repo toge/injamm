@@ -142,7 +142,7 @@ bytecode to_bytecode(ct_bytecode<N> const& ct) {
       while (j < bc.instructions.size()) {
         auto op = bc.instructions[j].op;
         auto const& fi = bc.instructions[j];
-        if (op >= bc_opcode::filter_upper && op <= bc_opcode::filter_format) {
+        if (op >= bc_opcode::filter_upper && op <= bc_opcode::filter_repeat) {
           switch (op) {
           case bc_opcode::filter_upper:      ref.filters.push_back({.filter = string_filter::upper}); break;
           case bc_opcode::filter_lower:      ref.filters.push_back({.filter = string_filter::lower}); break;
@@ -191,6 +191,10 @@ bytecode to_bytecode(ct_bytecode<N> const& ct) {
           }
           case bc_opcode::filter_format: {
             ref.filters.push_back({.filter = string_filter::format, .str_arg1 = bc.literals[fi.operand]});
+            break;
+          }
+          case bc_opcode::filter_repeat: {
+            ref.filters.push_back({.filter = string_filter::repeat, .arg1 = static_cast<int>(fi.operand)});
             break;
           }
           default: break;
@@ -431,6 +435,9 @@ consteval void compile_chunk_range(ct_bytecode_builder<N>& b,
           b.emit(bc_opcode::filter_format, fmt_idx);
           break;
         }
+        case string_filter::repeat:
+          b.emit(bc_opcode::filter_repeat, static_cast<std::uint32_t>(sf.arg1));
+          break;
        }
       }
       for (std::uint8_t f = 0; f < chunks.int_filter_count[idx]; ++f) {

@@ -62,6 +62,7 @@ namespace injamm::detail {
   case bc_opcode::filter_pad:              return "filter_pad";
   case bc_opcode::filter_pluralize:        return "filter_pluralize";
   case bc_opcode::filter_format:           return "filter_format";
+  case bc_opcode::filter_repeat:           return "filter_repeat";
   case bc_opcode::emit_filtered:           return "emit_filtered";
   case bc_opcode::emit_filtered_raw:       return "emit_filtered_raw";
   case bc_opcode::filter_int_abs:          return "filter_int_abs";

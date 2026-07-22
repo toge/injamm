@@ -89,39 +89,40 @@ enum class opcode : std::uint8_t {
   filter_pad = 45,        /**< パディング（引数1: 幅, 引数2: 埋め文字 literal index） */
   filter_pluralize = 46,  /**< 単数形/複数形（引数1: 単数 literal index, 引数2: 複数 literal index） */
   filter_format = 47,     /**< strftime 形式 chrono フォーマット */
-  emit_filtered = 48,     /**< フィルタ後の文字列出力（エスケープあり） */
-  emit_filtered_raw = 49, /**< フィルタ後の文字列出力（生出力） */
-  filter_int_abs = 50,    /**< 整数絶対値変換 */
-  filter_int_hex = 51,    /**< 整数 16 進数変換 */
-  filter_int_oct = 52,    /**< 整数 8 進数変換 */
-  filter_int_bin = 53,    /**< 整数 2 進数変換 */
-  filter_int_neg = 54,    /**< 整数符号逆転 */
-  filter_int_mod = 55,    /**< 整数余り（引数: 除数） */
-  filter_int_numify = 56,     /**< 整数 3 桁カンマ区切り */
-  filter_int_is_neg = 57,     /**< 負数判定: "true"/"false" を出力 */
-  filter_int_eq = 58,         /**< 等価判定: 引数と比較し "true"/"false" を出力 */
-  filter_int_ne = 59,         /**< 不等価判定 */
-  filter_int_gt = 60,         /**< 大なり判定 */
-  filter_int_gte = 61,        /**< 以上判定 */
-  filter_int_lt = 62,         /**< 小なり判定 */
-  filter_int_lte = 63,        /**< 以下判定 */
-  filter_int_zerofill = 64,   /**< 整数 0 埋め（引数: 最小桁数） */
-  filter_int_add = 65,        /**< 整数加算（引数: 加算値） */
-  filter_int_sub = 66,        /**< 整数減算（引数: 減算値） */
-  filter_int_mul = 67,        /**< 整数乗算（引数: 乗算値） */
-  filter_int_div = 68,        /**< 整数除算（引数: 除算値） */
-  filter_float_precision = 69, /**< 実数小数点以下桁数（引数: 桁数） */
-  emit_if_filtered = 70,  /**< フィルタ適用済み値での if 分岐 */
-  emit_break = 71,        /**< ループ脱出 */
-  emit_continue = 72,     /**< 次のイテレーションへスキップ */
-  emit_at_index1 = 73,    /**< ループ 1 始まりインデックス */
-  emit_at_size = 74,      /**< ループ総要素数 */
-  emit_var_size = 75,     /**< 変数の要素数 ({/{field.size}}) */
-  emit_if_or = 76,        /**< if (a || b) 分岐 */
-  emit_if_and = 77,       /**< if (a && b) 分岐 */
-  emit_if_not = 78,       /**< if (!a) 分岐 */
-  call_partial = 79,      /**< 名前付き partial 呼び出し */
-  halt = 80,              /**< プログラム終了 */
+  filter_repeat = 48,     /**< 文字列繰り返し（引数: 回数） */
+  emit_filtered = 49,     /**< フィルタ後の文字列出力（エスケープあり） */
+  emit_filtered_raw = 50, /**< フィルタ後の文字列出力（生出力） */
+  filter_int_abs = 51,    /**< 整数絶対値変換 */
+  filter_int_hex = 52,    /**< 整数 16 進数変換 */
+  filter_int_oct = 53,    /**< 整数 8 進数変換 */
+  filter_int_bin = 54,    /**< 整数 2 進数変換 */
+  filter_int_neg = 55,    /**< 整数符号逆転 */
+  filter_int_mod = 56,    /**< 整数余り（引数: 除数） */
+  filter_int_numify = 57,     /**< 整数 3 桁カンマ区切り */
+  filter_int_is_neg = 58,     /**< 負数判定: "true"/"false" を出力 */
+  filter_int_eq = 59,         /**< 等価判定: 引数と比較し "true"/"false" を出力 */
+  filter_int_ne = 60,         /**< 不等価判定 */
+  filter_int_gt = 61,         /**< 大なり判定 */
+  filter_int_gte = 62,        /**< 以上判定 */
+  filter_int_lt = 63,         /**< 小なり判定 */
+  filter_int_lte = 64,        /**< 以下判定 */
+  filter_int_zerofill = 65,   /**< 整数 0 埋め（引数: 最小桁数） */
+  filter_int_add = 66,        /**< 整数加算（引数: 加算値） */
+  filter_int_sub = 67,        /**< 整数減算（引数: 減算値） */
+  filter_int_mul = 68,        /**< 整数乗算（引数: 乗算値） */
+  filter_int_div = 69,        /**< 整数除算（引数: 除算値） */
+  filter_float_precision = 70, /**< 実数小数点以下桁数（引数: 桁数） */
+  emit_if_filtered = 71,  /**< フィルタ適用済み値での if 分岐 */
+  emit_break = 72,        /**< ループ脱出 */
+  emit_continue = 73,     /**< 次のイテレーションへスキップ */
+  emit_at_index1 = 74,    /**< ループ 1 始まりインデックス */
+  emit_at_size = 75,      /**< ループ総要素数 */
+  emit_var_size = 76,     /**< 変数の要素数 ({/{field.size}}) */
+  emit_if_or = 77,        /**< if (a || b) 分岐 */
+  emit_if_and = 78,       /**< if (a && b) 分岐 */
+  emit_if_not = 79,       /**< if (!a) 分岐 */
+  call_partial = 80,      /**< 名前付き partial 呼び出し */
+  halt = 81,              /**< プログラム終了 */
 };
 
 /**
@@ -691,6 +692,9 @@ class code_generator {
     }
     else if (op == bc::opcode::filter_substr) {
       emit("filter_substr(_filtered, " + std::to_string(inst.operand) + ", " + std::to_string(inst.operand2) + ");");
+    }
+    else if (op == bc::opcode::filter_repeat) {
+      emit("filter_repeat(_filtered, " + std::to_string(inst.operand) + ");");
     }
     else if (op == bc::opcode::filter_int_numify) {
       emit("filter_numify(_filtered);");

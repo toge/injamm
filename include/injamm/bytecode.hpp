@@ -65,6 +65,7 @@ enum class bc_opcode : std::uint8_t {
   filter_pad,         /**< パディング（引数1: 幅, 引数2: 埋め文字literal index） */
   filter_pluralize,   /**< 単数形/複数形（引数1: 単数literal index, 引数2: 複数literal index） */
   filter_format,      /**< strftime 形式 chrono フォーマット（dispatch 時は no-op） */
+  filter_repeat,      /**< 文字列繰り返し（引数: 回数） */
   emit_filtered,      /**< フィルタ後の文字列出力（エスケープあり） */
   emit_filtered_raw,  /**< フィルタ後の文字列出力（生出力） */
   filter_int_abs,     /**< 整数絶対値変換 */
@@ -120,7 +121,8 @@ enum class string_filter : std::uint8_t {
   indent,      /**< 各行にインデント追加（引数: 空白数） */
   pad,         /**< パディング（引数1: 幅, 引数2: 埋め文字） */
   pluralize,   /**< 単数形/複数形（引数1: 単数形, 引数2: 複数形） */
-  format       /**< strftime 形式 chrono フォーマット（dispatch 時は no-op） */
+  format,      /**< strftime 形式 chrono フォーマット（dispatch 時は no-op） */
+  repeat       /**< 文字列繰り返し（引数: 回数） */
 };
 
 struct string_filter_entry {

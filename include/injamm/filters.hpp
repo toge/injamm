@@ -165,6 +165,18 @@ constexpr void apply_string_filter(std::string& str, string_filter_entry entry) 
   case string_filter::format:
     // resolve_filtered で特殊処理済み。no-op。
     break;
+  case string_filter::repeat: {
+    auto n = entry.arg1;
+    if (n < 1) {
+      str.clear();
+    } else if (n > 1 && !str.empty()) {
+      auto saved = str;
+      str.reserve(saved.size() * static_cast<std::size_t>(n));
+      for (int i = 1; i < n; ++i)
+        str += saved;
+    }
+    break;
+  }
   case string_filter::indent: {
     if (entry.arg1 > 0 && !str.empty()) {
       auto pad = std::string(static_cast<std::size_t>(entry.arg1), ' ');

@@ -114,6 +114,17 @@ inline void filter_zerofill(std::string& s, int width) {
     s = std::string(static_cast<std::size_t>(width) - s.size(), '0') + s;
 }
 
+inline void filter_repeat(std::string& s, int n) {
+  if (n < 1) {
+    s.clear();
+  } else if (n > 1 && !s.empty()) {
+    auto saved = s;
+    s.reserve(saved.size() * static_cast<std::size_t>(n));
+    for (int i = 1; i < n; ++i)
+      s += saved;
+  }
+}
+
 } // namespace generated
 
 #endif // INJAMM_CODEGEN_HELPERS_HPP

@@ -895,6 +895,20 @@ TEST_CASE("ct_filter_right", "[injamm][ct]") {
   REQUIRE(*r == "hi   ");
 }
 
+TEST_CASE("ct_filter_repeat", "[injamm][ct]") {
+  auto constexpr tmpl = injamm::fixed_string("{{name | repeat(3)}}");
+  auto r              = injamm::render<tmpl>(CtUser{"abc", 0});
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "abcabcabc");
+}
+
+TEST_CASE("ct_filter_repeat_zero", "[injamm][ct]") {
+  auto constexpr tmpl = injamm::fixed_string("{{name | repeat(0)}}");
+  auto r              = injamm::render<tmpl>(CtUser{"abc", 0});
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "");
+}
+
 TEST_CASE("ct_filter_truncate", "[injamm][ct]") {
   auto constexpr tmpl = injamm::fixed_string("{{name | truncate(8)}}");
   auto r              = injamm::render<tmpl>(CtUser{"hello world", 0});

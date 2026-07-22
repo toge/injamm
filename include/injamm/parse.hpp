@@ -252,6 +252,8 @@ constexpr std::size_t constexpr_find_tag(std::string_view haystack, std::string_
       return string_filter_entry{string_filter::right, arg1, 0};
     if (fname == "center")
       return string_filter_entry{string_filter::center, arg1, 0};
+    if (fname == "repeat")
+      return string_filter_entry{string_filter::repeat, arg1, 0};
     if (fname == "truncate")
       return string_filter_entry{string_filter::truncate, arg1, 0};
     if (fname == "substr")
