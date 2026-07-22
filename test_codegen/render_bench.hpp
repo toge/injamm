@@ -12,21 +12,18 @@
 #include <string_view>
 
 #include <injamm/types.hpp>
+#include <injamm/escape.hpp>
+#if defined(__AVX2__)
+#include <immintrin.h>
+#elif defined(__SSE2__)
+#include <emmintrin.h>
+#endif
 
 namespace generated {
 
-/** @brief HTML エスケープ関数 */
+/** @brief HTML エスケープ関数（SIMD 対応） */
 inline void html_escape_append(std::string& out, std::string_view sv) {
-  for (char c : sv) {
-    switch (c) {
-      case '&':  out += "&amp;";  break;
-      case '<':  out += "&lt;";   break;
-      case '>':  out += "&gt;";   break;
-      case '"': out += "&quot;"; break;
-      case '\'': out += "&#39;";  break;
-      default:   out += c;       break;
-    }
-  }
+  injamm::detail::html_escape_into(out, sv);
 }
 
 /** @brief 整数→文字列変換ヘルパ */
@@ -71,15 +68,85 @@ inline void html_escape_append_value(std::string& out, V const& v) {
   }
 }
 
-/** @brief 文字列の大文字変換 */
+/** @brief 文字列の大文字変換（SIMD 対応） */
+#if defined(__AVX2__)
 inline void filter_to_upper(std::string& s) {
-  for (auto& c : s) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
+  auto* data = s.data();
+  auto len = s.size();
+  std::size_t i = 0;
+  for (; i + 32 <= len; i += 32) {
+    __m256i chunk = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(data + i));
+    __m256i ge_a = _mm256_cmpeq_epi8(_mm256_max_epu8(chunk, _mm256_set1_epi8('a')), chunk);
+    __m256i le_z = _mm256_cmpeq_epi8(_mm256_min_epu8(chunk, _mm256_set1_epi8('z')), chunk);
+    __m256i is_lower = _mm256_and_si256(ge_a, le_z);
+    __m256i result = _mm256_sub_epi8(chunk, _mm256_and_si256(is_lower, _mm256_set1_epi8(0x20)));
+    _mm256_storeu_si256(reinterpret_cast<__m256i*>(data + i), result);
+  }
+  for (; i < len; ++i)
+    if (data[i] >= 'a' && data[i] <= 'z') data[i] -= 32;
 }
+#elif defined(__SSE2__)
+inline void filter_to_upper(std::string& s) {
+  auto* data = s.data();
+  auto len = s.size();
+  std::size_t i = 0;
+  for (; i + 16 <= len; i += 16) {
+    __m128i chunk = _mm_loadu_si128(reinterpret_cast<const __m128i*>(data + i));
+    __m128i ge_a = _mm_cmpeq_epi8(_mm_max_epu8(chunk, _mm_set1_epi8('a')), chunk);
+    __m128i le_z = _mm_cmpeq_epi8(_mm_min_epu8(chunk, _mm_set1_epi8('z')), chunk);
+    __m128i is_lower = _mm_and_si128(ge_a, le_z);
+    __m128i result = _mm_sub_epi8(chunk, _mm_and_si128(is_lower, _mm_set1_epi8(0x20)));
+    _mm_storeu_si128(reinterpret_cast<__m128i*>(data + i), result);
+  }
+  for (; i < len; ++i)
+    if (data[i] >= 'a' && data[i] <= 'z') data[i] -= 32;
+}
+#else
+inline void filter_to_upper(std::string& s) {
+  for (auto& c : s)
+    if (c >= 'a' && c <= 'z') c -= 32;
+}
+#endif
 
-/** @brief 文字列の小文字変換 */
+/** @brief 文字列の小文字変換（SIMD 対応） */
+#if defined(__AVX2__)
 inline void filter_to_lower(std::string& s) {
-  for (auto& c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+  auto* data = s.data();
+  auto len = s.size();
+  std::size_t i = 0;
+  for (; i + 32 <= len; i += 32) {
+    __m256i chunk = _mm256_loadu_si256(reinterpret_cast<const __m256i*>(data + i));
+    __m256i ge_a = _mm256_cmpeq_epi8(_mm256_max_epu8(chunk, _mm256_set1_epi8('A')), chunk);
+    __m256i le_z = _mm256_cmpeq_epi8(_mm256_min_epu8(chunk, _mm256_set1_epi8('Z')), chunk);
+    __m256i is_upper = _mm256_and_si256(ge_a, le_z);
+    __m256i result = _mm256_add_epi8(chunk, _mm256_and_si256(is_upper, _mm256_set1_epi8(0x20)));
+    _mm256_storeu_si256(reinterpret_cast<__m256i*>(data + i), result);
+  }
+  for (; i < len; ++i)
+    if (data[i] >= 'A' && data[i] <= 'Z') data[i] += 32;
 }
+#elif defined(__SSE2__)
+inline void filter_to_lower(std::string& s) {
+  auto* data = s.data();
+  auto len = s.size();
+  std::size_t i = 0;
+  for (; i + 16 <= len; i += 16) {
+    __m128i chunk = _mm_loadu_si128(reinterpret_cast<const __m128i*>(data + i));
+    __m128i ge_a = _mm_cmpeq_epi8(_mm_max_epu8(chunk, _mm_set1_epi8('A')), chunk);
+    __m128i le_z = _mm_cmpeq_epi8(_mm_min_epu8(chunk, _mm_set1_epi8('Z')), chunk);
+    __m128i is_upper = _mm_and_si128(ge_a, le_z);
+    __m128i result = _mm_add_epi8(chunk, _mm_and_si128(is_upper, _mm_set1_epi8(0x20)));
+    _mm_storeu_si128(reinterpret_cast<__m128i*>(data + i), result);
+  }
+  for (; i < len; ++i)
+    if (data[i] >= 'A' && data[i] <= 'Z') data[i] += 32;
+}
+#else
+inline void filter_to_lower(std::string& s) {
+  for (auto& c : s)
+    if (c >= 'A' && c <= 'Z') c += 32;
+}
+#endif
 
 /** @brief 文字列の先頭大文字変換 */
 inline void filter_capitalize(std::string& s) {
@@ -88,18 +155,34 @@ inline void filter_capitalize(std::string& s) {
 
 /** @brief 文字列のトリム */
 inline void filter_trim(std::string& s) {
-  while (!s.empty() && std::isspace(static_cast<unsigned char>(s.front()))) s.erase(s.begin());
-  while (!s.empty() && std::isspace(static_cast<unsigned char>(s.back()))) s.pop_back();
+  auto start = s.find_first_not_of(" \t");
+  if (start == std::string::npos) {
+    s.clear();
+  } else {
+    auto end = s.find_last_not_of(" \t");
+    s.erase(end + 1);
+    s.erase(0, start);
+  }
 }
 
 /** @brief 文字列の左トリム */
 inline void filter_ltrim(std::string& s) {
-  while (!s.empty() && std::isspace(static_cast<unsigned char>(s.front()))) s.erase(s.begin());
+  auto start = s.find_first_not_of(" \t");
+  if (start == std::string::npos) {
+    s.clear();
+  } else {
+    s.erase(0, start);
+  }
 }
 
 /** @brief 文字列の右トリム */
 inline void filter_rtrim(std::string& s) {
-  while (!s.empty() && std::isspace(static_cast<unsigned char>(s.back()))) s.pop_back();
+  auto end = s.find_last_not_of(" \t");
+  if (end == std::string::npos) {
+    s.clear();
+  } else {
+    s.erase(end + 1);
+  }
 }
 
 /** @brief 文字列の切り詰め */

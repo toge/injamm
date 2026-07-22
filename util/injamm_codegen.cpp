@@ -401,6 +401,7 @@ class code_generator {
   std::string type_name_;      /**< データ型名 */
   std::string namespace_;      /**< 生成コードの名前空間 */
   std::string func_prefix_;    /**< 関数名プレフィックス（空なら "render"） */
+  bool no_simd_ = false;       /**< SIMD命令を生成しない */
   int indent_ = 0;             /**現在のインデントレベル */
   int loop_depth_ = 0;         /**< 現在のループ深度 */
   bool filtered_declared_ = false; /**< _filtered 変数が宣言済みか */
@@ -491,6 +492,11 @@ class code_generator {
     emit_raw("#include <string>");
     emit_raw("");
     emit_raw("#include <injamm/types.hpp>");
+    if (no_simd_) {
+      emit_raw("#define INJAMM_CODEGEN_DISABLE_SIMD 1");
+    } else {
+      emit_raw("#include <injamm/escape.hpp>");
+    }
     emit_raw("#include \"codegen_helpers.hpp\"");
     emit_raw("");
     emit_raw("namespace generated {");
@@ -726,8 +732,8 @@ public:
    * @param ns 生成コードの名前空間
    * @param func_prefix 関数名プレフィックス（デフォルト: 空 = "render"）
    */
-  code_generator(std::string type_name, std::string ns, std::string func_prefix = "")
-    : type_name_(std::move(type_name)), namespace_(std::move(ns)), func_prefix_(std::move(func_prefix)) {}
+  code_generator(std::string type_name, std::string ns, std::string func_prefix = "", bool no_simd = false)
+    : type_name_(std::move(type_name)), namespace_(std::move(ns)), func_prefix_(std::move(func_prefix)), no_simd_(no_simd) {}
 
   /**
    * @brief バイトコードから C++ コードを生成
@@ -794,13 +800,14 @@ public:
 
 /** @brief 使用方法を表示 */
 void print_usage() {
-  std::cerr << "用法: injamm_codegen -i <input.bc> -t <Type> -o <output.hpp> [-n <namespace>] [-p <prefix>]\n";
+  std::cerr << "用法: injamm_codegen -i <input.bc> -t <Type> -o <output.hpp> [-n <namespace>] [-p <prefix>] [--no-simd]\n";
   std::cerr << "\nオプション:\n";
   std::cerr << "  -i <file>   入力バイトコードファイル (.bc)\n";
   std::cerr << "  -t <type>   データ型名 (例: UserData, myapp::UserInfo)\n";
   std::cerr << "  -o <file>   出力ヘッダファイル (.hpp)\n";
   std::cerr << "  -n <ns>     生成コードの名前空間 (デフォルト: generated)\n";
   std::cerr << "  -p <prefix> 関数名プレフィックス (デフォルト: render)\n";
+  std::cerr << "  --no-simd   SIMD命令を生成しない（デフォルト: 有効）\n";
   std::cerr << "  -h          ヘルプ表示\n";
 }
 
@@ -814,6 +821,7 @@ int main(int argc, char* argv[]) {
   std::string output_path;
   std::string ns = "generated";
   std::string prefix;
+  bool no_simd = false;
 
   for (int i = 1; i < argc; ++i) {
     std::string_view arg = argv[i];
@@ -822,6 +830,7 @@ int main(int argc, char* argv[]) {
     else if (arg == "-o" && i + 1 < argc) { output_path = argv[++i]; }
     else if (arg == "-n" && i + 1 < argc) { ns = argv[++i]; }
     else if (arg == "-p" && i + 1 < argc) { prefix = argv[++i]; }
+    else if (arg == "--no-simd") { no_simd = true; }
     else if (arg == "-h") { print_usage(); return 0; }
     else { std::cerr << "不明なオプション: " << arg << "\n"; print_usage(); return 1; }
   }
@@ -853,7 +862,7 @@ int main(int argc, char* argv[]) {
   }
 
   // C++ コード生成
-  code_generator gen(type_name, ns, prefix);
+  code_generator gen(type_name, ns, prefix, no_simd);
   auto code = gen.generate(*bc);
 
   // 出力
