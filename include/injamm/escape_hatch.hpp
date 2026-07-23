@@ -486,6 +486,9 @@ namespace detail {
     std::array<std::size_t, N> order{};
     std::size_t count = 0;
     bool found = false;
+    // ネストした partial のボディ範囲（count == 0 かつ found の場合に有効）
+    std::size_t nested_body_start = 0;
+    std::size_t nested_body_end   = 0;
   };
 
   template <std::size_t N>
@@ -498,8 +501,34 @@ namespace detail {
         break;
       }
     }
-    if (target_idx == static_cast<std::size_t>(-1))
+    if (target_idx == static_cast<std::size_t>(-1)) {
+      // partial_names に見つからない → テンプレート全体からネスト {{#partialdef}} を探索
+      std::size_t pos = 0;
+      while (pos < sv.size()) {
+        auto pdef = constexpr_find(sv, "{{#partialdef ", pos);
+        if (pdef == std::string_view::npos) break;
+        auto tag_end = constexpr_find(sv, "}}", pdef);
+        if (tag_end == std::string_view::npos) break;
+        auto inner = trim_sv(sv.substr(pdef + 2, tag_end - pdef - 2));
+        if (inner.starts_with("#partialdef ")) {
+          auto name = trim_sv(inner.substr(12));
+          auto sp = constexpr_find(name, ' ');
+          if (sp != std::string_view::npos)
+            name = trim_sv(name.substr(0, sp));
+          if (name == target) {
+            auto close_tag = constexpr_find_close_partialdef(sv, tag_end + 2);
+            if (close_tag != std::string_view::npos) {
+              result.found = true;
+              result.nested_body_start = tag_end + 2;
+              result.nested_body_end   = close_tag;
+              return result;  // count == 0, 依存なしの leaf として扱う
+            }
+          }
+        }
+        pos = tag_end + 2;
+      }
       return result;  // found == false
+    }
     result.found = true;
 
     std::array<bool, N> visited{};
@@ -550,6 +579,18 @@ namespace detail {
         return bc;
       }
       auto tmpl_sv = Data::tmpl_sv;
+      if constexpr (closure.count == 0) {
+        // ネストした partial（トップレベル partial_names に含まれない）
+        auto body = tmpl_sv.substr(closure.nested_body_start, closure.nested_body_end - closure.nested_body_start);
+        detail::bc_compiler<T> compiler;
+        auto partial_bc = compiler.compile(std::string(body));
+        if (partial_bc.error.ec != error_code::none) {
+          bc.error = partial_bc.error;
+          return bc;
+        }
+        bc.partial_entries.push_back({std::string(target_sv), std::make_shared<detail::bytecode>(std::move(partial_bc))});
+        return bc;
+      }
       for (std::size_t k = 0; k < closure.count; ++k) {
         std::size_t i = closure.order[k];  // 依存先が先
         auto body = tmpl_sv.substr(Data::parsed.partial_body_starts[i], Data::parsed.partial_body_ends[i] - Data::parsed.partial_body_starts[i]);
@@ -581,6 +622,17 @@ namespace detail {
         return bc;
       }
       auto tmpl_sv = Data::tmpl_sv;
+      if constexpr (closure.count == 0) {
+        auto body = tmpl_sv.substr(closure.nested_body_start, closure.nested_body_end - closure.nested_body_start);
+        detail::bc_compiler<T> compiler;
+        auto partial_bc = compiler.compile(std::string(body));
+        if (partial_bc.error.ec != error_code::none) {
+          bc.error = partial_bc.error;
+          return bc;
+        }
+        bc.partial_entries.push_back({std::string(target_sv), std::make_shared<detail::bytecode>(std::move(partial_bc))});
+        return bc;
+      }
       for (std::size_t k = 0; k < closure.count; ++k) {
         std::size_t i = closure.order[k];
         auto body = tmpl_sv.substr(Data::parsed.partial_body_starts[i], Data::parsed.partial_body_ends[i] - Data::parsed.partial_body_starts[i]);

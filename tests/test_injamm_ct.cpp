@@ -2650,3 +2650,27 @@ TEST_CASE("ct_partial_render_nested_deep", "[injamm][ct][partial]") {
   REQUIRE(wrap_nttp.has_value());
   CHECK(*wrap_nttp == "<wrap><table><tr><td>Alice</td></tr></table></wrap>");
 }
+
+TEST_CASE("ct_partial_nttp_nested", "[injamm][ct][partial]") {
+  // {{#partialdef row}} が {{#partialdef table}} の内側で定義されているケース。
+  // NTTP 名でもアクセスできることを確認する。
+  CtUser user{"Bob", 25};
+  auto constexpr tmpl = injamm::fixed_string(
+    "{{#partialdef table}}{{#partialdef row}}<tr><td>{{name}}</td></tr>{{/partialdef}}{{#partial row}}{{/partialdef}}"
+    "BODY:{{#partial table}}");
+  auto row = injamm::render_partial<tmpl, "row">(user);
+  REQUIRE(row.has_value());
+  CHECK(*row == "<tr><td>Bob</td></tr>");
+
+  auto table = injamm::render_partial<tmpl, "table">(user);
+  REQUIRE(table.has_value());
+  CHECK(*table == "<tr><td>Bob</td></tr>");
+
+  // now 修飾子が付いたネスト partial も NTTP 名でアクセス可能
+  auto constexpr tmpl2 = injamm::fixed_string(
+    "{{#partialdef table}}{{#partialdef cell now}}<td>{{name}}</td>{{/partialdef}}{{/partialdef}}"
+    "{{#partial table}}");
+  auto cell = injamm::render_partial<tmpl2, "cell">(user);
+  REQUIRE(cell.has_value());
+  CHECK(*cell == "<td>Bob</td>");
+}
