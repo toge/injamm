@@ -1066,7 +1066,46 @@ class bc_compiler {
       pos = close_tag + 15;
     }
 
-    for (auto& pp : pending) {
+    // 前方参照に対応するため、先に全エントリを名前のみ登録（bc は後で埋める）
+    for (auto const& pp : pending) {
+      bc_.partial_entries.push_back({pp.name, {}, pp.local});
+    }
+
+    // 依存関係を走査し、トポロジカル順を計算
+    std::vector<std::size_t> order;
+    {
+      order.reserve(pending.size());
+      std::vector<bool> visited(pending.size(), false);
+      std::vector<bool> in_stack(pending.size(), false);  // ponytail: 循環検出用
+      auto dfs = [&](auto& self, std::size_t node) -> void {
+        if (visited[node]) return;
+        visited[node]   = true;
+        in_stack[node]  = true;
+        std::string_view body = pending[node].body;
+        std::size_t pos = 0;
+        while (pos < body.size()) {
+          auto at = constexpr_find(body, "{{#partial ", pos);
+          if (at == std::string_view::npos) break;
+          auto end = constexpr_find(body, "}}", at);
+          if (end == std::string_view::npos) break;
+          std::string_view ref = trim_sv(body.substr(at + 11, end - (at + 11)));
+          for (std::size_t j = 0; j < pending.size(); ++j) {
+            if (pending[j].name == ref) {
+              if (!in_stack[j]) self(self, j);
+              break;
+            }
+          }
+          pos = end + 2;
+        }
+        in_stack[node] = false;
+        order.push_back(node);
+      };
+      for (std::size_t i = 0; i < pending.size(); ++i)
+        dfs(dfs, i);
+    }
+
+    for (auto idx : order) {
+      auto const& pp = pending[idx];
       bc_compiler<T> partial_compiler;
       partial_compiler.set_partial_entries(bc_.partial_entries);
       auto partial_bc = partial_compiler.compile(pp.body, trim_blocks_, lstrip_blocks_);
@@ -1074,12 +1113,24 @@ class bc_compiler {
         bc_.error = partial_bc.error;
         return {};
       }
+      // 同名のプレースホルダを探して bc を埋める（shared_ptr はコピー間で共有）
+      auto it = std::find_if(bc_.partial_entries.begin(), bc_.partial_entries.end(),
+                             [&](auto const& e) { return e.name == pp.name; });
+      it->bc = std::make_shared<bytecode>(std::move(partial_bc));
+    }
 
-      partial_entry entry;
-      entry.name = pp.name;
-      entry.bc = std::make_shared<bytecode>(std::move(partial_bc));
-      entry.local = pp.local;
-      bc_.partial_entries.push_back(std::move(entry));
+    // ponytail: ネストした partial 定義を bc_.partial_entries に昇格させる。
+    // engine<T>::render_partial(value, "inner") がアクセス可能になる。
+    for (std::size_t ei = 0; ei < bc_.partial_entries.size(); ++ei) {
+      auto const& entry = bc_.partial_entries[ei];
+      if (!entry.bc) continue;
+      for (auto const& nested : entry.bc->partial_entries) {
+        if (nested.local) continue;
+        auto dup = std::find_if(bc_.partial_entries.begin(), bc_.partial_entries.end(),
+                                [&](auto const& e) { return e.name == nested.name; });
+        if (dup == bc_.partial_entries.end())
+          bc_.partial_entries.push_back(nested);
+      }
     }
 
     return result;

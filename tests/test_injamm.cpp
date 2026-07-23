@@ -4152,3 +4152,44 @@ TEST_CASE("bytecode load: truncated data", "[bytecode_io][error]") {
   REQUIRE(result.error().ec == injamm::error_code::no_read_input);
 }
 
+TEST_CASE("partial_nested_engine_render_named", "[injamm][partial][engine]") {
+  BcPartialUser user{"Bob", 25};
+  // {{#partialdef row}} が {{#partialdef table}} の内側で定義されている。
+  auto eng = injamm::engine<BcPartialUser>{
+    "{{#partialdef table}}{{#partialdef row}}<tr><td>{{name}}</td></tr>{{/partialdef}}{{#partial row}}{{/partialdef}}"
+    "BODY:{{#partial table}}"
+  };
+  auto full = eng.render(user);
+  REQUIRE(full.has_value());
+  CHECK(*full == "BODY:<tr><td>Bob</td></tr>");
+
+  auto table = eng.render(user, "table");
+  REQUIRE(table.has_value());
+  CHECK(*table == "<tr><td>Bob</td></tr>");
+
+  // engine でもネスト partial が render_partial でアクセス可能
+  auto row = eng.render(user, "row");
+  REQUIRE(row.has_value());
+  CHECK(*row == "<tr><td>Bob</td></tr>");
+}
+
+TEST_CASE("partial_nested_engine_deep", "[injamm][partial][engine]") {
+  BcPartialUser user{"Alice", 30};
+  auto eng = injamm::engine<BcPartialUser>{
+    "{{#partialdef wrap}}<wrap>{{#partial table}}</wrap>{{/partialdef}}"
+    "{{#partialdef table}}<table>{{#partial row}}</table>{{/partialdef}}"
+    "{{#partialdef row}}<tr><td>{{name}}</td></tr>{{/partialdef}}"
+    "{{#partialdef unused}}NEVER{{/partialdef}}"
+    "{{#partial wrap}}"
+  };
+  auto wrap = eng.render(user, "wrap");
+  REQUIRE(wrap.has_value());
+  CHECK(*wrap == "<wrap><table><tr><td>Alice</td></tr></table></wrap>");
+  auto table = eng.render(user, "table");
+  REQUIRE(table.has_value());
+  CHECK(*table == "<table><tr><td>Alice</td></tr></table>");
+  auto row = eng.render(user, "row");
+  REQUIRE(row.has_value());
+  CHECK(*row == "<tr><td>Alice</td></tr>");
+}
+

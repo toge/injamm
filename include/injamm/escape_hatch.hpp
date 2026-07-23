@@ -397,20 +397,69 @@ namespace detail {
       // [0, partial_count) は #partialdef 本体、[partial_count, partial_total) は外部 {{> }} 参照。
       bc.partial_entries.reserve(Data::parsed.partial_total);
       auto tmpl_sv = Data::tmpl_sv;
+      // 前方参照に対応するため、先に全エントリを名前のみ登録（bc は後で埋める）
       for (std::size_t i = 0; i < Data::parsed.partial_count; ++i) {
-        auto                   body = tmpl_sv.substr(Data::parsed.partial_body_starts[i], Data::parsed.partial_body_ends[i] - Data::parsed.partial_body_starts[i]);
-        detail::bc_compiler<T> compiler;
-        compiler.set_partial_entries(bc.partial_entries);
-        auto partial_bc = compiler.compile(std::string(body));
-        if (partial_bc.error.ec != error_code::none) {
-          bc.error = partial_bc.error;
-          break;
+        bc.partial_entries.push_back({std::string(Data::parsed.partial_names[i]), {}, Data::parsed.partial_local[i]});
+      }
+      // トポロジカル順（依存先が先）でボディをコンパイル
+      {
+        std::array<std::size_t, Data::parsed.partial_count> order{};
+        std::size_t order_count = 0;
+        {
+          std::array<bool, Data::parsed.partial_count> visited{};
+          std::array<bool, Data::parsed.partial_count> in_stack{};
+          auto dfs = [&](auto& self, std::size_t node) -> void {
+            if (visited[node]) return;
+            visited[node] = true;
+            in_stack[node] = true;
+            std::string_view body = tmpl_sv.substr(Data::parsed.partial_body_starts[node], Data::parsed.partial_body_ends[node] - Data::parsed.partial_body_starts[node]);
+            std::size_t pos = 0;
+            while (pos < body.size()) {
+              auto at = constexpr_find(body, "{{#partial ", pos);
+              if (at == std::string_view::npos) break;
+              auto end = constexpr_find(body, "}}", at);
+              if (end == std::string_view::npos) break;
+              std::string_view ref = trim_sv(body.substr(at + 11, end - (at + 11)));
+              for (std::size_t j = 0; j < Data::parsed.partial_count; ++j) {
+                if (Data::parsed.partial_names[j] == ref) {
+                  if (!in_stack[j]) self(self, j);
+                  break;
+                }
+              }
+              pos = end + 2;
+            }
+            in_stack[node] = false;
+            order[order_count++] = node;
+          };
+          for (std::size_t i = 0; i < Data::parsed.partial_count; ++i)
+            dfs(dfs, i);
         }
-        partial_entry e;
-        e.name = std::string(Data::parsed.partial_names[i]);
-        e.bc = std::make_shared<detail::bytecode>(std::move(partial_bc));
-        e.local = Data::parsed.partial_local[i];
-        bc.partial_entries.push_back(std::move(e));
+        for (std::size_t k = 0; k < order_count; ++k) {
+          std::size_t i = order[k];
+          auto body = tmpl_sv.substr(Data::parsed.partial_body_starts[i], Data::parsed.partial_body_ends[i] - Data::parsed.partial_body_starts[i]);
+          detail::bc_compiler<T> compiler;
+          compiler.set_partial_entries(bc.partial_entries);
+          auto partial_bc = compiler.compile(std::string(body));
+          if (partial_bc.error.ec != error_code::none) {
+            bc.error = partial_bc.error;
+            break;
+          }
+          bc.partial_entries[i].bc = std::make_shared<detail::bytecode>(std::move(partial_bc));
+        }
+      }
+      // ネストした partial 定義（コンパイラ内で抽出される）を bc.partial_entries に昇格させる。
+      // これにより render_partial(t, "inner") で nttp_partial_bytecode_holder のキャッシュから
+      // アクセス可能になる。
+      for (std::size_t ei = 0; ei < bc.partial_entries.size(); ++ei) {
+        auto const& entry = bc.partial_entries[ei];
+        if (!entry.bc) continue;
+        for (auto const& nested : entry.bc->partial_entries) {
+          if (nested.local) continue;
+          auto dup = std::find_if(bc.partial_entries.begin(), bc.partial_entries.end(),
+                                  [&](auto const& e) { return e.name == nested.name; });
+          if (dup == bc.partial_entries.end())
+            bc.partial_entries.push_back(nested);
+        }
       }
       // 外部レジストリ（ct_partials<...>）から、未定義の {{> }} 参照を名前解決して差し込む
       if constexpr (Data::partial_set::count > 0) {

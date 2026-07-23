@@ -2571,3 +2571,47 @@ TEST_CASE("ct_partial_render_selected_drops_unreachable", "[injamm][ct][partial]
   REQUIRE_FALSE(broken.has_value());
   CHECK(broken.error().ec == injamm::error_code::unknown_key);
 }
+
+TEST_CASE("ct_partial_render_nested_inner_via_runtime_name", "[injamm][ct][partial]") {
+  // テンプレート中に {{#partialdef row}} が {{#partialdef table}} の内側で定義されているケース。
+  // row は事前スキャンで捕捉されない（ネスト定義）ため、bc_compiler 内で抽出されたエントリを
+  // nttp_partial_bytecode_holder が昇格させる必要がある。
+  // 実行時名前版（全コンパイル＋昇格）でのみアクセス可能。
+  CtUser user{"Bob", 25};
+  auto constexpr tmpl = injamm::fixed_string(
+    "{{#partialdef table}}{{#partialdef row}}<tr><td>{{name}}</td></tr>{{/partialdef}}{{#partial row}}{{/partialdef}}"
+    "BODY:{{#partial table}}");
+  auto table = injamm::render_partial<tmpl>(user, "table");
+  REQUIRE(table.has_value());
+  CHECK(*table == "<tr><td>Bob</td></tr>");
+  auto row = injamm::render_partial<tmpl>(user, "row");
+  REQUIRE(row.has_value());
+  CHECK(*row == "<tr><td>Bob</td></tr>");
+  // 存在しない nested 名 → エラー
+  auto nope = injamm::render_partial<tmpl>(user, "nope");
+  REQUIRE_FALSE(nope.has_value());
+}
+
+TEST_CASE("ct_partial_render_nested_deep", "[injamm][ct][partial]") {
+  // 3 段階のトップレベル partial: wrap > table > row
+  CtUser user{"Alice", 30};
+  auto constexpr tmpl = injamm::fixed_string(
+    "{{#partialdef wrap}}<wrap>{{#partial table}}</wrap>{{/partialdef}}"
+    "{{#partialdef table}}<table>{{#partial row}}</table>{{/partialdef}}"
+    "{{#partialdef row}}<tr><td>{{name}}</td></tr>{{/partialdef}}"
+    "{{#partialdef unused}}NEVER{{/partialdef}}"
+    "{{#partial wrap}}");
+  auto wrap = injamm::render_partial<tmpl>(user, "wrap");
+  REQUIRE(wrap.has_value());
+  CHECK(*wrap == "<wrap><table><tr><td>Alice</td></tr></table></wrap>");
+  auto table = injamm::render_partial<tmpl>(user, "table");
+  REQUIRE(table.has_value());
+  CHECK(*table == "<table><tr><td>Alice</td></tr></table>");
+  auto row = injamm::render_partial<tmpl>(user, "row");
+  REQUIRE(row.has_value());
+  CHECK(*row == "<tr><td>Alice</td></tr>");
+  // NTTP 版（トップレベルのみ対応）
+  auto wrap_nttp = injamm::render_partial<tmpl, "wrap">(user);
+  REQUIRE(wrap_nttp.has_value());
+  CHECK(*wrap_nttp == "<wrap><table><tr><td>Alice</td></tr></table></wrap>");
+}
