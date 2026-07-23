@@ -2674,3 +2674,44 @@ TEST_CASE("ct_partial_nttp_nested", "[injamm][ct][partial]") {
   REQUIRE(cell.has_value());
   CHECK(*cell == "<td>Bob</td>");
 }
+
+struct CtItem {
+  int         id{};
+  std::string name;
+};
+
+template <>
+struct glz::meta<CtItem> {
+  static constexpr auto value = glz::object("id", &CtItem::id, "name", &CtItem::name);
+};
+
+TEST_CASE("ct_partial_nttp_nested_realistic", "[injamm][ct][partial]") {
+  // test13.cpp のユースケースを模した現実的なテンプレート：
+  // {{#partialdef 外側 now}} ... {{#partialdef 内側}} ... {{/partialdef}} ... {{/partialdef}}
+  // 内側の partial を NTTP 名でレンダリングする。
+  CtItem item{42, "Buy milk"};
+  auto constexpr tmpl = injamm::fixed_string(
+    "{{#partialdef row now}}<tr><td class='px-4 py-2'>{{id}}</td>"
+    "{{#partialdef name_cell}}<td class='px-4 py-2'>{{name}}</td>{{/partialdef}}"
+    "{{#partial name_cell}}</tr>{{/partialdef}}"
+    "{{#partial row}}");
+  std::string const expected_row =
+    "<tr><td class='px-4 py-2'>42</td><td class='px-4 py-2'>Buy milk</td></tr>";
+  std::string const expected_cell = "<td class='px-4 py-2'>Buy milk</td>";
+
+  // 実行時名前（全コンパイル+昇格）
+  auto row = injamm::render_partial<tmpl>(item, "row");
+  REQUIRE(row.has_value());
+  CHECK(*row == expected_row);
+  auto name_cell = injamm::render_partial<tmpl>(item, "name_cell");
+  REQUIRE(name_cell.has_value());
+  CHECK(*name_cell == expected_cell);
+
+  // NTTP 名（選択的コンパイル）
+  auto row_nttp = injamm::render_partial<tmpl, "row">(item);
+  REQUIRE(row_nttp.has_value());
+  CHECK(*row_nttp == expected_row);
+  auto name_cell_nttp = injamm::render_partial<tmpl, "name_cell">(item);
+  REQUIRE(name_cell_nttp.has_value());
+  CHECK(*name_cell_nttp == expected_cell);
+}
