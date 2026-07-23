@@ -1364,6 +1364,46 @@ TEST_CASE("filter: repeat empty", "[filter]") {
   REQUIRE(*result == "");
 }
 
+TEST_CASE("string literal constant folding: {{ \"-\" | repeat(3) }}", "[filter][constfold]") {
+  BcUser data{"", 0};
+  auto bc = injamm::engine<BcUser>("{{ \"-\" | repeat(3) }}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "---");
+}
+
+TEST_CASE("string literal constant folding: {{ \"hello\" | upper }}", "[filter][constfold]") {
+  BcUser data{"", 0};
+  auto bc = injamm::engine<BcUser>("{{ \"hello\" | upper }}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "HELLO");
+}
+
+TEST_CASE("string literal constant folding: {{ \"abc\" | repeat(0) }}", "[filter][constfold]") {
+  BcUser data{"", 0};
+  auto bc = injamm::engine<BcUser>("{{ \"abc\" | repeat(0) }}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "");
+}
+
+TEST_CASE("string literal constant folding: {{{ \"x\" | repeat(3) }}}", "[filter][constfold]") {
+  BcUser data{"", 0};
+  auto bc = injamm::engine<BcUser>("{{{ \"x\" | repeat(3) }}}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "xxx");
+}
+
+TEST_CASE("string literal constant folding: {{ \"hello\" }}", "[filter][constfold]") {
+  BcUser data{"", 0};
+  auto bc = injamm::engine<BcUser>("{{ \"hello\" }}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "hello");
+}
+
 TEST_CASE("filter: truncate short", "[filter]") {
   BcUser data{"hello", 30};
   auto bc = injamm::engine<BcUser>("{{name | truncate(10)}}");

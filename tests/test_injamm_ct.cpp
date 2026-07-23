@@ -909,6 +909,41 @@ TEST_CASE("ct_filter_repeat_zero", "[injamm][ct]") {
   REQUIRE(*r == "");
 }
 
+TEST_CASE("ct_constfold_repeat", "[injamm][ct][constfold]") {
+  auto constexpr tmpl = injamm::fixed_string("{{ \"-\" | repeat(3) }}");
+  auto r              = injamm::render<tmpl>(CtUser{"", 0});
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "---");
+}
+
+TEST_CASE("ct_constfold_upper", "[injamm][ct][constfold]") {
+  auto constexpr tmpl = injamm::fixed_string("{{ \"hello\" | upper }}");
+  auto r              = injamm::render<tmpl>(CtUser{"", 0});
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "HELLO");
+}
+
+TEST_CASE("ct_constfold_repeat_zero", "[injamm][ct][constfold]") {
+  auto constexpr tmpl = injamm::fixed_string("{{ \"abc\" | repeat(0) }}");
+  auto r              = injamm::render<tmpl>(CtUser{"", 0});
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "");
+}
+
+TEST_CASE("ct_constfold_raw", "[injamm][ct][constfold]") {
+  auto constexpr tmpl = injamm::fixed_string("{{{ \"x\" | repeat(3) }}}");
+  auto r              = injamm::render<tmpl>(CtUser{"", 0});
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "xxx");
+}
+
+TEST_CASE("ct_constfold_no_filter", "[injamm][ct][constfold]") {
+  auto constexpr tmpl = injamm::fixed_string("{{ \"hello\" }}");
+  auto r              = injamm::render<tmpl>(CtUser{"", 0});
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "hello");
+}
+
 TEST_CASE("ct_filter_truncate", "[injamm][ct]") {
   auto constexpr tmpl = injamm::fixed_string("{{name | truncate(8)}}");
   auto r              = injamm::render<tmpl>(CtUser{"hello world", 0});

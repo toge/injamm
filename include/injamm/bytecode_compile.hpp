@@ -5,6 +5,7 @@
 
 #include "bytecode.hpp"
 #include "enum_io.hpp"
+#include "filters.hpp"
 #include "parse.hpp"
 // enum_io.hpp provides enum_name_to_int and serialize_enum
 
@@ -815,6 +816,8 @@ class bc_compiler {
         }
         if (actual_key.starts_with("root.")) {
           emit_root_field(actual_key, true);
+        } else if (auto folded = try_fold_string_constant(actual_key, true, filters, int_filters, float_filters)) {
+          emit_literal(*folded);
         } else {
           emit_var(actual_key, true, std::move(filters), std::move(int_filters), std::move(float_filters));
         }
@@ -961,6 +964,8 @@ class bc_compiler {
         // {{field.size}} → emit_var_size
         if (key.ends_with(".size") && filters.empty() && int_filters.empty() && float_filters.empty()) {
           emit_var_size(key.substr(0, key.size() - 5), false);
+        } else if (auto folded = try_fold_string_constant(key, false, filters, int_filters, float_filters)) {
+          emit_literal(*folded);
         } else {
           emit_var(key, false, std::move(filters), std::move(int_filters), std::move(float_filters));
         }

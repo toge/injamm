@@ -1,6 +1,7 @@
 #pragma once
 
 #include "ct_chunk.hpp"
+#include "filters.hpp"
 #include "parse.hpp"
 #include <cstddef>
 #include <span>

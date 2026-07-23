@@ -1,6 +1,8 @@
 #pragma once
 
 #include "bytecode.hpp"
+#include "escape.hpp"
+#include "parse.hpp"
 #include "types.hpp"
 #include <array>
 #include <charconv>
@@ -8,6 +10,7 @@
 #include <glaze/util/zmij.hpp>
 #include <cmath>
 #include <expected>
+#include <optional>
 #include <string>
 
 namespace injamm::detail {
@@ -674,6 +677,52 @@ constexpr void apply_float_filter(std::string& str, float_filter_entry entry) {
     break;
   }
   }
+}
+
+/**
+ * @brief 文字列リテラル式を定数畳み込みする
+ * @param key キー文字列（引用符でくくられているかチェックされる）
+ * @param raw 生出力モード（{{{ }}} または safe フィルタ）
+ * @param filters 文字列フィルタチェーン
+ * @param int_filters 整数フィルタチェーン
+ * @param float_filters 実数フィルタチェーン
+ * @return 畳み込み結果。キーが文字列リテラルでない場合は nullopt
+ */
+[[nodiscard]] constexpr std::optional<std::string>
+try_fold_string_constant(std::string_view key, bool raw,
+                         std::vector<string_filter_entry> const& filters,
+                         std::vector<int_filter_entry> const& int_filters,
+                         std::vector<float_filter_entry> const& float_filters) {
+  auto str_val = parse_string_literal(key);
+  if (!str_val) return std::nullopt;
+
+  std::string result = std::move(*str_val);
+  bool use_raw = raw;
+
+  for (auto const& f : filters) {
+    if (f.filter == string_filter::safe) { use_raw = true; continue; }
+    // to_json と format はランタイムで特殊処理されるため畳み込み不可
+    if (f.filter == string_filter::to_json || f.filter == string_filter::format)
+      return std::nullopt;
+    apply_string_filter(result, f);
+  }
+
+  for (auto const& f : int_filters) {
+    auto r = apply_int_filter(result, f);
+    if (!r) return std::nullopt;
+  }
+
+  for (auto const& f : float_filters) {
+    apply_float_filter(result, f);
+  }
+
+  if (!use_raw) {
+    std::string escaped;
+    html_escape_scalar(escaped, result);
+    result = std::move(escaped);
+  }
+
+  return result;
 }
 
 }  // namespace injamm::detail

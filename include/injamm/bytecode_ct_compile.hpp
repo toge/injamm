@@ -1,6 +1,8 @@
 #pragma once
 
 #include "ct_chunk.hpp"
+#include "escape.hpp"
+#include "filters.hpp"
 #include "glz_dispatch.hpp"
 #include "parse.hpp"
 #include "types.hpp"
@@ -527,6 +529,36 @@ consteval void compile_chunk_range(ct_bytecode_builder<N>& b,
                                       static_cast<std::uint32_t>(chunks.field_indices[i]));
           b.emit(bc_opcode::emit_var_size, vridx);
           break;
+        }
+
+        // 定数畳み込み: 文字列リテラルキー → コンパイル時に評価してリテラル出力
+        if (auto str_val = parse_string_literal(sv)) {
+          std::string result = std::move(*str_val);
+          bool fold_ok = true;
+          bool raw_eff = use_raw;
+          for (std::uint8_t f = 0; f < chunks.filter_count[i] && fold_ok; ++f) {
+            auto const& sf = chunks.filters[i][f];
+            if (sf.filter == string_filter::safe) { raw_eff = true; continue; }
+            if (sf.filter == string_filter::to_json || sf.filter == string_filter::format)
+              { fold_ok = false; break; }
+            apply_string_filter(result, sf);
+          }
+          for (std::uint8_t f = 0; f < chunks.int_filter_count[i] && fold_ok; ++f) {
+            auto r = apply_int_filter(result, chunks.int_filters[i][f]);
+            if (!r) { fold_ok = false; break; }
+          }
+          for (std::uint8_t f = 0; f < chunks.float_filter_count[i] && fold_ok; ++f)
+            apply_float_filter(result, chunks.float_filters[i][f]);
+          if (fold_ok) {
+            if (!raw_eff) {
+              std::string escaped;
+              html_escape_scalar(escaped, result);
+              result = std::move(escaped);
+            }
+            auto lit_idx = b.add_literal({result.data(), result.size()});
+            b.emit(bc_opcode::emit_literal, lit_idx);
+            break;
+          }
         }
 
         auto vridx = b.add_var_ref({sv.data(), sv.size()},
