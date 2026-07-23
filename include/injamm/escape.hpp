@@ -181,7 +181,8 @@ constexpr void html_escape_into(Buffer& out, std::string_view s) {
     html_escape_scalar(out, s);
   }
 }
-#elif defined(__ARM_NEON)
+// ponytail: Apple Clang の NEON movemask が 0 を返すバグがあるためスカラーフォールバック
+#elif defined(__ARM_NEON) && !defined(__apple_build_version__)
 template <class Buffer>
 constexpr void html_escape_into(Buffer& out, std::string_view s) {
   if !consteval {
