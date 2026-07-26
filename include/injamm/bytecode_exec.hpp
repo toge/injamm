@@ -240,12 +240,32 @@ static auto resolve_nested_path(V const& v, std::string_view path, F&& visitor) 
  */
 template <class V, class F>
 static auto for_each_field(V const& v, std::string_view key, std::uint32_t field_index, bool has_dot, F&& visitor) -> std::expected<void, error_ctx> {
+  if constexpr (forward_iterable<V>) {
+    if (key == ".") {
+      if constexpr (std::same_as<decltype(visitor(v)), void>) {
+        visitor(v);
+        return {};
+      } else {
+        return visitor(v);
+      }
+    }
+    return {};
+  }
+
   /** ネストパスが含まれている場合は再帰解決に委譲 */
   if (has_dot) {
     return resolve_nested_path(v, key, std::forward<F>(visitor));
   }
 
-  if constexpr (ct_glz_reflectable<V>) {
+  if constexpr (runtime_field_accessible<V>) {
+    auto val = v.find(key);
+    if constexpr (std::same_as<decltype(visitor(val)), void>) {
+      visitor(val);
+      return {};
+    } else {
+      return visitor(val);
+    }
+  } else if constexpr (ct_glz_reflectable<V>) {
     constexpr auto sz   = static_cast<std::size_t>(glz::reflect<V>::size);
     auto           tied = glz::to_tie(v);
     using visitor_t     = decltype(visitor(glz::get<0>(tied)));
@@ -954,6 +974,30 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
           const_cast<bc_loop_state const*&>(ex.loop_) = save;
           if (!r2) return r2;
         }
+      } else if constexpr (forward_iterable<FT>) {
+        using elem_t = typename FT::value_type;
+        bc_loop_state ls;
+        ls.parent = ex.loop_;
+        ls.count = 0;
+        ls.index = 0;
+        auto it = field.begin();
+        auto end = field.end();
+        if (!(it != end)) return {};
+        is_falsy = false;
+        for (; it != end; ++it, ++ls.index) {
+          auto const& elem = *it;
+          ls.continue_flag = false;
+          ls.binding_name = ref.key;
+          ls.binding_elem = &elem;
+          ls.binding_resolve = &resolve_binding_var<elem_t>;
+          ls.binding_truthy = &eval_binding_truthy<elem_t>;
+          bc_executor<elem_t, RootT> child_exec(ex.bc_, elem, ex.root_value_, &ls, ex.out_);
+          auto r2 = child_exec.execute_impl(pc + 1, body_end - 1);
+          if (!r2) return r2;
+          if (ls.continue_flag) { ls.continue_flag = false; continue; }
+          if (ls.break_flag) break;
+        }
+        ls.count = static_cast<std::uint32_t>(ls.index);
       } else if constexpr (ct_glz_reflectable<FT>) {
         is_falsy = false;
         constexpr auto sz = glz::reflect<FT>::size;
@@ -1536,6 +1580,30 @@ public:
           loop_ = save;
           if (!r2) return r2;
         }
+      } else if constexpr (forward_iterable<FT>) {
+        using elem_t = typename FT::value_type;
+        bc_loop_state ls;
+        ls.parent = loop_;
+        ls.count = 0;
+        ls.index = 0;
+        auto it = field.begin();
+        auto end = field.end();
+        if (!(it != end)) return {};
+        is_falsy = false;
+        for (; it != end; ++it, ++ls.index) {
+          auto const& elem = *it;
+          ls.continue_flag = false;
+          ls.binding_name = ref.key;
+          ls.binding_elem = &elem;
+          ls.binding_resolve = &resolve_binding_var<elem_t>;
+          ls.binding_truthy = &eval_binding_truthy<elem_t>;
+          bc_executor<elem_t, RootT> child_exec(bc_, elem, root_value_, &ls, out_);
+          auto                       r2 = child_exec.execute_impl(pc + 1, body_end - 1);
+          if (!r2) return r2;
+          if (ls.continue_flag) { ls.continue_flag = false; continue; }
+          if (ls.break_flag) break;
+        }
+        ls.count = static_cast<std::uint32_t>(ls.index);
       } else if constexpr (ct_glz_reflectable<FT>) {
         is_falsy = false;
         constexpr auto                 sz   = glz::reflect<FT>::size;
@@ -1560,14 +1628,14 @@ public:
            }()),
            ...);
         }(std::make_index_sequence<sz>{});
-        return res;
-      }
-      return {};
-    };
+         return res;
+       }
+       return {};
+     };
 
-    auto r = for_each_field(value_, ref.key, ref.field_index, ref.has_dot, section_iterate);
-    if (!r)
-      return r;
+     auto r = for_each_field(value_, ref.key, ref.field_index, ref.has_dot, section_iterate);
+     if (!r)
+       return r;
     if (!entered) {
       auto r2 = for_each_field(root_value_, ref.key, ref.field_index, ref.has_dot, section_iterate);
       if (!r2)
@@ -2637,6 +2705,7 @@ public:
       &handle_string_filter_arg,
       &handle_emit_filtered,
       &handle_emit_filtered,
+      &handle_int_filter,
       &handle_int_filter,
       &handle_int_filter,
       &handle_int_filter,

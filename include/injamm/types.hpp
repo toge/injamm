@@ -142,6 +142,23 @@ struct fixed_string {
 #endif
 };
 
+// ---- runtime field access concept (shared with sqlite3 ext) ----
+namespace detail {
+
+template <class T>
+concept runtime_field_accessible = requires(T const& t, std::string_view key) {
+  { t.find(key) } -> std::same_as<std::string>;
+};
+
+template <class T>
+concept forward_iterable = requires(T& t) {
+  typename T::value_type;
+  { t.begin() };
+  { t.end() };
+};
+
+} // namespace detail
+
 // ponytail: クラステンプレート推定ガイド。injamm::fixed_string("...") で N を推定可能に。
 template <std::size_t N>
 fixed_string(char const (&str)[N]) -> fixed_string<N>;
