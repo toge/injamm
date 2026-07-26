@@ -4074,6 +4074,90 @@ TEST_CASE("zip: reflectable element field access via binding", "[injamm][zip]") 
   CHECK(*r == "AliceBob");
 }
 
+// ---- C1/C2: ルート型と要素型で field_index 不整合によるバグ再現 ----
+
+struct BcC1Item {
+  std::string name;
+  int         price{};
+};
+
+struct BcC1Root {
+  std::vector<BcC1Item> items;
+  std::string           name;
+};
+
+template <>
+struct glz::meta<BcC1Item> {
+  static constexpr auto value = glz::object("name", &BcC1Item::name, "price", &BcC1Item::price);
+};
+
+template <>
+struct glz::meta<BcC1Root> {
+  static constexpr auto value = glz::object("items", &BcC1Root::items, "name", &BcC1Root::name);
+};
+
+struct BcC2Col {
+  std::string label;
+};
+
+struct BcC2Data {
+  std::vector<std::string> row;
+  std::vector<BcC2Col>     col;
+};
+
+template <>
+struct glz::meta<BcC2Col> {
+  static constexpr auto value = glz::object("label", &BcC2Col::label);
+};
+
+template <>
+struct glz::meta<BcC2Data> {
+  static constexpr auto value = glz::object("row", &BcC2Data::row, "col", &BcC2Data::col);
+};
+
+struct BcC2bCol {
+  std::string label;
+};
+
+struct BcC2bData {
+  std::vector<BcC2bCol> dummy;
+  std::vector<std::string> row;
+};
+
+template <>
+struct glz::meta<BcC2bCol> {
+  static constexpr auto value = glz::object("label", &BcC2bCol::label);
+};
+
+template <>
+struct glz::meta<BcC2bData> {
+  static constexpr auto value = glz::object("dummy", &BcC2bData::dummy, "row", &BcC2bData::row);
+};
+
+TEST_CASE("section: key with misaligned index between root and element type (C1-a)", "[injamm][bug]") {
+  BcC1Root d{{{"apple", 100}}, "site"};
+  auto     bc = injamm::engine<BcC1Root>("{{#items}}{{name}}{{/items}}");
+  auto     r  = bc.render(d);
+  REQUIRE(r);
+  CHECK(*r == "apple");
+}
+
+TEST_CASE("binding: non-dot key hijacked by indexed path in struct element (C2-a)", "[injamm][bug]") {
+  BcC2Data d{{"a", "b"}, {{"X"}}};
+  auto     bc = injamm::engine<BcC2Data>("{{#row}}{{#col}}{{row}}|{{/col}}{{/row}}");
+  auto     r  = bc.render(d);
+  REQUIRE(r);
+  CHECK(*r == "a|b|");
+}
+
+TEST_CASE("binding: unknown_key error preempts binding resolution (C2-b)", "[injamm][bug]") {
+  BcC2bData d{{{"X"}}, {"a", "b"}};
+  auto      bc = injamm::engine<BcC2bData>("{{#row}}{{#dummy}}{{row}}{{/dummy}}{{/row}}");
+  auto      r  = bc.render(d);
+  REQUIRE(r);
+  CHECK(*r == "ab");
+}
+
 // ---- バイトコード保存・読み込みテスト ----
 
 /** @brief 単純変数を含むテンプレートを保存・読込し、レンダリング結果が一致することを確認 */

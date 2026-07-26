@@ -275,7 +275,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
      * if constexpr チェーンで実行時の field_index 値をコンパイル時定数に変換し、
      * 該当フィールドに直接アクセスする。コンパイラが二分探索的ジャンプテーブルを生成。
      */
-    if (field_index != UINT32_MAX && field_index < sz) {
+    if (field_index != UINT32_MAX && field_index < sz && std::string_view{glz::reflect<V>::keys[field_index]} == key) {
       auto visit_by_index = [&]<std::size_t... I>(std::index_sequence<I...>) -> std::expected<void, error_ctx> {
         std::expected<void, error_ctx> visitor_result{};
         /** 単一インデックスを試行する内部ラムダ。見つかれば visitor を適用。 */
@@ -527,9 +527,10 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
     if (ref.is_loop_parent && resolve_loop_parent_var(ex, ref.key, raw)) { ++pc; return {}; }
     bool        found = false;
     auto        r = for_each_field(ex.value_, ref.key, ref.field_index, ref.has_dot, [&](auto const& field) { found = true; ex.emit_var_value(field, raw); });
-    if (!r) return std::unexpected(r.error());
+    if (!r && r.error().ec != error_code::unknown_key) return std::unexpected(r.error());
     if (found) { ++pc; return {}; }
     if (try_resolve_loop_binding(ex, ref, raw)) { ++pc; return {}; }
+    if (!r) return std::unexpected(r.error());
     ++pc;
     return {};
   }
@@ -541,9 +542,10 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
     if (ref.is_loop_parent && resolve_loop_parent_var(ex, ref.key, raw)) { ++pc; return {}; }
     bool        found = false;
     auto        r = for_each_field(ex.value_, ref.key, ref.field_index, ref.has_dot, [&](auto const& field) { found = true; ex.emit_var_value(field, raw); });
-    if (!r) return std::unexpected(r.error());
+    if (!r && r.error().ec != error_code::unknown_key) return std::unexpected(r.error());
     if (found) { ++pc; return {}; }
     if (try_resolve_loop_binding(ex, ref, raw)) { ++pc; return {}; }
+    if (!r) return std::unexpected(r.error());
     ++pc;
     return {};
   }
@@ -1458,9 +1460,10 @@ public:
     if (ref.is_loop_parent && resolve_loop_parent_var(*this, ref.key, raw)) { ++pc; DISPATCH(); }
     bool        found = false;
     auto        r = for_each_field(value_, ref.key, ref.field_index, ref.has_dot, [&](auto const& field) { found = true; emit_var_value(field, raw); });
-    if (!r) return r;
+    if (!r && r.error().ec != error_code::unknown_key) return r;
     if (found) { ++pc; DISPATCH(); }
     if (try_resolve_loop_binding(*this, ref, raw)) { ++pc; DISPATCH(); }
+    if (!r) return r;
     ++pc;
     DISPATCH();
   }
@@ -2124,9 +2127,10 @@ public:
     if (ref.is_loop_parent && resolve_loop_parent_var(*this, ref.key, raw)) { ++pc; DISPATCH(); }
     bool        found = false;
     auto        r = for_each_field(value_, ref.key, ref.field_index, ref.has_dot, [&](auto const& field) { found = true; emit_var_value(field, raw); });
-    if (!r) return r;
+    if (!r && r.error().ec != error_code::unknown_key) return r;
     if (found) { ++pc; DISPATCH(); }
     if (try_resolve_loop_binding(*this, ref, raw)) { ++pc; DISPATCH(); }
+    if (!r) return r;
     ++pc;
     DISPATCH();
   }

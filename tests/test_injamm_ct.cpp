@@ -2715,3 +2715,32 @@ TEST_CASE("ct_partial_nttp_nested_realistic", "[injamm][ct][partial]") {
   REQUIRE(name_cell_nttp.has_value());
   CHECK(*name_cell_nttp == expected_cell);
 }
+
+// ---- C1: ルート型と要素型で field_index 不整合によるバグ再現 (NTTP) ----
+
+struct CtC1Item {
+  std::string name;
+  int         price{};
+};
+
+struct CtC1Root {
+  std::vector<CtC1Item> items;
+  std::string           name;
+};
+
+template <>
+struct glz::meta<CtC1Item> {
+  static constexpr auto value = glz::object("name", &CtC1Item::name, "price", &CtC1Item::price);
+};
+
+template <>
+struct glz::meta<CtC1Root> {
+  static constexpr auto value = glz::object("items", &CtC1Root::items, "name", &CtC1Root::name);
+};
+
+TEST_CASE("ct: section key with misaligned index between root and element type (C1-a)", "[injamm][ct][bug]") {
+  CtC1Root d{{{"apple", 100}}, "site"};
+  auto     r = injamm::render<"{{#items}}{{name}}{{/items}}">(d);
+  REQUIRE(r);
+  CHECK(*r == "apple");
+}
