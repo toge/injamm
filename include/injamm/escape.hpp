@@ -214,7 +214,7 @@ constexpr void html_escape_into(Buffer& out, std::string_view s) {
         1, 2, 4, 8, 16, 32, 64, 128
       };
       uint8x16_t mask = vld1q_u8(mask_data);
-      uint8x16_t masked = vandq_u8(vshrq_n_u8(v, 7), mask);
+      uint8x16_t masked = vandq_u8(v, mask);
       uint16x8_t wide = vpaddlq_u8(masked);
       uint32x4_t wider = vpaddlq_u16(wide);
       uint64x2_t widest = vpaddlq_u32(wider);

@@ -15,6 +15,7 @@
 #include <ostream>
 #include <string>
 #include <string_view>
+#include <type_traits>
 #include <vector>
 
 #include "bytecode.hpp"
@@ -221,10 +222,22 @@ inline std::string read_string(std::istream& is, read_state& state) {
   return s;
 }
 
+/** @brief オペコードが有効な範囲か確認 */
+inline bool is_valid_opcode(bc_opcode op) {
+  auto const value = static_cast<std::underlying_type_t<bc_opcode>>(op);
+  auto const min = static_cast<std::underlying_type_t<bc_opcode>>(bc_opcode::emit_literal);
+  auto const max = static_cast<std::underlying_type_t<bc_opcode>>(bc_opcode::halt);
+  return value >= min && value <= max;
+}
+
 /** @brief bc_instruction を読み込み */
 inline bc_instruction read_instruction(std::istream& is, read_state& state) {
   bc_instruction inst;
   inst.op = static_cast<bc_opcode>(read_u8(is, state));
+  if (state.ok && !is_valid_opcode(inst.op)) {
+    state.ok = false;
+    state.ec = error_code::syntax_error;
+  }
   inst.operand = read_u32_le(is, state);
   inst.operand2 = read_u32_le(is, state);
   inst.operand3 = read_u32_le(is, state);
@@ -442,6 +455,16 @@ bytecode read_bytecode_body(std::istream& is, read_state& state) {
     auto local = read_u8(is, state) != 0;
     auto partial_bc = std::make_shared<bytecode>(read_bytecode_body<T>(is, state));
     bc.partial_entries.push_back(partial_entry{std::move(name), std::move(partial_bc), local});
+  }
+
+  if (state.ok) {
+    for (auto const& inst : bc.instructions) {
+      if (inst.op == bc_opcode::call_partial && inst.operand >= bc.partial_entries.size()) {
+        state.ok = false;
+        state.ec = error_code::syntax_error;
+        break;
+      }
+    }
   }
 
   return bc;

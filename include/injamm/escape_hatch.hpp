@@ -2,9 +2,9 @@
 
 /**
  * @file escape_hatch.hpp
- * @brief NTTP コンピイル時パーサーとバイトコード VM の公開 API
+ * @brief NTTP コンパイル時パーサーとバイトコード VM の公開 API
  *
- * @details fixed_string（NTTP 文字列）とコンピイル時パースによる
+ * @details fixed_string（NTTP 文字列）とコンパイル時パースによる
  *          true compile-time template rendering（render 関数）、
  *          および実行時コンパイル + Bytecode VM によるランタイムレンダリング
  *          （engine クラス）の 2 系統の API を提供する。
@@ -665,7 +665,7 @@ namespace detail {
  * @param value コンテキスト値の const 参照
  * @return expected<std::string> レンダリング結果、またはエラー（error_ctx）
  */
-template <fixed_string Tmpl, int TrimBlocks = 0, int LstripBlocks = 0, typename T>
+template <fixed_string Tmpl, bool TrimBlocks = false, bool LstripBlocks = false, typename T>
 [[nodiscard]] expected<std::string> render(T const& value) {
   using D = detail::nttp_render_data<Tmpl, TrimBlocks != 0, LstripBlocks != 0, T>;
   if constexpr (D::ct_bc.error.ec != error_code::none)
@@ -686,7 +686,7 @@ template <fixed_string Tmpl, int TrimBlocks = 0, int LstripBlocks = 0, typename 
  * @param value コンテキスト値の const 参照
  * @return expected<std::string> レンダリング結果、またはエラー（error_ctx）
  */
-template <fixed_string Tmpl, typename Reg, int TrimBlocks = 0, int LstripBlocks = 0, typename T>
+template <fixed_string Tmpl, typename Reg, bool TrimBlocks = false, bool LstripBlocks = false, typename T>
   requires detail::is_ct_partials_v<Reg>
 [[nodiscard]] expected<std::string> render(T const& value) {
   using D = detail::nttp_render_data<Tmpl, TrimBlocks != 0, LstripBlocks != 0, T, Reg>;
@@ -709,7 +709,7 @@ template <fixed_string Tmpl, typename Reg, int TrimBlocks = 0, int LstripBlocks 
  * @param out   出力先バッファ（内容はクリアされる）
  * @return expected<void> 実行結果、またはエラー（error_ctx）
  */
-template <fixed_string Tmpl, int TrimBlocks = 0, int LstripBlocks = 0, typename T>
+template <fixed_string Tmpl, bool TrimBlocks = false, bool LstripBlocks = false, typename T>
 [[nodiscard]] expected<void> render(T const& value, std::string& out) {
   using D = detail::nttp_render_data<Tmpl, TrimBlocks != 0, LstripBlocks != 0, T>;
   if constexpr (D::ct_bc.error.ec != error_code::none)
@@ -768,7 +768,7 @@ template <fixed_string Tmpl, fixed_string... Entries, typename T>
 
 #if INJAMM_HAS_FROZENCHARS
 
-template <auto Tmpl, int TrimBlocks = 0, int LstripBlocks = 0, typename T>
+template <auto Tmpl, bool TrimBlocks = false, bool LstripBlocks = false, typename T>
   requires (!detail::is_fixed_string_type_v<decltype(Tmpl)>)
 [[nodiscard]] expected<std::string> render(T const& value) {
   using D = detail::nttp_render_data<Tmpl, TrimBlocks != 0, LstripBlocks != 0, T>;
@@ -777,7 +777,7 @@ template <auto Tmpl, int TrimBlocks = 0, int LstripBlocks = 0, typename T>
   return detail::bc_execute(detail::nttp_partial_bytecode_holder<D, T>(), value);
 }
 
-template <auto Tmpl, typename Reg, int TrimBlocks = 0, int LstripBlocks = 0, typename T>
+template <auto Tmpl, typename Reg, bool TrimBlocks = false, bool LstripBlocks = false, typename T>
   requires (!detail::is_fixed_string_type_v<decltype(Tmpl)> && detail::is_ct_partials_v<Reg>)
 [[nodiscard]] expected<std::string> render(T const& value) {
   using D = detail::nttp_render_data<Tmpl, TrimBlocks != 0, LstripBlocks != 0, T, Reg>;
@@ -786,7 +786,7 @@ template <auto Tmpl, typename Reg, int TrimBlocks = 0, int LstripBlocks = 0, typ
   return detail::bc_execute(detail::nttp_partial_bytecode_holder<D, T>(), value);
 }
 
-template <auto Tmpl, int TrimBlocks = 0, int LstripBlocks = 0, typename T>
+template <auto Tmpl, bool TrimBlocks = false, bool LstripBlocks = false, typename T>
   requires (!detail::is_fixed_string_type_v<decltype(Tmpl)>)
 [[nodiscard]] expected<void> render(T const& value, std::string& out) {
   using D = detail::nttp_render_data<Tmpl, TrimBlocks != 0, LstripBlocks != 0, T>;
@@ -857,7 +857,7 @@ template <auto Tmpl, auto... Entries, typename T>
  * @param partial_name レンダリングする partial の名前
  * @return expected<std::string> レンダリング結果、またはエラー
  */
-template <fixed_string Tmpl, int TrimBlocks = 0, int LstripBlocks = 0, typename T>
+template <fixed_string Tmpl, bool TrimBlocks = false, bool LstripBlocks = false, typename T>
 [[nodiscard]] expected<std::string> render_partial(T const& value, std::string_view partial_name) {
   using D = detail::nttp_render_data<Tmpl, TrimBlocks != 0, LstripBlocks != 0, T>;
   if constexpr (D::ct_bc.error.ec != error_code::none)
@@ -884,7 +884,7 @@ template <fixed_string Tmpl, int TrimBlocks = 0, int LstripBlocks = 0, typename 
  * @param partial_name レンダリングする partial の名前
  * @return expected<std::string> レンダリング結果、またはエラー
  */
-template <fixed_string Tmpl, typename Reg, int TrimBlocks = 0, int LstripBlocks = 0, typename T>
+template <fixed_string Tmpl, typename Reg, bool TrimBlocks = false, bool LstripBlocks = false, typename T>
   requires detail::is_ct_partials_v<Reg>
 [[nodiscard]] expected<std::string> render_partial(T const& value, std::string_view partial_name) {
   using D = detail::nttp_render_data<Tmpl, TrimBlocks != 0, LstripBlocks != 0, T, Reg>;
@@ -915,7 +915,7 @@ template <fixed_string Tmpl, typename Reg, int TrimBlocks = 0, int LstripBlocks 
  * @param value       コンテキスト値の const 参照
  * @return expected<std::string> レンダリング結果、またはエラー
  */
-template <fixed_string Tmpl, fixed_string PartialName, int TrimBlocks = 0, int LstripBlocks = 0, typename T>
+template <fixed_string Tmpl, fixed_string PartialName, bool TrimBlocks = false, bool LstripBlocks = false, typename T>
 [[nodiscard]] expected<std::string> render_partial(T const& value) {
   using D = detail::nttp_render_data<Tmpl, TrimBlocks != 0, LstripBlocks != 0, T>;
   constexpr auto target_sv = detail::nttp_string_view(PartialName);
@@ -939,7 +939,7 @@ template <fixed_string Tmpl, fixed_string PartialName, int TrimBlocks = 0, int L
  *          (_fs リテラル) をテンプレート文字列として受け取れる。fixed_string 版と
  *           overload セットを分けるため、Tmpl が fixed_string でない場合のみ選択される。
  */
-template <auto Tmpl, int TrimBlocks = 0, int LstripBlocks = 0, typename T>
+template <auto Tmpl, bool TrimBlocks = false, bool LstripBlocks = false, typename T>
   requires (!detail::is_fixed_string_type_v<decltype(Tmpl)>)
 [[nodiscard]] expected<std::string> render_partial(T const& value, std::string_view partial_name) {
   using D = detail::nttp_render_data<Tmpl, TrimBlocks != 0, LstripBlocks != 0, T>;
@@ -954,7 +954,7 @@ template <auto Tmpl, int TrimBlocks = 0, int LstripBlocks = 0, typename T>
   return detail::bc_execute(*it->bc, value);
 }
 
-template <auto Tmpl, typename Reg, int TrimBlocks = 0, int LstripBlocks = 0, typename T>
+template <auto Tmpl, typename Reg, bool TrimBlocks = false, bool LstripBlocks = false, typename T>
   requires (!detail::is_fixed_string_type_v<decltype(Tmpl)> && detail::is_ct_partials_v<Reg>)
 [[nodiscard]] expected<std::string> render_partial(T const& value, std::string_view partial_name) {
   using D = detail::nttp_render_data<Tmpl, TrimBlocks != 0, LstripBlocks != 0, T, Reg>;
@@ -976,7 +976,7 @@ template <auto Tmpl, typename Reg, int TrimBlocks = 0, int LstripBlocks = 0, typ
  *          ("name") を指定する組み合わせ用。partial 名は fixed_string に consteval
  *          構築される。
  */
-template <auto Tmpl, fixed_string PartialName, int TrimBlocks = 0, int LstripBlocks = 0, typename T>
+template <auto Tmpl, fixed_string PartialName, bool TrimBlocks = false, bool LstripBlocks = false, typename T>
   requires (!detail::is_fixed_string_type_v<decltype(Tmpl)>)
 [[nodiscard]] expected<std::string> render_partial(T const& value) {
   using D = detail::nttp_render_data<Tmpl, TrimBlocks != 0, LstripBlocks != 0, T>;
@@ -995,7 +995,7 @@ template <auto Tmpl, fixed_string PartialName, int TrimBlocks = 0, int LstripBlo
 /**
  * @brief NTTP ベースの名前付き partial レンダリング（partial 名をテンプレート引数で指定、FrozenString 対応）
  */
-template <auto Tmpl, auto PartialName, int TrimBlocks = 0, int LstripBlocks = 0, typename T>
+template <auto Tmpl, auto PartialName, bool TrimBlocks = false, bool LstripBlocks = false, typename T>
   requires (!detail::is_fixed_string_type_v<decltype(Tmpl)> && !detail::is_fixed_string_type_v<decltype(PartialName)>)
 [[nodiscard]] expected<std::string> render_partial(T const& value) {
   using D = detail::nttp_render_data<Tmpl, TrimBlocks != 0, LstripBlocks != 0, T>;

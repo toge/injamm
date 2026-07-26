@@ -1,5 +1,7 @@
 #include "injamm.hpp"
 #include "injamm/bytecode_debug.hpp"
+#include "injamm/bytecode_exec.hpp"
+#include "injamm/bytecode_io.hpp"
 #include "injamm/types.hpp"
 #include <glaze/glaze.hpp>
 #include <catch2/catch_test_macros.hpp>
@@ -668,6 +670,14 @@ TEST_CASE("bc_escaped_output", "[injamm]") {
   auto r = bc.render(data);
   REQUIRE(r.has_value());
   REQUIRE(*r == "&lt;b&gt;alice&lt;/b&gt;");
+}
+
+TEST_CASE("bc_escaped_output_regression_long_string", "[injamm][escape][regression]") {
+  BcUser data{"0123456789abcdef<>&\"'", 30};
+  auto bc = injamm::engine<BcUser>("{{name}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "0123456789abcdef&lt;&gt;&amp;&quot;&#x27;");
 }
 
 /**
@@ -4165,6 +4175,37 @@ TEST_CASE("bytecode load: invalid magic", "[bytecode_io][error]") {
   std::stringstream ss;
   ss.write("XXXX", 4);
   auto result = injamm::load_bytecode<BcRootData>(ss);
+  REQUIRE_FALSE(result.has_value());
+  REQUIRE(result.error().ec == injamm::error_code::syntax_error);
+}
+
+TEST_CASE("bytecode load: invalid partial reference", "[bytecode_io][error]") {
+  injamm::detail::bytecode bc;
+  injamm::detail::bc_instruction instr{};
+  instr.op = injamm::detail::bc_opcode::call_partial;
+  instr.operand = 0;
+  bc.instructions.push_back(instr);
+
+  std::stringstream ss;
+  REQUIRE(injamm::save_bytecode(bc, ss) == injamm::error_code::none);
+
+  auto result = injamm::load_bytecode<BcRootData>(ss);
+  REQUIRE_FALSE(result.has_value());
+  REQUIRE(result.error().ec == injamm::error_code::syntax_error);
+}
+
+TEST_CASE("bytecode executor: invalid partial reference", "[bytecode_exec][error]") {
+  injamm::detail::bytecode bc;
+  injamm::detail::bc_instruction instr{};
+  instr.op = injamm::detail::bc_opcode::call_partial;
+  instr.operand = 0;
+  bc.instructions.push_back(instr);
+
+  BcUser data{"hello", 30};
+  std::string out;
+  injamm::detail::bc_executor<BcUser, BcUser> exec(bc, data, data, nullptr, out);
+
+  auto result = exec.execute();
   REQUIRE_FALSE(result.has_value());
   REQUIRE(result.error().ec == injamm::error_code::syntax_error);
 }

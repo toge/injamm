@@ -1222,7 +1222,13 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
 
   static std::expected<void, error_ctx> handle_call_partial(bc_executor& ex, std::size_t& pc, std::string&) {
     auto const& instr = ex.bc_.instructions[pc];
+    if (instr.operand >= ex.bc_.partial_entries.size()) {
+      return std::unexpected(error_ctx{.position = pc, .ec = error_code::syntax_error});
+    }
     auto const& entry = ex.bc_.partial_entries[instr.operand];
+    if (!entry.bc) {
+      return std::unexpected(error_ctx{.position = pc, .ec = error_code::syntax_error});
+    }
     bc_executor<T, RootT> child_exec(*entry.bc, ex.value_, ex.root_value_, ex.loop_, ex.out_);
     auto r = child_exec.execute();
     if (!r)
@@ -1293,96 +1299,100 @@ public:
      * 対応: GCC のみ（Clang は computed goto をサポートしない）
      */
     static void* dispatch_table[] = {
-        &&L_emit_literal,            // 0
-        &&L_emit_var,                // 1
-        &&L_emit_var_raw,            // 2
-        &&L_emit_section,            // 3
-        &&L_emit_end,                // 4
-        &&L_emit_inverted,           // 6
-        &&L_emit_at_index,           // 7
-        &&L_emit_at_first,           // 8
-        &&L_emit_at_last,            // 9
-        &&L_emit_if,                 // 10
-       &&L_emit_if_cmp,             // 11 emit_if_eq
-       &&L_emit_if_cmp,             // 12 emit_if_ne
-        &&L_emit_if_cmp,             // 13 emit_if_gt (falls through to L_emit_if_eq handler)
-        &&L_emit_if_cmp,             // 14 emit_if_gte
-        &&L_emit_if_cmp,             // 15 emit_if_lt
-        &&L_emit_if_cmp,             // 16 emit_if_lte
-        &&L_emit_else,               // 17
-        &&L_emit_endif,              // 18
-        &&L_emit_at_section,         // 15
-        &&L_emit_at_inverted,        // 16
-        &&L_emit_litvar,             // 17
-        &&L_emit_litvar_raw,         // 18
-        &&L_emit_at_root,            // 19
-        &&L_emit_at_root_field,      // 20
-        &&L_emit_at_root_field_raw,  // 21
-        &&L_emit_at_key,             // 22
-        &&L_emit_this,               // 23
-        &&L_resolve_filtered,        // 24
-        &&L_filter_upper,            // 25
-        &&L_filter_lower,            // 26
-        &&L_filter_capitalize,       // 27
-        &&L_filter_title,            // 28
-        &&L_filter_trim,             // 29
-        &&L_filter_ltrim,            // 30
-        &&L_filter_rtrim,            // 31
-        &&L_filter_left,             // 32
-        &&L_filter_right,            // 33
-        &&L_filter_center,           // 34
-        &&L_filter_truncate,         // 35
-        &&L_filter_substr,           // 36
-        &&L_filter_replace,          // 40
-        &&L_filter_default,          // 41
-        &&L_filter_json,             // 42
-        &&L_filter_safe,             // 43
-        &&L_filter_indent,           // 44
-        &&L_filter_pad,              // 45
-        &&L_filter_pluralize,        // 46
-        &&L_filter_format,           // 47
-        &&L_filter_repeat,           // 48
-        &&L_emit_filtered,           // 49
-        &&L_emit_filtered_raw,       // 49
-        &&L_filter_int_abs,          // 50
-        &&L_filter_int_hex,          // 51
-        &&L_filter_int_oct,          // 52
-        &&L_filter_int_bin,          // 53
-        &&L_filter_int_neg,          // 54
-        &&L_filter_int_mod,          // 55
-        &&L_filter_int_numify,       // 56
-        &&L_filter_int_is_neg,       // 57
-        &&L_filter_int_eq,           // 58
-        &&L_filter_int_ne,           // 59
-        &&L_filter_int_gt,           // 60
-        &&L_filter_int_gte,          // 61
-        &&L_filter_int_lt,           // 62
-        &&L_filter_int_lte,          // 63
-        &&L_filter_int_zerofill,     // 64
-        &&L_filter_int_add,          // 65
-        &&L_filter_int_sub,          // 66
-        &&L_filter_int_mul,          // 67
-        &&L_filter_int_div,          // 68
-        &&L_filter_float_precision,  // 69
-        &&L_emit_if_filtered,        // 70
-        &&L_emit_break,              // 71
-        &&L_emit_continue,           // 72
-        &&L_emit_at_index1,          // 73
-        &&L_emit_at_size,            // 74
-        &&L_emit_var_size,           // 75
-        &&L_emit_if_logic,           // 76 emit_if_or
-        &&L_emit_if_logic,           // 77 emit_if_and
-        &&L_emit_if_not,             // 78 emit_if_not
-        &&L_call_partial,            // 79
-        &&L_halt,                    // 80
+        &&L_emit_literal,
+        &&L_emit_var,
+        &&L_emit_var_raw,
+        &&L_emit_section,
+        &&L_emit_end,
+        &&L_emit_inverted,
+        &&L_emit_at_index,
+        &&L_emit_at_first,
+        &&L_emit_at_last,
+        &&L_emit_if,
+        &&L_emit_if_cmp,
+        &&L_emit_if_cmp,
+        &&L_emit_if_cmp,
+        &&L_emit_if_cmp,
+        &&L_emit_if_cmp,
+        &&L_emit_if_cmp,
+        &&L_emit_else,
+        &&L_emit_endif,
+        &&L_emit_at_section,
+        &&L_emit_at_inverted,
+        &&L_emit_litvar,
+        &&L_emit_litvar_raw,
+        &&L_emit_at_root,
+        &&L_emit_at_root_field,
+        &&L_emit_at_root_field_raw,
+        &&L_emit_at_key,
+        &&L_emit_this,
+        &&L_resolve_filtered,
+        &&L_filter_upper,
+        &&L_filter_lower,
+        &&L_filter_capitalize,
+        &&L_filter_title,
+        &&L_filter_trim,
+        &&L_filter_ltrim,
+        &&L_filter_rtrim,
+        &&L_filter_left,
+        &&L_filter_right,
+        &&L_filter_center,
+        &&L_filter_truncate,
+        &&L_filter_substr,
+        &&L_filter_replace,
+        &&L_filter_default,
+        &&L_filter_json,
+        &&L_filter_safe,
+        &&L_filter_indent,
+        &&L_filter_pad,
+        &&L_filter_pluralize,
+        &&L_filter_format,
+        &&L_filter_repeat,
+        &&L_emit_filtered,
+        &&L_emit_filtered_raw,
+        &&L_filter_int_abs,
+        &&L_filter_int_hex,
+        &&L_filter_int_oct,
+        &&L_filter_int_bin,
+        &&L_filter_int_neg,
+        &&L_filter_int_mod,
+        &&L_filter_int_numify,
+        &&L_filter_int_is_neg,
+        &&L_filter_int_eq,
+        &&L_filter_int_ne,
+        &&L_filter_int_gt,
+        &&L_filter_int_gte,
+        &&L_filter_int_lt,
+        &&L_filter_int_lte,
+        &&L_filter_int_zerofill,
+        &&L_filter_int_add,
+        &&L_filter_int_sub,
+        &&L_filter_int_mul,
+        &&L_filter_int_div,
+        &&L_filter_float_precision,
+        &&L_emit_if_filtered,
+        &&L_emit_break,
+        &&L_emit_continue,
+        &&L_emit_at_index1,
+        &&L_emit_at_size,
+        &&L_emit_var_size,
+        &&L_emit_if_logic,
+        &&L_emit_if_logic,
+        &&L_emit_if_not,
+        &&L_call_partial,
+        &&L_halt,
     };
+    static_assert(std::size(dispatch_table) == static_cast<std::size_t>(bc_opcode::halt) + 1, "dispatch_table size mismatch");
 
 /** @brief 現在の命令のオペコードに対応するラベルにジャンプする（実行範囲外なら終了） */
 #define DISPATCH()                                                         \
   do {                                                                     \
     if (pc >= end)                                                         \
       goto L_halt;                                                         \
-    goto* dispatch_table[static_cast<int>(bc_.instructions[pc].op)];       \
+    auto _op = static_cast<unsigned>(bc_.instructions[pc].op);             \
+    if (_op >= std::size(dispatch_table))                                  \
+      return std::unexpected(error_ctx{.position = pc, .ec = error_code::syntax_error}); \
+    goto* dispatch_table[_op];                                             \
   } while (0)
 
     if (pc >= end)
@@ -2422,7 +2432,7 @@ public:
     DISPATCH();
   }
 
-  /** @brief 実数小数点以下桁数（引数: 桁数） */
+  /** @brief 整数加算（引数: 加算値） */
   L_filter_int_add: {
     if (auto err = apply_int_filter(filtered_value_, {.filter = int_filter::add, .arg = static_cast<int>(bc_.instructions[pc].operand)}); !err) {
       return std::unexpected(err.error());
@@ -2550,8 +2560,14 @@ public:
 
   /** @brief partial呼び出し: プリコンパイル済みpartialバイトコードをサブexecutorで実行 */
   L_call_partial: {
-    auto const& instr    = bc_.instructions[pc];
-    auto const& entry    = bc_.partial_entries[instr.operand];
+    auto const& instr = bc_.instructions[pc];
+    if (instr.operand >= bc_.partial_entries.size()) {
+      return std::unexpected(error_ctx{.position = pc, .ec = error_code::syntax_error});
+    }
+    auto const& entry = bc_.partial_entries[instr.operand];
+    if (!entry.bc) {
+      return std::unexpected(error_ctx{.position = pc, .ec = error_code::syntax_error});
+    }
     {
       bc_executor<T, RootT> child_exec(*entry.bc, value_, root_value_, loop_, out_);
       auto r = child_exec.execute();
@@ -2570,89 +2586,89 @@ public:
 #else
     using handler_fn = std::expected<void, error_ctx> (*)(bc_executor&, std::size_t&, std::string&);
     static constexpr handler_fn dispatch_table[] = {
-      &handle_emit_literal,       // 0
-      &handle_emit_var,           // 1
-      &handle_emit_var,           // 2 emit_var_raw
-      &handle_emit_section,       // 3
-      &handle_emit_end,           // 4
-      &handle_emit_inverted,      // 5
-      &handle_emit_at_index,      // 6
-      &handle_emit_at_first,      // 7
-      &handle_emit_at_last,       // 8
-      &handle_emit_if,            // 9
-      &handle_emit_if_cmp,        // 10 emit_if_eq
-      &handle_emit_if_cmp,        // 11 emit_if_ne
-      &handle_emit_if_cmp,        // 12 emit_if_gt
-      &handle_emit_if_cmp,        // 13 emit_if_gte
-      &handle_emit_if_cmp,        // 14 emit_if_lt
-      &handle_emit_if_cmp,        // 15 emit_if_lte
-      &handle_emit_else,          // 16
-      &handle_emit_endif,         // 13
-      &handle_emit_at_section,    // 14
-      &handle_emit_at_inverted,   // 15
-      &handle_emit_litvar,        // 16
-      &handle_emit_litvar,        // 17 emit_litvar_raw
-      &handle_emit_at_root,       // 18
-      &handle_emit_at_root_field, // 19
-      &handle_emit_at_root_field, // 20 emit_at_root_field_raw
-      &handle_emit_at_key,        // 21
-      &handle_emit_this,          // 22
-      &handle_resolve_filtered,   // 23
-      &handle_string_filter,      // 24 filter_upper
-      &handle_string_filter,      // 25 filter_lower
-      &handle_string_filter,      // 26 filter_capitalize
-      &handle_string_filter,      // 27 filter_title
-      &handle_string_filter,      // 28 filter_trim
-      &handle_string_filter,      // 29 filter_ltrim
-      &handle_string_filter,      // 30 filter_rtrim
-      &handle_string_filter_arg,  // 31 filter_left
-      &handle_string_filter_arg,  // 32 filter_right
-      &handle_string_filter_arg,  // 33 filter_center
-      &handle_string_filter_arg,  // 34 filter_truncate
-      &handle_string_filter_arg2, // 35 filter_substr
-      &handle_string_filter,      // 36 filter_replace
-      &handle_string_filter,      // 37 filter_default (generic handler with literal arg)
-      &handle_noop,               // 38 filter_json
-      &handle_noop,               // 39 filter_safe
-      &handle_string_filter_arg,  // 40 filter_indent
-      &handle_string_filter_arg_pad, // 41 filter_pad
-      &handle_string_filter_arg_pluralize, // 42 filter_pluralize
-      &handle_noop,                        // 43 filter_format (no-op)
-      &handle_string_filter_arg,           // 44 filter_repeat
-      &handle_emit_filtered,               // 45
-      &handle_emit_filtered,               // 45 emit_filtered_raw
-      &handle_int_filter,                  // 46 filter_int_abs
-      &handle_int_filter,                  // 47 filter_int_hex
-      &handle_int_filter,                  // 48 filter_int_oct
-      &handle_int_filter,                  // 49 filter_int_bin
-      &handle_int_filter,                  // 50 filter_int_neg
-      &handle_int_filter,                  // 51 filter_int_mod
-      &handle_int_filter,                  // 52 filter_int_numify
-      &handle_int_filter,                  // 53 filter_int_is_neg
-      &handle_int_filter,                  // 54 filter_int_eq
-      &handle_int_filter,                  // 55 filter_int_ne
-      &handle_int_filter,                  // 56 filter_int_gt
-      &handle_int_filter,                  // 57 filter_int_gte
-      &handle_int_filter,                  // 58 filter_int_lt
-      &handle_int_filter,                  // 59 filter_int_lte
-      &handle_int_filter,                  // 60 filter_int_zerofill
-      &handle_int_filter,                  // 61 filter_int_add
-      &handle_int_filter,                  // 62 filter_int_sub
-      &handle_int_filter,                  // 63 filter_int_mul
-      &handle_int_filter,                  // 64 filter_int_div
-      &handle_float_filter,                // 65 filter_float_precision
-      &handle_emit_if_filtered,            // 66
-      &handle_emit_break,                  // 67
-      &handle_emit_continue,               // 68
-      &handle_emit_at_index1,              // 69
-      &handle_emit_at_size,                // 70
-      &handle_emit_var_size,               // 71
-      &handle_emit_if_logic,               // 72 emit_if_or
-      &handle_emit_if_logic,               // 73 emit_if_and
-      &handle_emit_if_logic,               // 74 emit_if_not
-      &handle_call_partial,                // 75
-      &handle_emit_halt,                   // 76
+      &handle_emit_literal,
+      &handle_emit_var,
+      &handle_emit_var,
+      &handle_emit_section,
+      &handle_emit_end,
+      &handle_emit_inverted,
+      &handle_emit_at_index,
+      &handle_emit_at_first,
+      &handle_emit_at_last,
+      &handle_emit_if,
+      &handle_emit_if_cmp,
+      &handle_emit_if_cmp,
+      &handle_emit_if_cmp,
+      &handle_emit_if_cmp,
+      &handle_emit_if_cmp,
+      &handle_emit_if_cmp,
+      &handle_emit_else,
+      &handle_emit_endif,
+      &handle_emit_at_section,
+      &handle_emit_at_inverted,
+      &handle_emit_litvar,
+      &handle_emit_litvar,
+      &handle_emit_at_root,
+      &handle_emit_at_root_field,
+      &handle_emit_at_root_field,
+      &handle_emit_at_key,
+      &handle_emit_this,
+      &handle_resolve_filtered,
+      &handle_string_filter,
+      &handle_string_filter,
+      &handle_string_filter,
+      &handle_string_filter,
+      &handle_string_filter,
+      &handle_string_filter,
+      &handle_string_filter,
+      &handle_string_filter_arg,
+      &handle_string_filter_arg,
+      &handle_string_filter_arg,
+      &handle_string_filter_arg,
+      &handle_string_filter_arg2,
+      &handle_string_filter,
+      &handle_string_filter,
+      &handle_noop,
+      &handle_noop,
+      &handle_string_filter_arg,
+      &handle_string_filter_arg_pad,
+      &handle_string_filter_arg_pluralize,
+      &handle_noop,
+      &handle_string_filter_arg,
+      &handle_emit_filtered,
+      &handle_emit_filtered,
+      &handle_int_filter,
+      &handle_int_filter,
+      &handle_int_filter,
+      &handle_int_filter,
+      &handle_int_filter,
+      &handle_int_filter,
+      &handle_int_filter,
+      &handle_int_filter,
+      &handle_int_filter,
+      &handle_int_filter,
+      &handle_int_filter,
+      &handle_int_filter,
+      &handle_int_filter,
+      &handle_int_filter,
+      &handle_int_filter,
+      &handle_int_filter,
+      &handle_int_filter,
+      &handle_int_filter,
+      &handle_float_filter,
+      &handle_emit_if_filtered,
+      &handle_emit_break,
+      &handle_emit_continue,
+      &handle_emit_at_index1,
+      &handle_emit_at_size,
+      &handle_emit_var_size,
+      &handle_emit_if_logic,
+      &handle_emit_if_logic,
+      &handle_emit_if_logic,
+      &handle_call_partial,
+      &handle_emit_halt,
     };
+    static_assert(std::size(dispatch_table) == static_cast<std::size_t>(bc_opcode::halt) + 1, "dispatch_table size mismatch");
 
     while (pc < end) {
       auto op = static_cast<int>(bc_.instructions[pc].op);
