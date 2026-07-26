@@ -29,101 +29,15 @@
 #include <string_view>
 #include <vector>
 
+#include <injamm/bytecode_fwd.hpp>
+
 // ============================================================
 // バイトコード定義（glaze 非依存の最小限の型）
 // ============================================================
 
 namespace bc {
 
-/**
- * @brief バイトコードオペコード
- * @details injamm のバイトコード VM が解釈する命令の種類。
- *          injamm::detail::bc_opcode と同一だが glaze に依存しない独立定義。
- */
-enum class opcode : std::uint8_t {
-  emit_literal = 0,       /**< リテラル文字列出力 */
-  emit_var = 1,           /**< 変数参照（HTML エスケープあり） */
-  emit_var_raw = 2,       /**< 変数参照（生出力、エスケープなし） */
-  emit_section = 3,       /**< セクション開始（配列ループ） */
-  emit_end = 4,           /**< セクション終了 */
-  emit_inverted = 5,      /**< 反転セクション開始 ({^{section}}) */
-  emit_at_index = 6,      /**< @index 出力（ループ内の現在インデックス） */
-  emit_at_first = 7,      /**< @first 出力（ループの先頭要素か） */
-  emit_at_last = 8,       /**< @last 出力（ループの末尾要素か） */
-  emit_if = 9,            /**< if 条件分岐 */
-  emit_if_eq = 10,        /**< if (var == int_literal) 分岐 */
-  emit_if_ne = 11,        /**< if (var != int_literal) 分岐 */
-  emit_if_gt = 12,        /**< if (var > int_literal) 分岐 */
-  emit_if_gte = 13,       /**< if (var >= int_literal) 分岐 */
-  emit_if_lt = 14,        /**< if (var < int_literal) 分岐 */
-  emit_if_lte = 15,       /**< if (var <= int_literal) 分岐 */
-  emit_else = 16,         /**< else ジャンプ先 */
-  emit_endif = 17,        /**< endif（if ブロック終了） */
-  emit_at_section = 18,   /**< @first/@last/@index によるセクション制御 */
-  emit_at_inverted = 19,  /**< ^@first/^@last/^@index 反転セクション */
-  emit_litvar = 20,       /**< 融合命令: リテラル + 変数（エスケープあり） */
-  emit_litvar_raw = 21,   /**< 融合命令: リテラル + 変数（生出力） */
-  emit_at_root = 22,      /**< @root 出力（ルートコンテキストのシリアライズ） */
-  emit_at_root_field = 23,    /**< @root.field ルートフィールド解決（エスケープあり） */
-  emit_at_root_field_raw = 24, /**< @root.field ルートフィールド解決（生出力） */
-  emit_at_key = 25,       /**< @key 出力（ループ内の現在要素キー名） */
-  emit_this = 26,         /**< 現在のコンテキスト自体のシリアライズ */
-  resolve_filtered = 27,  /**< フィルタ付き変数解決: 値を一時バッファに解決 */
-  filter_upper = 28,      /**< ASCII 大文字変換 */
-  filter_lower = 29,      /**< ASCII 小文字変換 */
-  filter_capitalize = 30, /**< 先頭の文字を大文字にする */
-  filter_title = 31,      /**< 単語の先頭を大文字にする */
-  filter_trim = 32,       /**< 先頭末尾の空白除去 */
-  filter_ltrim = 33,      /**< 先頭の空白除去 */
-  filter_rtrim = 34,      /**< 末尾の空白除去 */
-  filter_left = 35,       /**< 左寄せ（引数: 幅） */
-  filter_right = 36,      /**< 右寄せ（引数: 幅） */
-  filter_center = 37,     /**< 中央寄せ（引数: 幅） */
-  filter_truncate = 38,   /**< 文字列切り詰め（引数: 最大文字数） */
-  filter_substr = 39,     /**< 部分文字列（引数1: 開始位置, 引数2: 文字数） */
-  filter_replace = 40,    /**< 部分文字列置換 */
-  filter_default = 41,    /**< デフォルト値フィルタ（引数: literal index） */
-  filter_json = 42,       /**< JSON 出力フィルタ */
-  filter_safe = 43,       /**< 生出力マーク（エスケープ抑制） */
-  filter_indent = 44,     /**< インデント（引数: 空白数） */
-  filter_pad = 45,        /**< パディング（引数1: 幅, 引数2: 埋め文字 literal index） */
-  filter_pluralize = 46,  /**< 単数形/複数形（引数1: 単数 literal index, 引数2: 複数 literal index） */
-  filter_format = 47,     /**< strftime 形式 chrono フォーマット */
-  filter_repeat = 48,     /**< 文字列繰り返し（引数: 回数） */
-  emit_filtered = 49,     /**< フィルタ後の文字列出力（エスケープあり） */
-  emit_filtered_raw = 50, /**< フィルタ後の文字列出力（生出力） */
-  filter_int_abs = 51,    /**< 整数絶対値変換 */
-  filter_int_hex = 52,    /**< 整数 16 進数変換 */
-  filter_int_oct = 53,    /**< 整数 8 進数変換 */
-  filter_int_bin = 54,    /**< 整数 2 進数変換 */
-  filter_int_neg = 55,    /**< 整数符号逆転 */
-  filter_int_mod = 56,    /**< 整数余り（引数: 除数） */
-  filter_int_numify = 57,     /**< 整数 3 桁カンマ区切り */
-  filter_int_is_neg = 58,     /**< 負数判定: "true"/"false" を出力 */
-  filter_int_eq = 59,         /**< 等価判定: 引数と比較し "true"/"false" を出力 */
-  filter_int_ne = 60,         /**< 不等価判定 */
-  filter_int_gt = 61,         /**< 大なり判定 */
-  filter_int_gte = 62,        /**< 以上判定 */
-  filter_int_lt = 63,         /**< 小なり判定 */
-  filter_int_lte = 64,        /**< 以下判定 */
-  filter_int_zerofill = 65,   /**< 整数 0 埋め（引数: 最小桁数） */
-  filter_int_add = 66,        /**< 整数加算（引数: 加算値） */
-  filter_int_sub = 67,        /**< 整数減算（引数: 減算値） */
-  filter_int_mul = 68,        /**< 整数乗算（引数: 乗算値） */
-  filter_int_div = 69,        /**< 整数除算（引数: 除算値） */
-  filter_float_precision = 70, /**< 実数小数点以下桁数（引数: 桁数） */
-  emit_if_filtered = 71,  /**< フィルタ適用済み値での if 分岐 */
-  emit_break = 72,        /**< ループ脱出 */
-  emit_continue = 73,     /**< 次のイテレーションへスキップ */
-  emit_at_index1 = 74,    /**< ループ 1 始まりインデックス */
-  emit_at_size = 75,      /**< ループ総要素数 */
-  emit_var_size = 76,     /**< 変数の要素数 ({/{field.size}}) */
-  emit_if_or = 77,        /**< if (a || b) 分岐 */
-  emit_if_and = 78,       /**< if (a && b) 分岐 */
-  emit_if_not = 79,       /**< if (!a) 分岐 */
-  call_partial = 80,      /**< 名前付き partial 呼び出し */
-  halt = 81,              /**< プログラム終了 */
-};
+using opcode = injamm::detail::bc_opcode;
 
 /**
  * @brief 中間命令

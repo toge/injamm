@@ -2,7 +2,10 @@
   "$schema": "https://raw.githubusercontent.com/microsoft/vcpkg-tool/main/docs/vcpkg.schema.json",
   "dependencies": [
     "glaze",
-    "fmt",
+    {
+      "name": "fmt",
+      "platform": "osx"
+    },
     "catch2",
     "frozenchars",
     "fast-float",

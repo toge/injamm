@@ -27,6 +27,7 @@ Thumbs.db
 
 .opencode
 build-*
+bench-*
 docs/superpowers
 
 .commandcode

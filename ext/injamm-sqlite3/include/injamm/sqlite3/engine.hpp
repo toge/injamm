@@ -3,6 +3,7 @@
 #include <injamm/bytecode.hpp>
 #include <injamm/sqlite3/concept.hpp>
 #include <injamm/sqlite3/executor.hpp>
+#include <injamm/bytecode_exec.hpp>
 #include <injamm/bytecode_compile.hpp>
 #include <expected>
 #include <string>

@@ -270,6 +270,7 @@ if(BUILD_UTIL)
   add_executable(injamm_codegen
     util/injamm_codegen.cpp
   )
+  target_include_directories(injamm_codegen PRIVATE include)
   target_compile_features(injamm_codegen PRIVATE cxx_std_23)
 
   # codegen 動作テスト
@@ -282,13 +283,7 @@ if(BUILD_UTIL)
     target_compile_features(test_codegen PRIVATE cxx_std_23)
     add_test(NAME codegen_test COMMAND test_codegen)
 
-    add_executable(bench_codegen
-      test_codegen/bench_codegen_vs_others.cpp
-    )
-    target_link_libraries(bench_codegen PRIVATE injamm)
-    target_include_directories(bench_codegen PRIVATE include test_codegen)
-    target_compile_features(bench_codegen PRIVATE cxx_std_23)
-
+    
     add_executable(test_ct_if
       util/test_ct_if.cpp
     )

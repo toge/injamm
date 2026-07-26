@@ -8,122 +8,10 @@
 #include <string_view>
 #include <vector>
 
+#include "bytecode_fwd.hpp"
 #include "types.hpp"
 
 namespace injamm::detail {
-
-/**
- * @brief バイトコードオペコード
- * @details VM が解釈する命令の種類を定義する。各オペコードは1バイトで表現される。
- */
-enum class bc_opcode : std::uint8_t {
-  emit_literal,       /**< リテラル文字列出力 */
-  emit_var,           /**< 変数参照（HTMLエスケープあり） */
-  emit_var_raw,       /**< 変数参照（生出力、エスケープなし） */
-  emit_section,       /**< セクション開始（配列ループ） */
-  emit_end,           /**< セクション終了 */
-  emit_inverted,      /**< 反転セクション開始（^section） */
-  emit_at_index,      /**< @index 出力（ループ内の現在インデックス） */
-  emit_at_first,      /**< @first 出力（ループの先頭要素か） */
-  emit_at_last,       /**< @last 出力（ループの末尾要素か） */
-  emit_if,            /**< if 条件分岐 */
-  emit_if_eq,         /**< if (var == int_literal) 分岐 */
-  emit_if_ne,         /**< if (var != int_literal) 分岐 */
-  emit_if_gt,         /**< if (var > int_literal) 分岐 */
-  emit_if_gte,        /**< if (var >= int_literal) 分岐 */
-  emit_if_lt,         /**< if (var < int_literal) 分岐 */
-  emit_if_lte,        /**< if (var <= int_literal) 分岐 */
-  emit_else,          /**< else ジャンプ先 */
-  emit_endif,         /**< endif（ifブロック終了） */
-  emit_at_section,    /**< @first/@last/@index によるセクション制御 */
-  emit_at_inverted,   /**< ^@first/^@last/^@index 反転セクション */
-  emit_litvar,        /**< 融合命令: リテラル + 変数（エスケープあり） */
-  emit_litvar_raw,    /**< 融合命令: リテラル + 変数（生出力） */
-  emit_at_root,       /**< @root 出力（ルートコンテキストのシリアライズ） */
-  emit_at_root_field,     /**< @root.field ルートフィールド解決（エスケープあり） */
-  emit_at_root_field_raw, /**< @root.field ルートフィールド解決（生出力） */
-  emit_at_key,        /**< @key 出力（ループ内の現在要素キー名 / インデックス文字列） */
-  emit_this,          /**< 現在のコンテキスト自体のシリアライズ */
-  resolve_filtered,   /**< フィルタ付き変数解決: 値を一時バッファに解決 */
-  filter_upper,       /**< ASCII大文字変換 */
-  filter_lower,       /**< ASCII小文字変換 */
-  filter_capitalize,  /**< 先頭の文字を大文字にする */
-  filter_title,       /**< 単語の先頭を大文字にする */
-  filter_trim,        /**< 先頭末尾の空白除去 */
-  filter_ltrim,       /**< 先頭の空白除去 */
-  filter_rtrim,       /**< 末尾の空白除去 */
-  filter_left,        /**< 左寄せ（引数: 幅） */
-  filter_right,       /**< 右寄せ（引数: 幅） */
-  filter_center,      /**< 中央寄せ（引数: 幅） */
-  filter_truncate,    /**< 文字列切り詰め（引数: 最大文字数） */
-  filter_substr,      /**< 部分文字列（引数1: 開始位置, 引数2: 文字数） */
-  filter_replace,     /**< 部分文字列置換 */
-  filter_default,     /**< デフォルト値フィルタ（引数: literal index） */
-  filter_json,        /**< JSON出力フィルタ */
-  filter_safe,        /**< 生出力マーク（エスケープ抑制） */
-  filter_indent,      /**< インデント（引数: 空白数） */
-  filter_pad,         /**< パディング（引数1: 幅, 引数2: 埋め文字literal index） */
-  filter_pluralize,   /**< 単数形/複数形（引数1: 単数literal index, 引数2: 複数literal index） */
-  filter_format,      /**< strftime 形式 chrono フォーマット（dispatch 時は no-op） */
-  filter_repeat,      /**< 文字列繰り返し（引数: 回数） */
-  emit_filtered,      /**< フィルタ後の文字列出力（エスケープあり） */
-  emit_filtered_raw,  /**< フィルタ後の文字列出力（生出力） */
-  filter_int_abs,     /**< 整数絶対値変換 */
-  filter_int_hex,     /**< 整数16進数変換 */
-  filter_int_oct,     /**< 整数8進数変換 */
-  filter_int_bin,     /**< 整数2進数変換 */
-  filter_int_neg,     /**< 整数符号逆転 */
-  filter_int_mod,     /**< 整数余り（引数: 除数） */
-  filter_int_numify,        /**< 整数3桁カンマ区切り */
-  filter_int_is_neg,           /**< 負数判定: "true"/"false" を出力 */
-  filter_int_eq,               /**< 等価判定: 引数と比較し "true"/"false" を出力 */
-  filter_int_ne,               /**< 不等価判定: 引数と比較し "true"/"false" を出力 */
-  filter_int_gt,               /**< 大なり判定: 引数より大きければ "true"/"false" を出力 */
-  filter_int_gte,              /**< 以上判定: 引数以上なら "true"/"false" を出力 */
-  filter_int_lt,               /**< 小なり判定: 引数未満なら "true"/"false" を出力 */
-  filter_int_lte,              /**< 以下判定: 引数以下なら "true"/"false" を出力 */
-  filter_int_zerofill,         /**< 整数0埋め（引数: 最小桁数） */
-  filter_int_add,              /**< 整数加算（引数: 加算値） */
-  filter_int_sub,              /**< 整数減算（引数: 減算値） */
-  filter_int_mul,              /**< 整数乗算（引数: 乗算値） */
-  filter_int_div,              /**< 整数除算（引数: 除算値） */
-  filter_float_precision,     /**< 実数小数点以下桁数（引数: 桁数） */
-  emit_if_filtered,           /**< フィルタ適用済み値での if 分岐 */
-  emit_break,         /**< ループ脱出 */
-  emit_continue,      /**< 次のイテレーションへスキップ */
-  emit_at_index1,     /**< ループ1始まりインデックス ({{@index1}}) */
-  emit_at_size,       /**< ループ総要素数 ({{@size}}) */
-  emit_var_size,      /**< 変数の要素数 ({{field.size}}) */
-  emit_if_or,         /**< if (a || b) 分岐 */
-  emit_if_and,        /**< if (a && b) 分岐 */
-  emit_if_not,        /**< if (!a) 分岐 */
-  call_partial,       /**< 名前付きpartial呼び出し (operand: partial_entry index) */
-  halt                /**< プログラム終了 */
-};
-
-enum class string_filter : std::uint8_t {
-  upper,       /**< ASCII小文字→大文字変換 */
-  lower,       /**< ASCII大文字→小文字変換 */
-  capitalize,  /**< 先頭の文字を大文字にする */
-  title,       /**< 単語の先頭を大文字にする */
-  trim,        /**< 先頭末尾の空白除去 */
-  ltrim,       /**< 先頭の空白除去 */
-  rtrim,       /**< 末尾の空白除去 */
-  left,        /**< 左寄せ（引数: 幅） */
-  right,       /**< 右寄せ（引数: 幅） */
-  center,      /**< 中央寄せ（引数: 幅） */
-  truncate,    /**< 文字列切り詰め（引数: 最大文字数） */
-  substr,      /**< 部分文字列（引数1: 開始位置, 引数2: 文字数） */
-  replace,     /**< 部分文字列置換 */
-  default_value, /**< デフォルト値（引数: フォールバック文字列） */
-  to_json,     /**< JSON出力 */
-  safe,        /**< 生出力マーク（エスケープ抑制、コンパイル時処理） */
-  indent,      /**< 各行にインデント追加（引数: 空白数） */
-  pad,         /**< パディング（引数1: 幅, 引数2: 埋め文字） */
-  pluralize,   /**< 単数形/複数形（引数1: 単数形, 引数2: 複数形） */
-  format,      /**< strftime 形式 chrono フォーマット（dispatch 時は no-op） */
-  repeat       /**< 文字列繰り返し（引数: 回数） */
-};
 
 struct string_filter_entry {
   string_filter filter;       /**< フィルタの種別 */
@@ -133,58 +21,14 @@ struct string_filter_entry {
   std::string_view str_arg2;  /**< 文字列引数2（replace の new 文字列） */
 };
 
-/**
- * @brief 整数変換フィルタの種別
- * @details プレースホルダに適用する整数変換の種類を定義する
- */
-enum class int_filter : std::uint8_t {
-  abs,     /**< 絶対値 */
-  hex,     /**< 16進数表記 */
-  oct,     /**< 8進数表記 */
-  bin,     /**< 2進数表記 */
-  neg,     /**< 符号の逆転 */
-  mod,     /**< 余り（引数: 除数） */
-  numify,  /**< 3桁ごとにカンマ区切り */
-  is_neg,  /**< 負数判定（真偽値出力: "true"/"false"） */
-  eq,      /**< 等価判定（引数: 比較値、真偽値出力: "true"/"false"） */
-  ne,      /**< 不等価判定（引数: 比較値、真偽値出力: "true"/"false"） */
-  gt,      /**< 大なり判定（引数: 比較値、真偽値出力: "true"/"false"） */
-  gte,     /**< 以上判定（引数: 比較値、真偽値出力: "true"/"false"） */
-  lt,      /**< 小なり判定（引数: 比較値、真偽値出力: "true"/"false"） */
-  lte,     /**< 以下判定（引数: 比較値、真偽値出力: "true"/"false"） */
-  zerofill, /**< 0埋め（引数: 最小桁数） */
-  add,      /**< 加算（引数: 加算値） */
-  sub,      /**< 減算（引数: 減算値） */
-  mul,      /**< 乗算（引数: 乗算値） */
-  div       /**< 除算（引数: 除算値） */
-};
-
 struct int_filter_entry {
   int_filter filter; /**< フィルタの種別 */
   int arg = 0;       /**< 引数（mod の除数） */
 };
 
-/**
- * @brief 実数変換フィルタの種別
- * @details プレースホルダに適用する実数変換の種類を定義する
- */
-enum class float_filter : std::uint8_t {
-  precision   /**< 小数点以下桁数（引数: 桁数） */
-};
-
 struct float_filter_entry {
   float_filter filter; /**< フィルタの種別 */
   int arg = 0;         /**< 引数（precision の小数点以下桁数） */
-};
-
-/**
- * @brief if 比較の右オペランド種別
- */
-enum class compare_operand_kind : std::uint8_t {
-  none,
-  int_literal,
-  string_literal,
-  variable
 };
 
 /**

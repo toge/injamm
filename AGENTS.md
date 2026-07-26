@@ -15,7 +15,7 @@ ctest --test-dir build -V
 ./build/injamm_tests           # 直接実行 (Catch2)
 ```
 
-CMake オプション: `ENABLE_THREADED_DISPATCH`（デフォルト ON、GCC のみ）、`BUILD_TEST`、`BUILD_EXAMPLE`。
+CMake オプション: `ENABLE_THREADED_DISPATCH`（デフォルト ON、GCC のみ）、`BUILD_TEST`、`BUILD_EXAMPLE`、`BUILD_FUZZ`、`BUILD_UTIL`、`ENABLE_ENUM`、`ENABLE_SQLITE3`。
 
 ## 重要な規約
 
@@ -37,5 +37,10 @@ CMake オプション: `ENABLE_THREADED_DISPATCH`（デフォルト ON、GCC の
 
 ## 依存関係
 
-- `glaze`（必須、vcpkg: `~/vm/vcpkg`）
+- `glaze`（必須、vcpkg）
+- `fast-float`（必須、vcpkg）
+- `fmt`（AppleClang のみ、vcpkg）
 - `catch2`（テストのみ、vcpkg）
+- `frozenchars`（GCC NTTP テストのみ、vcpkg）
+- `enchantum`（`ENABLE_ENUM`=ON 時、vcpkg）
+- `sqlite3`（`ENABLE_SQLITE3`=ON 時、ext/injamm-sqlite3）
