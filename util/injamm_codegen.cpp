@@ -574,6 +574,25 @@ class code_generator {
       emit("out += " + cpp_string(bc.literals[inst.operand]) + ";");
       emit("out += " + resolve_access(bc.var_refs[inst.operand2]) + ";");
     }
+    else if (op == bc::opcode::emit_at_root) {
+      emit("html_escape_append_value(out, data);");
+    }
+    else if (op == bc::opcode::emit_at_root_field) {
+      emit("html_escape_append_value(out, data." + bc.var_refs[inst.operand].key + ");");
+    }
+    else if (op == bc::opcode::emit_at_root_field_raw) {
+      emit("out += data." + bc.var_refs[inst.operand].key + ";");
+    }
+    else if (op == bc::opcode::emit_at_key) {
+      emit("out += _key" + std::to_string(loop_depth_) + ";");
+    }
+    else if (op == bc::opcode::emit_this) {
+      if (loop_depth_ > 0) {
+        emit("html_escape_append_value(out, _item" + std::to_string(loop_depth_) + ");");
+      } else {
+        emit("html_escape_append_value(out, data);");
+      }
+    }
     else if (op == bc::opcode::emit_filtered) {
       emit("html_escape_append(out, _filtered);");
     }
@@ -613,8 +632,152 @@ class code_generator {
     else if (op == bc::opcode::filter_substr) {
       emit("filter_substr(_filtered, " + std::to_string(inst.operand) + ", " + std::to_string(inst.operand2) + ");");
     }
+    else if (op == bc::opcode::filter_title) {
+      emit("filter_title(_filtered);");
+    }
+    else if (op == bc::opcode::filter_left) {
+      emit("filter_left(_filtered, " + std::to_string(inst.operand) + ");");
+    }
+    else if (op == bc::opcode::filter_right) {
+      emit("filter_right(_filtered, " + std::to_string(inst.operand) + ");");
+    }
+    else if (op == bc::opcode::filter_center) {
+      emit("filter_center(_filtered, " + std::to_string(inst.operand) + ");");
+    }
+    else if (op == bc::opcode::filter_replace) {
+      auto const& ref = bc.var_refs[inst.operand2];
+      std::string old_str, new_str;
+      if (!ref.filters.empty()) {
+        old_str = cpp_string(ref.filters[0].str_arg1);
+        new_str = cpp_string(ref.filters[0].str_arg2);
+      } else {
+        old_str = "\"\"";
+        new_str = "\"\"";
+      }
+      emit("filter_replace(_filtered, " + old_str + ", " + new_str + ");");
+    }
+    else if (op == bc::opcode::filter_default) {
+      auto const& ref = bc.var_refs[inst.operand2];
+      std::string def_str = "\"\"";
+      if (!ref.filters.empty())
+        def_str = cpp_string(ref.filters[0].str_arg1);
+      emit("filter_default(_filtered, " + def_str + ");");
+    }
+    else if (op == bc::opcode::filter_safe) {
+      // safe: no-op (already marked as raw in opcode selection)
+    }
+    else if (op == bc::opcode::filter_indent) {
+      emit("filter_indent(_filtered, " + std::to_string(inst.operand) + ");");
+    }
+    else if (op == bc::opcode::filter_pad) {
+      auto const& ref = bc.var_refs[inst.operand2];
+      std::string pad_str = "\" \"";
+      if (!ref.filters.empty())
+        pad_str = cpp_string(ref.filters[0].str_arg1);
+      emit("filter_pad(_filtered, " + std::to_string(inst.operand) + ", " + pad_str + ");");
+    }
+    else if (op == bc::opcode::filter_pluralize) {
+      auto const& ref = bc.var_refs[inst.operand2];
+      std::string sg = "\"\"", pl = "\"\"";
+      if (ref.filters.size() >= 1) sg = cpp_string(ref.filters[0].str_arg1);
+      if (ref.filters.size() >= 2) pl = cpp_string(ref.filters[1].str_arg1);
+      emit("filter_pluralize(_filtered, " + sg + ", " + pl + ");");
+    }
+    else if (op == bc::opcode::filter_format) {
+      emit("filter_format(_filtered);");
+    }
     else if (op == bc::opcode::filter_repeat) {
       emit("filter_repeat(_filtered, " + std::to_string(inst.operand) + ");");
+    }
+    else if (op == bc::opcode::filter_int_abs) {
+      emit("filter_int_abs(_filtered);");
+    }
+    else if (op == bc::opcode::filter_int_hex) {
+      emit("filter_int_hex(_filtered);");
+    }
+    else if (op == bc::opcode::filter_int_oct) {
+      emit("filter_int_oct(_filtered);");
+    }
+    else if (op == bc::opcode::filter_int_bin) {
+      emit("filter_int_bin(_filtered);");
+    }
+    else if (op == bc::opcode::filter_int_neg) {
+      emit("filter_int_neg(_filtered);");
+    }
+    else if (op == bc::opcode::filter_int_mod) {
+      emit("filter_int_mod(_filtered, " + std::to_string(inst.operand) + ");");
+    }
+    else if (op == bc::opcode::filter_int_is_neg) {
+      emit("filter_int_is_neg(_filtered);");
+    }
+    else if (op == bc::opcode::filter_int_eq) {
+      emit("filter_int_eq(_filtered, " + std::to_string(inst.operand) + ");");
+    }
+    else if (op == bc::opcode::filter_int_ne) {
+      emit("filter_int_ne(_filtered, " + std::to_string(inst.operand) + ");");
+    }
+    else if (op == bc::opcode::filter_int_gt) {
+      emit("filter_int_gt(_filtered, " + std::to_string(inst.operand) + ");");
+    }
+    else if (op == bc::opcode::filter_int_gte) {
+      emit("filter_int_gte(_filtered, " + std::to_string(inst.operand) + ");");
+    }
+    else if (op == bc::opcode::filter_int_lt) {
+      emit("filter_int_lt(_filtered, " + std::to_string(inst.operand) + ");");
+    }
+    else if (op == bc::opcode::filter_int_lte) {
+      emit("filter_int_lte(_filtered, " + std::to_string(inst.operand) + ");");
+    }
+    else if (op == bc::opcode::filter_int_add) {
+      emit("filter_int_add(_filtered, " + std::to_string(inst.operand) + ");");
+    }
+    else if (op == bc::opcode::filter_int_sub) {
+      emit("filter_int_sub(_filtered, " + std::to_string(inst.operand) + ");");
+    }
+    else if (op == bc::opcode::filter_int_mul) {
+      emit("filter_int_mul(_filtered, " + std::to_string(inst.operand) + ");");
+    }
+    else if (op == bc::opcode::filter_int_div) {
+      emit("filter_int_div(_filtered, " + std::to_string(inst.operand) + ");");
+    }
+    else if (op == bc::opcode::filter_float_precision) {
+      emit("filter_float_precision(_filtered, " + std::to_string(inst.operand) + ");");
+    }
+    else if (op == bc::opcode::emit_if_filtered) {
+      bool invert = inst.operand != 0;
+      if (invert) {
+        emit("if (!static_cast<bool>(_filtered.empty())) {");
+      } else {
+        emit("if (!_filtered.empty()) {");
+      }
+      ++indent_;
+    }
+    else if (op == bc::opcode::emit_if_or) {
+      auto access = resolve_access(bc.var_refs[inst.operand2]);
+      emit("if (static_cast<bool>(" + access + ")) {");
+      ++indent_;
+    }
+    else if (op == bc::opcode::emit_if_and) {
+      auto access = resolve_access(bc.var_refs[inst.operand2]);
+      emit("if (static_cast<bool>(" + access + ")) {");
+      ++indent_;
+    }
+    else if (op == bc::opcode::emit_if_not) {
+      auto access = resolve_access(bc.var_refs[inst.operand2]);
+      emit("if (!static_cast<bool>(" + access + ")) {");
+      ++indent_;
+    }
+    else if (op == bc::opcode::call_partial) {
+      auto& pe = bc.partial_entries[inst.operand];
+      if (!pe.local) {
+        emit("// call partial: " + pe.name);
+        auto partial_bc = pe.bc;
+        if (partial_bc && !partial_bc->instructions.empty()) {
+          for (auto const& pi : partial_bc->instructions) {
+            emit_instruction(pi, *partial_bc);
+          }
+        }
+      }
     }
     else if (op == bc::opcode::filter_int_numify) {
       emit("filter_numify(_filtered);");

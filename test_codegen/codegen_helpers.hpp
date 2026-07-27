@@ -18,6 +18,9 @@
 #endif
 #endif
 
+#include <injamm/serialize_value.hpp>
+#include <glaze/glaze.hpp>
+
 namespace generated {
 
 #ifndef INJAMM_CODEGEN_DISABLE_SIMD
@@ -44,6 +47,225 @@ inline void append_number(std::string& out, N n) {
   char buf[64];
   auto [ptr, ec] = std::to_chars(buf, buf + sizeof(buf), n);
   out.append(buf, ptr);
+}
+
+inline void filter_title(std::string& s) {
+  bool prev_space = true;
+  for (auto& c : s) {
+    if (prev_space && c >= 'a' && c <= 'z') c -= 32;
+    prev_space = (c == ' ');
+  }
+}
+
+inline void filter_left(std::string& s, int n) {
+  if (static_cast<int>(s.size()) < n)
+    s = std::string(static_cast<std::size_t>(n) - s.size(), ' ') + s;
+  else
+    s = s.substr(0, static_cast<std::size_t>(n));
+}
+
+inline void filter_right(std::string& s, int n) {
+  if (static_cast<int>(s.size()) < n)
+    s.append(static_cast<std::size_t>(n) - s.size(), ' ');
+  else
+    s = s.substr(s.size() - static_cast<std::size_t>(n));
+}
+
+inline void filter_center(std::string& s, int n) {
+  if (static_cast<int>(s.size()) < n) {
+    auto total = static_cast<std::size_t>(n) - s.size();
+    auto left = total / 2;
+    auto right = total - left;
+    s = std::string(left, ' ') + s + std::string(right, ' ');
+  } else {
+    s = s.substr(0, static_cast<std::size_t>(n));
+  }
+}
+
+inline void filter_replace(std::string& s, std::string_view old_str, std::string_view new_str) {
+  if (old_str.empty()) return;
+  std::string result;
+  std::size_t pos = 0;
+  while (true) {
+    auto found = s.find(old_str, pos);
+    if (found == std::string::npos) break;
+    result.append(s.data() + pos, found - pos);
+    result += new_str;
+    pos = found + old_str.size();
+  }
+  result.append(s.data() + pos, s.size() - pos);
+  s = std::move(result);
+}
+
+inline void filter_default(std::string& s, std::string_view def) {
+  if (s.empty()) s = def;
+}
+
+inline void filter_indent(std::string& s, int n) {
+  if (n <= 0) return;
+  std::string pad(static_cast<std::size_t>(n), ' ');
+  std::string result;
+  std::size_t pos = 0;
+  while (true) {
+    auto nl = s.find('\n', pos);
+    if (nl == std::string::npos) break;
+    result.append(s.data() + pos, nl - pos + 1);
+    result += pad;
+    pos = nl + 1;
+  }
+  result.append(s.data() + pos, s.size() - pos);
+  s = std::move(result);
+}
+
+inline void filter_pad(std::string& s, int n, std::string_view pad_str) {
+  if (n <= 0 || pad_str.empty()) return;
+  while (static_cast<int>(s.size()) < n) {
+    s += pad_str;
+    if (static_cast<int>(s.size()) > n)
+      s.resize(static_cast<std::size_t>(n));
+  }
+}
+
+inline void filter_pluralize(std::string& s, std::string_view sg, std::string_view pl) {
+  if (s == "1" || s == "1.0") {
+    if (!sg.empty()) s = std::string(sg);
+  } else {
+    if (!pl.empty()) s = std::string(pl);
+    else if (!sg.empty()) { s = std::string(sg); s += 's'; }
+  }
+}
+
+inline void filter_format(std::string& s) {
+  // formatは整形済み文字列をそのまま返す（runtimeではstd::vformat等を使用）
+}
+
+inline void filter_int_abs(std::string& s) {
+  if (!s.empty() && s[0] == '-') s.erase(0, 1);
+}
+
+inline void filter_int_hex(std::string& s) {
+  int val = 0;
+  auto [ptr, ec] = std::from_chars(s.data(), s.data() + s.size(), val);
+  if (ec == std::errc{}) {
+    char buf[32];
+    auto [p, e] = std::to_chars(buf, buf + sizeof(buf), val, 16);
+    s.assign(buf, p);
+  }
+}
+
+inline void filter_int_oct(std::string& s) {
+  int val = 0;
+  auto [ptr, ec] = std::from_chars(s.data(), s.data() + s.size(), val);
+  if (ec == std::errc{}) {
+    char buf[32];
+    auto [p, e] = std::to_chars(buf, buf + sizeof(buf), val, 8);
+    s.assign(buf, p);
+  }
+}
+
+inline void filter_int_bin(std::string& s) {
+  int val = 0;
+  auto [ptr, ec] = std::from_chars(s.data(), s.data() + s.size(), val);
+  if (ec == std::errc{}) {
+    std::string result;
+    if (val == 0) { result = "0"; }
+    else {
+      while (val > 0) { result = char('0' + (val & 1)) + result; val >>= 1; }
+    }
+    s = std::move(result);
+  }
+}
+
+inline void filter_int_neg(std::string& s) {
+  if (!s.empty() && s[0] == '-')
+    s.erase(0, 1);
+  else
+    s = "-" + s;
+}
+
+inline void filter_int_mod(std::string& s, int n) {
+  if (n == 0) return;
+  int val = 0;
+  auto [ptr, ec] = std::from_chars(s.data(), s.data() + s.size(), val);
+  if (ec == std::errc{}) {
+    val %= n;
+    s = std::to_string(val);
+  }
+}
+
+inline void filter_int_is_neg(std::string& s) {
+  s = (!s.empty() && s[0] == '-') ? "true" : "false";
+}
+
+inline void filter_int_eq(std::string& s, int n) {
+  int val = 0;
+  auto [ptr, ec] = std::from_chars(s.data(), s.data() + s.size(), val);
+  s = (ec == std::errc{} && val == n) ? "true" : "false";
+}
+
+inline void filter_int_ne(std::string& s, int n) {
+  int val = 0;
+  auto [ptr, ec] = std::from_chars(s.data(), s.data() + s.size(), val);
+  s = (ec == std::errc{} && val != n) ? "true" : "false";
+}
+
+inline void filter_int_gt(std::string& s, int n) {
+  int val = 0;
+  auto [ptr, ec] = std::from_chars(s.data(), s.data() + s.size(), val);
+  s = (ec == std::errc{} && val > n) ? "true" : "false";
+}
+
+inline void filter_int_gte(std::string& s, int n) {
+  int val = 0;
+  auto [ptr, ec] = std::from_chars(s.data(), s.data() + s.size(), val);
+  s = (ec == std::errc{} && val >= n) ? "true" : "false";
+}
+
+inline void filter_int_lt(std::string& s, int n) {
+  int val = 0;
+  auto [ptr, ec] = std::from_chars(s.data(), s.data() + s.size(), val);
+  s = (ec == std::errc{} && val < n) ? "true" : "false";
+}
+
+inline void filter_int_lte(std::string& s, int n) {
+  int val = 0;
+  auto [ptr, ec] = std::from_chars(s.data(), s.data() + s.size(), val);
+  s = (ec == std::errc{} && val <= n) ? "true" : "false";
+}
+
+inline void filter_int_add(std::string& s, int n) {
+  int val = 0;
+  auto [ptr, ec] = std::from_chars(s.data(), s.data() + s.size(), val);
+  if (ec == std::errc{}) s = std::to_string(val + n);
+}
+
+inline void filter_int_sub(std::string& s, int n) {
+  int val = 0;
+  auto [ptr, ec] = std::from_chars(s.data(), s.data() + s.size(), val);
+  if (ec == std::errc{}) s = std::to_string(val - n);
+}
+
+inline void filter_int_mul(std::string& s, int n) {
+  int val = 0;
+  auto [ptr, ec] = std::from_chars(s.data(), s.data() + s.size(), val);
+  if (ec == std::errc{}) s = std::to_string(val * n);
+}
+
+inline void filter_int_div(std::string& s, int n) {
+  if (n == 0) return;
+  int val = 0;
+  auto [ptr, ec] = std::from_chars(s.data(), s.data() + s.size(), val);
+  if (ec == std::errc{}) s = std::to_string(val / n);
+}
+
+inline void filter_float_precision(std::string& s, int n) {
+  double val = 0.0;
+  auto [ptr, ec] = std::from_chars(s.data(), s.data() + s.size(), val);
+  if (ec == std::errc{}) {
+    char buf[128];
+    auto [p, e] = std::to_chars(buf, buf + sizeof(buf), val, std::chars_format::fixed, n);
+    s.assign(buf, p);
+  }
 }
 
 template <typename V>
@@ -73,8 +295,16 @@ inline void html_escape_append_value(std::string& out, V const& v) {
     std::string tmp;
     append_number(tmp, v);
     html_escape_append(out, tmp);
+  } else if constexpr (std::is_enum_v<V>) {
+    html_escape_append(out, std::to_string(static_cast<std::underlying_type_t<V>>(v)));
   } else {
-    html_escape_append(out, v);
+    std::string _ser;
+    if constexpr (glz::write_supported<std::decay_t<V>, glz::JSON>) {
+      (void)glz::write_json(v, _ser);
+    } else {
+      injamm::detail::serialize_value(_ser, v);
+    }
+    html_escape_append(out, _ser);
   }
 }
 
