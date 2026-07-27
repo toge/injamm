@@ -88,14 +88,15 @@ class bc_executor {
       auto           tied = glz::to_tie(v);
       using visitor_r     = decltype(visitor(glz::get<0>(tied)));
       if constexpr (std::same_as<visitor_r, void>) {
-        /** visitor が void を返す場合: fold 式で全フィールドを走査 */
+        /** visitor が void を返す場合: fold 式で全フィールドを走査（短絡） */
         [&]<std::size_t... I>(std::index_sequence<I...>) {
-          (([&] {
+          (([&]() -> bool {
              if (std::string_view{glz::reflect<V>::keys[I]} == path) {
                visitor(glz::get<I>(tied));
+               return true;
              }
-           }()),
-           ...);
+             return false;
+           })() || ...);
         }(std::make_index_sequence<sz>{});
       } else {
         /** visitor が std::expected を返す場合: エラーを伝搬する */
@@ -306,13 +307,13 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
     if constexpr (std::same_as<visitor_t, void>) {
       bool found = false;
       [&]<std::size_t... I>(std::index_sequence<I...>) {
-        (([&] {
+        found = (([&]() -> bool {
            if (std::string_view{glz::reflect<V>::keys[I]} == key) {
              visitor(glz::get<I>(tied));
-             found = true;
+             return true;
            }
-         }()),
-         ...);
+           return false;
+         })() || ...);
       }(std::make_index_sequence<sz>{});
       if (!found && !key.empty() && !key.starts_with('@'))
         return std::unexpected(error_ctx{.ec = error_code::unknown_key});
@@ -568,15 +569,19 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
   }
 
   static std::expected<void, error_ctx> handle_emit_this(bc_executor& ex, std::size_t& pc, std::string&) {
-    ex.emit_this_scratch_.clear();
-    if constexpr (serializable_v<T>) {
-      serialize_value(ex.emit_this_scratch_, ex.value_);
-    } else if constexpr (ct_glz_reflectable<T> && glz::write_supported<T, glz::JSON>) {
-      if (auto ec = glz::write_json(ex.value_, ex.emit_this_scratch_)) {
-        return std::unexpected(error_ctx{.position = pc, .ec = error_code::syntax_error});
+    if constexpr (std::same_as<T, std::string> || std::same_as<T, std::string_view>) {
+      html_escape_into(ex.out_, ex.value_);
+    } else {
+      ex.emit_this_scratch_.clear();
+      if constexpr (serializable_v<T>) {
+        serialize_value(ex.emit_this_scratch_, ex.value_);
+      } else if constexpr (ct_glz_reflectable<T> && glz::write_supported<T, glz::JSON>) {
+        if (auto ec = glz::write_json(ex.value_, ex.emit_this_scratch_)) {
+          return std::unexpected(error_ctx{.position = pc, .ec = error_code::syntax_error});
+        }
       }
+      html_escape_into(ex.out_, ex.emit_this_scratch_);
     }
-    html_escape_into(ex.out_, ex.emit_this_scratch_);
     ++pc;
     return {};
   }
@@ -2176,15 +2181,19 @@ public:
 
   /** @brief {{this}}: 現在のコンテキスト自体を出力する */
   L_emit_this: {
-    this->emit_this_scratch_.clear();
-    if constexpr (serializable_v<T>) {
-      serialize_value(this->emit_this_scratch_, value_);
-    } else if constexpr (ct_glz_reflectable<T> && glz::write_supported<T, glz::JSON>) {
-      if (auto ec = glz::write_json(value_, this->emit_this_scratch_)) {
-        return std::unexpected(error_ctx{.position = pc, .ec = error_code::syntax_error});
+    if constexpr (std::same_as<T, std::string> || std::same_as<T, std::string_view>) {
+      html_escape_into(out_, value_);
+    } else {
+      this->emit_this_scratch_.clear();
+      if constexpr (serializable_v<T>) {
+        serialize_value(this->emit_this_scratch_, value_);
+      } else if constexpr (ct_glz_reflectable<T> && glz::write_supported<T, glz::JSON>) {
+        if (auto ec = glz::write_json(value_, this->emit_this_scratch_)) {
+          return std::unexpected(error_ctx{.position = pc, .ec = error_code::syntax_error});
+        }
       }
+      html_escape_into(out_, this->emit_this_scratch_);
     }
-    html_escape_into(out_, this->emit_this_scratch_);
     ++pc;
     DISPATCH();
   }
@@ -2754,43 +2763,7 @@ public:
 #endif
   }
 
-  /**
-   * @brief 全変数参照の値サイズ合計を推定する
-   */
-  template <class U>
-  static std::size_t estimate_var_sizes(bytecode const& bc, U const& value) {
-    std::size_t total = 0;
-    for (auto const& ref : bc.var_refs) {
-      auto r = for_each_field(value, ref.key, ref.field_index, ref.has_dot, [&](auto const& field) -> std::expected<void, error_ctx> {
-        total += estimate_field_size(field);
-        return {};
-      });
-      if (!r) total += 32;
-    }
-    return total;
-  }
-
 private:
-  template <class V>
-  static std::size_t estimate_field_size(V const& v) {
-    using FT = std::remove_cvref_t<V>;
-    if constexpr (std::same_as<FT, bool>) {
-      return 5;
-    } else if constexpr (is_std_optional_v<FT>) {
-      return v.has_value() ? estimate_field_size(*v) : 0;
-    } else if constexpr (std::same_as<FT, std::string> || std::same_as<FT, std::string_view>) {
-      return v.size();
-    } else if constexpr (std::is_enum_v<FT>) {
-#ifndef INJAMM_NO_ENUM_REGISTRY
-      auto name = enchantum::to_string(v);
-      if (!name.empty()) return name.size();
-#endif
-      return 10;
-    } else if constexpr (std::is_arithmetic_v<FT>) {
-      return 16;
-    }
-    return 16;
-  }
 };
 
 /**
@@ -2801,12 +2774,8 @@ private:
  * @return 推定出力サイズ
  */
 template <class T>
-std::size_t estimate_output_size(bytecode const& bc, T const& value) {
-  auto base = bc.literal_total_size * 4;
-  if (bc.var_refs.size() > 5) {
-    return base + bc_executor<T>::template estimate_var_sizes<>(bc, value);
-  }
-  return base + bc.var_refs.size() * 32;
+std::size_t estimate_output_size(bytecode const& bc, T const&) {
+  return bc.literal_total_size * 4 + bc.var_refs.size() * 32;
 }
 
 /**
