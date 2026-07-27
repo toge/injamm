@@ -508,13 +508,19 @@ class code_generator {
    * @details render_partial<"name">(data, out) の if constexpr ディスパッチ。
    *          non-local な partial エントリごとに分岐を生成する。
    *          partial がない場合は何も出力しない。
+   *
+   *          NTTP に injamm::fixed_string を使うことで、利用側は文字列リテラルで
+   *          partial 名を指定できる。コンパイル時に if constexpr で解決されるため、
+   *          該当ブランチ以外のコードは生成されない。
    */
   void emit_partial_dispatch(bc::bytecode const& bc) {
+    /* 非ローカル partial でかつ空でないバイトコードを持つものの数を数える */
     std::size_t partial_count = 0;
     for (auto const& pe : bc.partial_entries) {
       if (!pe.local && pe.bc && !pe.bc->instructions.empty())
         ++partial_count;
     }
+    /* partial が1つもなければ dispatch 関数を出力しない */
     if (partial_count == 0) return;
 
     emit_raw("");
@@ -542,6 +548,8 @@ class code_generator {
     emit_raw("render_partial(const T& data, std::string& out) {");
     ++indent_;
 
+    /* if constexpr チェーン: 各 partial 名を std::string_view で比較する。
+       コンパイル時解決なので実行時オーバーヘッドは一切ない。 */
     bool first = true;
     for (auto const& pe : bc.partial_entries) {
       if (pe.local || !pe.bc || pe.bc->instructions.empty()) continue;
@@ -555,6 +563,7 @@ class code_generator {
       }
       ++indent_;
 
+      /* loop_depth_ などの状態を退避: 各 partial は独立した関数内部と同じ扱い */
       auto saved_loop = loop_depth_;
       auto saved_filtered = filtered_declared_;
       auto saved_cond = cond_section_depth_;
@@ -576,7 +585,7 @@ class code_generator {
       emit_raw("}");
     }
 
-    // else: unknown partial
+    /* どの partial 名にも一致しなかった場合はエラーを返す */
     emit("else {");
     ++indent_;
     emit("return std::unexpected(injamm::error_ctx{.ec = injamm::error_code::unknown_key, .custom_error_message = \"unknown partial: \" + std::string(PartialName.data)});");
@@ -939,6 +948,9 @@ class code_generator {
       ++indent_;
     }
     else if (op == bc::opcode::call_partial) {
+      /* partial 呼び出し: 従来はインライン展開していたが、emit_partial_dispatch で
+         生成された render_partial<"name"> 関数を呼び出すことで外部からも個別に
+         呼び出せるようになった。(void) キャストは nodiscard 警告の抑制。 */
       auto& pe = bc.partial_entries[inst.operand];
       if (!pe.local) {
         emit("(void)render_partial<\"" + pe.name + "\">(data, out);");
@@ -992,6 +1004,8 @@ public:
     }
 
     emit_header();
+    /* partial ディスパッチ関数を先に出力: メイン関数から render_partial<"name"> として
+       呼び出せるようにする。partial がない場合は何も出力しない。 */
     emit_partial_dispatch(bc);
     emit_render_into_start(total_literal_size);
 
