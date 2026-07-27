@@ -407,6 +407,7 @@ class code_generator {
     emit_raw("#include <string>");
     emit_raw("");
     emit_raw("#include <injamm/types.hpp>");
+    emit_raw("#include <glaze/glaze.hpp>");
     if (no_simd_) {
       emit_raw("#define INJAMM_CODEGEN_DISABLE_SIMD 1");
     } else {
@@ -632,13 +633,35 @@ class code_generator {
       emit("out += _filtered;");
     }
     else if (op == bc::opcode::resolve_filtered) {
-      auto access = resolve_access(bc.var_refs[inst.operand2]);
-      if (!filtered_declared_) {
-        emit("std::string _filtered = " + access + ";");
-        filtered_declared_ = true;
-      } else {
+      auto const& ref = bc.var_refs[inst.operand2];
+      auto access = resolve_access(ref);
+      bool use_json = (ref.filter_flags & 1) != 0;
+      if (use_json) {
+        if (!filtered_declared_) {
+          emit("std::string _filtered;");
+          filtered_declared_ = true;
+        }
+        // runtime: reflectable → glz::write_json, serializable → serialize_value (raw)
+        emit("if constexpr (::glz::reflectable<decltype(" + access + ")>) {");
+        ++indent_;
+        emit("(void)::glz::write_json(" + access + ", _filtered);");
+        --indent_;
+        emit("} else {");
+        ++indent_;
         emit("_filtered = " + access + ";");
+        --indent_;
+        emit("}");
+      } else {
+        if (!filtered_declared_) {
+          emit("std::string _filtered = " + access + ";");
+          filtered_declared_ = true;
+        } else {
+          emit("_filtered = " + access + ";");
+        }
       }
+    }
+    else if (op == bc::opcode::filter_json) {
+      // resolve_filtered で処理済みのため no-op
     }
     else if (op == bc::opcode::filter_upper) {
       emit("filter_to_upper(_filtered);");

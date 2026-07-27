@@ -65,6 +65,7 @@ struct glz::meta<TestData> {
 #include "render10.hpp"
 #include "render11.hpp"
 #include "render12.hpp"
+#include "render13.hpp"
 
 int test_count = 0;
 int pass_count = 0;
@@ -127,6 +128,8 @@ int main() {
     [](auto const& d) { return generated::render11(d); });
   check_ext("last section", "{{#items}}[{{#loop.is_last}}L:{{name}}{{/loop.is_last}}]{{/items}}", d,
     [](auto const& d) { return generated::render12(d); });
+  check_ext("json filter", "{{name|json}}", d,
+    [](auto const& d) { return generated::render13(d); });
 
   std::cout << "\n=== 結果: " << pass_count << "/" << test_count << " passed ===\n";
   return (pass_count == test_count) ? 0 : 1;
