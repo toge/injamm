@@ -493,8 +493,8 @@ consteval void compile_chunk_range(ct_bytecode_builder<N>& b,
         }
         bool use_raw = raw || has_safe;
 
-        // {{this}} → emit_this（コンテキストのシリアライズ）
-        if (sv == "this") {
+        // {{this}} / {{.}} → emit_this（コンテキストのシリアライズ）
+        if (sv == "this" || sv == ".") {
           b.emit(bc_opcode::emit_this);
           break;
         }

@@ -4158,6 +4158,41 @@ TEST_CASE("binding: unknown_key error preempts binding resolution (C2-b)", "[inj
   CHECK(*r == "ab");
 }
 
+// ---- E2/E3: {{& var}} raw output / {{.}} alias for {{this}} ----
+
+struct BcEscRoot {
+  std::string name;
+};
+
+template <>
+struct glz::meta<BcEscRoot> {
+  static constexpr auto value = glz::object("name", &BcEscRoot::name);
+};
+
+TEST_CASE("ampersand raw output ({{&var}})", "[injamm][feature][e2]") {
+  BcEscRoot d{"hello & <world>"};
+  auto bc = injamm::engine<BcEscRoot>("{{name}} vs {{{name}}} vs {{& name}}");
+  auto r = bc.render(d);
+  REQUIRE(r);
+  CHECK(*r == "hello &amp; &lt;world&gt; vs hello & <world> vs hello & <world>");
+}
+
+TEST_CASE("ampersand raw with filtered var", "[injamm][feature][e2]") {
+  BcEscRoot d{"hello"};
+  auto bc = injamm::engine<BcEscRoot>("{{& name | upper}}");
+  auto r = bc.render(d);
+  REQUIRE(r);
+  CHECK(*r == "HELLO");
+}
+
+TEST_CASE("dot alias for this ({{.}})", "[injamm][feature][e3]") {
+  BcEscRoot d{"<test>"};
+  auto bc = injamm::engine<BcEscRoot>("{{.}} == {{this}}");
+  auto r = bc.render(d);
+  REQUIRE(r);
+  CHECK(*r == "{&quot;name&quot;:&quot;&lt;test&gt;&quot;} == {&quot;name&quot;:&quot;&lt;test&gt;&quot;}");
+}
+
 // ---- バイトコード保存・読み込みテスト ----
 
 /** @brief 単純変数を含むテンプレートを保存・読込し、レンダリング結果が一致することを確認 */

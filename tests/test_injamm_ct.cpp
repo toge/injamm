@@ -2744,3 +2744,35 @@ TEST_CASE("ct: section key with misaligned index between root and element type (
   REQUIRE(r);
   CHECK(*r == "apple");
 }
+
+// ---- E2/E3: {{& var}} raw output / {{.}} alias for {{this}} (NTTP) ----
+
+struct CtEscTest {
+  std::string text;
+};
+
+template <>
+struct glz::meta<CtEscTest> {
+  static constexpr auto value = glz::object("text", &CtEscTest::text);
+};
+
+TEST_CASE("ct_ampersand raw output ({{&var}})", "[injamm][ct][feature][e2]") {
+  CtEscTest d{"a & b <c>"};
+  auto      r = injamm::render<"{{text}} vs {{{text}}} vs {{& text}}">(d);
+  REQUIRE(r);
+  CHECK(*r == "a &amp; b &lt;c&gt; vs a & b <c> vs a & b <c>");
+}
+
+TEST_CASE("ct_ampersand raw with filtered var", "[injamm][ct][feature][e2]") {
+  CtEscTest d{"hello"};
+  auto      r = injamm::render<"{{& text | upper}}">(d);
+  REQUIRE(r);
+  CHECK(*r == "HELLO");
+}
+
+TEST_CASE("ct_dot alias for this ({{.}})", "[injamm][ct][feature][e3]") {
+  CtUser d{"<test>", 25};
+  auto   r = injamm::render<"{{this}} vs {{.}}">(d);
+  REQUIRE(r);
+  CHECK(*r == "{&quot;name&quot;:&quot;&lt;test&gt;&quot;,&quot;age&quot;:25} vs {&quot;name&quot;:&quot;&lt;test&gt;&quot;,&quot;age&quot;:25}");
+}

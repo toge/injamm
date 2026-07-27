@@ -930,7 +930,7 @@ class bc_compiler {
         continue;
       }
 
-      if (inner == "this") {
+      if (inner == "this" || inner == ".") {
         bc_.add_instruction(bc_opcode::emit_this);
         continue;
       }
@@ -946,7 +946,18 @@ class bc_compiler {
       }
 
       {
-        auto parts = split_by_pipe(inner);
+        // {{&var}} → 生出力（{{{var}}} と同じ、HTML エスケープなし）
+        bool raw_via_ampersand = false;
+        auto effective_inner = inner;
+        if (!effective_inner.empty() && effective_inner[0] == '&') {
+          raw_via_ampersand = true;
+          effective_inner = trim_sv(effective_inner.substr(1));
+          if (effective_inner.empty()) {
+            bc_.error = error_ctx{pos_, error_code::syntax_error, "& の後に変数がありません"};
+            return body_result::eof;
+          }
+        }
+        auto parts = split_by_pipe(effective_inner);
         auto key = parts[0];
         std::vector<string_filter_entry> filters;
         std::vector<int_filter_entry> int_filters;
@@ -963,11 +974,11 @@ class bc_compiler {
         }
         // {{field.size}} → emit_var_size
         if (key.ends_with(".size") && filters.empty() && int_filters.empty() && float_filters.empty()) {
-          emit_var_size(key.substr(0, key.size() - 5), false);
-        } else if (auto folded = try_fold_string_constant(key, false, filters, int_filters, float_filters)) {
+          emit_var_size(key.substr(0, key.size() - 5), raw_via_ampersand);
+        } else if (auto folded = try_fold_string_constant(key, raw_via_ampersand, filters, int_filters, float_filters)) {
           emit_literal(*folded);
         } else {
-          emit_var(key, false, std::move(filters), std::move(int_filters), std::move(float_filters));
+          emit_var(key, raw_via_ampersand, std::move(filters), std::move(int_filters), std::move(float_filters));
         }
       }
     }

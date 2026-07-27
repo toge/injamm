@@ -846,7 +846,14 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
 
     // -- 通常のプレースホルダ --
     {
-      auto parts = split_by_pipe(inner);
+      // {{&var}} → 生出力（{{{var}}} と同じ）
+      bool raw_via_ampersand = false;
+      auto effective_inner = inner;
+      if (!effective_inner.empty() && effective_inner[0] == '&') {
+        raw_via_ampersand = true;
+        effective_inner = trim_sv(effective_inner.substr(1));
+      }
+      auto parts = split_by_pipe(effective_inner);
       auto key = parts[0];
       std::vector<string_filter_entry> filter_list;
       std::vector<int_filter_entry> int_filter_list;
@@ -868,7 +875,7 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
           continue;
         }
       }
-      ctx.push_placeholder(key, false, filter_list, int_filter_list, float_filter_list);
+      ctx.push_placeholder(key, raw_via_ampersand, filter_list, int_filter_list, float_filter_list);
     }
   }
 }
