@@ -503,6 +503,91 @@ class code_generator {
     emit_raw("");
   }
 
+  /**
+   * @brief 名前付き partial のディスパッチ関数 render_partial を生成
+   * @details render_partial<"name">(data, out) の if constexpr ディスパッチ。
+   *          non-local な partial エントリごとに分岐を生成する。
+   *          partial がない場合は何も出力しない。
+   */
+  void emit_partial_dispatch(bc::bytecode const& bc) {
+    std::size_t partial_count = 0;
+    for (auto const& pe : bc.partial_entries) {
+      if (!pe.local && pe.bc && !pe.bc->instructions.empty())
+        ++partial_count;
+    }
+    if (partial_count == 0) return;
+
+    emit_raw("");
+    emit_raw("/**");
+    emit_raw(" * @brief 名前付き partial を NTTP で指定してレンダリングする");
+    emit_raw(" *");
+    emit_raw(" * @details injamm_codegen によって自動生成された関数。");
+    emit_raw(" *          PartialName に partial 名を NTTP 文字列として渡す。");
+    emit_raw(" *          存在しない名前の場合は unknown_key エラーを返す。");
+    emit_raw(" *");
+    emit_raw(" * @tparam T          データ型");
+    emit_raw(" * @tparam PartialName partial 名（fixed_string 互換 NTTP）");
+    emit_raw(" * @param data レンダリング対象のデータ");
+    emit_raw(" * @param out  出力先バッファ（内容は追記される）");
+    emit_raw(" * @return 正常時: void。エラー時: error_ctx");
+    emit_raw(" *");
+    emit_raw(" * @code");
+    emit_raw(" *   // 使い方例:");
+    emit_raw(" *   std::string out;");
+    emit_raw(" *   auto result = generated::render_partial<\"header\">(data, out);");
+    emit_raw(" * @endcode");
+    emit_raw(" */");
+    emit_raw("template <injamm::fixed_string PartialName, typename T>");
+    emit_raw("[[nodiscard]] std::expected<void, injamm::error_ctx>");
+    emit_raw("render_partial(const T& data, std::string& out) {");
+    ++indent_;
+
+    bool first = true;
+    for (auto const& pe : bc.partial_entries) {
+      if (pe.local || !pe.bc || pe.bc->instructions.empty()) continue;
+
+      auto name_lit = cpp_string(pe.name);
+      if (first) {
+        emit("if constexpr (std::string_view(PartialName.data) == " + name_lit + ") {");
+        first = false;
+      } else {
+        emit("else if constexpr (std::string_view(PartialName.data) == " + name_lit + ") {");
+      }
+      ++indent_;
+
+      auto saved_loop = loop_depth_;
+      auto saved_filtered = filtered_declared_;
+      auto saved_cond = cond_section_depth_;
+      loop_depth_ = 0;
+      filtered_declared_ = false;
+      cond_section_depth_ = 0;
+
+      for (auto const& pi : pe.bc->instructions) {
+        emit_instruction(pi, *pe.bc);
+      }
+
+      emit("return {};");
+
+      loop_depth_ = saved_loop;
+      filtered_declared_ = saved_filtered;
+      cond_section_depth_ = saved_cond;
+
+      --indent_;
+      emit_raw("}");
+    }
+
+    // else: unknown partial
+    emit("else {");
+    ++indent_;
+    emit("return std::unexpected(injamm::error_ctx{.ec = injamm::error_code::unknown_key, .custom_error_message = \"unknown partial: \" + std::string(PartialName.data)});");
+    --indent_;
+    emit_raw("}");
+
+    --indent_;
+    emit_raw("}");
+    emit_raw("");
+  }
+
   /** @brief フッタ（名前空間クローズ + インクルードガード終了）を生成 */
   void emit_footer() {
     emit_raw("} // namespace generated");
@@ -856,13 +941,7 @@ class code_generator {
     else if (op == bc::opcode::call_partial) {
       auto& pe = bc.partial_entries[inst.operand];
       if (!pe.local) {
-        emit("// call partial: " + pe.name);
-        auto partial_bc = pe.bc;
-        if (partial_bc && !partial_bc->instructions.empty()) {
-          for (auto const& pi : partial_bc->instructions) {
-            emit_instruction(pi, *partial_bc);
-          }
-        }
+        emit("(void)render_partial<\"" + pe.name + "\">(data, out);");
       }
     }
     else if (op == bc::opcode::filter_int_numify) {
@@ -913,6 +992,7 @@ public:
     }
 
     emit_header();
+    emit_partial_dispatch(bc);
     emit_render_into_start(total_literal_size);
 
     // 隣接リテラルを結合して出力
