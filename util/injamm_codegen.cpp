@@ -493,11 +493,11 @@ class code_generator {
       emit("out += " + cpp_string(bc.literals[inst.operand]) + ";");
     }
     else if (op == bc::opcode::emit_var) {
-      auto access = resolve_access(bc.var_refs[inst.operand2]);
+      auto access = resolve_access(bc.var_refs[inst.operand]);
       emit("html_escape_append_value(out, " + access + ");");
     }
     else if (op == bc::opcode::emit_var_raw) {
-      auto access = resolve_access(bc.var_refs[inst.operand2]);
+      auto access = resolve_access(bc.var_refs[inst.operand]);
       emit("append_value(out, " + access + ");");
     }
     else if (op == bc::opcode::emit_section) {
