@@ -85,12 +85,42 @@ static double elapsed_us(auto const& start, auto const& end) {
   return std::chrono::duration<double, std::micro>(end - start).count();
 }
 
+// ネストパス計測用構造体
+struct BAddress {
+  std::string city;
+  std::string country;
+};
+template <>
+struct glz::meta<BAddress> {
+  using T = BAddress;
+  static constexpr auto value = object(&T::city, &T::country);
+};
+struct BFounder {
+  std::string name;
+  BAddress    address;
+};
+template <>
+struct glz::meta<BFounder> {
+  using T = BFounder;
+  static constexpr auto value = object(&T::name, &T::address);
+};
+struct BCompany {
+  std::string name;
+  BFounder    founder;
+};
+template <>
+struct glz::meta<BCompany> {
+  using T = BCompany;
+  static constexpr auto value = object(&T::name, &T::founder);
+};
+
 static int bench_filter_dispatch();
 static int bench_wide_struct();
 static int bench_bind_context();
 static int bench_section_loop_large();
 static int bench_enum_resolve();
 static int bench_many_vars();
+static int bench_nested_path();
 
 template <size_t N>
 static std::string repeat(std::string_view s) {
@@ -429,6 +459,9 @@ int main() {
   std::printf("\n--- bind context (コンテナ直接バインド) ---\n");
   bench_bind_context();
 
+  std::printf("\n--- nested path resolution ---\n");
+  bench_nested_path();
+
   std::printf("\n=== done ===\n");
   return 0;
 }
@@ -744,5 +777,74 @@ static int bench_many_vars() {
     auto us = elapsed_us(start, end);
     std::printf("  long_literals(reuse)  x %d: %.0f us  (%.1f ns/call)\n", ITERS, us, us * 1000.0 / ITERS);
   }
+  return 0;
+}
+
+/**
+ * @brief ネストパス解決のマイクロベンチマーク
+ *
+ * 2-level: "{{name}} by {{founder.name}} in {{founder.address.city}}"
+ * 3-level: "{{founder.address.country}}"
+ * compile: runtime compile + render (parse コスト込み)
+ */
+static int bench_nested_path() {
+  BCompany company{"Acme", BFounder{"Alice", BAddress{"Tokyo", "Japan"}}};
+
+  // BC: 2-level 複合テンプレート
+  auto constexpr kTmplStr2 = "{{name}} by {{founder.name}} in {{founder.address.city}}";
+  injamm::engine<BCompany> eng2(kTmplStr2);
+  for (int i = 0; i < 1000; ++i)
+    (void)eng2.render(company);
+
+  constexpr int ITERS = 100000;
+  {
+    auto start = std::chrono::high_resolution_clock::now();
+    for (int i = 0; i < ITERS; ++i)
+      (void)eng2.render(company);
+    auto end   = std::chrono::high_resolution_clock::now();
+    auto us    = elapsed_us(start, end);
+    std::printf("  BC  nested_2level x %d: %.0f us  (%.1f ns/call)\n", ITERS, us, us * 1000.0 / ITERS);
+  }
+
+  // BC: 3-level シングル変数
+  auto constexpr kTmplStr3 = "{{founder.address.country}}";
+  injamm::engine<BCompany> eng3(kTmplStr3);
+  for (int i = 0; i < 1000; ++i)
+    (void)eng3.render(company);
+  {
+    auto start = std::chrono::high_resolution_clock::now();
+    for (int i = 0; i < ITERS; ++i)
+      (void)eng3.render(company);
+    auto end   = std::chrono::high_resolution_clock::now();
+    auto us    = elapsed_us(start, end);
+    std::printf("  BC  nested_3level x %d: %.0f us  (%.1f ns/call)\n", ITERS, us, us * 1000.0 / ITERS);
+  }
+
+  // NTTP: 2-level
+  auto constexpr kNTTP2 = injamm::fixed_string("{{name}} by {{founder.name}} in {{founder.address.city}}");
+  for (int i = 0; i < 1000; ++i)
+    (void)injamm::render<kNTTP2>(company);
+  {
+    auto start = std::chrono::high_resolution_clock::now();
+    for (int i = 0; i < ITERS; ++i)
+      (void)injamm::render<kNTTP2>(company);
+    auto end = std::chrono::high_resolution_clock::now();
+    auto us  = elapsed_us(start, end);
+    std::printf("  NTTP nested_2level x %d: %.0f us  (%.1f ns/call)\n", ITERS, us, us * 1000.0 / ITERS);
+  }
+
+  // NTTP: 3-level
+  auto constexpr kNTTP3 = injamm::fixed_string("{{founder.address.country}}");
+  for (int i = 0; i < 1000; ++i)
+    (void)injamm::render<kNTTP3>(company);
+  {
+    auto start = std::chrono::high_resolution_clock::now();
+    for (int i = 0; i < ITERS; ++i)
+      (void)injamm::render<kNTTP3>(company);
+    auto end = std::chrono::high_resolution_clock::now();
+    auto us  = elapsed_us(start, end);
+    std::printf("  NTTP nested_3level x %d: %.0f us  (%.1f ns/call)\n", ITERS, us, us * 1000.0 / ITERS);
+  }
+
   return 0;
 }

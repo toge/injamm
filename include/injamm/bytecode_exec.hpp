@@ -88,15 +88,14 @@ class bc_executor {
       auto           tied = glz::to_tie(v);
       using visitor_r     = decltype(visitor(glz::get<0>(tied)));
       if constexpr (std::same_as<visitor_r, void>) {
-        /** visitor が void を返す場合: fold 式で全フィールドを走査（短絡） */
+        /** visitor が void を返す場合: fold 式で全フィールドを走査 */
         [&]<std::size_t... I>(std::index_sequence<I...>) {
-          (([&]() -> bool {
+          (([&] {
              if (std::string_view{glz::reflect<V>::keys[I]} == path) {
                visitor(glz::get<I>(tied));
-               return true;
              }
-             return false;
-           })() || ...);
+           }()),
+           ...);
         }(std::make_index_sequence<sz>{});
       } else {
         /** visitor が std::expected を返す場合: エラーを伝搬する */
@@ -307,13 +306,13 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
     if constexpr (std::same_as<visitor_t, void>) {
       bool found = false;
       [&]<std::size_t... I>(std::index_sequence<I...>) {
-        found = (([&]() -> bool {
+        (([&] {
            if (std::string_view{glz::reflect<V>::keys[I]} == key) {
              visitor(glz::get<I>(tied));
-             return true;
+             found = true;
            }
-           return false;
-         })() || ...);
+         }()),
+         ...);
       }(std::make_index_sequence<sz>{});
       if (!found && !key.empty() && !key.starts_with('@'))
         return std::unexpected(error_ctx{.ec = error_code::unknown_key});
