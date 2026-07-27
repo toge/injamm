@@ -425,19 +425,56 @@ class code_generator {
   void emit_filter_helpers() {}
 
   /**
-   * @brief レンダリング関数の先頭を生成
-   * @details テンプレート関数のシグニチャと関数本体の冒頭を出力する。
-   *          生成される関数は汎用テンプレートで、任意の型 T で利用可能。
+   * @brief 出力先バッファ版レンダリング関数の先頭を生成
+   * @details render(data, out) -> expected<void> のシグニチャと本体冒頭。
+   *          既存の std::string を出力先として受け取りバッファを再利用する。
    * @param reserve_size 文字列バッファの事前確保サイズ（バイト）
    */
-  void emit_render_start(std::size_t reserve_size = 256) {
+  void emit_render_into_start(std::size_t reserve_size = 256) {
+    auto func_name = func_prefix_.empty() ? "render" : func_prefix_;
     emit_raw("");
+    emit_raw("/**");
+    emit_raw(" * @brief テンプレート文字列から生成されたレンダリング関数（バッファ再利用版）");
+    emit_raw(" *");
+    emit_raw(" * @details injamm_codegen によって自動生成された関数。");
+    emit_raw(" *          出力先バッファを引数で受け取り、内部バッファを再利用することで");
+    emit_raw(" *          アロケーションを削減する。");
+    emit_raw(" *");
+    emit_raw(" * @tparam T データ型（フィールドへのアクセスが必要）");
+    emit_raw(" * @param data レンダリング対象のデータ");
+    emit_raw(" * @param out  出力先バッファ（内容はクリアされる）");
+    emit_raw(" * @return 正常時: void。エラー時: error_ctx");
+    emit_raw(" */");
+    emit_raw("template <typename T>");
+    emit_raw("[[nodiscard]] std::expected<void, injamm::error_ctx>");
+    emit_raw(func_name + "(const T& data, std::string& out) {");
+    ++indent_;
+    emit("out.clear();");
+    emit("out.reserve(" + std::to_string(reserve_size) + ");");
+    emit("");
+  }
+
+  /** @brief 出力先バッファ版レンダリング関数の末尾を生成 */
+  void emit_render_into_end() {
+    emit("");
+    emit("return {};");
+    --indent_;
+    emit_raw("}");
+    emit_raw("");
+  }
+
+  /**
+   * @brief アロケーション版レンダリング関数（ラッパー）を生成
+   * @details render(data) -> expected<std::string>。
+   *          内部で render(data, out) を呼び出し結果を返す。
+   */
+  void emit_render_wrapper_start() {
+    auto func_name = func_prefix_.empty() ? "render" : func_prefix_;
     emit_raw("/**");
     emit_raw(" * @brief テンプレート文字列から生成されたレンダリング関数");
     emit_raw(" *");
     emit_raw(" * @details injamm_codegen によって自動生成された関数。");
-    emit_raw(" *          テンプレート引数 T は data.name, data.age 等の");
-    emit_raw(" *          フィールドにアクセス可能な型でなければならない。");
+    emit_raw(" *          バッファ再利用版 (render(data, out)) のラッパー。");
     emit_raw(" *");
     emit_raw(" * @tparam T データ型（フィールドへのアクセスが必要）");
     emit_raw(" * @param data レンダリング対象のデータ");
@@ -455,17 +492,11 @@ class code_generator {
     emit_raw(" */");
     emit_raw("template <typename T>");
     emit_raw("[[nodiscard]] std::expected<std::string, injamm::error_ctx>");
-    auto func_name = func_prefix_.empty() ? "render" : func_prefix_;
     emit_raw(func_name + "(const T& data) {");
     ++indent_;
     emit("std::string out;");
-    emit("out.reserve(" + std::to_string(reserve_size) + ");");
-    emit("");
-  }
-
-  /** @brief レンダリング関数の末尾を生成 */
-  void emit_render_end() {
-    emit("");
+    emit("auto result = " + func_name + "(data, out);");
+    emit("if (!result) return std::unexpected(result.error());");
     emit("return out;");
     --indent_;
     emit_raw("}");
@@ -882,7 +913,7 @@ public:
     }
 
     emit_header();
-    emit_render_start(total_literal_size);
+    emit_render_into_start(total_literal_size);
 
     // 隣接リテラルを結合して出力
     std::string accumulated_literals;
@@ -920,7 +951,8 @@ public:
     // 最後の蓄積リテラルをフラッシュ
     flush_literals();
 
-    emit_render_end();
+    emit_render_into_end();
+    emit_render_wrapper_start();
     emit_footer();
     return out_.str();
   }

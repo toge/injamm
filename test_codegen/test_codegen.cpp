@@ -117,6 +117,35 @@ void check(std::string_view name, std::string_view tmpl_str, auto const& data, a
   }
 }
 
+void check_into(std::string_view name, std::string_view tmpl_str, auto const& data, auto gen_func) {
+  ++test_count;
+
+  injamm::engine<TestData> eng{std::string(tmpl_str)};
+  auto expected = eng.render(data);
+  if (!expected) {
+    std::cerr << "FAIL [" << name << "] injamm render failed: "
+              << expected.error().custom_error_message << "\n";
+    return;
+  }
+
+  std::string out;
+  out = "garbage_prefix"; // バッファ再利用の確認: 内容を意図的に汚す
+  auto result = gen_func(data, out);
+  if (!result) {
+    std::cerr << "FAIL [" << name << "] generated render_into failed\n";
+    return;
+  }
+
+  if (*expected == out) {
+    std::cout << "PASS [" << name << "]\n";
+    ++pass_count;
+  } else {
+    std::cerr << "FAIL [" << name << "]\n";
+    std::cerr << "  expected (" << expected->size() << " bytes): [" << *expected << "]\n";
+    std::cerr << "  got      (" << out.size() << " bytes): [" << out << "]\n";
+  }
+}
+
 // ============================================================
 // テスト実行
 // ============================================================
@@ -157,6 +186,14 @@ int main() {
     "Order #{{order_id}}:\n{{#if total > 1000}}[VIP]{{/if}}\n{{#items}}\n  {{name}}: ${{price}}\n{{/items}}\nTotal: ${{total}}",
     d,
     [](auto const& data) { return generated::render5(data); });
+
+  // バッファ再利用版のテスト
+  check_into("into simple", "Hello {{name}}, age={{age}}", d,
+    [](auto const& data, std::string& out) { return generated::render1(data, out); });
+  check_into("into section", "Items:\n{{#items}}\n- {{name}} x{{quantity}}\n{{/items}}", d,
+    [](auto const& data, std::string& out) { return generated::render3(data, out); });
+  check_into("into if/else", "{{#if active}}Active{{else}}Inactive{{/if}}", d,
+    [](auto const& data, std::string& out) { return generated::render4(data, out); });
 
   std::cout << "\n=== 結果: " << pass_count << "/" << test_count << " passed ===\n";
   return (pass_count == test_count) ? 0 : 1;

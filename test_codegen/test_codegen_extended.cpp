@@ -70,6 +70,31 @@ struct glz::meta<TestData> {
 int test_count = 0;
 int pass_count = 0;
 
+void check_into(std::string_view name, std::string_view tmpl_str, auto const& data, auto gen_func) {
+  ++test_count;
+  injamm::engine<std::decay_t<decltype(data)>> eng{std::string(tmpl_str)};
+  auto expected = eng.render(data);
+  if (!expected) {
+    std::cerr << "FAIL [" << name << "] runtime: " << expected.error().custom_error_message << "\n";
+    return;
+  }
+  std::string out;
+  out = "garbage";
+  auto result = gen_func(data, out);
+  if (!result) {
+    std::cerr << "FAIL [" << name << "] codegen_into failed\n";
+    return;
+  }
+  if (*expected == out) {
+    std::cout << "PASS [" << name << "]\n";
+    ++pass_count;
+  } else {
+    std::cerr << "FAIL [" << name << "]\n";
+    std::cerr << "  expected (" << expected->size() << "): [" << *expected << "]\n";
+    std::cerr << "  got      (" << out.size() << "): [" << out << "]\n";
+  }
+}
+
 void check_ext(std::string_view name, std::string_view tmpl_str, auto const& data, auto gen_func) {
   ++test_count;
   injamm::engine<std::decay_t<decltype(data)>> eng{std::string(tmpl_str)};
@@ -130,6 +155,18 @@ int main() {
     [](auto const& d) { return generated::render12(d); });
   check_ext("json filter", "{{name|json}}", d,
     [](auto const& d) { return generated::render13(d); });
+
+  // バッファ再利用版
+  check_into("into num compare gt", "{{#if age > 20}}adult{{else}}minor{{/if}}", u,
+    [](auto const& d, std::string& out) { return generated::render_ext1(d, out); });
+  check_into("into raw", "{{{name}}}", u,
+    [](auto const& d, std::string& out) { return generated::render_ext4(d, out); });
+  check_into("into dot section", "{{#nums}}[{{.}}]{{/nums}}", d,
+    [](auto const& d, std::string& out) { return generated::render7(d, out); });
+  check_into("into not", "{{#if !active}}inactive{{/if}}", d,
+    [](auto const& d, std::string& out) { return generated::render9(d, out); });
+  check_into("into json", "{{name|json}}", d,
+    [](auto const& d, std::string& out) { return generated::render13(d, out); });
 
   std::cout << "\n=== 結果: " << pass_count << "/" << test_count << " passed ===\n";
   return (pass_count == test_count) ? 0 : 1;

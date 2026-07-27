@@ -10,17 +10,45 @@
 #include <string>
 
 #include <injamm/types.hpp>
-#include "codegen_helpers.hpp"
+#include <glaze/glaze.hpp>
+#include <injamm/escape.hpp>
 
 namespace generated {
+#include "codegen_helpers.hpp"
 
+
+/**
+ * @brief テンプレート文字列から生成されたレンダリング関数（バッファ再利用版）
+ *
+ * @details injamm_codegen によって自動生成された関数。
+ *          出力先バッファを引数で受け取り、内部バッファを再利用することで
+ *          アロケーションを削減する。
+ *
+ * @tparam T データ型（フィールドへのアクセスが必要）
+ * @param data レンダリング対象のデータ
+ * @param out  出力先バッファ（内容はクリアされる）
+ * @return 正常時: void。エラー時: error_ctx
+ */
+template <typename T>
+[[nodiscard]] std::expected<void, injamm::error_ctx>
+render_ext2(const T& data, std::string& out) {
+  out.clear();
+  out.reserve(13);
+  
+  if (data.age == 30) {
+    out += "match";
+  } else {
+    out += "no match";
+  }
+  
+  return {};
+}
 
 /**
  * @brief テンプレート文字列から生成されたレンダリング関数
  *
  * @details injamm_codegen によって自動生成された関数。
- *          テンプレート引数 T は data.name, data.age 等の
- *          フィールドにアクセス可能な型でなければならない。
+ *          バッファ再利用版 (render(data, out)) のラッパー。
  *
  * @tparam T データ型（フィールドへのアクセスが必要）
  * @param data レンダリング対象のデータ
@@ -40,14 +68,8 @@ template <typename T>
 [[nodiscard]] std::expected<std::string, injamm::error_ctx>
 render_ext2(const T& data) {
   std::string out;
-  out.reserve(256);
-  
-  if (data.age == 30) {
-    out += "match";
-  } else {
-    out += "no match";
-  }
-  
+  auto result = render_ext2(data, out);
+  if (!result) return std::unexpected(result.error());
   return out;
 }
 
