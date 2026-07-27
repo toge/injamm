@@ -11,9 +11,9 @@
 
 #include <injamm/types.hpp>
 #include <injamm/escape.hpp>
-#include "codegen_helpers.hpp"
 
 namespace generated {
+#include "codegen_helpers.hpp"
 
 
 /**
@@ -43,7 +43,8 @@ render8(const T& data) {
   std::string out;
   out.reserve(1);
   
-  for (std::size_t _i1 = 0; _i1 < data.items.size(); ++_i1) {
+  auto _size1 = data.items.size();
+  for (std::size_t _i1 = 0; _i1 < _size1; ++_i1) {
     const auto& _item1 = data.items[_i1];
     html_escape_append_value(out, data.name);
     out += ":";

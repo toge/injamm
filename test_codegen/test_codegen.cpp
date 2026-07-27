@@ -11,6 +11,7 @@
 
 #include <injamm.hpp>
 #include <injamm/escape_hatch.hpp>
+#include "codegen_helpers.hpp"
 
 // ============================================================
 // テストデータ型
@@ -62,25 +63,11 @@ struct glz::meta<ItemData> {
 // 各テストケースの生成コードを個別にインクルード
 // テンプレート関数なので名前衝突を避けるため名前空間で分離
 
-namespace gen1 {
 #include "render1.hpp"
-}
-
-namespace gen2 {
 #include "render2.hpp"
-}
-
-namespace gen3 {
 #include "render3.hpp"
-}
-
-namespace gen4 {
 #include "render4.hpp"
-}
-
-namespace gen5 {
 #include "render5.hpp"
-}
 
 // ============================================================
 // テストヘルパ
@@ -151,25 +138,25 @@ int main() {
 
   // テスト1: 単純変数
   check("simple vars", "Hello {{name}}, age={{age}}", d,
-    [](auto const& data) { return gen1::generated::render(data); });
+    [](auto const& data) { return generated::render1(data); });
 
   // テスト2: フィルタ
   check("filters", "Name: {{name|upper}}, Lower: {{name|lower}}", d,
-    [](auto const& data) { return gen2::generated::render(data); });
+    [](auto const& data) { return generated::render2(data); });
 
   // テスト3: セクション
   check("section", "Items:\n{{#items}}\n- {{name}} x{{quantity}}\n{{/items}}", d,
-    [](auto const& data) { return gen3::generated::render(data); });
+    [](auto const& data) { return generated::render3(data); });
 
   // テスト4: if/else
   check("if/else", "{{#if active}}Active{{else}}Inactive{{/if}}", d,
-    [](auto const& data) { return gen4::generated::render(data); });
+    [](auto const& data) { return generated::render4(data); });
 
   // テスト5: 複合
   check("complex",
     "Order #{{order_id}}:\n{{#if total > 1000}}[VIP]{{/if}}\n{{#items}}\n  {{name}}: ${{price}}\n{{/items}}\nTotal: ${{total}}",
     d,
-    [](auto const& data) { return gen5::generated::render(data); });
+    [](auto const& data) { return generated::render5(data); });
 
   std::cout << "\n=== 結果: " << pass_count << "/" << test_count << " passed ===\n";
   return (pass_count == test_count) ? 0 : 1;

@@ -318,6 +318,7 @@ class code_generator {
   bool no_simd_ = false;       /**< SIMD命令を生成しない */
   int indent_ = 0;             /**現在のインデントレベル */
   int loop_depth_ = 0;         /**< 現在のループ深度 */
+  int cond_section_depth_ = 0; /**< emit_at_section/inverted のネスト深度 */
   bool filtered_declared_ = false; /**< _filtered 変数が宣言済みか */
   std::ostringstream out_;     /**< 出力ストリーム */
 
@@ -411,9 +412,9 @@ class code_generator {
     } else {
       emit_raw("#include <injamm/escape.hpp>");
     }
-    emit_raw("#include \"codegen_helpers.hpp\"");
     emit_raw("");
     emit_raw("namespace generated {");
+    emit_raw("#include \"codegen_helpers.hpp\"");
     emit_raw("");
   }
 
@@ -502,12 +503,43 @@ class code_generator {
       auto access = resolve_access(bc.var_refs[inst.operand2]);
       ++loop_depth_;
       auto idx = std::to_string(loop_depth_);
-      emit("for (std::size_t _i" + idx + " = 0; _i" + idx + " < " + access + ".size(); ++_i" + idx + ") {");
+      emit("auto _size" + idx + " = " + access + ".size();");
+      emit("for (std::size_t _i" + idx + " = 0; _i" + idx + " < _size" + idx + "; ++_i" + idx + ") {");
       ++indent_;
       emit("const auto& _item" + idx + " = " + access + "[_i" + idx + "];");
     }
+    else if (op == bc::opcode::emit_at_section) {
+      auto kind = inst.operand2;
+      auto d = std::to_string(loop_depth_);
+      if (kind == 0) {
+        emit("if (_i" + d + " > 0) {");
+      } else if (kind == 1) {
+        emit("if (_i" + d + " == 0) {");
+      } else if (kind == 2) {
+        emit("if (_i" + d + " + 1 == _size" + d + ") {");
+      }
+      ++indent_;
+      ++cond_section_depth_;
+    }
+    else if (op == bc::opcode::emit_at_inverted) {
+      auto kind = inst.operand2;
+      auto d = std::to_string(loop_depth_);
+      if (kind == 0) {
+        emit("if (_i" + d + " == 0) {");
+      } else if (kind == 1) {
+        emit("if (_i" + d + " > 0) {");
+      } else if (kind == 2) {
+        emit("if (_i" + d + " + 1 < _size" + d + ") {");
+      }
+      ++indent_;
+      ++cond_section_depth_;
+    }
     else if (op == bc::opcode::emit_end) {
-      if (loop_depth_ > 0) {
+      if (cond_section_depth_ > 0) {
+        --indent_;
+        emit("}");
+        --cond_section_depth_;
+      } else if (loop_depth_ > 0) {
         --indent_;
         emit("}");
         --loop_depth_;
@@ -529,10 +561,10 @@ class code_generator {
     }
     else if (op == bc::opcode::emit_at_last) {
       auto d = std::to_string(loop_depth_);
-      emit("out += (_i" + d + " == _item" + d + ".size() - 1) ? \"true\" : \"false\";");
+      emit("out += (_i" + d + " == _size" + d + " - 1) ? \"true\" : \"false\";");
     }
     else if (op == bc::opcode::emit_at_size) {
-      emit("append_number(out, _item" + std::to_string(loop_depth_) + ".size());");
+      emit("append_number(out, _size" + std::to_string(loop_depth_) + ");");
     }
     else if (op == bc::opcode::emit_if) {
       auto access = resolve_access(bc.var_refs[inst.operand2]);

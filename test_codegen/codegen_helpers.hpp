@@ -18,11 +18,6 @@
 #endif
 #endif
 
-#include <injamm/serialize_value.hpp>
-#include <glaze/glaze.hpp>
-
-namespace generated {
-
 #ifndef INJAMM_CODEGEN_DISABLE_SIMD
 inline void html_escape_append(std::string& out, std::string_view sv) {
   injamm::detail::html_escape_into(out, sv);
@@ -297,14 +292,11 @@ inline void html_escape_append_value(std::string& out, V const& v) {
     html_escape_append(out, tmp);
   } else if constexpr (std::is_enum_v<V>) {
     html_escape_append(out, std::to_string(static_cast<std::underlying_type_t<V>>(v)));
-  } else {
-    std::string _ser;
-    if constexpr (glz::write_supported<std::decay_t<V>, glz::JSON>) {
-      (void)glz::write_json(v, _ser);
-    } else {
-      injamm::detail::serialize_value(_ser, v);
-    }
+  } else if constexpr (std::is_arithmetic_v<V>) {
+    std::string _ser = std::to_string(v);
     html_escape_append(out, _ser);
+  } else {
+    html_escape_append(out, v);
   }
 }
 
@@ -494,7 +486,5 @@ inline void filter_repeat(std::string& s, int n) {
       s += saved;
   }
 }
-
-} // namespace generated
 
 #endif // INJAMM_CODEGEN_HELPERS_HPP

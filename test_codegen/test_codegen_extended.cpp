@@ -9,6 +9,7 @@
 
 #include <injamm.hpp>
 #include <injamm/escape_hatch.hpp>
+#include "codegen_helpers.hpp"
 
 struct User {
   std::string name;
@@ -34,7 +35,7 @@ struct glz::meta<User> {
 #include "render_ext5.hpp"
 
 // 新機能テスト用テンプレート
-struct Item {
+struct Item2 {
   std::string name;
   int quantity = 0;
 };
@@ -42,17 +43,19 @@ struct TestData {
   std::string name;
   bool active = false;
   int age = 0;
-  std::vector<Item> items;
+  std::vector<Item2> items;
+  std::vector<int> nums;
 };
 
 template <>
-struct glz::meta<Item> {
-  static constexpr auto value = glz::object("name", &Item::name, "quantity", &Item::quantity);
+struct glz::meta<Item2> {
+  static constexpr auto value = glz::object("name", &Item2::name, "quantity", &Item2::quantity);
 };
 template <>
 struct glz::meta<TestData> {
   static constexpr auto value = glz::object("name", &TestData::name, "active", &TestData::active,
-                                             "age", &TestData::age, "items", &TestData::items);
+                                             "age", &TestData::age, "items", &TestData::items,
+                                             "nums", &TestData::nums);
 };
 
 #include "render6.hpp"
@@ -60,6 +63,8 @@ struct glz::meta<TestData> {
 #include "render8.hpp"
 #include "render9.hpp"
 #include "render10.hpp"
+#include "render11.hpp"
+#include "render12.hpp"
 
 int test_count = 0;
 int pass_count = 0;
@@ -89,7 +94,7 @@ void check_ext(std::string_view name, std::string_view tmpl_str, auto const& dat
 
 int main() {
   User u{"Alice", 30, true, 95.5};
-  TestData d{"MyApp", true, 25, {{"Widget", 3}, {"Gadget", 7}}};
+  TestData d{"MyApp", true, 25, {{"Widget", 3}, {"Gadget", 7}}, {10, 20, 30}};
 
   std::cout << "=== codegen 拡張テスト ===\n\n";
 
@@ -112,12 +117,16 @@ int main() {
   // 各コード生成済み render 関数はそれぞれ特定のテンプレートから生成されている
   check_ext("this aka {{.}}", "Hello {{this}} World", std::string{"hello"},
     [](auto const& d) { return generated::render6(d); });
-  check_ext("dot in section", "{{#items}}[{{.}}]{{/items}}", d,
+  check_ext("dot in section", "{{#nums}}[{{.}}]{{/nums}}", d,
     [](auto const& d) { return generated::render7(d); });
   check_ext("root in section", "{{#items}}{{root.name}}:{{name}}{{/items}}", d,
     [](auto const& d) { return generated::render8(d); });
   check_ext("not operator", "{{#if !active}}inactive{{/if}}", d,
     [](auto const& d) { return generated::render9(d); });
+  check_ext("first section", "{{#items}}[{{#loop.is_first}}F:{{name}}{{/loop.is_first}}][{{^loop.is_first}}N:{{name}}{{/loop.is_first}}]{{/items}}", d,
+    [](auto const& d) { return generated::render11(d); });
+  check_ext("last section", "{{#items}}[{{#loop.is_last}}L:{{name}}{{/loop.is_last}}]{{/items}}", d,
+    [](auto const& d) { return generated::render12(d); });
 
   std::cout << "\n=== 結果: " << pass_count << "/" << test_count << " passed ===\n";
   return (pass_count == test_count) ? 0 : 1;

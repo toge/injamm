@@ -11,9 +11,9 @@
 
 #include <injamm/types.hpp>
 #include <injamm/escape.hpp>
-#include "codegen_helpers.hpp"
 
 namespace generated {
+#include "codegen_helpers.hpp"
 
 
 /**

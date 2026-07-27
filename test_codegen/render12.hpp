@@ -1,6 +1,6 @@
 #pragma once
-#ifndef RENDER_RENDER4_HPP
-#define RENDER_RENDER4_HPP
+#ifndef RENDER_RENDER12_HPP
+#define RENDER_RENDER12_HPP
 /**
  * @file render.hpp
  * @brief injamm_codegen によって自動生成されたレンダリング関数
@@ -39,14 +39,19 @@ namespace generated {
  */
 template <typename T>
 [[nodiscard]] std::expected<std::string, injamm::error_ctx>
-render4(const T& data) {
+render12(const T& data) {
   std::string out;
-  out.reserve(14);
+  out.reserve(4);
   
-  if (static_cast<bool>(data.active)) {
-    out += "Active";
-  } else {
-    out += "Inactive";
+  auto _size1 = data.items.size();
+  for (std::size_t _i1 = 0; _i1 < _size1; ++_i1) {
+    const auto& _item1 = data.items[_i1];
+    out += "[";
+    if (_i1 + 1 == _size1) {
+      out += "L:";
+      html_escape_append_value(out, _item1.name);
+    }
+    out += "]";
   }
   
   return out;
@@ -54,4 +59,4 @@ render4(const T& data) {
 
 } // namespace generated
 
-#endif // RENDER_RENDER4_HPP
+#endif // RENDER_RENDER12_HPP
