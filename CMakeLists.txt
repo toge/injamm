@@ -270,6 +270,7 @@ if(BUILD_UTIL)
   add_executable(injamm_codegen
     util/injamm_codegen.cpp
   )
+  target_link_libraries(injamm_codegen PRIVATE injamm)
   target_include_directories(injamm_codegen PRIVATE include)
   target_compile_features(injamm_codegen PRIVATE cxx_std_23)
 

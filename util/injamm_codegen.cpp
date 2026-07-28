@@ -1,12 +1,14 @@
 /**
  * @file injamm_codegen.cpp
- * @brief バイトコード(.bc)から glaze 非依存の C++ レンダリング関数を生成する
+ * @brief バイトコード(.bc)またはテンプレート文字列から C++ レンダリング関数を生成する
  *
- * @details このツールは injamm_bc で生成されたバイトコードを読み込み、
+ * @details このツールはバイトコードファイルまたはテンプレート文字列を元に、
  *          glaze に依存しない C++ テンプレート関数を生成する。
  *          生成された関数は直接フィールドアクセスにより高速にレンダリングを行う。
+ *          テンプレート文字列から生成する場合は、内部で engine によるコンパイルと
+ *          バイトコードシリアライズを経由して既存のコードジェネレータに受け渡す。
  *
- *          用法: injamm_codegen -i template.bc -t UserData -o render.hpp
+ *          用法: injamm_codegen (-i <input.bc> | -e <template>) -t <Type> -o <output.hpp>
  *
  * @note 生成されるコードは以下の機能に対応している:
  *       - 変数展開 ({/{{var}}})
@@ -30,6 +32,15 @@
 #include <vector>
 
 #include <injamm/bytecode_fwd.hpp>
+
+/**
+ * @brief -e オプションによるテンプレート文字列からの直接コード生成のために必要
+ * @details engine<DummyCtx> によるテンプレートコンパイルおよび save_bytecode による
+ *          バイトコードシリアライズに必要な関数・型を提供する。
+ *          従来の -i オプション（.bc ファイル入力）では不要だが、単一バイナリとして
+ *          両方のパスをサポートするためにインクルードする。
+ */
+#include "injamm.hpp"
 
 // ============================================================
 // バイトコード定義（glaze 非依存の最小限の型）
@@ -1056,11 +1067,34 @@ public:
 // CLI
 // ============================================================
 
+/**
+ * @brief テンプレート→バイトコード変換用ダミーコンテキスト
+ *
+ * @details injamm の engine はテンプレートコンパイル時に glaze リフレクションで
+ *          フィールドインデックスを解決する。コードジェネレータはフィールド名による
+ *          直接アクセスコードを生成するため、インデックス解決結果は不要である。
+ *          このダミー型は engine の型引数を満たすためだけに存在し、解決された
+ *          フィールドインデックスはバイトコードシリアライズ時に破棄される。
+ */
+namespace {
+
+struct DummyCtx {
+  int _dummy{};
+};
+
+} // namespace
+
+template <>
+struct glz::meta<DummyCtx> {
+  static constexpr auto value = glz::object("_dummy", &DummyCtx::_dummy);
+};
+
 /** @brief 使用方法を表示 */
 void print_usage() {
-  std::cerr << "用法: injamm_codegen -i <input.bc> -t <Type> -o <output.hpp> [-n <namespace>] [-p <prefix>] [--no-simd]\n";
+  std::cerr << "用法: injamm_codegen (-i <input.bc> | -e <template>) -t <Type> -o <output.hpp> [-n <namespace>] [-p <prefix>] [--no-simd]\n";
   std::cerr << "\nオプション:\n";
   std::cerr << "  -i <file>   入力バイトコードファイル (.bc)\n";
+  std::cerr << "  -e <string> インラインテンプレート文字列\n";
   std::cerr << "  -t <type>   データ型名 (例: UserData, myapp::UserInfo)\n";
   std::cerr << "  -o <file>   出力ヘッダファイル (.hpp)\n";
   std::cerr << "  -n <ns>     生成コードの名前空間 (デフォルト: generated)\n";
@@ -1071,19 +1105,29 @@ void print_usage() {
 
 /**
  * @brief メインエントリポイント
- * @details コマンド引数を解析し、バイトコードを読み込んで C++ コードを生成する
+ *
+ * @details コマンド引数を解析し、テンプレート文字列またはバイトコードファイルから
+ *          C++ レンダリング関数を生成する。-e が指定された場合は engine でテンプレートを
+ *          コンパイル後、save_bytecode でバイナリシリアライズして既存の reader に
+ *          受け渡す。-i が指定された場合は従来通り .bc ファイルを直接読み込む。
+ *
+ * @param argc 引数の個数
+ * @param argv 引数の配列
+ * @return int 正常終了時 0、エラー時 1
  */
 int main(int argc, char* argv[]) {
-  std::string input_path;
-  std::string type_name;
-  std::string output_path;
-  std::string ns = "generated";
-  std::string prefix;
-  bool no_simd = false;
+  std::string input_path;   /**< .bc ファイルのパス（-i で指定） */
+  std::string expr_tmpl;    /**< インラインテンプレート文字列（-e で指定） */
+  std::string type_name;    /**< データ型名（-t で指定、例: UserData） */
+  std::string output_path;  /**< 出力ヘッダファイルのパス（-o で指定） */
+  std::string ns = "generated";   /**< 生成コードの名前空間（-n で指定、デフォルト: generated） */
+  std::string prefix;       /**< 関数名プレフィックス（-p で指定、デフォルト: render） */
+  bool no_simd = false;     /**< SIMD 最適化を無効化するフラグ（--no-simd で指定） */
 
   for (int i = 1; i < argc; ++i) {
     std::string_view arg = argv[i];
     if (arg == "-i" && i + 1 < argc) { input_path = argv[++i]; }
+    else if ((arg == "-e" || arg == "--template") && i + 1 < argc) { expr_tmpl = argv[++i]; }
     else if (arg == "-t" && i + 1 < argc) { type_name = argv[++i]; }
     else if (arg == "-o" && i + 1 < argc) { output_path = argv[++i]; }
     else if (arg == "-n" && i + 1 < argc) { ns = argv[++i]; }
@@ -1093,37 +1137,59 @@ int main(int argc, char* argv[]) {
     else { std::cerr << "不明なオプション: " << arg << "\n"; print_usage(); return 1; }
   }
 
-  if (input_path.empty() || type_name.empty() || output_path.empty()) {
-    std::cerr << "エラー: -i, -t, -o は必須です\n";
+  /* -e か -i のいずれか、および -t, -o は必須 */
+  if ((input_path.empty() && expr_tmpl.empty()) || type_name.empty() || output_path.empty()) {
+    std::cerr << "エラー: -e (または -i) と -t, -o は必須です\n";
     print_usage();
     return 1;
   }
 
-  // ファイル読み込み
-  std::ifstream file(input_path, std::ios::binary | std::ios::ate);
-  if (!file) {
-    std::cerr << "エラー: " << input_path << " を開けません\n";
-    return 1;
+  /** @brief バイナリバイトコードデータのバッファ（-e のシリアライズ結果または .bc ファイルの内容） */
+  std::string binary_data;
+
+  if (!expr_tmpl.empty()) {
+    /* ---- パス A: テンプレート文字列から直接生成 ---- */
+    /* engine でテンプレートをコンパイルし、バイトコードをバイナリ形式にシリアライズする。
+       シリアライズ後は既存の reader で読み込むことで、code_generator とのインタフェースを統一する。 */
+    injamm::engine<DummyCtx> eng(expr_tmpl);
+    auto const& real_bc = eng.get_bytecode();
+    if (real_bc.error.has_error()) {
+      std::cerr << "エラー: " << real_bc.error.message() << "\n";
+      return 1;
+    }
+    std::ostringstream ss;
+    auto ec = injamm::save_bytecode(real_bc, ss);
+    if (ec != injamm::error_code::none) {
+      std::cerr << "エラー: バイトコードのシリアライズに失敗しました\n";
+      return 1;
+    }
+    binary_data = ss.str();
+  } else {
+    /* ---- パス B: .bc ファイルから読み込み（従来のパス） ---- */
+    std::ifstream file(input_path, std::ios::binary | std::ios::ate);
+    if (!file) {
+      std::cerr << "エラー: " << input_path << " を開けません\n";
+      return 1;
+    }
+    auto size = file.tellg();
+    file.seekg(0);
+    binary_data.resize(static_cast<std::size_t>(size));
+    file.read(binary_data.data(), size);
   }
 
-  auto size = file.tellg();
-  file.seekg(0);
-  std::string data(static_cast<std::size_t>(size), '\0');
-  file.read(data.data(), size);
-
-  // バイトコード解析
-  reader r(data.data(), data.size());
+  /* バイトコードとして解析 */
+  reader r(binary_data.data(), binary_data.size());
   auto bc = r.read_bytecode();
   if (!bc) {
     std::cerr << "エラー: バイトコードの解析に失敗しました\n";
     return 1;
   }
 
-  // C++ コード生成
+  /* C++ コード生成 */
   code_generator gen(type_name, ns, prefix, no_simd);
   auto code = gen.generate(*bc);
 
-  // 出力
+  /* 生成されたコードをファイルに書き出し */
   std::ofstream out(output_path);
   if (!out) {
     std::cerr << "エラー: " << output_path << " を開けません\n";
