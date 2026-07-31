@@ -29,6 +29,7 @@
 #include <sstream>
 #include <string>
 #include <string_view>
+#include <unordered_set>
 #include <vector>
 
 #include <injamm/bytecode_fwd.hpp>
@@ -330,7 +331,8 @@ class code_generator {
   int indent_ = 0;             /**現在のインデントレベル */
   int loop_depth_ = 0;         /**< 現在のループ深度 */
   int cond_section_depth_ = 0; /**< emit_at_section/inverted のネスト深度 */
-  bool filtered_declared_ = false; /**< _filtered 変数が宣言済みか */
+  /**< インデックス形式（_iN/_sizeN）が必要な emit_section 命令 */
+  std::unordered_set<const bc::instruction*> index_loops_;
   std::ostringstream out_;     /**< 出力ストリーム */
 
   /**
@@ -440,8 +442,9 @@ class code_generator {
    * @details render(data, out) -> expected<void> のシグニチャと本体冒頭。
    *          既存の std::string を出力先として受け取りバッファを再利用する。
    * @param reserve_size 文字列バッファの事前確保サイズ（バイト）
+   * @param declare_filtered フィルタバッファ _filtered を先頭で宣言するか
    */
-  void emit_render_into_start(std::size_t reserve_size = 256) {
+  void emit_render_into_start(std::size_t reserve_size = 256, bool declare_filtered = false) {
     auto func_name = func_prefix_.empty() ? "render" : func_prefix_;
     emit_raw("");
     emit_raw("/**");
@@ -462,6 +465,12 @@ class code_generator {
     ++indent_;
     emit("out.clear();");
     emit("out.reserve(" + std::to_string(reserve_size) + ");");
+    if (declare_filtered) {
+      // フィルタバッファは関数先頭で宣言し assign で再利用する
+      // （ループ内フィルタで毎回アロケーションしないための工夫）
+      emit("std::string _filtered;");
+      emit("_filtered.reserve(64);");
+    }
     emit("");
   }
 
@@ -576,11 +585,16 @@ class code_generator {
 
       /* loop_depth_ などの状態を退避: 各 partial は独立した関数内部と同じ扱い */
       auto saved_loop = loop_depth_;
-      auto saved_filtered = filtered_declared_;
       auto saved_cond = cond_section_depth_;
       loop_depth_ = 0;
-      filtered_declared_ = false;
       cond_section_depth_ = 0;
+
+      /* _filtered を使う partial はブロック先頭で宣言する（ループ内フィルタの再アロケーション回避） */
+      if (uses_filtered(*pe.bc)) {
+        emit("std::string _filtered;");
+        emit("_filtered.reserve(64);");
+      }
+      precompute_index_loops(*pe.bc);
 
       for (auto const& pi : pe.bc->instructions) {
         emit_instruction(pi, *pe.bc);
@@ -589,7 +603,6 @@ class code_generator {
       emit("return {};");
 
       loop_depth_ = saved_loop;
-      filtered_declared_ = saved_filtered;
       cond_section_depth_ = saved_cond;
 
       --indent_;
@@ -618,6 +631,48 @@ class code_generator {
   }
 
   /**
+   * @brief ループ本体がインデックス変数 (_iN/_sizeN) を参照する emit_section を事前収集
+   * @details @index/@first/@last/@size および loop.is_first/is_last 系
+   *          (emit_at_section/emit_at_inverted) を本体に含むループはインデックス形式を
+   *          維持し、それ以外は range-for に変換する。ネストループはスタックで追跡し、
+   *          インデックス参照命令は最も内側のループに帰属させる。
+   * @param bc 解析対象のバイトコード
+   */
+  void precompute_index_loops(bc::bytecode const& bc) {
+    index_loops_.clear();
+    std::vector<const bc::instruction*> stack;
+    for (auto const& inst : bc.instructions) {
+      auto op = inst.op;
+      if (op == bc::opcode::emit_section) {
+        stack.push_back(&inst);
+      }
+      else if (op == bc::opcode::emit_at_index || op == bc::opcode::emit_at_index1 ||
+               op == bc::opcode::emit_at_first || op == bc::opcode::emit_at_last ||
+               op == bc::opcode::emit_at_size || op == bc::opcode::emit_at_section ||
+               op == bc::opcode::emit_at_inverted) {
+        if (!stack.empty()) index_loops_.insert(stack.back());
+      }
+      else if (op == bc::opcode::emit_end) {
+        if (!stack.empty()) stack.pop_back();
+      }
+    }
+  }
+
+  /**
+   * @brief バイトコードが _filtered バッファを使用するか判定
+   * @details resolve_filtered が存在すれば以降のフィルタ命令も _filtered を使うため、
+   *          この命令の有無だけで判定できる。
+   * @param bc 判定対象のバイトコード
+   * @return _filtered を使用する場合は true
+   */
+  bool uses_filtered(bc::bytecode const& bc) {
+    for (auto const& inst : bc.instructions) {
+      if (inst.op == bc::opcode::resolve_filtered) return true;
+    }
+    return false;
+  }
+
+  /**
    * @brief 個々のバイトコード命令を C++ コードに変換
    * @param inst 変換する命令
    * @param bc 含まれるバイトコード（リテラル・変数参照テーブルへのアクセス用）
@@ -640,10 +695,17 @@ class code_generator {
       auto access = resolve_access(bc.var_refs[inst.operand2]);
       ++loop_depth_;
       auto idx = std::to_string(loop_depth_);
-      emit("auto _size" + idx + " = " + access + ".size();");
-      emit("for (std::size_t _i" + idx + " = 0; _i" + idx + " < _size" + idx + "; ++_i" + idx + ") {");
-      ++indent_;
-      emit("const auto& _item" + idx + " = " + access + "[_i" + idx + "];");
+      if (index_loops_.count(&inst) != 0) {
+        /* @index/@first/@last/@size 等を参照するループはインデックス形式を維持 */
+        emit("auto _size" + idx + " = " + access + ".size();");
+        emit("for (std::size_t _i" + idx + " = 0; _i" + idx + " < _size" + idx + "; ++_i" + idx + ") {");
+        ++indent_;
+        emit("const auto& _item" + idx + " = " + access + "[_i" + idx + "];");
+      } else {
+        /* インデックス変数を参照しないループは range-for に変換（境界チェック削減） */
+        emit("for (const auto& _item" + idx + " : " + access + ") {");
+        ++indent_;
+      }
     }
     else if (op == bc::opcode::emit_at_section) {
       auto kind = inst.operand2;
@@ -773,10 +835,6 @@ class code_generator {
       auto access = resolve_access(ref);
       bool use_json = (ref.filter_flags & 1) != 0;
       if (use_json) {
-        if (!filtered_declared_) {
-          emit("std::string _filtered;");
-          filtered_declared_ = true;
-        }
         // runtime: reflectable → glz::write_json, serializable → serialize_value (raw)
         emit("if constexpr (::glz::reflectable<decltype(" + access + ")>) {");
         ++indent_;
@@ -784,16 +842,12 @@ class code_generator {
         --indent_;
         emit("} else {");
         ++indent_;
-        emit("_filtered = " + access + ";");
+        emit("_filtered.assign(" + access + ");");
         --indent_;
         emit("}");
       } else {
-        if (!filtered_declared_) {
-          emit("std::string _filtered = " + access + ";");
-          filtered_declared_ = true;
-        } else {
-          emit("_filtered = " + access + ";");
-        }
+        // _filtered は関数先頭で宣言済み: assign でバッファ容量を再利用する
+        emit("_filtered.assign(" + access + ");");
       }
     }
     else if (op == bc::opcode::filter_json) {
@@ -1006,8 +1060,6 @@ public:
    * @return 生成された C++ ヘッダファイルの内容
    */
   std::string generate(bc::bytecode const& bc) {
-    filtered_declared_ = false;
-
     // リテラルの合計サイズを計算して reserve に使用
     std::size_t total_literal_size = 0;
     for (auto const& lit : bc.literals) {
@@ -1018,7 +1070,10 @@ public:
     /* partial ディスパッチ関数を先に出力: メイン関数から render_partial<"name"> として
        呼び出せるようにする。partial がない場合は何も出力しない。 */
     emit_partial_dispatch(bc);
-    emit_render_into_start(total_literal_size);
+    emit_render_into_start(total_literal_size, uses_filtered(bc));
+
+    /* range-for 化の判定をループ命令の生成前に済ませる */
+    precompute_index_loops(bc);
 
     // 隣接リテラルを結合して出力
     std::string accumulated_literals;

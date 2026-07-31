@@ -42,9 +42,7 @@ render5(const T& data, std::string& out) {
     out += "[VIP]";
   }
   out += "\n";
-  auto _size1 = data.items.size();
-  for (std::size_t _i1 = 0; _i1 < _size1; ++_i1) {
-    const auto& _item1 = data.items[_i1];
+  for (const auto& _item1 : data.items) {
     out += "\n  ";
     html_escape_append_value(out, _item1.name);
     out += ": $";

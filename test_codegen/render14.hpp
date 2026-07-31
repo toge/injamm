@@ -1,6 +1,6 @@
 #pragma once
-#ifndef RENDER_RENDER2_HPP
-#define RENDER_RENDER2_HPP
+#ifndef RENDER_RENDER14_HPP
+#define RENDER_RENDER14_HPP
 /**
  * @file render.hpp
  * @brief injamm_codegen によって自動生成されたレンダリング関数
@@ -31,20 +31,15 @@ namespace generated {
  */
 template <typename T>
 [[nodiscard]] std::expected<void, injamm::error_ctx>
-render2(const T& data, std::string& out) {
+render14(const T& data, std::string& out) {
   out.clear();
-  out.reserve(15);
-  std::string _filtered;
-  _filtered.reserve(64);
+  out.reserve(2);
   
-  out += "Name: ";
-  _filtered.assign(data.name);
-  filter_to_upper(_filtered);
-  html_escape_append(out, _filtered);
-  out += ", Lower: ";
-  _filtered.assign(data.name);
-  filter_to_lower(_filtered);
-  html_escape_append(out, _filtered);
+  html_escape_append_value(out, data.name);
+  out += "|";
+  html_escape_append_value(out, data.active);
+  out += "|";
+  html_escape_append_value(out, data.age);
   
   return {};
 }
@@ -71,13 +66,13 @@ render2(const T& data, std::string& out) {
  */
 template <typename T>
 [[nodiscard]] std::expected<std::string, injamm::error_ctx>
-render2(const T& data) {
+render14(const T& data) {
   std::string out;
-  auto result = render2(data, out);
+  auto result = render14(data, out);
   if (!result) return std::unexpected(result.error());
   return out;
 }
 
 } // namespace generated
 
-#endif // RENDER_RENDER2_HPP
+#endif // RENDER_RENDER14_HPP

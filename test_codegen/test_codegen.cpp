@@ -68,6 +68,7 @@ struct glz::meta<ItemData> {
 #include "render3.hpp"
 #include "render4.hpp"
 #include "render5.hpp"
+#include "render14.hpp"
 
 // ============================================================
 // テストヘルパ
@@ -187,6 +188,10 @@ int main() {
     d,
     [](auto const& data) { return generated::render5(data); });
 
+  // テスト6: bool と数値の直接出力（エスケープ不要パス）
+  check("bool and numeric out", "{{name}}|{{active}}|{{age}}", d,
+    [](auto const& data) { return generated::render14(data); });
+
   // バッファ再利用版のテスト
   check_into("into simple", "Hello {{name}}, age={{age}}", d,
     [](auto const& data, std::string& out) { return generated::render1(data, out); });
@@ -194,6 +199,8 @@ int main() {
     [](auto const& data, std::string& out) { return generated::render3(data, out); });
   check_into("into if/else", "{{#if active}}Active{{else}}Inactive{{/if}}", d,
     [](auto const& data, std::string& out) { return generated::render4(data, out); });
+  check_into("into bool and numeric out", "{{name}}|{{active}}|{{age}}", d,
+    [](auto const& data, std::string& out) { return generated::render14(data, out); });
 
   std::cout << "\n=== 結果: " << pass_count << "/" << test_count << " passed ===\n";
   return (pass_count == test_count) ? 0 : 1;

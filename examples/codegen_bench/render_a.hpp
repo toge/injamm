@@ -1,6 +1,6 @@
 #pragma once
-#ifndef RENDER_RENDER2_HPP
-#define RENDER_RENDER2_HPP
+#ifndef RENDER_RENDER_A_HPP
+#define RENDER_RENDER_A_HPP
 /**
  * @file render.hpp
  * @brief injamm_codegen によって自動生成されたレンダリング関数
@@ -31,20 +31,21 @@ namespace generated {
  */
 template <typename T>
 [[nodiscard]] std::expected<void, injamm::error_ctx>
-render2(const T& data, std::string& out) {
+render_a(const T& data, std::string& out) {
   out.clear();
-  out.reserve(15);
-  std::string _filtered;
-  _filtered.reserve(64);
+  out.reserve(5);
   
-  out += "Name: ";
-  _filtered.assign(data.name);
-  filter_to_upper(_filtered);
-  html_escape_append(out, _filtered);
-  out += ", Lower: ";
-  _filtered.assign(data.name);
-  filter_to_lower(_filtered);
-  html_escape_append(out, _filtered);
+  auto _size1 = data.items.size();
+  for (std::size_t _i1 = 0; _i1 < _size1; ++_i1) {
+    const auto& _item1 = data.items[_i1];
+    out += "[";
+    html_escape_append_value(out, _item1.name);
+    out += "/";
+    html_escape_append_value(out, _item1.quantity);
+    out += "/";
+    html_escape_append_value(out, _item1.price);
+    out += "]\n";
+  }
   
   return {};
 }
@@ -71,13 +72,13 @@ render2(const T& data, std::string& out) {
  */
 template <typename T>
 [[nodiscard]] std::expected<std::string, injamm::error_ctx>
-render2(const T& data) {
+render_a(const T& data) {
   std::string out;
-  auto result = render2(data, out);
+  auto result = render_a(data, out);
   if (!result) return std::unexpected(result.error());
   return out;
 }
 
 } // namespace generated
 
-#endif // RENDER_RENDER2_HPP
+#endif // RENDER_RENDER_A_HPP

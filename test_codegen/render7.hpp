@@ -35,9 +35,7 @@ render7(const T& data, std::string& out) {
   out.clear();
   out.reserve(2);
   
-  auto _size1 = data.nums.size();
-  for (std::size_t _i1 = 0; _i1 < _size1; ++_i1) {
-    const auto& _item1 = data.nums[_i1];
+  for (const auto& _item1 : data.nums) {
     out += "[";
     html_escape_append_value(out, _item1);
     out += "]";

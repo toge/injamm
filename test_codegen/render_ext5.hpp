@@ -34,8 +34,10 @@ template <typename T>
 render_ext5(const T& data, std::string& out) {
   out.clear();
   out.reserve(0);
+  std::string _filtered;
+  _filtered.reserve(64);
   
-  std::string _filtered = data.name;
+  _filtered.assign(data.name);
   filter_to_upper(_filtered);
   filter_to_lower(_filtered);
   html_escape_append(out, _filtered);

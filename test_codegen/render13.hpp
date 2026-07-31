@@ -34,12 +34,13 @@ template <typename T>
 render13(const T& data, std::string& out) {
   out.clear();
   out.reserve(0);
-  
   std::string _filtered;
+  _filtered.reserve(64);
+  
   if constexpr (::glz::reflectable<decltype(data.name)>) {
     (void)::glz::write_json(data.name, _filtered);
   } else {
-    _filtered = data.name;
+    _filtered.assign(data.name);
   }
   html_escape_append(out, _filtered);
   
