@@ -670,6 +670,13 @@ class code_generator {
                op == bc::opcode::emit_at_inverted) {
         if (!stack.empty()) index_loops_.insert(stack.back());
       }
+      else if (op == bc::opcode::emit_if || op == bc::opcode::emit_if_not ||
+               op == bc::opcode::emit_if_or || op == bc::opcode::emit_if_and) {
+        auto const& ref = bc.var_refs[inst.operand2];
+        if (!stack.empty() && (ref.key == "loop.is_last" || ref.key == "loop.is_first")) {
+          index_loops_.insert(stack.back());
+        }
+      }
       else if (op == bc::opcode::emit_end) {
         if (!stack.empty()) stack.pop_back();
       }
@@ -784,7 +791,7 @@ class code_generator {
       emit("append_number(out, _size" + std::to_string(loop_depth_) + ");");
     }
     else if (op == bc::opcode::emit_if) {
-      auto access = resolve_access(bc.var_refs[inst.operand2]);
+      auto access = resolve_if_access(bc.var_refs[inst.operand2]);
       emit("if (static_cast<bool>(" + access + ")) {");
       ++indent_;
     }
@@ -1016,17 +1023,17 @@ class code_generator {
       ++indent_;
     }
     else if (op == bc::opcode::emit_if_or) {
-      auto access = resolve_access(bc.var_refs[inst.operand2]);
+      auto access = resolve_if_access(bc.var_refs[inst.operand2]);
       emit("if (static_cast<bool>(" + access + ")) {");
       ++indent_;
     }
     else if (op == bc::opcode::emit_if_and) {
-      auto access = resolve_access(bc.var_refs[inst.operand2]);
+      auto access = resolve_if_access(bc.var_refs[inst.operand2]);
       emit("if (static_cast<bool>(" + access + ")) {");
       ++indent_;
     }
     else if (op == bc::opcode::emit_if_not) {
-      auto access = resolve_access(bc.var_refs[inst.operand2]);
+      auto access = resolve_if_access(bc.var_refs[inst.operand2]);
       emit("if (!static_cast<bool>(" + access + ")) {");
       ++indent_;
     }
