@@ -395,6 +395,24 @@ class code_generator {
   }
 
   /**
+   * @brief if 条件式を C++ の真偽式に変換
+   * @details loop.is_last/loop.is_first は現在のループのインデックス比較に変換する。
+   *          （{{#if loop.is_last}} 等。emit_at_section 相当の最適化を if 構文にも適用）
+   */
+  std::string resolve_if_access(bc::var_ref const& ref) {
+    if (loop_depth_ > 0) {
+      auto d = std::to_string(loop_depth_);
+      if (ref.key == "loop.is_last") {
+        return "_i" + d + " + 1 == _size" + d;
+      }
+      if (ref.key == "loop.is_first") {
+        return "_i" + d + " == 0";
+      }
+    }
+    return resolve_access(ref);
+  }
+
+  /**
    * @brief 比較値を取得
    * @details 整数比較の右辺値は var_ref.int_filters[0].arg に格納されている
    */
