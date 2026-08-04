@@ -32,6 +32,60 @@ struct float_filter_entry {
 };
 
 /**
+ * @brief 特殊変数の種別（コンパイル時分類）
+ * @details this / loop.* / loop.parent.* をコンパイル時に分類し、
+ *          実行時ホットパスの文字列比較を整数比較に置き換えるための enum。
+ *          *_unknown は該当プレフィックスだがプロパティ名が不明なもの
+ *          （実行時は偽扱い）を表す。
+ */
+enum class special_var_kind : std::uint8_t {
+  none,
+  this_,
+  loop_index,
+  loop_index1,
+  loop_size,
+  loop_is_first,
+  loop_is_last,
+  loop_key,
+  loop_unknown,
+  lp_index,
+  lp_index1,
+  lp_size,
+  lp_is_first,
+  lp_is_last,
+  lp_key,
+  lp_unknown,
+};
+
+/** @brief 変数キーを special_var_kind に分類する */
+inline special_var_kind classify_special_var(std::string_view key) {
+  if (key == "this") {
+    return special_var_kind::this_;
+  }
+  if (!key.starts_with("loop.")) {
+    return special_var_kind::none;
+  }
+  auto prop = key.substr(5);
+  if (prop.starts_with("parent.")) {
+    auto p = prop.substr(7);
+    if (p == "index") return special_var_kind::lp_index;
+    if (p == "index1") return special_var_kind::lp_index1;
+    if (p == "size") return special_var_kind::lp_size;
+    if (p == "is_first") return special_var_kind::lp_is_first;
+    if (p == "is_last") return special_var_kind::lp_is_last;
+    if (p == "key") return special_var_kind::lp_key;
+    return special_var_kind::lp_unknown;
+  }
+  if (prop == "index") return special_var_kind::loop_index;
+  if (prop == "index1") return special_var_kind::loop_index1;
+  if (prop == "size") return special_var_kind::loop_size;
+  if (prop == "is_first") return special_var_kind::loop_is_first;
+  if (prop == "is_last") return special_var_kind::loop_is_last;
+  if (prop == "key") return special_var_kind::loop_key;
+  return special_var_kind::loop_unknown;
+}
+
+/**
  * @brief 変数参照情報
  * @details テンプレート内の変数参照を表す。コンパイル時に glaze リフレクションで
  *          フィールドインデックスが解決可能な場合は field_index に値が設定される。
@@ -41,6 +95,13 @@ struct bc_var_ref {
   std::uint32_t field_index = UINT32_MAX;  /**< コンパイル時解決済みフィールドインデックス */
   bool has_dot = false;                    /**< ドット区切りパス（ネスト）を持つか */
   bool is_loop_parent = false;             /**< コンパイル時解決: key が "loop.parent." 始まりか（ホットパスの文字列比較排除用） */
+  special_var_kind special = special_var_kind::none; /**< コンパイル時解決: this / loop.* / loop.parent.* の分類 */
+  bool binding_first = false;              /**< コンパイル時解決: キーが内包セクションの束縛参照であることが確定しているか（サブパスの field_index 事前解決の根拠） */
+  std::uint8_t path_hint_len = 0;          /**< path_indices の有効長 */
+  /** @brief コンパイル時解決: ドット区切りパスの階層別フィールドインデックス
+   *  @details ヒープを避けるためインライン固定長（4階層まで）。実行時は名前検証付きで使用するため
+   *           途中までの解決や誤解決でも安全（不一致なら線形探索にフォールバック）。 */
+  std::array<std::uint32_t, 4> path_indices{};
   compare_operand_kind compare_rhs_kind = compare_operand_kind::none; /**< if 比較の右オペランド種別 */
   std::string compare_rhs_text;            /**< 右オペランド文字列（文字列リテラル or 変数名） */
   std::uint32_t compare_rhs_field_index = UINT32_MAX; /**< 右オペランドの解決済みフィールドインデックス */
@@ -140,6 +201,7 @@ struct bytecode {
     ref.field_index = UINT32_MAX;
     ref.has_dot = (key.find('.') != std::string_view::npos);
     ref.is_loop_parent = key.starts_with("loop.parent.");
+    ref.special = classify_special_var(key);
     var_refs.push_back(std::move(ref));
     return idx;
   }

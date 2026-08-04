@@ -121,6 +121,7 @@ bytecode to_bytecode(ct_bytecode<N> const& ct) {
     ref.key.assign(ct.var_refs[i].key.data, ct.var_refs[i].key.size);
     ref.field_index = ct.var_refs[i].field_index;
     ref.has_dot = (ref.key.find('.') != std::string::npos);
+    ref.special = classify_special_var(ref.key);
     /** 比較演算子の RHS 整数値が設定されている場合は int_filters に追加（emit_if_cmp 用） */
     if (ct.var_refs[i].has_compare_rhs) {
       ref.int_filters.push_back({int_filter::eq, ct.var_refs[i].compare_rhs});

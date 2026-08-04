@@ -297,6 +297,9 @@ template <class T>
 void re_resolve_var_ref(bc_var_ref& ref) {
   if (ref.key.empty()) return;
 
+  /** special 分類はシリアライズされないため読み込み時に再計算する */
+  ref.special = classify_special_var(ref.key);
+
   if (ref.has_dot) {
     // ドット付きパス: 先頭セグメントのみ解決
     auto dot = ref.key.find('.');

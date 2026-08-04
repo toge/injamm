@@ -154,7 +154,7 @@ enum class compare_operand_kind : std::uint8_t {
 struct bytecode;
 
 template <class T>
-std::expected<std::string, error_ctx> bc_execute(bytecode const& bc, T const& value);
+std::expected<std::string, error_ctx> bc_execute(bytecode const& bc, T const& value, std::size_t size_hint = 0);
 
 template <class T>
 std::expected<void, error_ctx> bc_execute_into(bytecode const& bc, T const& value, std::string& out);

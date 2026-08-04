@@ -21,6 +21,7 @@
 #include "bytecode_compile.hpp"
 #include "bytecode_exec.hpp"
 #include <array>
+#include <atomic>
 #include <memory>
 #include <tuple>
 
@@ -1051,9 +1052,25 @@ template <typename T>
 template <class T>
 class engine {
   detail::bytecode bc_;
+  /** @brief 前回レンダリングの出力サイズ（次回 reserve のヒント。relaxed で十分） */
+  mutable std::atomic<std::size_t> last_size_{0};
 
   public:
   engine() = delete;
+
+  /** atomic メンバによる暗黙削除を避けるためコピー/ムーブを明示定義（ヒントは引き継ぐ） */
+  engine(engine const& o) : bc_(o.bc_), last_size_(o.last_size_.load(std::memory_order_relaxed)) {}
+  engine(engine&& o) noexcept : bc_(std::move(o.bc_)), last_size_(o.last_size_.load(std::memory_order_relaxed)) {}
+  engine& operator=(engine const& o) {
+    bc_ = o.bc_;
+    last_size_.store(o.last_size_.load(std::memory_order_relaxed), std::memory_order_relaxed);
+    return *this;
+  }
+  engine& operator=(engine&& o) noexcept {
+    bc_ = std::move(o.bc_);
+    last_size_.store(o.last_size_.load(std::memory_order_relaxed), std::memory_order_relaxed);
+    return *this;
+  }
 
   /**
    * @brief テンプレート文字列から構築（実行時コンパイル）
@@ -1098,7 +1115,12 @@ class engine {
     if (bc_.error.ec != error_code::none) {
       return std::unexpected(bc_.error);
     }
-    return detail::bc_execute(bc_, value);
+    /** 前回の実測出力サイズを reserve ヒントとして渡し、レンダリング中の再確保を防ぐ */
+    auto r = detail::bc_execute(bc_, value, last_size_.load(std::memory_order_relaxed));
+    if (r) {
+      last_size_.store(r->size(), std::memory_order_relaxed);
+    }
+    return r;
   }
 
   /**

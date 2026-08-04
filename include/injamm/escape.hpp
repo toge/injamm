@@ -1,5 +1,6 @@
 #pragma once
 
+#include <array>
 #include <string_view>
 
 #if defined(__AVX2__)
@@ -103,6 +104,28 @@ constexpr void html_escape_into(Buffer& out, std::string_view s) {
         process_special(i + first, i + 32);
         i += 32;
       }
+    }
+
+    /** 16〜31 バイトの端数は SSE2 で 16 バイトまとめて判定する（短い変数値の高速化） */
+    if (i + 16 <= len) {
+      __m128i chunk = _mm_loadu_si128(reinterpret_cast<const __m128i*>(data + i));
+      __m128i lt    = _mm_cmpeq_epi8(chunk, _mm_set1_epi8('<'));
+      __m128i gt    = _mm_cmpeq_epi8(chunk, _mm_set1_epi8('>'));
+      __m128i amp   = _mm_cmpeq_epi8(chunk, _mm_set1_epi8('&'));
+      __m128i dqt   = _mm_cmpeq_epi8(chunk, _mm_set1_epi8('"'));
+      __m128i sqt   = _mm_cmpeq_epi8(chunk, _mm_set1_epi8('\''));
+      __m128i any   = _mm_or_si128(_mm_or_si128(lt, gt), _mm_or_si128(amp, _mm_or_si128(dqt, sqt)));
+      unsigned mask = static_cast<unsigned>(_mm_movemask_epi8(any));
+      if (mask == 0) {
+        out.append(data + i, 16);
+      } else {
+        int first = find_first_match(mask);
+        if (first > 0) {
+          out.append(data + i, first);
+        }
+        process_special(i + first, i + 16);
+      }
+      i += 16;
     }
 
     if (i < len) {

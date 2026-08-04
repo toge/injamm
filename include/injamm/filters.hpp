@@ -85,16 +85,14 @@ constexpr void apply_string_filter(std::string& str, string_filter_entry entry) 
   case string_filter::left: {
     auto width = entry.arg1;
     if (str.size() < static_cast<std::size_t>(width)) {
-      auto pad = width - str.size();
-      str      = std::string(pad, ' ') + str;
+      str.insert(0, width - str.size(), ' ');
     }
     break;
   }
   case string_filter::right: {
     auto width = entry.arg1;
     if (str.size() < static_cast<std::size_t>(width)) {
-      auto pad = width - str.size();
-      str      = str + std::string(pad, ' ');
+      str.append(width - str.size(), ' ');
     }
     break;
   }
@@ -103,8 +101,9 @@ constexpr void apply_string_filter(std::string& str, string_filter_entry entry) 
     if (str.size() < static_cast<std::size_t>(width)) {
       auto pad       = width - str.size();
       auto left_pad  = pad / 2;
-      auto right_pad = pad - left_pad;
-      str            = std::string(left_pad, ' ') + str + std::string(right_pad, ' ');
+      str.reserve(width);
+      str.insert(0, left_pad, ' ');
+      str.append(pad - left_pad, ' ');
     }
     break;
   }
@@ -203,18 +202,14 @@ constexpr void apply_string_filter(std::string& str, string_filter_entry entry) 
   case string_filter::pad: {
     auto width = entry.arg1;
     if (static_cast<int>(str.size()) < width && width > 0) {
-      auto total_pad = static_cast<std::size_t>(width) - str.size();
-      std::string pad_str = entry.str_arg1.empty() ? " " : std::string{entry.str_arg1};
-      /** 複数文字パディングの繰り返し */
-      std::string padding;
-      padding.reserve(total_pad);
-      while (padding.size() < total_pad) {
-        padding += pad_str;
+      auto const target = static_cast<std::size_t>(width);
+      std::string_view pad_str = entry.str_arg1.empty() ? std::string_view{" "} : entry.str_arg1;
+      str.reserve(target + pad_str.size());
+      /** 複数文字パディングを直接追記し、超過分を切り詰める */
+      while (str.size() < target) {
+        str.append(pad_str);
       }
-      if (padding.size() > total_pad) {
-        padding.resize(total_pad);
-      }
-      str = str + padding;
+      str.resize(target);
     }
     break;
   }
@@ -222,7 +217,7 @@ constexpr void apply_string_filter(std::string& str, string_filter_entry entry) 
     long long val{};
     auto [p, ec] = std::from_chars(str.data(), str.data() + str.size(), val);
     if (ec == std::errc()) {
-      str = (val == 1) ? std::string{entry.str_arg1} : std::string{entry.str_arg2};
+      str.assign((val == 1) ? entry.str_arg1 : entry.str_arg2);
     }
     break;
   }
