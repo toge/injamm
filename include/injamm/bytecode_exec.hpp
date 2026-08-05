@@ -316,34 +316,33 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
      * O(1) アクセス: field_index が有効な場合
      * if constexpr チェーンで実行時の field_index 値をコンパイル時定数に変換し、
      * 該当フィールドに直接アクセスする。コンパイラが二分探索的ジャンプテーブルを生成。
+     * フィールド数が多い構造で線形探索より高速（計測で sz>=5 相当が分岐点）。
      */
-    if (field_index != UINT32_MAX && field_index < sz && std::string_view{glz::reflect<V>::keys[field_index]} == key) {
-      auto visit_by_index = [&]<std::size_t... I>(std::index_sequence<I...>) -> std::expected<void, error_ctx> {
-        std::expected<void, error_ctx> visitor_result{};
-        /** 単一インデックスを試行する内部ラムダ。見つかれば visitor を適用。 */
-        auto try_index = [&]<std::size_t Idx>() -> bool {
-          if (field_index == Idx) {
-            if constexpr (std::same_as<visitor_t, void>) {
-              visitor(glz::get<Idx>(tied));
-            } else {
-              visitor_result = visitor(glz::get<Idx>(tied));
+    if constexpr (sz >= 5) {
+      if (field_index != UINT32_MAX && field_index < sz && std::string_view{glz::reflect<V>::keys[field_index]} == key) {
+        auto visit_by_index = [&]<std::size_t... I>(std::index_sequence<I...>) -> std::expected<void, error_ctx> {
+          std::expected<void, error_ctx> visitor_result{};
+          auto try_index = [&]<std::size_t Idx>() -> bool {
+            if (field_index == Idx) {
+              if constexpr (std::same_as<visitor_t, void>) {
+                visitor(glz::get<Idx>(tied));
+              } else {
+                visitor_result = visitor(glz::get<Idx>(tied));
+              }
+              return true;
             }
-            return true;
-          }
-          return false;
+            return false;
+          };
+          bool found = (try_index.template operator()<I>() || ...);
+          (void)found;
+          return visitor_result;
         };
-        /** fold 式で全インデックスを試行（最初の一致で短絡） */
-        bool found = (try_index.template operator()<I>() || ...);
-        (void)found;
-        return visitor_result;
-      };
-      return visit_by_index(std::make_index_sequence<sz>{});
+        return visit_by_index(std::make_index_sequence<sz>{});
+      }
     }
 
     /**
-     * フォールバック: 線形探索
-     * フィールドインデックスが不明な場合、全てのフィールドを走査して
-     * キー名と一致するものを探す。
+     * フォールバック: フィールド数の少ない構造は線形探索が速い。
      */
     if constexpr (std::same_as<visitor_t, void>) {
       bool found = false;
