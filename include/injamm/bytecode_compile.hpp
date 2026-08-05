@@ -1044,7 +1044,10 @@ class bc_compiler {
           bc_.error = error_ctx{tag_start, error_code::unknown_filter, parts[fi]};
           return body_result::eof;
         }
-        if (actual_key.starts_with("root.")) {
+        // {{{field.size}}} → emit_var_size (raw)
+        if (actual_key.ends_with(".size") && filters.empty() && int_filters.empty() && float_filters.empty()) {
+          emit_var_size(actual_key.substr(0, actual_key.size() - 5), true);
+        } else if (actual_key.starts_with("root.")) {
           emit_root_field(actual_key, true);
         } else if (auto folded = try_fold_string_constant(actual_key, true, filters, int_filters, float_filters)) {
           emit_literal(*folded);

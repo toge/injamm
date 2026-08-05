@@ -684,6 +684,8 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
         sz = field.size();
       } else if constexpr (ct_is_set_like<FT>) {
         sz = field.size();
+      } else if constexpr (std::same_as<FT, std::string> || std::same_as<FT, std::string_view>) {
+        sz = field.size();
       } else if constexpr (std::is_arithmetic_v<FT>) {
         sz = 0;
       }
@@ -1796,17 +1798,20 @@ public:
         sz = field.size();
       } else if constexpr (ct_is_set_like<FT>) {
         sz = field.size();
+      } else if constexpr (std::same_as<FT, std::string> || std::same_as<FT, std::string_view>) {
+        sz = field.size();
       }
       std::array<char, 16> buf;
       auto [ptr, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), sz);
       if (ec == std::errc{}) {
         out_.append(buf.data(), static_cast<std::size_t>(ptr - buf.data()));
       }
-    });
-    if (!r) return r;
-    ++pc;
-    DISPATCH();
-  }
+     });
+     if (!r) return r;
+     ++pc;
+     DISPATCH();
+   }
+
 
   /** @brief ループ先頭なら "true" を出力する */
   L_emit_at_first: {

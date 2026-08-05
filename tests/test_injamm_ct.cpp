@@ -1840,6 +1840,22 @@ TEST_CASE("ct_array_index_in_if_empty", "[injamm][ct][array_index]") {
   CHECK(*r == "");
 }
 
+TEST_CASE("ct_string_size", "[injamm][ct][string_size]") {
+  auto constexpr tmpl = injamm::fixed_string("Title length: {{title.size}}");
+  CtParty data{{"Jeff", "Tom"}, {}, "Party"};
+  auto    r = injamm::render<tmpl>(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "Title length: 5");
+}
+
+TEST_CASE("ct_string_size_mixed", "[injamm][ct][string_size]") {
+  auto constexpr tmpl = injamm::fixed_string("{{title.size}} vs {{guests.size}}");
+  CtParty data{{"Jeff", "Tom", "Patrick"}, {}, "Party"};
+  auto    r = injamm::render<tmpl>(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "5 vs 3");
+}
+
 TEST_CASE("ct_trim_blocks single var with no newline", "[injamm][ct][whitespace]") {
   CtUser user{"Alice", 30};
   SECTION("single var only") {

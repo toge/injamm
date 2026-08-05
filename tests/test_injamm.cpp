@@ -3098,6 +3098,30 @@ TEST_CASE("bc_array_index_empty_vec", "[injamm][array_index]") {
   CHECK(*r == "");
 }
 
+TEST_CASE("bc_string_size", "[injamm][string_size]") {
+  BcParty data{{"Alice", "Bob"}, {}, "Members"};
+  auto bc = injamm::engine<BcParty>("Title length: {{title.size}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "Title length: 7");
+}
+
+TEST_CASE("bc_string_size_raw", "[injamm][string_size]") {
+  BcParty data{{"Alice", "Bob"}, {}, "Hello"};
+  auto bc = injamm::engine<BcParty>("{{{title.size}}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "5");
+}
+
+TEST_CASE("bc_string_size_mixed", "[injamm][string_size]") {
+  BcParty data{{"Alice", "Bob"}, {{BcGuest{"Charlie"}}}, "Members"};
+  auto bc = injamm::engine<BcParty>("{{title.size}} vs {{guests.size}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "7 vs 2");
+}
+
 struct BcNestedGroup {
   std::vector<int> items;
 };
