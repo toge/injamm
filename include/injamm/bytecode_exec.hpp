@@ -403,11 +403,12 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
       } else {
         out.append("false", 5);
       }
-    } else if constexpr (std::same_as<FT, std::string> || std::same_as<FT, std::string_view>) {
+    } else if constexpr (std::same_as<FT, std::string> || std::same_as<FT, std::string_view> || char_pointer_v<FT>) {
+      auto sv = to_sv(field);
       if (raw) {
-        out.append(field.data(), field.size());
+        out.append(sv.data(), sv.size());
       } else {
-        html_escape_into(out, field);
+        html_escape_into(out, sv);
       }
     } else if constexpr (std::is_enum_v<FT>) {
       serialize_enum(out, field, raw);
@@ -508,7 +509,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
       using FT = std::remove_cvref_t<decltype(field)>;
       if constexpr (std::same_as<FT, bool>) { result = field; }
       else if constexpr (ct_is_vector_like<FT>) { result = !field.empty(); }
-      else if constexpr (std::same_as<FT, std::string> || std::same_as<FT, std::string_view>) { result = !field.empty(); }
+      else if constexpr (std::same_as<FT, std::string> || std::same_as<FT, std::string_view> || char_pointer_v<FT>) { result = !to_sv(field).empty(); }
       else if constexpr (std::is_arithmetic_v<FT>) { result = (field != 0); }
       else if constexpr (std::is_enum_v<FT>) { result = (static_cast<std::underlying_type_t<FT>>(field) != 0); }
       else if constexpr (is_std_optional_v<FT>) { result = field.has_value(); }
@@ -565,7 +566,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
           using FT = std::remove_cvref_t<decltype(f)>;
           if constexpr (std::same_as<FT, bool>) res = f;
           else if constexpr (ct_is_vector_like<FT>) res = !f.empty();
-          else if constexpr (std::same_as<FT, std::string> || std::same_as<FT, std::string_view>) res = !f.empty();
+          else if constexpr (std::same_as<FT, std::string> || std::same_as<FT, std::string_view> || char_pointer_v<FT>) res = !to_sv(f).empty();
           else if constexpr (std::is_arithmetic_v<FT>) res = (f != 0);
           else if constexpr (std::is_enum_v<FT>) res = (static_cast<std::underlying_type_t<FT>>(f) != 0);
           else if constexpr (is_std_optional_v<FT>) res = f.has_value();
@@ -578,7 +579,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
       if (!sub.empty()) return false;
       if constexpr (std::same_as<ElemT, bool>) return e;
       else if constexpr (ct_is_vector_like<ElemT>) return !e.empty();
-      else if constexpr (std::same_as<ElemT, std::string> || std::same_as<ElemT, std::string_view>) return !e.empty();
+      else if constexpr (std::same_as<ElemT, std::string> || std::same_as<ElemT, std::string_view> || char_pointer_v<ElemT>) return !to_sv(e).empty();
       else if constexpr (std::is_arithmetic_v<ElemT>) return (e != 0);
       else if constexpr (std::is_enum_v<ElemT>) return (static_cast<std::underlying_type_t<ElemT>>(e) != 0);
       else if constexpr (is_std_optional_v<ElemT>) return e.has_value();
@@ -656,8 +657,8 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
   }
 
   static std::expected<void, error_ctx> handle_emit_this(bc_executor& ex, std::size_t& pc, std::string&) {
-    if constexpr (std::same_as<T, std::string> || std::same_as<T, std::string_view>) {
-      html_escape_into(ex.out_, ex.value_);
+    if constexpr (std::same_as<T, std::string> || std::same_as<T, std::string_view> || char_pointer_v<T>) {
+      html_escape_into(ex.out_, to_sv(ex.value_));
     } else {
       ex.emit_this_scratch_.clear();
       if constexpr (serializable_v<T>) {
@@ -684,8 +685,8 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
         sz = field.size();
       } else if constexpr (ct_is_set_like<FT>) {
         sz = field.size();
-      } else if constexpr (std::same_as<FT, std::string> || std::same_as<FT, std::string_view>) {
-        sz = field.size();
+      } else if constexpr (std::same_as<FT, std::string> || std::same_as<FT, std::string_view> || char_pointer_v<FT>) {
+        sz = to_sv(field).size();
       } else if constexpr (std::is_arithmetic_v<FT>) {
         sz = 0;
       }
@@ -918,11 +919,12 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
         } else {
           serialize_value(filtered, field);
         }
-      } else if constexpr (std::same_as<FT, std::string> || std::same_as<FT, std::string_view>) {
+      } else if constexpr (std::same_as<FT, std::string> || std::same_as<FT, std::string_view> || char_pointer_v<FT>) {
+        auto sv = to_sv(field);
         if (use_chrono_format) {
-          serialize_formatted(filtered, field, chrono_fmt);
+          serialize_formatted(filtered, sv, chrono_fmt);
         } else {
-          serialize_value(filtered, field);
+          serialize_value(filtered, sv);
         }
       } else if constexpr (is_std_optional_v<FT>) {
         if (field.has_value()) {
@@ -1059,8 +1061,8 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
           if (ls.break_flag) break;
           ++ls.index;
         }
-      } else if constexpr (std::same_as<FT, std::string> || std::same_as<FT, std::string_view>) {
-        if (!field.empty()) {
+      } else if constexpr (std::same_as<FT, std::string> || std::same_as<FT, std::string_view> || char_pointer_v<FT>) {
+        if (!to_sv(field).empty()) {
           is_falsy = false;
           bc_loop_state guard;
           guard.parent = ex.loop_;
@@ -1144,7 +1146,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
       else if constexpr (is_std_optional_v<FT>) { empty = !field.has_value(); }
       else if constexpr (ct_is_map_like<FT>) { empty = field.empty(); }
       else if constexpr (ct_is_set_like<FT>) { empty = field.empty(); }
-      else if constexpr (std::same_as<FT, std::string> || std::same_as<FT, std::string_view>) { empty = field.empty(); }
+      else if constexpr (std::same_as<FT, std::string> || std::same_as<FT, std::string_view> || char_pointer_v<FT>) { empty = to_sv(field).empty(); }
       else if constexpr (std::is_arithmetic_v<FT>) { empty = (field == 0); }
       else if constexpr (std::is_enum_v<FT>) { empty = (static_cast<std::underlying_type_t<FT>>(field) == 0); }
       else if constexpr (ct_glz_reflectable<FT>) { empty = false; }
@@ -1199,11 +1201,12 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
       } else if constexpr (std::is_enum_v<FT>) {
         /** enum LHS: underlying 整数に変換して算術比較と同じロジックで評価 */
         cond = compare_ints(instr.op, static_cast<long long>(static_cast<std::underlying_type_t<FT>>(field)), static_cast<long long>(rhs));
-      } else if constexpr (std::same_as<FT, std::string> || std::same_as<FT, std::string_view>) {
+      } else if constexpr (std::same_as<FT, std::string> || std::same_as<FT, std::string_view> || char_pointer_v<FT>) {
         if (ref.compare_rhs_kind == compare_operand_kind::string_literal) {
+          auto sv = to_sv(field);
           switch (instr.op) {
-          case bc_opcode::emit_if_eq: cond = (field == ref.compare_rhs_text); break;
-          case bc_opcode::emit_if_ne: cond = (field != ref.compare_rhs_text); break;
+          case bc_opcode::emit_if_eq: cond = (sv == ref.compare_rhs_text); break;
+          case bc_opcode::emit_if_ne: cond = (sv != ref.compare_rhs_text); break;
           default: break;
           }
         }
@@ -1610,8 +1613,8 @@ public:
             break;
           ++ls.index;
         }
-      } else if constexpr (std::same_as<FT, std::string> || std::same_as<FT, std::string_view>) {
-        if (!field.empty()) {
+      } else if constexpr (std::same_as<FT, std::string> || std::same_as<FT, std::string_view> || char_pointer_v<FT>) {
+        if (!to_sv(field).empty()) {
           is_falsy = false;
           bc_loop_state guard;
           guard.parent = loop_;
@@ -1716,8 +1719,8 @@ public:
         empty = field.empty();
       } else if constexpr (ct_is_set_like<FT>) {
         empty = field.empty();
-      } else if constexpr (std::same_as<FT, std::string> || std::same_as<FT, std::string_view>) {
-        empty = field.empty();
+      } else if constexpr (std::same_as<FT, std::string> || std::same_as<FT, std::string_view> || char_pointer_v<FT>) {
+        empty = to_sv(field).empty();
       } else if constexpr (std::is_arithmetic_v<FT>) {
         empty = (field == 0);
       } else if constexpr (std::is_enum_v<FT>) {
@@ -1798,8 +1801,8 @@ public:
         sz = field.size();
       } else if constexpr (ct_is_set_like<FT>) {
         sz = field.size();
-      } else if constexpr (std::same_as<FT, std::string> || std::same_as<FT, std::string_view>) {
-        sz = field.size();
+      } else if constexpr (std::same_as<FT, std::string> || std::same_as<FT, std::string_view> || char_pointer_v<FT>) {
+        sz = to_sv(field).size();
       }
       std::array<char, 16> buf;
       auto [ptr, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), sz);
@@ -1871,11 +1874,12 @@ public:
       } else if constexpr (std::is_enum_v<FT>) {
         /** enum LHS: underlying 整数に変換して算術比較と同じロジックで評価 */
         cond = compare_ints(instr.op, static_cast<long long>(static_cast<std::underlying_type_t<FT>>(field)), static_cast<long long>(rhs));
-      } else if constexpr (std::same_as<FT, std::string> || std::same_as<FT, std::string_view>) {
+      } else if constexpr (std::same_as<FT, std::string> || std::same_as<FT, std::string_view> || char_pointer_v<FT>) {
         if (ref.compare_rhs_kind == compare_operand_kind::string_literal) {
+          auto sv = to_sv(field);
           switch (instr.op) {
-          case bc_opcode::emit_if_eq: cond = (field == ref.compare_rhs_text); break;
-          case bc_opcode::emit_if_ne: cond = (field != ref.compare_rhs_text); break;
+          case bc_opcode::emit_if_eq: cond = (sv == ref.compare_rhs_text); break;
+          case bc_opcode::emit_if_ne: cond = (sv != ref.compare_rhs_text); break;
           default: break;
           }
         }
@@ -2077,8 +2081,8 @@ public:
 
   /** @brief {{this}}: 現在のコンテキスト自体を出力する */
   L_emit_this: {
-    if constexpr (std::same_as<T, std::string> || std::same_as<T, std::string_view>) {
-      html_escape_into(out_, value_);
+    if constexpr (std::same_as<T, std::string> || std::same_as<T, std::string_view> || char_pointer_v<T>) {
+      html_escape_into(out_, to_sv(value_));
     } else {
       this->emit_this_scratch_.clear();
       if constexpr (serializable_v<T>) {
@@ -2124,11 +2128,12 @@ public:
         } else {
           serialize_value(filtered_value_, field);
         }
-      } else if constexpr (std::same_as<FT, std::string> || std::same_as<FT, std::string_view>) {
+      } else if constexpr (std::same_as<FT, std::string> || std::same_as<FT, std::string_view> || char_pointer_v<FT>) {
+        auto sv = to_sv(field);
         if (use_chrono_format) {
-          serialize_formatted(filtered_value_, field, chrono_fmt);
+          serialize_formatted(filtered_value_, sv, chrono_fmt);
         } else {
-          serialize_value(filtered_value_, field);
+          serialize_value(filtered_value_, sv);
         }
       } else if constexpr (is_std_optional_v<FT>) {
         if (field.has_value()) {

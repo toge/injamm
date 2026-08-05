@@ -771,7 +771,7 @@ class code_generator {
     }
     else if (op == bc::opcode::emit_inverted) {
       auto access = resolve_access(bc.var_refs[inst.operand2]);
-      emit("if (" + access + ".empty()) {");
+      emit("if (value_empty(" + access + ")) {");
       ++indent_;
     }
     else if (op == bc::opcode::emit_at_index) {
@@ -1053,7 +1053,7 @@ class code_generator {
       emit("filter_zerofill(_filtered, " + std::to_string(inst.operand) + ");");
     }
     else if (op == bc::opcode::emit_var_size) {
-      emit("append_number(out, " + resolve_access(bc.var_refs[inst.operand2]) + ".size());");
+      emit("append_number(out, value_size(" + resolve_access(bc.var_refs[inst.operand2]) + "));");
     }
     else if (op == bc::opcode::emit_break) {
       emit("break;");

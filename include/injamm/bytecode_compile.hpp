@@ -95,7 +95,7 @@ compile_ctx_ops compile_ctx_section_child(std::string_view key) {
       if constexpr (ct_is_vector_like<FT>) {
         result = make_compile_ctx_ops<typename FT::value_type>();
       } else if constexpr (std::same_as<FT, bool> || std::same_as<FT, std::string> ||
-                           std::same_as<FT, std::string_view>) {
+                           std::same_as<FT, std::string_view> || char_pointer_v<FT>) {
         result = make_compile_ctx_ops<V>();
       } else if constexpr (is_std_optional_v<FT>) {
         result = make_compile_ctx_ops<typename FT::value_type>();

@@ -279,6 +279,26 @@ inline void append_value(std::string& out, V const& v) {
 }
 
 template <typename V>
+constexpr bool value_empty(V const& v) {
+  if constexpr (std::is_same_v<V, const char*>) {
+    return !v || v[0] == '\0';
+  } else if constexpr (std::is_same_v<V, std::string> || std::is_same_v<V, std::string_view>) {
+    return v.empty();
+  } else {
+    return v.empty();
+  }
+}
+
+template <typename V>
+constexpr std::size_t value_size(V const& v) {
+  if constexpr (std::is_same_v<V, const char*>) {
+    return v ? std::string_view{v}.size() : 0;
+  } else {
+    return v.size();
+  }
+}
+
+template <typename V>
 inline void html_escape_append_value(std::string& out, V const& v) {
   if constexpr (std::is_same_v<V, std::string> || std::is_same_v<V, std::string_view>) {
     html_escape_append(out, v);

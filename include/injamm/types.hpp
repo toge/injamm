@@ -5,6 +5,7 @@
 #include <expected>
 #include <ostream>
 #include <string_view>
+#include <type_traits>
 
 #if __has_include(<frozenchars/mod/core.hpp>)
 #include <frozenchars/mod/core.hpp>
@@ -156,6 +157,35 @@ concept forward_iterable = requires(T& t) {
   { t.begin() };
   { t.end() };
 };
+
+/** @brief char ポインタ型（const char*, char*）かどうかを判定する
+ *
+ *  std::string / std::string_view は除外。nullptr 安全な string_view 変換は
+ *  to_sv() を使用する。
+ */
+template <class T>
+concept char_pointer_v = std::is_pointer_v<std::remove_cvref_t<T>> &&
+    std::same_as<std::remove_cv_t<std::remove_pointer_t<std::remove_cvref_t<T>>>, char>;
+
+/** @brief std::string / std::string_view / char ポインタから安全に string_view を得る
+ *
+ *  nullptr ポインタは空 string_view に変換する。emit_value / truthy / section /
+ *  comparison など、文字列系分岐で const char* にも対応するための統一入口。
+ */
+template <class T>
+  requires std::same_as<std::remove_cvref_t<T>, std::string> ||
+           std::same_as<std::remove_cvref_t<T>, std::string_view> ||
+           char_pointer_v<T>
+constexpr std::string_view to_sv(T const& t) noexcept {
+  using D = std::remove_cvref_t<T>;
+  if constexpr (char_pointer_v<D>) {
+    return t ? std::string_view{t} : std::string_view{};
+  } else if constexpr (std::same_as<D, std::string_view>) {
+    return t;
+  } else {
+    return {t.data(), t.size()};  // std::string
+  }
+}
 
 } // namespace detail
 

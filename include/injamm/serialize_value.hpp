@@ -1,6 +1,7 @@
 #pragma once
 
 #include "enum_io.hpp"
+#include "types.hpp"
 #include <array>
 #include <charconv>
 #include <chrono>
@@ -30,7 +31,7 @@ template <class T>
 inline constexpr bool serializable_v =
     std::integral<T> || std::floating_point<T> ||
     std::same_as<T, std::string> || std::same_as<T, std::string_view> ||
-    std::is_enum_v<T>;
+    std::is_enum_v<T> || char_pointer_v<T>;
 
 /** @brief std::optional かどうかを判定する型特性 */
 template <class T>
@@ -123,6 +124,22 @@ inline void serialize_value(Buffer& out, std::optional<T> const& opt) {
   if (opt.has_value()) {
     serialize_value(out, *opt);
   }
+}
+
+/** @brief char ポインタ（const char*, char*）をバッファに追記する
+ *
+ *  nullptr の場合は何も出力しない（空文字列相当）。フィルタ scratch 等の
+ *  serializable_v フォールバック経由で呼ばれる。
+ *
+ *  @tparam Buffer 出力バッファ型
+ *  @tparam T      char ポインタ型（const char*, char*）
+ *  @param[in,out] out 出力先バッファ
+ *  @param[in]     ptr 変換するポインタ（nullptr 可）
+ */
+template <class Buffer, class T>
+  requires char_pointer_v<T>
+inline void serialize_value(Buffer& out, T const& ptr) {
+  if (ptr) out.append(std::string_view{ptr});
 }
 
 /** @brief 浮動小数点型をバッファに変換して追記する
