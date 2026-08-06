@@ -42,49 +42,11 @@ namespace injamm::detail {
   case bc_opcode::emit_at_key:             return "emit_at_key";
   case bc_opcode::emit_this:               return "emit_this";
   case bc_opcode::resolve_filtered:        return "resolve_filtered";
-  case bc_opcode::filter_upper:            return "filter_upper";
-  case bc_opcode::filter_lower:            return "filter_lower";
-  case bc_opcode::filter_capitalize:       return "filter_capitalize";
-  case bc_opcode::filter_title:            return "filter_title";
-  case bc_opcode::filter_trim:             return "filter_trim";
-  case bc_opcode::filter_ltrim:            return "filter_ltrim";
-  case bc_opcode::filter_rtrim:            return "filter_rtrim";
-  case bc_opcode::filter_left:             return "filter_left";
-  case bc_opcode::filter_right:            return "filter_right";
-  case bc_opcode::filter_center:           return "filter_center";
-  case bc_opcode::filter_truncate:         return "filter_truncate";
-  case bc_opcode::filter_substr:           return "filter_substr";
-  case bc_opcode::filter_replace:          return "filter_replace";
-  case bc_opcode::filter_default:          return "filter_default";
-  case bc_opcode::filter_json:             return "filter_json";
-  case bc_opcode::filter_safe:             return "filter_safe";
-  case bc_opcode::filter_indent:           return "filter_indent";
-  case bc_opcode::filter_pad:              return "filter_pad";
-  case bc_opcode::filter_pluralize:        return "filter_pluralize";
-  case bc_opcode::filter_format:           return "filter_format";
-  case bc_opcode::filter_repeat:           return "filter_repeat";
+  case bc_opcode::filter_string:           return "filter_string";
+  case bc_opcode::filter_int:              return "filter_int";
+  case bc_opcode::filter_float:            return "filter_float";
   case bc_opcode::emit_filtered:           return "emit_filtered";
   case bc_opcode::emit_filtered_raw:       return "emit_filtered_raw";
-  case bc_opcode::filter_int_abs:          return "filter_int_abs";
-  case bc_opcode::filter_int_hex:          return "filter_int_hex";
-  case bc_opcode::filter_int_oct:          return "filter_int_oct";
-  case bc_opcode::filter_int_bin:          return "filter_int_bin";
-  case bc_opcode::filter_int_neg:          return "filter_int_neg";
-  case bc_opcode::filter_int_mod:          return "filter_int_mod";
-  case bc_opcode::filter_int_numify:       return "filter_int_numify";
-  case bc_opcode::filter_int_is_neg:       return "filter_int_is_neg";
-  case bc_opcode::filter_int_eq:           return "filter_int_eq";
-  case bc_opcode::filter_int_ne:           return "filter_int_ne";
-  case bc_opcode::filter_int_gt:           return "filter_int_gt";
-  case bc_opcode::filter_int_gte:          return "filter_int_gte";
-  case bc_opcode::filter_int_lt:           return "filter_int_lt";
-  case bc_opcode::filter_int_lte:          return "filter_int_lte";
-  case bc_opcode::filter_int_zerofill:     return "filter_int_zerofill";
-  case bc_opcode::filter_int_add:          return "filter_int_add";
-  case bc_opcode::filter_int_sub:          return "filter_int_sub";
-  case bc_opcode::filter_int_mul:          return "filter_int_mul";
-  case bc_opcode::filter_int_div:          return "filter_int_div";
-  case bc_opcode::filter_float_precision:  return "filter_float_precision";
   case bc_opcode::emit_if_filtered:        return "emit_if_filtered";
   case bc_opcode::emit_break:              return "emit_break";
   case bc_opcode::emit_continue:           return "emit_continue";
@@ -294,28 +256,29 @@ inline std::string bytecode::disassemble() const {
       }
       break;
     }
-    case bc_opcode::filter_left:
-    case bc_opcode::filter_right:
-    case bc_opcode::filter_center:
-    case bc_opcode::filter_truncate:
-    case bc_opcode::filter_int_mod:
-    case bc_opcode::filter_int_add:
-    case bc_opcode::filter_int_sub:
-    case bc_opcode::filter_int_mul:
-    case bc_opcode::filter_int_div: {
+    case bc_opcode::filter_string:
+    case bc_opcode::filter_int:
+    case bc_opcode::filter_float: {
+      // 汎用フィルタ: 種別名 + arg + 文字列引数
+      if (instr.op == bc_opcode::filter_string)
+        append(string_filter_name(static_cast<string_filter>(instr.operand2)));
+      else if (instr.op == bc_opcode::filter_int)
+        append(int_filter_name(static_cast<int_filter>(instr.operand2)));
+      else
+        append(float_filter_name(static_cast<float_filter>(instr.operand2)));
       char buf[16];
       auto [p, ec] = std::to_chars(buf, buf + sizeof(buf), instr.operand);
+      append(" ");
       append(std::string_view{buf, static_cast<std::size_t>(p - buf)});
-      break;
-    }
-    case bc_opcode::filter_substr: {
-      append("start=");
-      char buf[16];
-      auto [p, ec] = std::to_chars(buf, buf + sizeof(buf), instr.operand);
-      append(std::string_view{buf, static_cast<std::size_t>(p - buf)});
-      append(" len=");
-      auto [p2, ec2] = std::to_chars(buf, buf + sizeof(buf), instr.operand2);
-      append(std::string_view{buf, static_cast<std::size_t>(p2 - buf)});
+      if (instr.operand3 != UINT32_MAX) {
+        append(" \"");
+        if (instr.operand3 < literals.size()) append(literals[instr.operand3]);
+        if (instr.op == bc_opcode::filter_string && static_cast<string_filter>(instr.operand2) == string_filter::replace && instr.operand3 + 1 < literals.size()) {
+          append("\" \"");
+          append(literals[instr.operand3 + 1]);
+        }
+        append("\"");
+      }
       break;
     }
     case bc_opcode::call_partial: {
@@ -328,51 +291,6 @@ inline std::string bytecode::disassemble() const {
         auto [p, ec] = std::to_chars(buf, buf + sizeof(buf), instr.operand);
         append(std::string_view{buf, static_cast<std::size_t>(p - buf)});
       }
-      break;
-    }
-    case bc_opcode::filter_default: {
-      if (instr.operand < literals.size()) {
-        append("\"");
-        append(literals[instr.operand]);
-        append("\"");
-      }
-      break;
-    }
-    case bc_opcode::filter_pad: {
-      char buf[16];
-      auto [p, ec] = std::to_chars(buf, buf + sizeof(buf), instr.operand);
-      append(std::string_view{buf, static_cast<std::size_t>(p - buf)});
-      if (instr.operand2 < literals.size()) {
-        append(" \"");
-        append(literals[instr.operand2]);
-        append("\"");
-      }
-      break;
-    }
-    case bc_opcode::filter_pluralize: {
-      if (instr.operand < literals.size()) {
-        append("\"");
-        append(literals[instr.operand]);
-        append("\"");
-      }
-      if (instr.operand2 < literals.size()) {
-        append(" \"");
-        append(literals[instr.operand2]);
-        append("\"");
-      }
-      break;
-    }
-    case bc_opcode::filter_float_precision:
-    case bc_opcode::filter_int_eq:
-    case bc_opcode::filter_int_ne:
-    case bc_opcode::filter_int_gt:
-    case bc_opcode::filter_int_gte:
-    case bc_opcode::filter_int_lt:
-    case bc_opcode::filter_int_lte:
-    case bc_opcode::filter_int_zerofill: {
-      char buf[16];
-      auto [p, ec] = std::to_chars(buf, buf + sizeof(buf), instr.operand);
-      append(std::string_view{buf, static_cast<std::size_t>(p - buf)});
       break;
     }
     default:

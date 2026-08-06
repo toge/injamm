@@ -600,6 +600,269 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
     return false;
   }
 
+  // -- shared section/inverted/filter implementations (both dispatch paths delegate here) --
+
+  static std::expected<void, error_ctx> do_section(bc_executor& ex, std::size_t& pc) {
+    auto const& instr = ex.bc_.instructions[pc];
+    auto const& ref   = ex.bc_.var_refs[instr.operand2];
+    auto        body_end = instr.operand;
+    auto        else_pc  = instr.operand3;
+    bool        is_falsy = true;
+    bool        entered = false;
+    if (body_end <= pc + 1 || body_end > ex.bc_.instructions.size())
+      return std::unexpected(error_ctx{.position = pc, .ec = error_code::syntax_error});
+    auto section_body = [&](auto const& field) -> std::expected<void, error_ctx> {
+      entered = true;
+      using FT = std::remove_cvref_t<decltype(field)>;
+      if constexpr (ct_is_vector_like<FT>) {
+        if (!field.empty()) is_falsy = false;
+        using elem_t = typename FT::value_type;
+        bc_loop_state ls;
+        ls.parent = ex.loop_;
+        ls.count = static_cast<std::uint32_t>(field.size());
+        for (ls.index = 0; ls.index < static_cast<std::uint32_t>(field.size()); ++ls.index) {
+          ls.continue_flag = false;
+          ls.binding_name = ref.key;
+          ls.binding_elem = &field[ls.index];
+          ls.binding_resolve = &resolve_binding_var<elem_t>;
+          ls.binding_truthy = &eval_binding_truthy<elem_t>;
+          bc_executor<elem_t, RootT> child_exec(ex.bc_, field[ls.index], ex.root_value_, &ls, ex.out_);
+          auto r2 = child_exec.execute_impl(pc + 1, body_end - 1);
+          if (!r2) return r2;
+          if (ls.continue_flag) { ls.continue_flag = false; continue; }
+          if (ls.break_flag) break;
+        }
+      } else if constexpr (std::same_as<FT, bool>) {
+        is_falsy = !field;
+        if (field) { auto r2 = ex.execute_impl(pc + 1, body_end - 1); if (!r2) return r2; }
+      } else if constexpr (is_std_optional_v<FT>) {
+        is_falsy = !field.has_value();
+        if (field.has_value()) {
+          using inner_t = typename FT::value_type;
+          bc_executor<inner_t, RootT> child_exec(ex.bc_, *field, ex.root_value_, nullptr, ex.out_);
+          auto r2 = child_exec.execute_impl(pc + 1, body_end - 1);
+          if (!r2) return r2;
+        }
+      } else if constexpr (ct_is_map_like<FT>) {
+        if (!field.empty()) is_falsy = false;
+        bc_loop_state ls;
+        ls.parent = ex.loop_;
+        ls.count = static_cast<std::uint32_t>(field.size());
+        for (auto const& [k, v] : field) {
+          ls.key = std::string_view{k};
+          using val_t = std::remove_cvref_t<decltype(v)>;
+          ls.binding_name = ref.key;
+          ls.binding_elem = &v;
+          ls.binding_resolve = &resolve_binding_var<val_t>;
+          ls.binding_truthy = &eval_binding_truthy<val_t>;
+          bc_executor<val_t, RootT> child_exec(ex.bc_, v, ex.root_value_, &ls, ex.out_);
+          auto r2 = child_exec.execute_impl(pc + 1, body_end - 1);
+          if (!r2) return r2;
+          if (ls.break_flag) break;
+          ++ls.index;
+        }
+      } else if constexpr (ct_is_set_like<FT>) {
+        if (!field.empty()) is_falsy = false;
+        using elem_t = typename FT::value_type;
+        bc_loop_state ls;
+        ls.parent = ex.loop_;
+        ls.count = static_cast<std::uint32_t>(field.size());
+        for (auto const& elem : field) {
+          ls.continue_flag = false;
+          ls.binding_name = ref.key;
+          ls.binding_elem = &elem;
+          ls.binding_resolve = &resolve_binding_var<elem_t>;
+          ls.binding_truthy = &eval_binding_truthy<elem_t>;
+          bc_executor<elem_t, RootT> child_exec(ex.bc_, elem, ex.root_value_, &ls, ex.out_);
+          auto r2 = child_exec.execute_impl(pc + 1, body_end - 1);
+          if (!r2) return r2;
+          if (ls.continue_flag) { ls.continue_flag = false; continue; }
+          if (ls.break_flag) break;
+          ++ls.index;
+        }
+      } else if constexpr (std::same_as<FT, std::string> || std::same_as<FT, std::string_view> || char_pointer_v<FT>) {
+        if (!to_sv(field).empty()) {
+          is_falsy = false;
+          bc_loop_state guard;
+          guard.parent = ex.loop_;
+          bc_loop_state const* save = ex.loop_;
+          ex.loop_ = &guard;
+          auto r2 = ex.execute_impl(pc + 1, body_end - 1);
+          ex.loop_ = save;
+          if (!r2) return r2;
+        }
+      } else if constexpr (forward_iterable<FT>) {
+        using elem_t = typename FT::value_type;
+        bc_loop_state ls;
+        ls.parent = ex.loop_;
+        ls.count = 0;
+        ls.index = 0;
+        auto it = field.begin();
+        auto end = field.end();
+        if (!(it != end)) return {};
+        is_falsy = false;
+        for (; it != end; ++it, ++ls.index) {
+          auto const& elem = *it;
+          ls.continue_flag = false;
+          ls.binding_name = ref.key;
+          ls.binding_elem = &elem;
+          ls.binding_resolve = &resolve_binding_var<elem_t>;
+          ls.binding_truthy = &eval_binding_truthy<elem_t>;
+          bc_executor<elem_t, RootT> child_exec(ex.bc_, elem, ex.root_value_, &ls, ex.out_);
+          auto r2 = child_exec.execute_impl(pc + 1, body_end - 1);
+          if (!r2) return r2;
+          if (ls.continue_flag) { ls.continue_flag = false; continue; }
+          if (ls.break_flag) break;
+        }
+        ls.count = static_cast<std::uint32_t>(ls.index);
+      } else if constexpr (ct_glz_reflectable<FT>) {
+        is_falsy = false;
+        constexpr auto sz = glz::reflect<FT>::size;
+        auto tied = glz::to_tie(field);
+        std::expected<void, error_ctx> res{};
+        [&]<std::size_t... I>(std::index_sequence<I...>) {
+          (([&] {
+             if (!res) return;
+             using elem_t = std::remove_cvref_t<decltype(glz::get<I>(tied))>;
+             bc_loop_state ls;
+             ls.parent = ex.loop_;
+             ls.count = sz; ls.index = I; ls.key = glz::reflect<FT>::keys[I];
+             ls.binding_name = ref.key;
+             ls.binding_elem = &glz::get<I>(tied);
+             ls.binding_resolve = &resolve_binding_var<elem_t>;
+             ls.binding_truthy = &eval_binding_truthy<elem_t>;
+             bc_executor<elem_t, RootT> child_exec(ex.bc_, glz::get<I>(tied), ex.root_value_, &ls, ex.out_);
+             res = child_exec.execute_impl(pc + 1, body_end - 1);
+          }()), ...);
+        }(std::make_index_sequence<sz>{});
+        return res;
+      }
+      return {};
+    };
+    auto r = for_each_field_ref(ex.value_, ref,section_body);
+    if (!r) return std::unexpected(r.error());
+    if (!entered) {
+      auto r2 = for_each_field_ref(ex.root_value_, ref,section_body);
+      if (!r2) return std::unexpected(r2.error());
+    }
+    if (else_pc > 0 && is_falsy) {
+      pc = else_pc;
+    } else {
+      pc = body_end;
+    }
+    return {};
+  }
+
+  static std::expected<void, error_ctx> do_inverted(bc_executor& ex, std::size_t& pc) {
+    auto const& instr = ex.bc_.instructions[pc];
+    auto const& ref   = ex.bc_.var_refs[instr.operand2];
+    auto        else_pc = instr.operand3;
+    bool empty = true;
+    (void)for_each_field_ref(ex.value_, ref,[&](auto const& field) {
+      using FT = std::remove_cvref_t<decltype(field)>;
+      if constexpr (ct_is_vector_like<FT>) { empty = field.empty(); }
+      else if constexpr (std::same_as<FT, bool>) { empty = !field; }
+      else if constexpr (is_std_optional_v<FT>) { empty = !field.has_value(); }
+      else if constexpr (ct_is_map_like<FT>) { empty = field.empty(); }
+      else if constexpr (ct_is_set_like<FT>) { empty = field.empty(); }
+      else if constexpr (std::same_as<FT, std::string> || std::same_as<FT, std::string_view> || char_pointer_v<FT>) { empty = to_sv(field).empty(); }
+      else if constexpr (std::is_arithmetic_v<FT>) { empty = (field == 0); }
+      else if constexpr (std::is_enum_v<FT>) { empty = (static_cast<std::underlying_type_t<FT>>(field) == 0); }
+      else if constexpr (ct_glz_reflectable<FT>) { empty = false; }
+    });
+    auto body_end = instr.operand;
+    if (body_end <= pc + 1 || body_end > ex.bc_.instructions.size())
+      return std::unexpected(error_ctx{.position = pc, .ec = error_code::syntax_error});
+    if (empty) {
+      auto r = ex.execute_impl(pc + 1, body_end - 1);
+      if (!r) return std::unexpected(r.error());
+      pc = body_end;
+    } else if (else_pc > 0) {
+      auto r = ex.execute_impl(else_pc, body_end - 1);
+      if (!r) return std::unexpected(r.error());
+      pc = body_end;
+    } else {
+      pc = body_end;
+    }
+    return {};
+  }
+
+  static std::expected<void, error_ctx> do_resolve_filtered(bc_executor& ex, std::size_t& pc, std::string& filtered) {
+    auto const& instr  = ex.bc_.instructions[pc];
+    auto const& var_ref = ex.bc_.var_refs[instr.operand2];
+    filtered.clear();
+    // コンパイル時事前計算済みフラグで判定（ループ不要）
+    bool use_json = (var_ref.filter_flags & 1) != 0;
+    bool use_chrono_format = (var_ref.filter_flags & 2) != 0;
+    std::string_view chrono_fmt;
+    if (use_chrono_format) {
+      for (auto const& f : var_ref.filters) {
+        if (f.filter == string_filter::format) { chrono_fmt = f.str_arg1; break; }
+      }
+    }
+    auto r = for_each_field_ref(ex.value_, var_ref,[&](auto const& field) {
+      using FT = std::remove_cvref_t<decltype(field)>;
+      if (use_json) {
+        json_serialize_value(filtered, field);
+      } else if constexpr (is_chrono_time_point_v<FT>) {
+        if (use_chrono_format) {
+          serialize_chrono(filtered, field, chrono_fmt);
+        } else {
+          serialize_chrono(filtered, field);
+        }
+      } else if constexpr (std::is_arithmetic_v<FT> && !std::same_as<FT, bool>) {
+        if (use_chrono_format) {
+          serialize_formatted(filtered, field, chrono_fmt);
+        } else {
+          serialize_value(filtered, field);
+        }
+      } else if constexpr (std::same_as<FT, std::string> || std::same_as<FT, std::string_view> || char_pointer_v<FT>) {
+        auto sv = to_sv(field);
+        if (use_chrono_format) {
+          serialize_formatted(filtered, sv, chrono_fmt);
+        } else {
+          serialize_value(filtered, sv);
+        }
+      } else if constexpr (is_std_optional_v<FT>) {
+        if (field.has_value()) {
+          using inner_t = std::remove_cvref_t<decltype(*field)>;
+          if constexpr (is_chrono_time_point_v<inner_t>) {
+            if (use_chrono_format) {
+              serialize_chrono(filtered, *field, chrono_fmt);
+            } else {
+              serialize_chrono(filtered, *field);
+            }
+          } else if constexpr (std::is_arithmetic_v<inner_t> && !std::same_as<inner_t, bool>) {
+            if (use_chrono_format) {
+              serialize_formatted(filtered, *field, chrono_fmt);
+            } else {
+              serialize_value(filtered, *field);
+            }
+          } else if constexpr (std::same_as<inner_t, std::string> || std::same_as<inner_t, std::string_view>) {
+            if (use_chrono_format) {
+              serialize_formatted(filtered, *field, chrono_fmt);
+            } else {
+              serialize_value(filtered, *field);
+            }
+          } else {
+            serialize_value(filtered, *field);
+          }
+        }
+      } else if constexpr (serializable_v<FT>) {
+        serialize_value(filtered, field);
+      }
+    });
+    if (!r) return std::unexpected(r.error());
+    for (auto const& f : var_ref.filters) apply_string_filter(filtered, f);
+    for (auto const& f : var_ref.int_filters) {
+      if (auto err = apply_int_filter(filtered, f); !err) return std::unexpected(err.error());
+    }
+    for (auto const& f : var_ref.float_filters) apply_float_filter(filtered, f);
+    ++pc;
+    pc += instr.operand;
+    return {};
+  }
+
   // -- handler functions (shared by both dispatch paths) --
 
   static std::expected<void, error_ctx> handle_emit_literal(bc_executor& ex, std::size_t& pc, std::string&) {
@@ -769,112 +1032,39 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
     return {};
   }
 
-  /** @brief ディスパッチテーブル用: filter_upper / lower / capitalize / title / trim / ltrim / rtrim / replace / default */
-  static std::expected<void, error_ctx> handle_string_filter(bc_executor& ex, std::size_t& pc, std::string& filtered) {
-    auto op = ex.bc_.instructions[pc].op;
-    switch (op) {
-    case bc_opcode::filter_upper:      apply_string_filter(filtered, {.filter = string_filter::upper}); break;
-    case bc_opcode::filter_lower:      apply_string_filter(filtered, {.filter = string_filter::lower}); break;
-    case bc_opcode::filter_capitalize: apply_string_filter(filtered, {.filter = string_filter::capitalize}); break;
-    case bc_opcode::filter_title:      apply_string_filter(filtered, {.filter = string_filter::title}); break;
-    case bc_opcode::filter_trim:       apply_string_filter(filtered, {.filter = string_filter::trim}); break;
-    case bc_opcode::filter_ltrim:      apply_string_filter(filtered, {.filter = string_filter::ltrim}); break;
-    case bc_opcode::filter_rtrim:      apply_string_filter(filtered, {.filter = string_filter::rtrim}); break;
-    case bc_opcode::filter_replace:    apply_string_filter(filtered, {.filter = string_filter::replace}); break;
-    case bc_opcode::filter_default: {
-      auto def_str = ex.bc_.instructions[pc].operand < ex.bc_.literals.size()
-        ? std::string_view{ex.bc_.literals[ex.bc_.instructions[pc].operand]}
-        : std::string_view{};
-      apply_string_filter(filtered, {.filter = string_filter::default_value, .str_arg1 = def_str});
-      break;
+  /** @brief 汎用文字列フィルタ（operand2 = string_filter 種別） */
+  static std::expected<void, error_ctx> handle_filter_string(bc_executor& ex, std::size_t& pc, std::string& filtered) {
+    auto const& instr = ex.bc_.instructions[pc];
+    auto        kind  = static_cast<string_filter>(instr.operand2);
+    auto        arg   = static_cast<int>(instr.operand);
+    string_filter_entry entry{kind, arg, 0};
+    if (kind == string_filter::substr)
+      entry.arg2 = static_cast<int>(instr.operand3);
+    if (instr.operand3 != UINT32_MAX) {
+      auto lit_idx = instr.operand3;
+      if (lit_idx < ex.bc_.literals.size())
+        entry.str_arg1 = ex.bc_.literals[lit_idx];
+      if ((kind == string_filter::replace || kind == string_filter::pluralize) && lit_idx + 1 < ex.bc_.literals.size())
+        entry.str_arg2 = ex.bc_.literals[lit_idx + 1];
     }
-    default: return std::unexpected(error_ctx{.position = pc, .ec = error_code::syntax_error});
-    }
+    apply_string_filter(filtered, entry);
     ++pc;
     return {};
   }
 
-  /** @brief ディスパッチテーブル用: filter_left / right / center / truncate / indent（1引数） */
-  static std::expected<void, error_ctx> handle_string_filter_arg(bc_executor& ex, std::size_t& pc, std::string& filtered) {
-    auto op  = ex.bc_.instructions[pc].op;
-    auto arg = static_cast<int>(ex.bc_.instructions[pc].operand);
-    switch (op) {
-    case bc_opcode::filter_left:     apply_string_filter(filtered, {.filter = string_filter::left, .arg1 = arg}); break;
-    case bc_opcode::filter_right:    apply_string_filter(filtered, {.filter = string_filter::right, .arg1 = arg}); break;
-    case bc_opcode::filter_center:   apply_string_filter(filtered, {.filter = string_filter::center, .arg1 = arg}); break;
-    case bc_opcode::filter_truncate: apply_string_filter(filtered, {.filter = string_filter::truncate, .arg1 = arg}); break;
-    case bc_opcode::filter_indent:   apply_string_filter(filtered, {.filter = string_filter::indent, .arg1 = arg}); break;
-    case bc_opcode::filter_repeat:   apply_string_filter(filtered, {.filter = string_filter::repeat, .arg1 = arg}); break;
-    default: return std::unexpected(error_ctx{.position = pc, .ec = error_code::syntax_error});
-    }
+  static std::expected<void, error_ctx> handle_filter_int(bc_executor& ex, std::size_t& pc, std::string& filtered) {
+    auto const& instr = ex.bc_.instructions[pc];
+    auto        kind  = static_cast<int_filter>(instr.operand2);
+    if (auto r = apply_int_filter(filtered, {kind, static_cast<int>(instr.operand)}); !r)
+      return std::unexpected(r.error());
     ++pc;
     return {};
   }
 
-  /** @brief ディスパッチテーブル用: no-op（json, safe 等） */
-  static std::expected<void, error_ctx> handle_noop(bc_executor&, std::size_t& pc, std::string&) {
-    ++pc;
-    return {};
-  }
-
-  /** @brief ディスパッチテーブル用: filter_pad（引数1: 幅, 引数2: 埋め文字literal index） */
-  static std::expected<void, error_ctx> handle_string_filter_arg_pad(bc_executor& ex, std::size_t& pc, std::string& filtered) {
-    auto arg     = static_cast<int>(ex.bc_.instructions[pc].operand);
-    auto pad_str = (ex.bc_.instructions[pc].operand2 != UINT32_MAX) ? std::string_view{ex.bc_.literals[ex.bc_.instructions[pc].operand2]} : std::string_view{};
-    apply_string_filter(filtered, {.filter = string_filter::pad, .arg1 = arg, .str_arg1 = pad_str});
-    ++pc;
-    return {};
-  }
-
-  /** @brief ディスパッチテーブル用: filter_pluralize（引数1: 単数literal index, 引数2: 複数literal index） */
-  static std::expected<void, error_ctx> handle_string_filter_arg_pluralize(bc_executor& ex, std::size_t& pc, std::string& filtered) {
-    auto singular = ex.bc_.literals[ex.bc_.instructions[pc].operand];
-    auto plural   = ex.bc_.literals[ex.bc_.instructions[pc].operand2];
-    apply_string_filter(filtered, {.filter = string_filter::pluralize, .str_arg1 = singular, .str_arg2 = plural});
-    ++pc;
-    return {};
-  }
-
-  /** @brief ディスパッチテーブル用: filter_substr（2引数） */
-  static std::expected<void, error_ctx> handle_string_filter_arg2(bc_executor& ex, std::size_t& pc, std::string& filtered) {
-    apply_string_filter(filtered, {.filter = string_filter::substr, .arg1 = static_cast<int>(ex.bc_.instructions[pc].operand), .arg2 = static_cast<int>(ex.bc_.instructions[pc].operand2)});
-    ++pc;
-    return {};
-  }
-
-  /** @brief ディスパッチテーブル用: 全整数フィルタ */
-  static std::expected<void, error_ctx> handle_int_filter(bc_executor& ex, std::size_t& pc, std::string& filtered) {
-    auto op  = ex.bc_.instructions[pc].op;
-    auto arg = static_cast<int>(ex.bc_.instructions[pc].operand);
-    switch (op) {
-    case bc_opcode::filter_int_abs:      { auto r = apply_int_filter(filtered, {.filter = int_filter::abs}); if (!r) return std::unexpected(r.error()); } break;
-    case bc_opcode::filter_int_hex:      { auto r = apply_int_filter(filtered, {.filter = int_filter::hex}); if (!r) return std::unexpected(r.error()); } break;
-    case bc_opcode::filter_int_oct:      { auto r = apply_int_filter(filtered, {.filter = int_filter::oct}); if (!r) return std::unexpected(r.error()); } break;
-    case bc_opcode::filter_int_bin:      { auto r = apply_int_filter(filtered, {.filter = int_filter::bin}); if (!r) return std::unexpected(r.error()); } break;
-    case bc_opcode::filter_int_neg:      { auto r = apply_int_filter(filtered, {.filter = int_filter::neg}); if (!r) return std::unexpected(r.error()); } break;
-    case bc_opcode::filter_int_mod:      { auto r = apply_int_filter(filtered, {.filter = int_filter::mod, .arg = arg}); if (!r) return std::unexpected(r.error()); } break;
-    case bc_opcode::filter_int_numify:   { auto r = apply_int_filter(filtered, {.filter = int_filter::numify}); if (!r) return std::unexpected(r.error()); } break;
-    case bc_opcode::filter_int_is_neg:   { auto r = apply_int_filter(filtered, {.filter = int_filter::is_neg}); if (!r) return std::unexpected(r.error()); } break;
-    case bc_opcode::filter_int_eq:       { auto r = apply_int_filter(filtered, {.filter = int_filter::eq, .arg = arg}); if (!r) return std::unexpected(r.error()); } break;
-    case bc_opcode::filter_int_ne:       { auto r = apply_int_filter(filtered, {.filter = int_filter::ne, .arg = arg}); if (!r) return std::unexpected(r.error()); } break;
-    case bc_opcode::filter_int_gt:       { auto r = apply_int_filter(filtered, {.filter = int_filter::gt, .arg = arg}); if (!r) return std::unexpected(r.error()); } break;
-    case bc_opcode::filter_int_gte:      { auto r = apply_int_filter(filtered, {.filter = int_filter::gte, .arg = arg}); if (!r) return std::unexpected(r.error()); } break;
-    case bc_opcode::filter_int_lt:       { auto r = apply_int_filter(filtered, {.filter = int_filter::lt, .arg = arg}); if (!r) return std::unexpected(r.error()); } break;
-    case bc_opcode::filter_int_lte:      { auto r = apply_int_filter(filtered, {.filter = int_filter::lte, .arg = arg}); if (!r) return std::unexpected(r.error()); } break;
-    case bc_opcode::filter_int_zerofill: { auto r = apply_int_filter(filtered, {.filter = int_filter::zerofill, .arg = arg}); if (!r) return std::unexpected(r.error()); } break;
-    case bc_opcode::filter_int_add:      { auto r = apply_int_filter(filtered, {.filter = int_filter::add, .arg = arg}); if (!r) return std::unexpected(r.error()); } break;
-    case bc_opcode::filter_int_sub:      { auto r = apply_int_filter(filtered, {.filter = int_filter::sub, .arg = arg}); if (!r) return std::unexpected(r.error()); } break;
-    case bc_opcode::filter_int_mul:      { auto r = apply_int_filter(filtered, {.filter = int_filter::mul, .arg = arg}); if (!r) return std::unexpected(r.error()); } break;
-    case bc_opcode::filter_int_div:      { auto r = apply_int_filter(filtered, {.filter = int_filter::div, .arg = arg}); if (!r) return std::unexpected(r.error()); } break;
-    default: return std::unexpected(error_ctx{.position = pc, .ec = error_code::syntax_error});
-    }
-    ++pc;
-    return {};
-  }
-
-  /** @brief ディスパッチテーブル用: filter_float_precision */
-  static std::expected<void, error_ctx> handle_float_filter(bc_executor& ex, std::size_t& pc, std::string& filtered) {
-    apply_float_filter(filtered, {.filter = float_filter::precision, .arg = static_cast<int>(ex.bc_.instructions[pc].operand)});
+  static std::expected<void, error_ctx> handle_filter_float(bc_executor& ex, std::size_t& pc, std::string& filtered) {
+    auto const& instr = ex.bc_.instructions[pc];
+    auto        kind  = static_cast<float_filter>(instr.operand2);
+    apply_float_filter(filtered, {kind, static_cast<int>(instr.operand)});
     ++pc;
     return {};
   }
@@ -891,79 +1081,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
   }
 
   static std::expected<void, error_ctx> handle_resolve_filtered(bc_executor& ex, std::size_t& pc, std::string& filtered) {
-    auto const& instr  = ex.bc_.instructions[pc];
-    auto const& var_ref = ex.bc_.var_refs[instr.operand2];
-    filtered.clear();
-    // コンパイル時事前計算済みフラグで判定（ループ不要）
-    bool use_json = (var_ref.filter_flags & 1) != 0;
-    bool use_chrono_format = (var_ref.filter_flags & 2) != 0;
-    std::string_view chrono_fmt;
-    if (use_chrono_format) {
-      for (auto const& f : var_ref.filters) {
-        if (f.filter == string_filter::format) { chrono_fmt = f.str_arg1; break; }
-      }
-    }
-    auto r = for_each_field_ref(ex.value_, var_ref,[&](auto const& field) {
-      using FT = std::remove_cvref_t<decltype(field)>;
-      if (use_json) {
-        json_serialize_value(filtered, field);
-      } else if constexpr (is_chrono_time_point_v<FT>) {
-        if (use_chrono_format) {
-          serialize_chrono(filtered, field, chrono_fmt);
-        } else {
-          serialize_chrono(filtered, field);
-        }
-      } else if constexpr (std::is_arithmetic_v<FT> && !std::same_as<FT, bool>) {
-        if (use_chrono_format) {
-          serialize_formatted(filtered, field, chrono_fmt);
-        } else {
-          serialize_value(filtered, field);
-        }
-      } else if constexpr (std::same_as<FT, std::string> || std::same_as<FT, std::string_view> || char_pointer_v<FT>) {
-        auto sv = to_sv(field);
-        if (use_chrono_format) {
-          serialize_formatted(filtered, sv, chrono_fmt);
-        } else {
-          serialize_value(filtered, sv);
-        }
-      } else if constexpr (is_std_optional_v<FT>) {
-        if (field.has_value()) {
-          using inner_t = std::remove_cvref_t<decltype(*field)>;
-          if constexpr (is_chrono_time_point_v<inner_t>) {
-            if (use_chrono_format) {
-              serialize_chrono(filtered, *field, chrono_fmt);
-            } else {
-              serialize_chrono(filtered, *field);
-            }
-          } else if constexpr (std::is_arithmetic_v<inner_t> && !std::same_as<inner_t, bool>) {
-            if (use_chrono_format) {
-              serialize_formatted(filtered, *field, chrono_fmt);
-            } else {
-              serialize_value(filtered, *field);
-            }
-          } else if constexpr (std::same_as<inner_t, std::string> || std::same_as<inner_t, std::string_view>) {
-            if (use_chrono_format) {
-              serialize_formatted(filtered, *field, chrono_fmt);
-            } else {
-              serialize_value(filtered, *field);
-            }
-          } else {
-            serialize_value(filtered, *field);
-          }
-        }
-      } else if constexpr (serializable_v<FT>) {
-        serialize_value(filtered, field);
-      }
-    });
-    if (!r) return std::unexpected(r.error());
-    for (auto const& f : var_ref.filters) apply_string_filter(filtered, f);
-    for (auto const& f : var_ref.int_filters) {
-      if (auto err = apply_int_filter(filtered, f); !err) return std::unexpected(err.error());
-    }
-    for (auto const& f : var_ref.float_filters) apply_float_filter(filtered, f);
-    ++pc;
-    pc += instr.operand;
-    return {};
+    return do_resolve_filtered(ex, pc, filtered);
   }
 
   static std::expected<void, error_ctx> handle_emit_filtered(bc_executor& ex, std::size_t& pc, std::string& filtered) {
@@ -984,188 +1102,11 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
   }
 
   static std::expected<void, error_ctx> handle_emit_section(bc_executor& ex, std::size_t& pc, std::string&) {
-    auto const& instr = ex.bc_.instructions[pc];
-    auto const& ref   = ex.bc_.var_refs[instr.operand2];
-    auto        body_end = instr.operand;
-    auto        else_pc  = instr.operand3;
-    bool        is_falsy = true;
-    bool        entered = false;
-    if (body_end <= pc + 1 || body_end > ex.bc_.instructions.size())
-      return std::unexpected(error_ctx{.position = pc, .ec = error_code::syntax_error});
-    auto section_body = [&](auto const& field) -> std::expected<void, error_ctx> {
-      entered = true;
-      using FT = std::remove_cvref_t<decltype(field)>;
-      if constexpr (ct_is_vector_like<FT>) {
-        if (!field.empty()) is_falsy = false;
-        using elem_t = typename FT::value_type;
-        bc_loop_state ls;
-        ls.parent = ex.loop_;
-        ls.count = static_cast<std::uint32_t>(field.size());
-        for (ls.index = 0; ls.index < static_cast<std::uint32_t>(field.size()); ++ls.index) {
-          ls.continue_flag = false;
-          ls.binding_name = ref.key;
-          ls.binding_elem = &field[ls.index];
-          ls.binding_resolve = &resolve_binding_var<elem_t>;
-          ls.binding_truthy = &eval_binding_truthy<elem_t>;
-          bc_executor<elem_t, RootT> child_exec(ex.bc_, field[ls.index], ex.root_value_, &ls, ex.out_);
-          auto r2 = child_exec.execute_impl(pc + 1, body_end - 1);
-          if (!r2) return r2;
-          if (ls.continue_flag) { ls.continue_flag = false; continue; }
-          if (ls.break_flag) break;
-        }
-      } else if constexpr (std::same_as<FT, bool>) {
-        is_falsy = !field;
-        if (field) { auto r2 = ex.execute_impl(pc + 1, body_end - 1); if (!r2) return r2; }
-      } else if constexpr (is_std_optional_v<FT>) {
-        is_falsy = !field.has_value();
-        if (field.has_value()) {
-          using inner_t = typename FT::value_type;
-          bc_executor<inner_t, RootT> child_exec(ex.bc_, *field, ex.root_value_, nullptr, ex.out_);
-          auto r2 = child_exec.execute_impl(pc + 1, body_end - 1);
-          if (!r2) return r2;
-        }
-      } else if constexpr (ct_is_map_like<FT>) {
-        if (!field.empty()) is_falsy = false;
-        bc_loop_state ls;
-        ls.parent = ex.loop_;
-        ls.count = static_cast<std::uint32_t>(field.size());
-        for (auto const& [k, v] : field) {
-          ls.key = std::string_view{k};
-          using val_t = std::remove_cvref_t<decltype(v)>;
-          ls.binding_name = ref.key;
-          ls.binding_elem = &v;
-          ls.binding_resolve = &resolve_binding_var<val_t>;
-          ls.binding_truthy = &eval_binding_truthy<val_t>;
-          bc_executor<val_t, RootT> child_exec(ex.bc_, v, ex.root_value_, &ls, ex.out_);
-          auto r2 = child_exec.execute_impl(pc + 1, body_end - 1);
-          if (!r2) return r2;
-          if (ls.break_flag) break;
-          ++ls.index;
-        }
-      } else if constexpr (ct_is_set_like<FT>) {
-        if (!field.empty()) is_falsy = false;
-        using elem_t = typename FT::value_type;
-        bc_loop_state ls;
-        ls.parent = ex.loop_;
-        ls.count = static_cast<std::uint32_t>(field.size());
-        for (auto const& elem : field) {
-          ls.continue_flag = false;
-          ls.binding_name = ref.key;
-          ls.binding_elem = &elem;
-          ls.binding_resolve = &resolve_binding_var<elem_t>;
-          ls.binding_truthy = &eval_binding_truthy<elem_t>;
-          bc_executor<elem_t, RootT> child_exec(ex.bc_, elem, ex.root_value_, &ls, ex.out_);
-          auto r2 = child_exec.execute_impl(pc + 1, body_end - 1);
-          if (!r2) return r2;
-          if (ls.continue_flag) { ls.continue_flag = false; continue; }
-          if (ls.break_flag) break;
-          ++ls.index;
-        }
-      } else if constexpr (std::same_as<FT, std::string> || std::same_as<FT, std::string_view> || char_pointer_v<FT>) {
-        if (!to_sv(field).empty()) {
-          is_falsy = false;
-          bc_loop_state guard;
-          guard.parent = ex.loop_;
-          bc_loop_state const* save = ex.loop_;
-          const_cast<bc_loop_state const*&>(ex.loop_) = &guard;
-          auto r2 = ex.execute_impl(pc + 1, body_end - 1);
-          const_cast<bc_loop_state const*&>(ex.loop_) = save;
-          if (!r2) return r2;
-        }
-      } else if constexpr (forward_iterable<FT>) {
-        using elem_t = typename FT::value_type;
-        bc_loop_state ls;
-        ls.parent = ex.loop_;
-        ls.count = 0;
-        ls.index = 0;
-        auto it = field.begin();
-        auto end = field.end();
-        if (!(it != end)) return {};
-        is_falsy = false;
-        for (; it != end; ++it, ++ls.index) {
-          auto const& elem = *it;
-          ls.continue_flag = false;
-          ls.binding_name = ref.key;
-          ls.binding_elem = &elem;
-          ls.binding_resolve = &resolve_binding_var<elem_t>;
-          ls.binding_truthy = &eval_binding_truthy<elem_t>;
-          bc_executor<elem_t, RootT> child_exec(ex.bc_, elem, ex.root_value_, &ls, ex.out_);
-          auto r2 = child_exec.execute_impl(pc + 1, body_end - 1);
-          if (!r2) return r2;
-          if (ls.continue_flag) { ls.continue_flag = false; continue; }
-          if (ls.break_flag) break;
-        }
-        ls.count = static_cast<std::uint32_t>(ls.index);
-      } else if constexpr (ct_glz_reflectable<FT>) {
-        is_falsy = false;
-        constexpr auto sz = glz::reflect<FT>::size;
-        auto tied = glz::to_tie(field);
-        std::expected<void, error_ctx> res{};
-        [&]<std::size_t... I>(std::index_sequence<I...>) {
-          (([&] {
-             if (!res) return;
-             using elem_t = std::remove_cvref_t<decltype(glz::get<I>(tied))>;
-             bc_loop_state ls;
-             ls.parent = ex.loop_;
-             ls.count = sz; ls.index = I; ls.key = glz::reflect<FT>::keys[I];
-             ls.binding_name = ref.key;
-             ls.binding_elem = &glz::get<I>(tied);
-             ls.binding_resolve = &resolve_binding_var<elem_t>;
-             ls.binding_truthy = &eval_binding_truthy<elem_t>;
-             bc_executor<elem_t, RootT> child_exec(ex.bc_, glz::get<I>(tied), ex.root_value_, &ls, ex.out_);
-             res = child_exec.execute_impl(pc + 1, body_end - 1);
-          }()), ...);
-        }(std::make_index_sequence<sz>{});
-        return res;
-      }
-      return {};
-    };
-    auto r = for_each_field_ref(ex.value_, ref,section_body);
-    if (!r) return std::unexpected(r.error());
-    if (!entered) {
-      auto r2 = for_each_field_ref(ex.root_value_, ref,section_body);
-      if (!r2) return std::unexpected(r2.error());
-    }
-    if (else_pc > 0 && is_falsy) {
-      pc = else_pc;
-    } else {
-      pc = body_end;
-    }
-    return {};
+    return do_section(ex, pc);
   }
 
   static std::expected<void, error_ctx> handle_emit_inverted(bc_executor& ex, std::size_t& pc, std::string&) {
-    auto const& instr = ex.bc_.instructions[pc];
-    auto const& ref   = ex.bc_.var_refs[instr.operand2];
-    auto        else_pc = instr.operand3;
-    bool empty = true;
-    (void)for_each_field_ref(ex.value_, ref,[&](auto const& field) {
-      using FT = std::remove_cvref_t<decltype(field)>;
-      if constexpr (ct_is_vector_like<FT>) { empty = field.empty(); }
-      else if constexpr (std::same_as<FT, bool>) { empty = !field; }
-      else if constexpr (is_std_optional_v<FT>) { empty = !field.has_value(); }
-      else if constexpr (ct_is_map_like<FT>) { empty = field.empty(); }
-      else if constexpr (ct_is_set_like<FT>) { empty = field.empty(); }
-      else if constexpr (std::same_as<FT, std::string> || std::same_as<FT, std::string_view> || char_pointer_v<FT>) { empty = to_sv(field).empty(); }
-      else if constexpr (std::is_arithmetic_v<FT>) { empty = (field == 0); }
-      else if constexpr (std::is_enum_v<FT>) { empty = (static_cast<std::underlying_type_t<FT>>(field) == 0); }
-      else if constexpr (ct_glz_reflectable<FT>) { empty = false; }
-    });
-    auto body_end = instr.operand;
-    if (body_end <= pc + 1 || body_end > ex.bc_.instructions.size())
-      return std::unexpected(error_ctx{.position = pc, .ec = error_code::syntax_error});
-    if (empty) {
-      auto r = ex.execute_impl(pc + 1, body_end - 1);
-      if (!r) return std::unexpected(r.error());
-      pc = body_end;
-    } else if (else_pc > 0) {
-      auto r = ex.execute_impl(else_pc, body_end - 1);
-      if (!r) return std::unexpected(r.error());
-      pc = body_end;
-    } else {
-      pc = body_end;
-    }
-    return {};
+    return do_inverted(ex, pc);
   }
 
   static std::expected<void, error_ctx> handle_emit_if(bc_executor& ex, std::size_t& pc, std::string&) {
@@ -1413,49 +1354,11 @@ public:
         &&L_emit_at_key,
         &&L_emit_this,
         &&L_resolve_filtered,
-        &&L_filter_upper,
-        &&L_filter_lower,
-        &&L_filter_capitalize,
-        &&L_filter_title,
-        &&L_filter_trim,
-        &&L_filter_ltrim,
-        &&L_filter_rtrim,
-        &&L_filter_left,
-        &&L_filter_right,
-        &&L_filter_center,
-        &&L_filter_truncate,
-        &&L_filter_substr,
-        &&L_filter_replace,
-        &&L_filter_default,
-        &&L_filter_json,
-        &&L_filter_safe,
-        &&L_filter_indent,
-        &&L_filter_pad,
-        &&L_filter_pluralize,
-        &&L_filter_format,
-        &&L_filter_repeat,
+        &&L_filter_string,
+        &&L_filter_int,
+        &&L_filter_float,
         &&L_emit_filtered,
         &&L_emit_filtered_raw,
-        &&L_filter_int_abs,
-        &&L_filter_int_hex,
-        &&L_filter_int_oct,
-        &&L_filter_int_bin,
-        &&L_filter_int_neg,
-        &&L_filter_int_mod,
-        &&L_filter_int_numify,
-        &&L_filter_int_is_neg,
-        &&L_filter_int_eq,
-        &&L_filter_int_ne,
-        &&L_filter_int_gt,
-        &&L_filter_int_gte,
-        &&L_filter_int_lt,
-        &&L_filter_int_lte,
-        &&L_filter_int_zerofill,
-        &&L_filter_int_add,
-        &&L_filter_int_sub,
-        &&L_filter_int_mul,
-        &&L_filter_int_div,
-        &&L_filter_float_precision,
         &&L_emit_if_filtered,
         &&L_emit_break,
         &&L_emit_continue,
@@ -1515,182 +1418,7 @@ public:
    *          ループ時は bc_loop_state を生成して子 executor に渡す。
    */
   L_emit_section: {
-    auto const& instr    = bc_.instructions[pc];
-    auto const& ref      = bc_.var_refs[instr.operand2];
-    auto        body_end = instr.operand;
-    auto        else_pc  = instr.operand3;
-
-    if (body_end <= pc + 1 || body_end > bc_.instructions.size()) {
-      return std::unexpected(error_ctx{.position = pc, .ec = error_code::syntax_error});
-    }
-
-    bool is_falsy = true;
-    bool entered = false;
-    auto section_iterate = [&](auto const& field) -> std::expected<void, error_ctx> {
-      entered = true;
-      using FT = std::remove_cvref_t<decltype(field)>;
-      if constexpr (ct_is_vector_like<FT>) {
-        if (!field.empty()) is_falsy = false;
-        using elem_t = typename FT::value_type;
-        bc_loop_state ls;
-        ls.parent = loop_;
-        ls.count = static_cast<std::uint32_t>(field.size());
-
-        for (ls.index = 0; ls.index < static_cast<std::uint32_t>(field.size()); ++ls.index) {
-          ls.continue_flag = false;
-          ls.binding_name = ref.key;
-          ls.binding_elem = &field[ls.index];
-          ls.binding_resolve = &resolve_binding_var<elem_t>;
-          ls.binding_truthy = &eval_binding_truthy<elem_t>;
-          bc_executor<elem_t, RootT> child_exec(bc_, field[ls.index], root_value_, &ls, out_);
-          auto                       r2 = child_exec.execute_impl(pc + 1, body_end - 1);
-          if (!r2)
-            return r2;
-          if (ls.continue_flag) {
-            ls.continue_flag = false;
-            continue;
-          }
-          if (ls.break_flag)
-            break;
-        }
-      } else if constexpr (std::same_as<FT, bool>) {
-        is_falsy = !field;
-        if (field) {
-          auto r2 = execute_impl(pc + 1, body_end - 1);
-          if (!r2)
-            return r2;
-        }
-      } else if constexpr (is_std_optional_v<FT>) {
-        is_falsy = !field.has_value();
-        if (field.has_value()) {
-          using inner_t = typename FT::value_type;
-          bc_executor<inner_t, RootT> child_exec(bc_, *field, root_value_, nullptr, out_);
-          auto                        r2 = child_exec.execute_impl(pc + 1, body_end - 1);
-          if (!r2)
-            return r2;
-        }
-      } else if constexpr (ct_is_map_like<FT>) {
-        if (!field.empty()) is_falsy = false;
-        bc_loop_state ls;
-        ls.parent = loop_;
-        ls.count = static_cast<std::uint32_t>(field.size());
-        for (auto const& [k, v] : field) {
-          ls.key      = std::string_view{k};
-          using val_t = std::remove_cvref_t<decltype(v)>;
-          ls.binding_name = ref.key;
-          ls.binding_elem = &v;
-          ls.binding_resolve = &resolve_binding_var<val_t>;
-          ls.binding_truthy = &eval_binding_truthy<val_t>;
-          bc_executor<val_t, RootT> child_exec(bc_, v, root_value_, &ls, out_);
-          auto                      r2 = child_exec.execute_impl(pc + 1, body_end - 1);
-          if (!r2)
-            return r2;
-          if (ls.break_flag)
-            break;
-          ++ls.index;
-        }
-      } else if constexpr (ct_is_set_like<FT>) {
-        if (!field.empty()) is_falsy = false;
-        using elem_t = typename FT::value_type;
-        bc_loop_state ls;
-        ls.parent = loop_;
-        ls.count = static_cast<std::uint32_t>(field.size());
-        for (auto const& elem : field) {
-          ls.continue_flag = false;
-          ls.binding_name = ref.key;
-          ls.binding_elem = &elem;
-          ls.binding_resolve = &resolve_binding_var<elem_t>;
-          ls.binding_truthy = &eval_binding_truthy<elem_t>;
-          bc_executor<elem_t, RootT> child_exec(bc_, elem, root_value_, &ls, out_);
-          auto                       r2 = child_exec.execute_impl(pc + 1, body_end - 1);
-          if (!r2)
-            return r2;
-          if (ls.continue_flag) {
-            ls.continue_flag = false;
-            continue;
-          }
-          if (ls.break_flag)
-            break;
-          ++ls.index;
-        }
-      } else if constexpr (std::same_as<FT, std::string> || std::same_as<FT, std::string_view> || char_pointer_v<FT>) {
-        if (!to_sv(field).empty()) {
-          is_falsy = false;
-          bc_loop_state guard;
-          guard.parent = loop_;
-          bc_loop_state const* save = loop_;
-          loop_ = &guard;
-          auto r2 = execute_impl(pc + 1, body_end - 1);
-          loop_ = save;
-          if (!r2) return r2;
-        }
-      } else if constexpr (forward_iterable<FT>) {
-        using elem_t = typename FT::value_type;
-        bc_loop_state ls;
-        ls.parent = loop_;
-        ls.count = 0;
-        ls.index = 0;
-        auto it = field.begin();
-        auto end = field.end();
-        if (!(it != end)) return {};
-        is_falsy = false;
-        for (; it != end; ++it, ++ls.index) {
-          auto const& elem = *it;
-          ls.continue_flag = false;
-          ls.binding_name = ref.key;
-          ls.binding_elem = &elem;
-          ls.binding_resolve = &resolve_binding_var<elem_t>;
-          ls.binding_truthy = &eval_binding_truthy<elem_t>;
-          bc_executor<elem_t, RootT> child_exec(bc_, elem, root_value_, &ls, out_);
-          auto                       r2 = child_exec.execute_impl(pc + 1, body_end - 1);
-          if (!r2) return r2;
-          if (ls.continue_flag) { ls.continue_flag = false; continue; }
-          if (ls.break_flag) break;
-        }
-        ls.count = static_cast<std::uint32_t>(ls.index);
-      } else if constexpr (ct_glz_reflectable<FT>) {
-        is_falsy = false;
-        constexpr auto                 sz   = glz::reflect<FT>::size;
-        auto                           tied = glz::to_tie(field);
-        std::expected<void, error_ctx> res{};
-        [&]<std::size_t... I>(std::index_sequence<I...>) {
-          (([&] {
-             if (!res)
-               return;
-             using elem_t = std::remove_cvref_t<decltype(glz::get<I>(tied))>;
-             bc_loop_state ls;
-             ls.parent = loop_;
-             ls.count     = sz;
-             ls.index     = I;
-             ls.key       = glz::reflect<FT>::keys[I];
-             ls.binding_name = ref.key;
-             ls.binding_elem = &glz::get<I>(tied);
-             ls.binding_resolve = &resolve_binding_var<elem_t>;
-             ls.binding_truthy = &eval_binding_truthy<elem_t>;
-             bc_executor<elem_t, RootT> child_exec(bc_, glz::get<I>(tied), root_value_, &ls, out_);
-             res = child_exec.execute_impl(pc + 1, body_end - 1);
-           }()),
-           ...);
-        }(std::make_index_sequence<sz>{});
-         return res;
-       }
-       return {};
-     };
-
-     auto r = for_each_field_ref(value_, ref,section_iterate);
-     if (!r)
-       return r;
-    if (!entered) {
-      auto r2 = for_each_field_ref(root_value_, ref,section_iterate);
-      if (!r2)
-        return r2;
-    }
-
-    if (else_pc > 0 && is_falsy) {
-      pc = else_pc;
-    } else {
-      pc = body_end;
-    }
+    if (auto r = do_section(*this, pc); !r) return r;
     DISPATCH();
   }
 
@@ -1703,50 +1431,7 @@ public:
    *          条件が成立しなければ operand の位置（endif）にジャンプする。
    */
   L_emit_inverted: {
-    auto const& instr = bc_.instructions[pc];
-    auto const& ref   = bc_.var_refs[instr.operand2];
-    auto        else_pc = instr.operand3;
-    bool        empty = true;
-    (void)for_each_field_ref(value_, ref,[&](auto const& field) {
-      using FT = std::remove_cvref_t<decltype(field)>;
-      if constexpr (ct_is_vector_like<FT>) {
-        empty = field.empty();
-      } else if constexpr (std::same_as<FT, bool>) {
-        empty = !field;
-      } else if constexpr (is_std_optional_v<FT>) {
-        empty = !field.has_value();
-      } else if constexpr (ct_is_map_like<FT>) {
-        empty = field.empty();
-      } else if constexpr (ct_is_set_like<FT>) {
-        empty = field.empty();
-      } else if constexpr (std::same_as<FT, std::string> || std::same_as<FT, std::string_view> || char_pointer_v<FT>) {
-        empty = to_sv(field).empty();
-      } else if constexpr (std::is_arithmetic_v<FT>) {
-        empty = (field == 0);
-      } else if constexpr (std::is_enum_v<FT>) {
-        /** enum: underlying 整数が 0 なら偽（空）扱い */
-        empty = (static_cast<std::underlying_type_t<FT>>(field) == 0);
-      } else if constexpr (ct_glz_reflectable<FT>) {
-        empty = false;
-      }
-    });
-    auto body_end = instr.operand;
-    if (body_end <= pc + 1 || body_end > bc_.instructions.size()) {
-      return std::unexpected(error_ctx{.position = pc, .ec = error_code::syntax_error});
-    }
-    if (empty) {
-      auto r = execute_impl(pc + 1, body_end - 1);
-      if (!r)
-        return r;
-      pc = body_end;
-    } else if (else_pc > 0) {
-      auto r = execute_impl(else_pc, body_end - 1);
-      if (!r)
-        return r;
-      pc = body_end;
-    } else {
-      pc = body_end;
-    }
+    if (auto r = do_inverted(*this, pc); !r) return r;
     DISPATCH();
   }
 
@@ -2100,230 +1785,47 @@ public:
 
   /** @brief フィルタ付き変数解決（フィルタを一括適用し個別命令をスキップ） */
   L_resolve_filtered: {
-    auto const& instr   = bc_.instructions[pc];
-    auto const& var_ref = bc_.var_refs[instr.operand2];
-    filtered_value_.clear();
-    // コンパイル時事前計算済みフラグで判定（ループ不要）
-    bool use_json = (var_ref.filter_flags & 1) != 0;
-    bool use_chrono_format = (var_ref.filter_flags & 2) != 0;
-    std::string_view chrono_fmt;
-    if (use_chrono_format) {
-      for (auto const& f : var_ref.filters) {
-        if (f.filter == string_filter::format) { chrono_fmt = f.str_arg1; break; }
-      }
-    }
-    auto r = for_each_field_ref(value_, var_ref,[&](auto const& field) {
-      using FT = std::remove_cvref_t<decltype(field)>;
-      if (use_json) {
-        json_serialize_value(filtered_value_, field);
-      } else if constexpr (is_chrono_time_point_v<FT>) {
-        if (use_chrono_format) {
-          serialize_chrono(filtered_value_, field, chrono_fmt);
-        } else {
-          serialize_chrono(filtered_value_, field);
-        }
-      } else if constexpr (std::is_arithmetic_v<FT> && !std::same_as<FT, bool>) {
-        if (use_chrono_format) {
-          serialize_formatted(filtered_value_, field, chrono_fmt);
-        } else {
-          serialize_value(filtered_value_, field);
-        }
-      } else if constexpr (std::same_as<FT, std::string> || std::same_as<FT, std::string_view> || char_pointer_v<FT>) {
-        auto sv = to_sv(field);
-        if (use_chrono_format) {
-          serialize_formatted(filtered_value_, sv, chrono_fmt);
-        } else {
-          serialize_value(filtered_value_, sv);
-        }
-      } else if constexpr (is_std_optional_v<FT>) {
-        if (field.has_value()) {
-          using inner_t = std::remove_cvref_t<decltype(*field)>;
-          if constexpr (is_chrono_time_point_v<inner_t>) {
-            if (use_chrono_format) {
-              serialize_chrono(filtered_value_, *field, chrono_fmt);
-            } else {
-              serialize_chrono(filtered_value_, *field);
-            }
-          } else if constexpr (std::is_arithmetic_v<inner_t> && !std::same_as<inner_t, bool>) {
-            if (use_chrono_format) {
-              serialize_formatted(filtered_value_, *field, chrono_fmt);
-            } else {
-              serialize_value(filtered_value_, *field);
-            }
-          } else if constexpr (std::same_as<inner_t, std::string> || std::same_as<inner_t, std::string_view>) {
-            if (use_chrono_format) {
-              serialize_formatted(filtered_value_, *field, chrono_fmt);
-            } else {
-              serialize_value(filtered_value_, *field);
-            }
-          } else {
-            serialize_value(filtered_value_, *field);
-          }
-        }
-      } else if constexpr (serializable_v<FT>) {
-        serialize_value(filtered_value_, field);
-      }
-    });
-    if (!r)
-      return r;
-    // フィルタを一括適用（dispatch 削減のため）
-    for (auto const& f : var_ref.filters)
-      apply_string_filter(filtered_value_, f);
-    for (auto const& f : var_ref.int_filters) {
-      if (auto err = apply_int_filter(filtered_value_, f); !err)
-        return std::unexpected(err.error());
-    }
-    for (auto const& f : var_ref.float_filters)
-      apply_float_filter(filtered_value_, f);
-    // 個別フィルタ命令をスキップ
-    ++pc;
-    pc += instr.operand;
+    if (auto r = do_resolve_filtered(*this, pc, filtered_value_); !r) return r;
     DISPATCH();
   }
 
-  /** @brief ASCII大文字変換 */
-  L_filter_upper: {
-    apply_string_filter(filtered_value_, {.filter = string_filter::upper});
-    ++pc;
-    DISPATCH();
-  }
-
-  /** @brief ASCII小文字変換 */
-  L_filter_lower: {
-    apply_string_filter(filtered_value_, {.filter = string_filter::lower});
-    ++pc;
-    DISPATCH();
-  }
-
-  /** @brief 先頭の文字を大文字にする */
-  L_filter_capitalize: {
-    apply_string_filter(filtered_value_, {.filter = string_filter::capitalize});
-    ++pc;
-    DISPATCH();
-  }
-
-  /** @brief 単語の先頭を大文字にする */
-  L_filter_title: {
-    apply_string_filter(filtered_value_, {.filter = string_filter::title});
-    ++pc;
-    DISPATCH();
-  }
-
-  /** @brief 先頭末尾の空白除去 */
-  L_filter_trim: {
-    apply_string_filter(filtered_value_, {.filter = string_filter::trim});
-    ++pc;
-    DISPATCH();
-  }
-
-  /** @brief 先頭の空白除去 */
-  L_filter_ltrim: {
-    apply_string_filter(filtered_value_, {.filter = string_filter::ltrim});
-    ++pc;
-    DISPATCH();
-  }
-
-  /** @brief 末尾の空白除去 */
-  L_filter_rtrim: {
-    apply_string_filter(filtered_value_, {.filter = string_filter::rtrim});
-    ++pc;
-    DISPATCH();
-  }
-
-  /** @brief 左寄せ（引数: 幅） */
-  L_filter_left: {
-    apply_string_filter(filtered_value_, {.filter = string_filter::left, .arg1 = static_cast<int>(bc_.instructions[pc].operand)});
-    ++pc;
-    DISPATCH();
-  }
-
-  /** @brief 右寄せ（引数: 幅） */
-  L_filter_right: {
-    apply_string_filter(filtered_value_, {.filter = string_filter::right, .arg1 = static_cast<int>(bc_.instructions[pc].operand)});
-    ++pc;
-    DISPATCH();
-  }
-
-  /** @brief 中央寄せ（引数: 幅） */
-  L_filter_center: {
-    apply_string_filter(filtered_value_, {.filter = string_filter::center, .arg1 = static_cast<int>(bc_.instructions[pc].operand)});
-    ++pc;
-    DISPATCH();
-  }
-
-  /** @brief 文字列切り詰め（引数: 最大文字数） */
-  L_filter_truncate: {
-    apply_string_filter(filtered_value_, {.filter = string_filter::truncate, .arg1 = static_cast<int>(bc_.instructions[pc].operand)});
-    ++pc;
-    DISPATCH();
-  }
-
-  /** @brief 部分文字列（引数1: 開始位置, 引数2: 文字数） */
-  L_filter_substr: {
-    apply_string_filter(filtered_value_, {.filter = string_filter::substr, .arg1 = static_cast<int>(bc_.instructions[pc].operand), .arg2 = static_cast<int>(bc_.instructions[pc].operand2)});
-    ++pc;
-    DISPATCH();
-  }
-
-  /** @brief 部分文字列置換（デフォルト: 改行→空白） */
-  L_filter_replace: {
-    apply_string_filter(filtered_value_, {.filter = string_filter::replace});
-    ++pc;
-    DISPATCH();
-  }
-
-  /** @brief デフォルト値フィルタ */
-  L_filter_default: {
+  /** @brief 汎用文字列フィルタ（operand=arg1, operand2=string_filter種別, operand3=文字列リテラル開始 or UINT32_MAX） */
+  L_filter_string: {
     auto const& instr = bc_.instructions[pc];
-    apply_string_filter(filtered_value_, {.filter = string_filter::default_value, .str_arg1 = bc_.literals[instr.operand]});
+    auto        kind  = static_cast<string_filter>(instr.operand2);
+    auto        arg   = static_cast<int>(instr.operand);
+    // 文字列引数（replace / pluralize は old,new の2連続リテラル）
+    string_filter_entry entry{kind, arg, 0};
+    if (kind == string_filter::substr)
+      entry.arg2 = static_cast<int>(instr.operand3);
+    if (instr.operand3 != UINT32_MAX) {
+      auto lit_idx = instr.operand3;
+      if (lit_idx < bc_.literals.size())
+        entry.str_arg1 = bc_.literals[lit_idx];
+      if ((kind == string_filter::replace || kind == string_filter::pluralize) && lit_idx + 1 < bc_.literals.size())
+        entry.str_arg2 = bc_.literals[lit_idx + 1];
+    }
+    apply_string_filter(filtered_value_, entry);
     ++pc;
     DISPATCH();
   }
 
-  /** @brief JSON出力フィルタ（L_resolve_filtered で処理済み） */
-  L_filter_json: {
+  /** @brief 汎用整数フィルタ（operand=arg, operand2=int_filter種別） */
+  L_filter_int: {
+    auto const& instr = bc_.instructions[pc];
+    auto        kind  = static_cast<int_filter>(instr.operand2);
+    if (auto err = apply_int_filter(filtered_value_, {kind, static_cast<int>(instr.operand)}); !err) {
+      return std::unexpected(err.error());
+    }
     ++pc;
     DISPATCH();
   }
 
-  /** @brief 生出力マーク（コンパイル時処理済み） */
-  L_filter_safe: {
-    ++pc;
-    DISPATCH();
-  }
-
-  /** @brief 行インデント */
-  L_filter_indent: {
-    apply_string_filter(filtered_value_, {.filter = string_filter::indent, .arg1 = static_cast<int>(bc_.instructions[pc].operand)});
-    ++pc;
-    DISPATCH();
-  }
-
-  /** @brief パディング */
-  L_filter_pad: {
-    auto arg     = static_cast<int>(bc_.instructions[pc].operand);
-    auto pad_str = (bc_.instructions[pc].operand2 != UINT32_MAX) ? std::string_view{bc_.literals[bc_.instructions[pc].operand2]} : std::string_view{};
-    apply_string_filter(filtered_value_, {.filter = string_filter::pad, .arg1 = arg, .str_arg1 = pad_str});
-    ++pc;
-    DISPATCH();
-  }
-
-  /** @brief 単数形/複数形 */
-  L_filter_pluralize: {
-    apply_string_filter(filtered_value_, {.filter = string_filter::pluralize, .str_arg1 = bc_.literals[bc_.instructions[pc].operand], .str_arg2 = bc_.literals[bc_.instructions[pc].operand2]});
-    ++pc;
-    DISPATCH();
-  }
-
-  /** @brief strftime 形式 chrono フォーマット（L_resolve_filtered で処理済み、no-op） */
-  L_filter_format: {
-    ++pc;
-    DISPATCH();
-  }
-
-  /** @brief 文字列繰り返し */
-  L_filter_repeat: {
-    apply_string_filter(filtered_value_, {.filter = string_filter::repeat, .arg1 = static_cast<int>(bc_.instructions[pc].operand)});
+  /** @brief 汎用実数フィルタ（operand=arg, operand2=float_filter種別） */
+  L_filter_float: {
+    auto const& instr = bc_.instructions[pc];
+    auto        kind  = static_cast<float_filter>(instr.operand2);
+    apply_float_filter(filtered_value_, {kind, static_cast<int>(instr.operand)});
     ++pc;
     DISPATCH();
   }
@@ -2338,176 +1840,6 @@ public:
   /** @brief フィルタ後の文字列出力（生出力） */
   L_emit_filtered_raw: {
     out_.append(filtered_value_);
-    ++pc;
-    DISPATCH();
-  }
-
-  /** @brief 整数絶対値変換 */
-  L_filter_int_abs: {
-    if (auto err = apply_int_filter(filtered_value_, {.filter = int_filter::abs}); !err) {
-      return std::unexpected(err.error());
-    }
-    ++pc;
-    DISPATCH();
-  }
-
-  /** @brief 整数16進数変換 */
-  L_filter_int_hex: {
-    if (auto err = apply_int_filter(filtered_value_, {.filter = int_filter::hex}); !err) {
-      return std::unexpected(err.error());
-    }
-    ++pc;
-    DISPATCH();
-  }
-
-  /** @brief 整数8進数変換 */
-  L_filter_int_oct: {
-    if (auto err = apply_int_filter(filtered_value_, {.filter = int_filter::oct}); !err) {
-      return std::unexpected(err.error());
-    }
-    ++pc;
-    DISPATCH();
-  }
-
-  /** @brief 整数2進数変換 */
-  L_filter_int_bin: {
-    if (auto err = apply_int_filter(filtered_value_, {.filter = int_filter::bin}); !err) {
-      return std::unexpected(err.error());
-    }
-    ++pc;
-    DISPATCH();
-  }
-
-  /** @brief 整数符号逆転 */
-  L_filter_int_neg: {
-    if (auto err = apply_int_filter(filtered_value_, {.filter = int_filter::neg}); !err) {
-      return std::unexpected(err.error());
-    }
-    ++pc;
-    DISPATCH();
-  }
-
-  /** @brief 整数余り（引数: 除数） */
-  L_filter_int_mod: {
-    if (auto err = apply_int_filter(filtered_value_, {.filter = int_filter::mod, .arg = static_cast<int>(bc_.instructions[pc].operand)}); !err) {
-      return std::unexpected(err.error());
-    }
-    ++pc;
-    DISPATCH();
-  }
-
-  /** @brief 整数3桁カンマ区切り */
-  L_filter_int_numify: {
-    if (auto err = apply_int_filter(filtered_value_, {.filter = int_filter::numify}); !err) {
-      return std::unexpected(err.error());
-    }
-    ++pc;
-    DISPATCH();
-  }
-
-  /** @brief 整数0埋め（引数: 最小桁数） */
-  L_filter_int_zerofill: {
-    if (auto err = apply_int_filter(filtered_value_, {.filter = int_filter::zerofill, .arg = static_cast<int>(bc_.instructions[pc].operand)}); !err) {
-      return std::unexpected(err.error());
-    }
-    ++pc;
-    DISPATCH();
-  }
-
-  /** @brief 整数加算（引数: 加算値） */
-  L_filter_int_add: {
-    if (auto err = apply_int_filter(filtered_value_, {.filter = int_filter::add, .arg = static_cast<int>(bc_.instructions[pc].operand)}); !err) {
-      return std::unexpected(err.error());
-    }
-    ++pc;
-    DISPATCH();
-  }
-  L_filter_int_sub: {
-    if (auto err = apply_int_filter(filtered_value_, {.filter = int_filter::sub, .arg = static_cast<int>(bc_.instructions[pc].operand)}); !err) {
-      return std::unexpected(err.error());
-    }
-    ++pc;
-    DISPATCH();
-  }
-  L_filter_int_mul: {
-    if (auto err = apply_int_filter(filtered_value_, {.filter = int_filter::mul, .arg = static_cast<int>(bc_.instructions[pc].operand)}); !err) {
-      return std::unexpected(err.error());
-    }
-    ++pc;
-    DISPATCH();
-  }
-  L_filter_int_div: {
-    if (auto err = apply_int_filter(filtered_value_, {.filter = int_filter::div, .arg = static_cast<int>(bc_.instructions[pc].operand)}); !err) {
-      return std::unexpected(err.error());
-    }
-    ++pc;
-    DISPATCH();
-  }
-  L_filter_float_precision: {
-    apply_float_filter(filtered_value_, {.filter = float_filter::precision, .arg = static_cast<int>(bc_.instructions[pc].operand)});
-    ++pc;
-    DISPATCH();
-  }
-
-  /** @brief 負数判定: "true"/"false" を出力 */
-  L_filter_int_is_neg: {
-    if (auto err = apply_int_filter(filtered_value_, {.filter = int_filter::is_neg}); !err) {
-      return std::unexpected(err.error());
-    }
-    ++pc;
-    DISPATCH();
-  }
-
-  /** @brief 等価判定: 値と引数が等しければ "true"、そうでなければ "false" を出力 */
-  L_filter_int_eq: {
-    if (auto err = apply_int_filter(filtered_value_, {.filter = int_filter::eq, .arg = static_cast<int>(bc_.instructions[pc].operand)}); !err) {
-      return std::unexpected(err.error());
-    }
-    ++pc;
-    DISPATCH();
-  }
-
-  /** @brief 不等価判定: 値と引数が異なれば "true"、そうでなければ "false" を出力 */
-  L_filter_int_ne: {
-    if (auto err = apply_int_filter(filtered_value_, {.filter = int_filter::ne, .arg = static_cast<int>(bc_.instructions[pc].operand)}); !err) {
-      return std::unexpected(err.error());
-    }
-    ++pc;
-    DISPATCH();
-  }
-
-  /** @brief 大なり判定: 値が引数より大きければ "true"、そうでなければ "false" を出力 */
-  L_filter_int_gt: {
-    if (auto err = apply_int_filter(filtered_value_, {.filter = int_filter::gt, .arg = static_cast<int>(bc_.instructions[pc].operand)}); !err) {
-      return std::unexpected(err.error());
-    }
-    ++pc;
-    DISPATCH();
-  }
-
-  /** @brief 以上判定: 値が引数以上なら "true"、そうでなければ "false" を出力 */
-  L_filter_int_gte: {
-    if (auto err = apply_int_filter(filtered_value_, {.filter = int_filter::gte, .arg = static_cast<int>(bc_.instructions[pc].operand)}); !err) {
-      return std::unexpected(err.error());
-    }
-    ++pc;
-    DISPATCH();
-  }
-
-  /** @brief 小なり判定: 値が引数未満なら "true"、そうでなければ "false" を出力 */
-  L_filter_int_lt: {
-    if (auto err = apply_int_filter(filtered_value_, {.filter = int_filter::lt, .arg = static_cast<int>(bc_.instructions[pc].operand)}); !err) {
-      return std::unexpected(err.error());
-    }
-    ++pc;
-    DISPATCH();
-  }
-
-  /** @brief 以下判定: 値が引数以下なら "true"、そうでなければ "false" を出力 */
-  L_filter_int_lte: {
-    if (auto err = apply_int_filter(filtered_value_, {.filter = int_filter::lte, .arg = static_cast<int>(bc_.instructions[pc].operand)}); !err) {
-      return std::unexpected(err.error());
-    }
     ++pc;
     DISPATCH();
   }
@@ -2602,49 +1934,11 @@ public:
       case bc_opcode::emit_at_key:            r = handle_emit_at_key(*this, pc, filtered_value_); break;
       case bc_opcode::emit_this:              r = handle_emit_this(*this, pc, filtered_value_); break;
       case bc_opcode::resolve_filtered:       r = handle_resolve_filtered(*this, pc, filtered_value_); break;
-      case bc_opcode::filter_upper:
-      case bc_opcode::filter_lower:
-      case bc_opcode::filter_capitalize:
-      case bc_opcode::filter_title:
-      case bc_opcode::filter_trim:
-      case bc_opcode::filter_ltrim:
-      case bc_opcode::filter_rtrim:
-      case bc_opcode::filter_replace:
-      case bc_opcode::filter_default:         r = handle_string_filter(*this, pc, filtered_value_); break;
-      case bc_opcode::filter_left:
-      case bc_opcode::filter_right:
-      case bc_opcode::filter_center:
-      case bc_opcode::filter_truncate:
-      case bc_opcode::filter_indent:
-      case bc_opcode::filter_repeat:          r = handle_string_filter_arg(*this, pc, filtered_value_); break;
-      case bc_opcode::filter_substr:          r = handle_string_filter_arg2(*this, pc, filtered_value_); break;
-      case bc_opcode::filter_json:
-      case bc_opcode::filter_safe:
-      case bc_opcode::filter_format:          r = handle_noop(*this, pc, filtered_value_); break;
-      case bc_opcode::filter_pad:             r = handle_string_filter_arg_pad(*this, pc, filtered_value_); break;
-      case bc_opcode::filter_pluralize:       r = handle_string_filter_arg_pluralize(*this, pc, filtered_value_); break;
+      case bc_opcode::filter_string:          r = handle_filter_string(*this, pc, filtered_value_); break;
+      case bc_opcode::filter_int:             r = handle_filter_int(*this, pc, filtered_value_); break;
+      case bc_opcode::filter_float:           r = handle_filter_float(*this, pc, filtered_value_); break;
       case bc_opcode::emit_filtered:
       case bc_opcode::emit_filtered_raw:      r = handle_emit_filtered(*this, pc, filtered_value_); break;
-      case bc_opcode::filter_int_abs:
-      case bc_opcode::filter_int_hex:
-      case bc_opcode::filter_int_oct:
-      case bc_opcode::filter_int_bin:
-      case bc_opcode::filter_int_neg:
-      case bc_opcode::filter_int_mod:
-      case bc_opcode::filter_int_numify:
-      case bc_opcode::filter_int_is_neg:
-      case bc_opcode::filter_int_eq:
-      case bc_opcode::filter_int_ne:
-      case bc_opcode::filter_int_gt:
-      case bc_opcode::filter_int_gte:
-      case bc_opcode::filter_int_lt:
-      case bc_opcode::filter_int_lte:
-      case bc_opcode::filter_int_zerofill:
-      case bc_opcode::filter_int_add:
-      case bc_opcode::filter_int_sub:
-      case bc_opcode::filter_int_mul:
-      case bc_opcode::filter_int_div:         r = handle_int_filter(*this, pc, filtered_value_); break;
-      case bc_opcode::filter_float_precision: r = handle_float_filter(*this, pc, filtered_value_); break;
       case bc_opcode::emit_if_filtered:       r = handle_emit_if_filtered(*this, pc, filtered_value_); break;
       case bc_opcode::emit_break:             r = handle_emit_break(*this, pc, filtered_value_); break;
       case bc_opcode::emit_continue:          r = handle_emit_continue(*this, pc, filtered_value_); break;

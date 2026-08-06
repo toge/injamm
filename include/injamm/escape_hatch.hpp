@@ -770,6 +770,7 @@ template <fixed_string Tmpl, fixed_string... Entries, typename T>
 
 #if INJAMM_HAS_FROZENCHARS
 
+// FrozenString 対応: Tmpl が fixed_string でない場合のみ選択（auto NTTP）
 template <auto Tmpl, std::same_as<bool> auto TrimBlocks = false, std::same_as<bool> auto LstripBlocks = false, typename T>
   requires (!detail::is_fixed_string_type_v<decltype(Tmpl)>)
 [[nodiscard]] expected<std::string> render(T const& value) {
@@ -797,29 +798,6 @@ template <auto Tmpl, std::same_as<bool> auto TrimBlocks = false, std::same_as<bo
   return detail::bc_execute_into(detail::nttp_partial_bytecode_holder<D, T>(), value, out);
 }
 
-template <auto Tmpl, fixed_string... Entries, typename T>
-  requires(sizeof...(Entries) > 0 && !detail::is_fixed_string_type_v<decltype(Tmpl)> && (detail::is_fixed_string_type_v<decltype(Entries)> && ...))
-[[nodiscard]] expected<std::string> render(T const& value) {
-  static_assert(sizeof...(Entries) % 2 == 0, "injamm: @var entries must be key-value pairs (even count). "
-                                             "Example: render<tmpl, \"key1\", \"value1\", \"key2\", \"value2\">(data)");
-  using D = detail::nttp_atvar_data<Tmpl, T, Entries...>;
-  if constexpr (D::ct_bc.error.ec != error_code::none)
-    return std::unexpected(D::ct_bc.error);
-  return detail::bc_execute(detail::nttp_bytecode_holder<D>(), value);
-}
-
-template <auto Tmpl, fixed_string... Entries, typename T>
-  requires(sizeof...(Entries) > 0 && !detail::is_fixed_string_type_v<decltype(Tmpl)> && (detail::is_fixed_string_type_v<decltype(Entries)> && ...))
-[[nodiscard]] expected<void> render(T const& value, std::string& out) {
-  static_assert(sizeof...(Entries) % 2 == 0, "injamm: @var entries must be key-value pairs (even count). "
-                                             "Example: render<tmpl, \"key1\", \"value1\", \"key2\", \"value2\">(data, out)");
-  using D = detail::nttp_atvar_data<Tmpl, T, Entries...>;
-  if constexpr (D::ct_bc.error.ec != error_code::none)
-    return std::unexpected(D::ct_bc.error);
-  return detail::bc_execute_into(detail::nttp_bytecode_holder<D>(), value, out);
-}
-
-// FrozenString 等の auto Entries を受ける版（文字列リテラルは fixed_string... 版が選ばれる）。
 template <auto Tmpl, auto... Entries, typename T>
   requires(sizeof...(Entries) > 0 && !detail::is_fixed_string_type_v<decltype(Tmpl)> &&
           (!detail::is_fixed_string_type_v<decltype(Entries)> && ...))

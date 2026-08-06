@@ -3880,35 +3880,36 @@ TEST_CASE("disassemble_at_root", "[disassemble]") {
 TEST_CASE("disassemble_string_filters_with_operand", "[disassemble]") {
   auto bc = injamm::engine<BcUser>("{{name | substr(1, 2)}}|{{name | left(5)}}|{{name | right(5)}}|{{name | center(5)}}|{{name | truncate(3)}}");
   auto asm_str = bc.disassemble();
-  REQUIRE(asm_str.contains("filter_substr"));
-  REQUIRE(asm_str.contains("start="));
-  REQUIRE(asm_str.contains("len="));
-  REQUIRE(asm_str.contains("filter_left"));
-  REQUIRE(asm_str.contains("filter_right"));
-  REQUIRE(asm_str.contains("filter_center"));
-  REQUIRE(asm_str.contains("filter_truncate"));
+  REQUIRE(asm_str.contains("filter_string"));
+  REQUIRE(asm_str.contains("substr"));
+  REQUIRE(asm_str.contains("left"));
+  REQUIRE(asm_str.contains("right"));
+  REQUIRE(asm_str.contains("center"));
+  REQUIRE(asm_str.contains("truncate"));
 }
 
 TEST_CASE("disassemble_int_arith_filters", "[disassemble]") {
   auto bc = injamm::engine<BcUser>("{{age | add(1)}}|{{age | sub(1)}}|{{age | mul(2)}}|{{age | div(2)}}|{{age | mod(2)}}");
   auto asm_str = bc.disassemble();
-  REQUIRE(asm_str.contains("filter_int_add"));
-  REQUIRE(asm_str.contains("filter_int_sub"));
-  REQUIRE(asm_str.contains("filter_int_mul"));
-  REQUIRE(asm_str.contains("filter_int_div"));
-  REQUIRE(asm_str.contains("filter_int_mod"));
+  REQUIRE(asm_str.contains("filter_int"));
+  REQUIRE(asm_str.contains("add"));
+  REQUIRE(asm_str.contains("sub"));
+  REQUIRE(asm_str.contains("mul"));
+  REQUIRE(asm_str.contains("div"));
+  REQUIRE(asm_str.contains("mod"));
 }
 
 TEST_CASE("disassemble_int_comparison_filters", "[disassemble]") {
   auto bc = injamm::engine<BcUser>("{{age | eq(1)}}|{{age | ne(2)}}|{{age | gt(0)}}|{{age | gte(0)}}|{{age | lt(5)}}|{{age | lte(5)}}|{{age | zerofill(3)}}");
   auto asm_str = bc.disassemble();
-  REQUIRE(asm_str.contains("filter_int_eq"));
-  REQUIRE(asm_str.contains("filter_int_ne"));
-  REQUIRE(asm_str.contains("filter_int_gt"));
-  REQUIRE(asm_str.contains("filter_int_gte"));
-  REQUIRE(asm_str.contains("filter_int_lt"));
-  REQUIRE(asm_str.contains("filter_int_lte"));
-  REQUIRE(asm_str.contains("filter_int_zerofill"));
+  REQUIRE(asm_str.contains("filter_int"));
+  REQUIRE(asm_str.contains("eq"));
+  REQUIRE(asm_str.contains("ne"));
+  REQUIRE(asm_str.contains("gt"));
+  REQUIRE(asm_str.contains("gte"));
+  REQUIRE(asm_str.contains("lt"));
+  REQUIRE(asm_str.contains("lte"));
+  REQUIRE(asm_str.contains("zerofill"));
   // var_refs テーブルでの int_filter_name 出力を担保（各 var_ref は単一フィルタ）
   REQUIRE(asm_str.contains("filters=[eq]"));
   REQUIRE(asm_str.contains("filters=[ne]"));
@@ -3922,7 +3923,7 @@ TEST_CASE("disassemble_int_comparison_filters", "[disassemble]") {
 TEST_CASE("disassemble_float_precision_filter", "[disassemble]") {
   auto bc = injamm::engine<BcFloatData>("{{value | precision(2)}}");
   auto asm_str = bc.disassemble();
-  REQUIRE(asm_str.contains("filter_float_precision"));
+  REQUIRE(asm_str.contains("filter_float"));
   // var_refs テーブルでの float_filter_name 出力を担保
   REQUIRE(asm_str.contains("filters=[precision]"));
 }
@@ -3930,9 +3931,10 @@ TEST_CASE("disassemble_float_precision_filter", "[disassemble]") {
 TEST_CASE("disassemble_pad_pluralize_default", "[disassemble]") {
   auto bc = injamm::engine<BcLlData>("{{val | pad(10)}}|{{val | pluralize(\"item\", \"items\")}}|{{val | default(\"x\")}}");
   auto asm_str = bc.disassemble();
-  REQUIRE(asm_str.contains("filter_pad"));
-  REQUIRE(asm_str.contains("filter_pluralize"));
-  REQUIRE(asm_str.contains("filter_default"));
+  REQUIRE(asm_str.contains("filter_string"));
+  REQUIRE(asm_str.contains("pad"));
+  REQUIRE(asm_str.contains("pluralize"));
+  REQUIRE(asm_str.contains("default"));
 }
 
 TEST_CASE("disassemble_partial_call", "[disassemble]") {
@@ -3948,7 +3950,8 @@ TEST_CASE("disassemble_if_filtered", "[disassemble]") {
   auto bc = injamm::engine<BcUser>("{{#if age | gt(1)}}yes{{/if}}");
   auto asm_str = bc.disassemble();
   REQUIRE(asm_str.contains("emit_if_filtered"));
-  REQUIRE(asm_str.contains("filter_int_gt"));
+  REQUIRE(asm_str.contains("filter_int"));
+  REQUIRE(asm_str.contains("gt"));
 }
 
 // ---- parse.hpp: 未使用(デッド)だが純粋関数として独立テスト可能なコメント除去 ----

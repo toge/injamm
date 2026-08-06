@@ -875,143 +875,69 @@ class code_generator {
         emit("_filtered.assign(" + access + ");");
       }
     }
-    else if (op == bc::opcode::filter_json) {
-      // resolve_filtered で処理済みのため no-op
-    }
-    else if (op == bc::opcode::filter_upper) {
-      emit("filter_to_upper(_filtered);");
-    }
-    else if (op == bc::opcode::filter_lower) {
-      emit("filter_to_lower(_filtered);");
-    }
-    else if (op == bc::opcode::filter_capitalize) {
-      emit("filter_capitalize(_filtered);");
-    }
-    else if (op == bc::opcode::filter_trim) {
-      emit("filter_trim(_filtered);");
-    }
-    else if (op == bc::opcode::filter_ltrim) {
-      emit("filter_ltrim(_filtered);");
-    }
-    else if (op == bc::opcode::filter_rtrim) {
-      emit("filter_rtrim(_filtered);");
-    }
-    else if (op == bc::opcode::filter_truncate) {
-      emit("filter_truncate(_filtered, " + std::to_string(inst.operand) + ");");
-    }
-    else if (op == bc::opcode::filter_substr) {
-      emit("filter_substr(_filtered, " + std::to_string(inst.operand) + ", " + std::to_string(inst.operand2) + ");");
-    }
-    else if (op == bc::opcode::filter_title) {
-      emit("filter_title(_filtered);");
-    }
-    else if (op == bc::opcode::filter_left) {
-      emit("filter_left(_filtered, " + std::to_string(inst.operand) + ");");
-    }
-    else if (op == bc::opcode::filter_right) {
-      emit("filter_right(_filtered, " + std::to_string(inst.operand) + ");");
-    }
-    else if (op == bc::opcode::filter_center) {
-      emit("filter_center(_filtered, " + std::to_string(inst.operand) + ");");
-    }
-    else if (op == bc::opcode::filter_replace) {
-      auto const& ref = bc.var_refs[inst.operand2];
-      std::string old_str, new_str;
-      if (!ref.filters.empty()) {
-        old_str = cpp_string(ref.filters[0].str_arg1);
-        new_str = cpp_string(ref.filters[0].str_arg2);
-      } else {
-        old_str = "\"\"";
-        new_str = "\"\"";
+    else if (op == bc::opcode::filter_string) {
+      // 汎用文字列フィルタ: operand2 = string_filter 種別, operand = arg1, operand3 = 文字列引数
+      auto const kind = static_cast<injamm::detail::string_filter>(inst.operand2);
+      auto const arg = std::to_string(inst.operand);
+      std::string lit1, lit2;
+      if (inst.operand3 != UINT32_MAX) {
+        if (inst.operand3 < bc.literals.size()) lit1 = cpp_string(bc.literals[inst.operand3]);
+        if (kind == injamm::detail::string_filter::replace && inst.operand3 + 1 < bc.literals.size()) lit2 = cpp_string(bc.literals[inst.operand3 + 1]);
       }
-      emit("filter_replace(_filtered, " + old_str + ", " + new_str + ");");
+      switch (kind) {
+      case injamm::detail::string_filter::upper:      emit("filter_to_upper(_filtered);"); break;
+      case injamm::detail::string_filter::lower:      emit("filter_to_lower(_filtered);"); break;
+      case injamm::detail::string_filter::capitalize: emit("filter_capitalize(_filtered);"); break;
+      case injamm::detail::string_filter::title:      emit("filter_title(_filtered);"); break;
+      case injamm::detail::string_filter::trim:       emit("filter_trim(_filtered);"); break;
+      case injamm::detail::string_filter::ltrim:      emit("filter_ltrim(_filtered);"); break;
+      case injamm::detail::string_filter::rtrim:      emit("filter_rtrim(_filtered);"); break;
+      case injamm::detail::string_filter::left:       emit("filter_left(_filtered, " + arg + ");"); break;
+      case injamm::detail::string_filter::right:      emit("filter_right(_filtered, " + arg + ");"); break;
+      case injamm::detail::string_filter::center:     emit("filter_center(_filtered, " + arg + ");"); break;
+      case injamm::detail::string_filter::truncate:   emit("filter_truncate(_filtered, " + arg + ");"); break;
+      case injamm::detail::string_filter::substr:     emit("filter_substr(_filtered, " + arg + ", " + std::to_string(inst.operand3) + ");"); break;
+      case injamm::detail::string_filter::replace:    emit("filter_replace(_filtered, " + (lit1.empty() ? "\"\"" : lit1) + ", " + (lit2.empty() ? "\"\"" : lit2) + ");"); break;
+      case injamm::detail::string_filter::default_value: emit("filter_default(_filtered, " + (lit1.empty() ? "\"\"" : lit1) + ");"); break;
+      case injamm::detail::string_filter::to_json:    break; // resolve_filtered で処理済み
+      case injamm::detail::string_filter::safe:       break; // safe: no-op
+      case injamm::detail::string_filter::indent:     emit("filter_indent(_filtered, " + arg + ");"); break;
+      case injamm::detail::string_filter::pad:        emit("filter_pad(_filtered, " + arg + ", " + (lit1.empty() ? "\" \"" : lit1) + ");"); break;
+      case injamm::detail::string_filter::pluralize:  emit("filter_pluralize(_filtered, " + (lit1.empty() ? "\"\"" : lit1) + ", " + (lit2.empty() ? "\"\"" : lit2) + ");"); break;
+      case injamm::detail::string_filter::format:     emit("filter_format(_filtered);"); break;
+      case injamm::detail::string_filter::repeat:     emit("filter_repeat(_filtered, " + arg + ");"); break;
+      }
     }
-    else if (op == bc::opcode::filter_default) {
-      auto const& ref = bc.var_refs[inst.operand2];
-      std::string def_str = "\"\"";
-      if (!ref.filters.empty())
-        def_str = cpp_string(ref.filters[0].str_arg1);
-      emit("filter_default(_filtered, " + def_str + ");");
+    else if (op == bc::opcode::filter_int) {
+      // 汎用整数フィルタ: operand2 = int_filter 種別, operand = arg
+      auto const kind = static_cast<injamm::detail::int_filter>(inst.operand2);
+      auto const arg = std::to_string(inst.operand);
+      switch (kind) {
+      case injamm::detail::int_filter::abs:     emit("filter_int_abs(_filtered);"); break;
+      case injamm::detail::int_filter::hex:     emit("filter_int_hex(_filtered);"); break;
+      case injamm::detail::int_filter::oct:     emit("filter_int_oct(_filtered);"); break;
+      case injamm::detail::int_filter::bin:     emit("filter_int_bin(_filtered);"); break;
+      case injamm::detail::int_filter::neg:     emit("filter_int_neg(_filtered);"); break;
+      case injamm::detail::int_filter::mod:     emit("filter_int_mod(_filtered, " + arg + ");"); break;
+      case injamm::detail::int_filter::numify:  emit("filter_int_numify(_filtered);"); break;
+      case injamm::detail::int_filter::is_neg:  emit("filter_int_is_neg(_filtered);"); break;
+      case injamm::detail::int_filter::eq:      emit("filter_int_eq(_filtered, " + arg + ");"); break;
+      case injamm::detail::int_filter::ne:      emit("filter_int_ne(_filtered, " + arg + ");"); break;
+      case injamm::detail::int_filter::gt:      emit("filter_int_gt(_filtered, " + arg + ");"); break;
+      case injamm::detail::int_filter::gte:     emit("filter_int_gte(_filtered, " + arg + ");"); break;
+      case injamm::detail::int_filter::lt:      emit("filter_int_lt(_filtered, " + arg + ");"); break;
+      case injamm::detail::int_filter::lte:     emit("filter_int_lte(_filtered, " + arg + ");"); break;
+      case injamm::detail::int_filter::zerofill: emit("filter_int_zerofill(_filtered, " + arg + ");"); break;
+      case injamm::detail::int_filter::add:     emit("filter_int_add(_filtered, " + arg + ");"); break;
+      case injamm::detail::int_filter::sub:     emit("filter_int_sub(_filtered, " + arg + ");"); break;
+      case injamm::detail::int_filter::mul:     emit("filter_int_mul(_filtered, " + arg + ");"); break;
+      case injamm::detail::int_filter::div:     emit("filter_int_div(_filtered, " + arg + ");"); break;
+      }
     }
-    else if (op == bc::opcode::filter_safe) {
-      // safe: no-op (already marked as raw in opcode selection)
-    }
-    else if (op == bc::opcode::filter_indent) {
-      emit("filter_indent(_filtered, " + std::to_string(inst.operand) + ");");
-    }
-    else if (op == bc::opcode::filter_pad) {
-      auto const& ref = bc.var_refs[inst.operand2];
-      std::string pad_str = "\" \"";
-      if (!ref.filters.empty())
-        pad_str = cpp_string(ref.filters[0].str_arg1);
-      emit("filter_pad(_filtered, " + std::to_string(inst.operand) + ", " + pad_str + ");");
-    }
-    else if (op == bc::opcode::filter_pluralize) {
-      auto const& ref = bc.var_refs[inst.operand2];
-      std::string sg = "\"\"", pl = "\"\"";
-      if (ref.filters.size() >= 1) sg = cpp_string(ref.filters[0].str_arg1);
-      if (ref.filters.size() >= 2) pl = cpp_string(ref.filters[1].str_arg1);
-      emit("filter_pluralize(_filtered, " + sg + ", " + pl + ");");
-    }
-    else if (op == bc::opcode::filter_format) {
-      emit("filter_format(_filtered);");
-    }
-    else if (op == bc::opcode::filter_repeat) {
-      emit("filter_repeat(_filtered, " + std::to_string(inst.operand) + ");");
-    }
-    else if (op == bc::opcode::filter_int_abs) {
-      emit("filter_int_abs(_filtered);");
-    }
-    else if (op == bc::opcode::filter_int_hex) {
-      emit("filter_int_hex(_filtered);");
-    }
-    else if (op == bc::opcode::filter_int_oct) {
-      emit("filter_int_oct(_filtered);");
-    }
-    else if (op == bc::opcode::filter_int_bin) {
-      emit("filter_int_bin(_filtered);");
-    }
-    else if (op == bc::opcode::filter_int_neg) {
-      emit("filter_int_neg(_filtered);");
-    }
-    else if (op == bc::opcode::filter_int_mod) {
-      emit("filter_int_mod(_filtered, " + std::to_string(inst.operand) + ");");
-    }
-    else if (op == bc::opcode::filter_int_is_neg) {
-      emit("filter_int_is_neg(_filtered);");
-    }
-    else if (op == bc::opcode::filter_int_eq) {
-      emit("filter_int_eq(_filtered, " + std::to_string(inst.operand) + ");");
-    }
-    else if (op == bc::opcode::filter_int_ne) {
-      emit("filter_int_ne(_filtered, " + std::to_string(inst.operand) + ");");
-    }
-    else if (op == bc::opcode::filter_int_gt) {
-      emit("filter_int_gt(_filtered, " + std::to_string(inst.operand) + ");");
-    }
-    else if (op == bc::opcode::filter_int_gte) {
-      emit("filter_int_gte(_filtered, " + std::to_string(inst.operand) + ");");
-    }
-    else if (op == bc::opcode::filter_int_lt) {
-      emit("filter_int_lt(_filtered, " + std::to_string(inst.operand) + ");");
-    }
-    else if (op == bc::opcode::filter_int_lte) {
-      emit("filter_int_lte(_filtered, " + std::to_string(inst.operand) + ");");
-    }
-    else if (op == bc::opcode::filter_int_add) {
-      emit("filter_int_add(_filtered, " + std::to_string(inst.operand) + ");");
-    }
-    else if (op == bc::opcode::filter_int_sub) {
-      emit("filter_int_sub(_filtered, " + std::to_string(inst.operand) + ");");
-    }
-    else if (op == bc::opcode::filter_int_mul) {
-      emit("filter_int_mul(_filtered, " + std::to_string(inst.operand) + ");");
-    }
-    else if (op == bc::opcode::filter_int_div) {
-      emit("filter_int_div(_filtered, " + std::to_string(inst.operand) + ");");
-    }
-    else if (op == bc::opcode::filter_float_precision) {
-      emit("filter_float_precision(_filtered, " + std::to_string(inst.operand) + ");");
+    else if (op == bc::opcode::filter_float) {
+      auto const kind = static_cast<injamm::detail::float_filter>(inst.operand2);
+      if (kind == injamm::detail::float_filter::precision)
+        emit("filter_float_precision(_filtered, " + std::to_string(inst.operand) + ");");
     }
     else if (op == bc::opcode::emit_if_filtered) {
       bool invert = inst.operand != 0;
@@ -1045,12 +971,6 @@ class code_generator {
       if (!pe.local) {
         emit("(void)render_partial<\"" + pe.name + "\">(data, out);");
       }
-    }
-    else if (op == bc::opcode::filter_int_numify) {
-      emit("filter_numify(_filtered);");
-    }
-    else if (op == bc::opcode::filter_int_zerofill) {
-      emit("filter_zerofill(_filtered, " + std::to_string(inst.operand) + ");");
     }
     else if (op == bc::opcode::emit_var_size) {
       emit("append_number(out, value_size(" + resolve_access(bc.var_refs[inst.operand2]) + "));");

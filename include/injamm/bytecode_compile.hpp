@@ -163,59 +163,49 @@ void emit_filter_chain(Emitter&& emit, std::vector<string_filter_entry> const& f
                        std::vector<int_filter_entry> const& int_filters,
                        std::vector<float_filter_entry> const& float_filters) {
   for (auto f : filters) {
+    // 汎用 filter_string: operand = arg1, operand2 = string_filter 種別, operand3 = 未使用 (UINT32_MAX)
+    // 文字列引数は stabilize_filter_strings が bc_.literals にコピー済みで、
+    // 実行時は var_ref.filters を直接使うため operand3 は不要。
+    auto const no_str = UINT32_MAX;
     switch (f.filter) {
-      case string_filter::upper:      emit(bc_opcode::filter_upper); break;
-      case string_filter::lower:      emit(bc_opcode::filter_lower); break;
-      case string_filter::capitalize: emit(bc_opcode::filter_capitalize); break;
-      case string_filter::title:      emit(bc_opcode::filter_title); break;
-      case string_filter::trim:       emit(bc_opcode::filter_trim); break;
-      case string_filter::ltrim:      emit(bc_opcode::filter_ltrim); break;
-      case string_filter::rtrim:      emit(bc_opcode::filter_rtrim); break;
-      case string_filter::left:       emit(bc_opcode::filter_left, f.arg1); break;
-      case string_filter::right:      emit(bc_opcode::filter_right, f.arg1); break;
-      case string_filter::center:     emit(bc_opcode::filter_center, f.arg1); break;
-      case string_filter::truncate:   emit(bc_opcode::filter_truncate, f.arg1); break;
-      case string_filter::substr:     emit(bc_opcode::filter_substr, f.arg1, f.arg2); break;
-      case string_filter::replace:       emit(bc_opcode::filter_replace); break;
-      case string_filter::default_value: emit(bc_opcode::filter_default, static_cast<std::uint32_t>(0)); break;
-      case string_filter::to_json:       emit(bc_opcode::filter_json); break;
-      case string_filter::safe:          emit(bc_opcode::filter_safe); break;
-      case string_filter::indent:        emit(bc_opcode::filter_indent, static_cast<std::uint32_t>(f.arg1)); break;
-      case string_filter::pad:
-        emit(bc_opcode::filter_pad, static_cast<std::uint32_t>(f.arg1), UINT32_MAX);
+      case string_filter::upper:      emit(bc_opcode::filter_string, static_cast<std::uint32_t>(f.arg1), static_cast<std::uint32_t>(string_filter::upper), no_str); break;
+      case string_filter::lower:      emit(bc_opcode::filter_string, static_cast<std::uint32_t>(f.arg1), static_cast<std::uint32_t>(string_filter::lower), no_str); break;
+      case string_filter::capitalize: emit(bc_opcode::filter_string, static_cast<std::uint32_t>(f.arg1), static_cast<std::uint32_t>(string_filter::capitalize), no_str); break;
+      case string_filter::title:      emit(bc_opcode::filter_string, static_cast<std::uint32_t>(f.arg1), static_cast<std::uint32_t>(string_filter::title), no_str); break;
+      case string_filter::trim:       emit(bc_opcode::filter_string, static_cast<std::uint32_t>(f.arg1), static_cast<std::uint32_t>(string_filter::trim), no_str); break;
+      case string_filter::ltrim:      emit(bc_opcode::filter_string, static_cast<std::uint32_t>(f.arg1), static_cast<std::uint32_t>(string_filter::ltrim), no_str); break;
+      case string_filter::rtrim:      emit(bc_opcode::filter_string, static_cast<std::uint32_t>(f.arg1), static_cast<std::uint32_t>(string_filter::rtrim), no_str); break;
+      case string_filter::left:       emit(bc_opcode::filter_string, static_cast<std::uint32_t>(f.arg1), static_cast<std::uint32_t>(string_filter::left), no_str); break;
+      case string_filter::right:      emit(bc_opcode::filter_string, static_cast<std::uint32_t>(f.arg1), static_cast<std::uint32_t>(string_filter::right), no_str); break;
+      case string_filter::center:     emit(bc_opcode::filter_string, static_cast<std::uint32_t>(f.arg1), static_cast<std::uint32_t>(string_filter::center), no_str); break;
+      case string_filter::truncate:   emit(bc_opcode::filter_string, static_cast<std::uint32_t>(f.arg1), static_cast<std::uint32_t>(string_filter::truncate), no_str); break;
+      case string_filter::substr:     emit(bc_opcode::filter_string, static_cast<std::uint32_t>(f.arg1), static_cast<std::uint32_t>(string_filter::substr), static_cast<std::uint32_t>(f.arg2)); break;
+      case string_filter::replace:
+        emit(bc_opcode::filter_string, 0, static_cast<std::uint32_t>(string_filter::replace), no_str);
         break;
-      case string_filter::pluralize:     emit(bc_opcode::filter_pluralize); break;
-      case string_filter::format:        emit(bc_opcode::filter_format); break;
-      case string_filter::repeat:        emit(bc_opcode::filter_repeat, f.arg1); break;
+      case string_filter::default_value:
+        emit(bc_opcode::filter_string, 0, static_cast<std::uint32_t>(string_filter::default_value), no_str);
+        break;
+      case string_filter::to_json:
+        emit(bc_opcode::filter_string, 0, static_cast<std::uint32_t>(string_filter::to_json), no_str);
+        break;
+      case string_filter::safe:
+        emit(bc_opcode::filter_string, 0, static_cast<std::uint32_t>(string_filter::safe), no_str);
+        break;
+      case string_filter::indent:     emit(bc_opcode::filter_string, static_cast<std::uint32_t>(f.arg1), static_cast<std::uint32_t>(string_filter::indent), no_str); break;
+      case string_filter::pad:        emit(bc_opcode::filter_string, static_cast<std::uint32_t>(f.arg1), static_cast<std::uint32_t>(string_filter::pad), no_str); break;
+      case string_filter::pluralize:  emit(bc_opcode::filter_string, 0, static_cast<std::uint32_t>(string_filter::pluralize), no_str); break;
+      case string_filter::format:     emit(bc_opcode::filter_string, 0, static_cast<std::uint32_t>(string_filter::format), no_str); break;
+      case string_filter::repeat:     emit(bc_opcode::filter_string, static_cast<std::uint32_t>(f.arg1), static_cast<std::uint32_t>(string_filter::repeat), no_str); break;
     }
   }
   for (auto f : int_filters) {
-    switch (f.filter) {
-      case int_filter::abs:    emit(bc_opcode::filter_int_abs); break;
-      case int_filter::hex:    emit(bc_opcode::filter_int_hex); break;
-      case int_filter::oct:    emit(bc_opcode::filter_int_oct); break;
-      case int_filter::bin:    emit(bc_opcode::filter_int_bin); break;
-      case int_filter::neg:    emit(bc_opcode::filter_int_neg); break;
-      case int_filter::mod:    emit(bc_opcode::filter_int_mod, f.arg); break;
-      case int_filter::numify: emit(bc_opcode::filter_int_numify); break;
-      case int_filter::is_neg: emit(bc_opcode::filter_int_is_neg); break;
-      case int_filter::eq:     emit(bc_opcode::filter_int_eq, f.arg); break;
-      case int_filter::ne:     emit(bc_opcode::filter_int_ne, f.arg); break;
-      case int_filter::gt:     emit(bc_opcode::filter_int_gt, f.arg); break;
-      case int_filter::gte:    emit(bc_opcode::filter_int_gte, f.arg); break;
-      case int_filter::lt:     emit(bc_opcode::filter_int_lt, f.arg); break;
-      case int_filter::lte:    emit(bc_opcode::filter_int_lte, f.arg); break;
-      case int_filter::zerofill: emit(bc_opcode::filter_int_zerofill, f.arg); break;
-      case int_filter::add:      emit(bc_opcode::filter_int_add, f.arg); break;
-      case int_filter::sub:      emit(bc_opcode::filter_int_sub, f.arg); break;
-      case int_filter::mul:      emit(bc_opcode::filter_int_mul, f.arg); break;
-      case int_filter::div:      emit(bc_opcode::filter_int_div, f.arg); break;
-    }
+    // 汎用 filter_int: operand = arg, operand2 = int_filter 種別
+    emit(bc_opcode::filter_int, static_cast<std::uint32_t>(f.arg), static_cast<std::uint32_t>(f.filter), 0);
   }
   for (auto f : float_filters) {
-    switch (f.filter) {
-      case float_filter::precision: emit(bc_opcode::filter_float_precision, f.arg); break;
-    }
+    // 汎用 filter_float: operand = arg, operand2 = float_filter 種別
+    emit(bc_opcode::filter_float, static_cast<std::uint32_t>(f.arg), static_cast<std::uint32_t>(f.filter), 0);
   }
 }
 
@@ -466,8 +456,8 @@ class bc_compiler {
       bc_.var_refs[idx].filter_flags = flags;
       auto filter_count = static_cast<std::uint32_t>(filters.size() + int_filters.size() + float_filters.size());
       bc_.add_instruction(bc_opcode::resolve_filtered, filter_count, idx);
-      emit_filter_chain([this](bc_opcode op, std::uint32_t a = 0, std::uint32_t a2 = 0) {
-        bc_.add_instruction(op, a, a2);
+      emit_filter_chain([this](bc_opcode op, std::uint32_t a = 0, std::uint32_t a2 = 0, std::uint32_t a3 = 0) {
+        bc_.add_instruction(op, a, a2, a3);
       }, filters, int_filters, float_filters);
       bc_.add_instruction(use_raw ? bc_opcode::emit_filtered_raw : bc_opcode::emit_filtered);
     }
@@ -917,8 +907,8 @@ class bc_compiler {
       if (has_filters_actual) {
         auto filter_count = static_cast<std::uint32_t>(filters.size() + int_filters.size() + float_filters.size());
         bc_.add_instruction(bc_opcode::resolve_filtered, filter_count, idx);
-        emit_filter_chain([this](bc_opcode op, std::uint32_t a = 0, std::uint32_t a2 = 0) {
-          bc_.add_instruction(op, a, a2);
+        emit_filter_chain([this](bc_opcode op, std::uint32_t a = 0, std::uint32_t a2 = 0, std::uint32_t a3 = 0) {
+          bc_.add_instruction(op, a, a2, a3);
         }, filters, int_filters, float_filters);
         bc_.add_instruction(bc_opcode::emit_if_filtered, 0, idx);
       } else {
