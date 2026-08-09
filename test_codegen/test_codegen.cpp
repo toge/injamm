@@ -30,6 +30,7 @@ struct TestData {
   bool active = false;
   int order_id = 0;
   double total = 0.0;
+  ItemData primary_item;
   std::vector<ItemData> items;
 };
 
@@ -43,6 +44,7 @@ struct glz::meta<TestData> {
     "active", &TestData::active,
     "order_id", &TestData::order_id,
     "total", &TestData::total,
+    "primary_item", &TestData::primary_item,
     "items", &TestData::items
   );
 };
@@ -69,6 +71,7 @@ struct glz::meta<ItemData> {
 #include "render4.hpp"
 #include "render5.hpp"
 #include "render14.hpp"
+#include "render15.hpp"
 
 // ============================================================
 // テストヘルパ
@@ -163,6 +166,7 @@ int main() {
     {"Widget", 2, 25.0},
     {"Gadget", 1, 99.99},
   };
+  d.primary_item = {"Gizmo", 5, 12.5};
 
   std::cout << "=== injamm_codegen 動作テスト ===\n\n";
 
@@ -192,6 +196,10 @@ int main() {
   check("bool and numeric out", "{{name}}|{{active}}|{{age}}", d,
     [](auto const& data) { return generated::render14(data); });
 
+  // テスト7: struct フィールドの JSON 出力 + 生出力
+  check("struct field", "{{primary_item}}|{{& primary_item}}", d,
+    [](auto const& data) { return generated::render15(data); });
+
   // バッファ再利用版のテスト
   check_into("into simple", "Hello {{name}}, age={{age}}", d,
     [](auto const& data, std::string& out) { return generated::render1(data, out); });
@@ -201,6 +209,8 @@ int main() {
     [](auto const& data, std::string& out) { return generated::render4(data, out); });
   check_into("into bool and numeric out", "{{name}}|{{active}}|{{age}}", d,
     [](auto const& data, std::string& out) { return generated::render14(data, out); });
+  check_into("into struct field", "{{primary_item}}|{{& primary_item}}", d,
+    [](auto const& data, std::string& out) { return generated::render15(data, out); });
 
   std::cout << "\n=== 結果: " << pass_count << "/" << test_count << " passed ===\n";
   return (pass_count == test_count) ? 0 : 1;

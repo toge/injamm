@@ -3,6 +3,7 @@
 #define INJAMM_CODEGEN_HELPERS_HPP
 
 #include <charconv>
+#include <injamm/glz_dispatch.hpp>
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -273,6 +274,14 @@ inline void append_value(std::string& out, V const& v) {
     out += v ? "true" : "false";
   } else if constexpr (std::is_arithmetic_v<V>) {
     append_number(out, v);
+  } else if constexpr (std::is_enum_v<V>) {
+    out += std::to_string(static_cast<std::underlying_type_t<V>>(v));
+  } else if constexpr (injamm::detail::serializable_v<V>) {
+    serialize_value(out, v);
+  } else if constexpr (injamm::detail::ct_glz_reflectable<V>) {
+    std::string scratch;
+    (void)::glz::write_json(v, scratch);
+    out += scratch;
   } else {
     out += v;
   }
@@ -310,6 +319,14 @@ inline void html_escape_append_value(std::string& out, V const& v) {
     append_number(out, v);
   } else if constexpr (std::is_enum_v<V>) {
     html_escape_append(out, std::to_string(static_cast<std::underlying_type_t<V>>(v)));
+  } else if constexpr (injamm::detail::serializable_v<V>) {
+    std::string scratch;
+    serialize_value(scratch, v);
+    html_escape_append(out, scratch);
+  } else if constexpr (injamm::detail::ct_glz_reflectable<V>) {
+    std::string scratch;
+    (void)::glz::write_json(v, scratch);
+    html_escape_append(out, scratch);
   } else {
     html_escape_append(out, v);
   }

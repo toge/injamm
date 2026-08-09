@@ -828,7 +828,7 @@ class code_generator {
     }
     else if (op == bc::opcode::emit_litvar_raw) {
       emit("out += " + cpp_string(bc.literals[inst.operand]) + ";");
-      emit("out += " + resolve_access(bc.var_refs[inst.operand2]) + ";");
+      emit("append_value(out, " + resolve_access(bc.var_refs[inst.operand2]) + ");");
     }
     else if (op == bc::opcode::emit_at_root) {
       emit("html_escape_append_value(out, data);");
@@ -837,7 +837,7 @@ class code_generator {
       emit("html_escape_append_value(out, data." + bc.var_refs[inst.operand].key + ");");
     }
     else if (op == bc::opcode::emit_at_root_field_raw) {
-      emit("out += data." + bc.var_refs[inst.operand].key + ";");
+      emit("append_value(out, data." + bc.var_refs[inst.operand].key + ");");
     }
     else if (op == bc::opcode::emit_at_key) {
       emit("out += _key" + std::to_string(loop_depth_) + ";");
@@ -860,8 +860,12 @@ class code_generator {
       auto access = resolve_access(ref);
       bool use_json = (ref.filter_flags & 1) != 0;
       if (use_json) {
-        // runtime: reflectable → glz::write_json, serializable → serialize_value (raw)
-        emit("if constexpr (::glz::reflectable<decltype(" + access + ")>) {");
+        // serializable → serialize_value, reflectable → glz::write_json
+        emit("if constexpr (::injamm::detail::serializable_v<decltype(" + access + ")>) {");
+        ++indent_;
+        emit("_filtered.clear(); ::injamm::detail::serialize_value(_filtered, " + access + ");");
+        --indent_;
+        emit("} else if constexpr (::injamm::detail::ct_glz_reflectable<decltype(" + access + ")>) {");
         ++indent_;
         emit("(void)::glz::write_json(" + access + ", _filtered);");
         --indent_;
@@ -871,8 +875,20 @@ class code_generator {
         --indent_;
         emit("}");
       } else {
-        // _filtered は関数先頭で宣言済み: assign でバッファ容量を再利用する
+        // serializable → serialize_value, reflectable → glz::write_json, fallback → assign
+        emit("if constexpr (::injamm::detail::serializable_v<decltype(" + access + ")>) {");
+        ++indent_;
+        emit("_filtered.clear(); ::injamm::detail::serialize_value(_filtered, " + access + ");");
+        --indent_;
+        emit("} else if constexpr (::injamm::detail::ct_glz_reflectable<decltype(" + access + ")>) {");
+        ++indent_;
+        emit("(void)::glz::write_json(" + access + ", _filtered);");
+        --indent_;
+        emit("} else {");
+        ++indent_;
         emit("_filtered.assign(" + access + ");");
+        --indent_;
+        emit("}");
       }
     }
     else if (op == bc::opcode::filter_string) {
@@ -1046,7 +1062,7 @@ public:
       if (op == bc::opcode::emit_litvar_raw) {
         accumulated_literals += bc.literals[inst.operand];
         flush_literals();
-        emit("out += " + resolve_access(bc.var_refs[inst.operand2]) + ";");
+        emit("append_value(out, " + resolve_access(bc.var_refs[inst.operand2]) + ");");
         continue;
       }
       // 他の命令の前に蓄積リテラルをフラッシュ
