@@ -393,6 +393,8 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
    *          - bool → "true" / "false"
    *          - std::string / std::string_view → raw フラグに応じてエスケープ有無
    *          - 算術型 → std::to_chars による高速変換
+   *          - enum → serialize_enum (enchantum)
+   *          - カスタムstruct → serializable_v<FT> なら serialize_value、ct_glz_reflectable なら glz::write_json
    */
   /** @brief フィールド値を指定バッファに追記する（束縛リゾルバ兼用の静的版） */
   static void emit_value_static(std::string& out, auto const& field, bool raw) {
@@ -430,6 +432,22 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
     } else if constexpr (is_std_optional_v<FT>) {
       if (field.has_value()) {
         emit_value_static(out, *field, raw);
+      }
+    } else if constexpr (serializable_v<FT>) {
+      std::string scratch;
+      serialize_value(scratch, field);
+      if (raw) {
+        out.append(scratch);
+      } else {
+        html_escape_into(out, scratch);
+      }
+    } else if constexpr (ct_glz_reflectable<FT> && glz::write_supported<FT, glz::JSON>) {
+      std::string scratch;
+      (void)glz::write_json(field, scratch);
+      if (raw) {
+        out.append(scratch);
+      } else {
+        html_escape_into(out, scratch);
       }
     }
   }

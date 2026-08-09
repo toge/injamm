@@ -781,6 +781,61 @@ TEST_CASE("bc_nested_path_deep", "[injamm]") {
   REQUIRE(*r == "NYC");
 }
 
+// ---- struct field rendering via {{xxx}} (non-builtin types) ----
+
+namespace test_custom {
+struct CustomPoint {
+  int x;
+  int y;
+};
+
+template <class Buffer>
+inline void serialize_value(Buffer& out, CustomPoint const& p) {
+  out.append(std::to_string(p.x));
+  out.push_back(',');
+  out.append(std::to_string(p.y));
+}
+} // namespace test_custom
+
+namespace injamm::detail {
+template <>
+inline constexpr bool serializable_v<test_custom::CustomPoint> = true;
+}
+
+TEST_CASE("bc_struct_field_json_via_var", "[injamm][struct_var]") {
+  BcCompany data{.name = "Acme", .founder = BcFounder{.name = "John", .address = {"NYC", "USA"}}};
+  auto bc = injamm::engine<BcCompany>("{{founder}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "{&quot;name&quot;:&quot;John&quot;,&quot;address&quot;:{&quot;city&quot;:&quot;NYC&quot;,&quot;country&quot;:&quot;USA&quot;}}");
+}
+
+TEST_CASE("bc_struct_field_raw_var", "[injamm][struct_var][raw]") {
+  BcCompany data{.name = "Acme", .founder = BcFounder{.name = "John", .address = {"NYC", "USA"}}};
+  auto bc = injamm::engine<BcCompany>("{{& founder}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == R"({"name":"John","address":{"city":"NYC","country":"USA"}})");
+}
+
+namespace test_custom {
+struct Wrapper {
+  CustomPoint pt{3, 7};
+};
+} // namespace test_custom
+
+template <>
+struct glz::meta<test_custom::Wrapper> {
+  static constexpr auto value = glz::object("pt", &test_custom::Wrapper::pt);
+};
+
+TEST_CASE("bc_struct_field_custom_serialize", "[injamm][struct_var][custom]") {
+  auto bc = injamm::engine<test_custom::Wrapper>("{{pt}}");
+  auto r = bc.render(test_custom::Wrapper{});
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "3,7");
+}
+
 // ---- if/else テスト ----
 
 /**
@@ -4210,6 +4265,15 @@ TEST_CASE("ampersand raw with filtered var", "[injamm][feature][e2]") {
   auto r = bc.render(d);
   REQUIRE(r);
   CHECK(*r == "HELLO");
+}
+
+TEST_CASE("bc_struct_field_json_escaped_via_var", "[injamm][struct_var]") {
+  BcEscRoot d{"hello & <world>"};
+  auto bc = injamm::engine<BcEscRoot>("{{name}}|{{this}}");
+  auto r = bc.render(d);
+  REQUIRE(r.has_value());
+  // {{name}} escapes HTML; {{this}} produces JSON and escapes the whole string
+  REQUIRE(*r == "hello &amp; &lt;world&gt;|{&quot;name&quot;:&quot;hello &amp; &lt;world&gt;&quot;}");
 }
 
 TEST_CASE("dot alias for this ({{.}})", "[injamm][feature][e3]") {

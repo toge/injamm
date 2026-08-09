@@ -759,6 +759,13 @@ TEST_CASE("ct_nested_path_deep", "[injamm][ct]") {
   REQUIRE(*r == "NYC");
 }
 
+TEST_CASE("ct_struct_field_json_via_var", "[injamm][ct][struct_var]") {
+  CtCompany data{.name = "Acme", .founder = CtFounder{.name = "John", .address = {"NYC", "USA"}}};
+  auto      r = injamm::render<"{{founder}}">(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "{&quot;name&quot;:&quot;John&quot;,&quot;address&quot;:{&quot;city&quot;:&quot;NYC&quot;,&quot;country&quot;:&quot;USA&quot;}}");
+}
+
 // ---- @root ----
 
 TEST_CASE("ct_at_root_field_simple", "[injamm][ct]") {
