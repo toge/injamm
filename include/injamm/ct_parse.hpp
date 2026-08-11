@@ -58,9 +58,9 @@ struct ct_parse_context {
    */
   constexpr std::size_t push_section(std::string_view key, std::size_t body_start, std::size_t body_end,
                                       std::size_t else_start = 0, std::size_t else_end = 0,
-                                      std::uint8_t reverse = 0, std::uint32_t take = 0) {
+                                      std::span<bc_var_ref::section_op const> ops = {}) {
     auto idx = tmpl.size;
-    tmpl.push_section(key, body_start, body_end, else_start, else_end, reverse, take);
+    tmpl.push_section(key, body_start, body_end, else_start, else_end, ops);
     return idx;
   }
 
@@ -629,17 +629,18 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
       // -- {{#exists var}} → {{#var}} --
       /** @brief close tag 探索用に exists 前置詞を保持したキー */
       auto close_key = key;
+      bool exists_transformed = false;
       if (key.starts_with("exists ") || key.starts_with("exists\t")) {
         if (key.size() == 7) continue;
         close_key = key; // keep "exists name" for close tag search
         key = trim_sv(key.substr(7));
         if (key.empty()) continue;
+        exists_transformed = true;
       }
 
-      // -- セクションフィルタ（reverse/take）のパイプ分割 --
-      /** @brief セクションキーから reverse/take フィルタを抽出し、close_key をベースキーに設定 */
-      std::uint8_t sec_reverse = 0;
-      std::uint32_t sec_take = 0;
+      // -- セクションフィルタのパイプ分割 --
+      /** @brief セクションキーからフィルタを抽出し、close_key をベースキーに設定 */
+      std::vector<bc_var_ref::section_op> sec_ops;
       {
         auto parts = split_by_pipe(close_key);
         if (parts.size() > 1) {
@@ -650,10 +651,11 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
               // CT パスでは未知フィルタを無視（constexpr に error_ctx 機構なし）
               continue;
             }
-            if (sf->reverse) sec_reverse = 1;
-            if (sf->take) sec_take = static_cast<std::uint32_t>(*sf->take) + 1u;  // N+1 エンコード
+            if (sec_ops.size() < bc_var_ref::max_section_ops)
+              sec_ops.push_back({sf->kind, sf->arg});
           }
-          key = close_key;  // チャンクにはベースキーを格納
+          if (!exists_transformed)
+            key = close_key;  // チャンクにはベースキーを格納（exists 変換時は変換済みキーを使用）
         }
       }
 
@@ -720,8 +722,9 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
         }
 
         /** @brief セクションチャンクを追加し、本体を再帰パース */
-        key = close_key;  // チャンクにはベースキーを格納
-        auto chunk_idx = ctx.push_section(key, 0, 0, 0, 0, sec_reverse, sec_take);
+        if (!exists_transformed)
+          key = close_key;  // チャンクにはベースキーを格納（exists 変換時は変換済みキーを使用）
+        auto chunk_idx = ctx.push_section(key, 0, 0, 0, 0, sec_ops);
         auto body_start_idx = ctx.tmpl.size;
         ct_parse_into(ctx, main_body, trim_blocks, lstrip_blocks);
         auto body_end_idx = ctx.tmpl.size;

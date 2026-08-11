@@ -114,6 +114,15 @@ enum class compare_operand_kind : std::uint8_t {
   variable
 };
 
+/** @brief セクションフィルタオペコード種別 */
+enum class section_filter_op_kind : std::uint8_t {
+  reverse,     /**< 反転反復 */
+  take,        /**< 先頭 n 個を残す */
+  skip,        /**< 先頭 n 個を捨てる */
+  take_last,   /**< 末尾 n 個を残す */
+  skip_last    /**< 末尾 n 個を捨てる */
+};
+
 struct bytecode;
 
 template <class T>

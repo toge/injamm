@@ -111,8 +111,14 @@ struct bc_var_ref {
    *  bit 1: chrono format フィルタ含有
    */
   std::uint8_t filter_flags = 0;
-  std::uint8_t section_reverse = 0;  /**< セクション反転フラグ（1 = reverse フィルタ） */
-  std::uint32_t section_take = 0;    /**< セクション要素数上限（0 = 無制限） */
+  /** @brief セクションフィルタパイプライン（順序付きオペコード列） */
+  struct section_op {
+    section_filter_op_kind kind = section_filter_op_kind::reverse;
+    std::int32_t arg = 0;
+  };
+  static constexpr std::uint8_t max_section_ops = 4;
+  std::array<section_op, max_section_ops> section_ops{};
+  std::uint8_t section_op_count = 0;
   std::vector<string_filter_entry> filters; /**< 文字列フィルタチェーン */
   std::vector<int_filter_entry> int_filters; /**< 整数フィルタチェーン */
   std::vector<float_filter_entry> float_filters; /**< 実数フィルタチェーン */

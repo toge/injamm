@@ -4540,6 +4540,88 @@ TEST_CASE("section take loop.size", "[section][filter]") {
   CHECK(*out == "size=2 size=2 ");
 }
 
+TEST_CASE("section skip", "[section][filter]") {
+  auto out = injamm::engine<SectionFilterData>("{{#items | skip(2)}}{{this}} {{/items}}").render(SectionFilterData{});
+  REQUIRE(out);
+  CHECK(*out == "3 4 ");
+
+  auto out2 = injamm::engine<SectionFilterData>("{{#items | skip(0)}}{{this}} {{/items}}").render(SectionFilterData{});
+  REQUIRE(out2);
+  CHECK(*out2 == "1 2 3 4 ");
+
+  auto out3 = injamm::engine<SectionFilterData>("{{#items | skip(99)}}{{this}} {{/items}}").render(SectionFilterData{});
+  REQUIRE(out3);
+  CHECK(*out3 == "");
+}
+
+TEST_CASE("section take_last", "[section][filter]") {
+  auto out = injamm::engine<SectionFilterData>("{{#items | take_last(2)}}{{this}} {{/items}}").render(SectionFilterData{});
+  REQUIRE(out);
+  CHECK(*out == "3 4 ");
+
+  auto out2 = injamm::engine<SectionFilterData>("{{#items | take_last(0)}}X{{/items}}").render(SectionFilterData{});
+  REQUIRE(out2);
+  CHECK(*out2 == "");
+
+  auto out3 = injamm::engine<SectionFilterData>("{{#items | take_last(99)}}{{this}} {{/items}}").render(SectionFilterData{});
+  REQUIRE(out3);
+  CHECK(*out3 == "1 2 3 4 ");
+}
+
+TEST_CASE("section skip_last", "[section][filter]") {
+  auto out = injamm::engine<SectionFilterData>("{{#items | skip_last(2)}}{{this}} {{/items}}").render(SectionFilterData{});
+  REQUIRE(out);
+  CHECK(*out == "1 2 ");
+
+  auto out2 = injamm::engine<SectionFilterData>("{{#items | skip_last(0)}}{{this}} {{/items}}").render(SectionFilterData{});
+  REQUIRE(out2);
+  CHECK(*out2 == "1 2 3 4 ");
+
+  auto out3 = injamm::engine<SectionFilterData>("{{#items | skip_last(99)}}{{this}} {{/items}}").render(SectionFilterData{});
+  REQUIRE(out3);
+  CHECK(*out3 == "");
+}
+
+TEST_CASE("section skip take pipeline", "[section][filter]") {
+  auto out = injamm::engine<SectionFilterData5>("{{#items | skip(1) | take(2)}}{{this}} {{/items}}").render(SectionFilterData5{});
+  REQUIRE(out);
+  CHECK(*out == "2 3 ");
+}
+
+TEST_CASE("section take skip pipeline order matters", "[section][filter]") {
+  auto out1 = injamm::engine<SectionFilterData5>("{{#items | take(3) | skip(1)}}{{this}} {{/items}}").render(SectionFilterData5{});
+  REQUIRE(out1);
+  CHECK(*out1 == "2 3 ");
+
+  auto out2 = injamm::engine<SectionFilterData5>("{{#items | skip(1) | take(3)}}{{this}} {{/items}}").render(SectionFilterData5{});
+  REQUIRE(out2);
+  CHECK(*out2 == "2 3 4 ");
+}
+
+TEST_CASE("section reverse take_last", "[section][filter]") {
+  auto out = injamm::engine<SectionFilterData5>("{{#items | reverse | take_last(2)}}{{this}} {{/items}}").render(SectionFilterData5{});
+  REQUIRE(out);
+  CHECK(*out == "2 1 ");
+}
+
+TEST_CASE("section reverse skip", "[section][filter]") {
+  auto out = injamm::engine<SectionFilterData5>("{{#items | reverse | skip(2)}}{{this}} {{/items}}").render(SectionFilterData5{});
+  REQUIRE(out);
+  CHECK(*out == "3 2 1 ");
+}
+
+TEST_CASE("section reverse skip take pipeline", "[section][filter]") {
+  auto out = injamm::engine<SectionFilterData5>("{{#items | reverse | skip(1) | take(2)}}[{{loop.index}}:{{this}}]{{/items}}").render(SectionFilterData5{});
+  REQUIRE(out);
+  CHECK(*out == "[0:4][1:3]");
+}
+
+TEST_CASE("section skip take loop.size", "[section][filter]") {
+  auto out = injamm::engine<SectionFilterData5>("{{#items | skip(1) | take(2)}}size={{loop.size}} {{/items}}").render(SectionFilterData5{});
+  REQUIRE(out);
+  CHECK(*out == "size=2 size=2 ");
+}
+
 TEST_CASE("section unknown filter error", "[section][filter]") {
   auto eng = injamm::engine<SectionFilterData>("{{#items | bogus}}x{{/items}}");
   SectionFilterData data{};

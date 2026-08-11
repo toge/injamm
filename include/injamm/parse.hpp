@@ -1,5 +1,6 @@
 #pragma once
 
+#include "bytecode_fwd.hpp"
 #include "types.hpp"
 #include <array>
 #include <limits>
@@ -395,20 +396,25 @@ constexpr std::size_t constexpr_find_tag(std::string_view haystack, std::string_
   return std::nullopt;
 }
 
-/** @brief セクションフィルタ（{{#key | reverse}} / {{#key | take(n)}}） */
-struct section_filter_entry {
-  bool reverse = false;            /**< true で反転反復 */
-  std::optional<int> take;         /**< 要素数上限（未指定=nullopt, take(0)=0 → 0回反復） */
+/** @brief セクションフィルタオペコード（{{#key | reverse}} / {{#key | take(n)}} / {{#key | skip(n)}} / ...） */
+struct section_filter_op {
+  section_filter_op_kind kind;
+  int arg = 0; /**< take/skip/take_last/skip_last の引数 */
 };
 
 /** @brief セクションフィルタ名を解析する */
-[[nodiscard]] constexpr std::optional<section_filter_entry> parse_section_filter(std::string_view name) noexcept {
+[[nodiscard]] constexpr std::optional<section_filter_op> parse_section_filter(std::string_view name) noexcept {
   if (name == "reverse")
-    return section_filter_entry{true, std::nullopt};
+    return section_filter_op{section_filter_op_kind::reverse, 0};
   auto paren = constexpr_find(name, '(');
-  if (paren != std::string_view::npos && name.back() == ')' && name.substr(0, paren) == "take") {
+  if (paren != std::string_view::npos && name.back() == ')') {
+    auto fn = name.substr(0, paren);
     auto arg_str = name.substr(paren + 1, name.size() - paren - 2);
-    return section_filter_entry{false, parse_int_arg(arg_str)};
+    auto arg = parse_int_arg(arg_str);
+    if (fn == "take") return section_filter_op{section_filter_op_kind::take, arg};
+    if (fn == "skip") return section_filter_op{section_filter_op_kind::skip, arg};
+    if (fn == "take_last") return section_filter_op{section_filter_op_kind::take_last, arg};
+    if (fn == "skip_last") return section_filter_op{section_filter_op_kind::skip_last, arg};
   }
   return std::nullopt;
 }

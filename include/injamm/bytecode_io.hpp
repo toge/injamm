@@ -114,8 +114,11 @@ inline void write_var_ref(std::ostream& os, std::vector<std::string> const& lite
   write_string(os, ref.compare_rhs_text);
   write_u8(os, ref.compare_rhs_has_dot ? 1 : 0);
   write_u8(os, ref.filter_flags);
-  write_u8(os, ref.section_reverse ? 1 : 0);
-  write_u32_le(os, ref.section_take);
+  write_u8(os, ref.section_op_count);
+  for (std::uint8_t i = 0; i < ref.section_op_count; ++i) {
+    write_u8(os, static_cast<std::uint8_t>(ref.section_ops[i].kind));
+    write_u32_le(os, static_cast<std::uint32_t>(ref.section_ops[i].arg));
+  }
 
   write_u64_le(os, ref.filters.size());
   for (auto const& f : ref.filters) write_string_filter_entry(os, literals, f);
@@ -334,7 +337,7 @@ bytecode read_bytecode_body(std::istream& is, read_state& state);
 inline error_code save_bytecode(detail::bytecode const& bc, std::ostream& os) {
   constexpr char magic[] = {'I', 'J', 'B', 'C'};
   os.write(magic, 4);
-  detail::write_u32_le(os, 2); // バージョン 2
+  detail::write_u32_le(os, 3); // バージョン 3（セクションフィルタパイプライン）
   if (!os) return error_code::no_read_input;
 
   detail::write_bytecode(os, bc);
@@ -370,6 +373,8 @@ expected<detail::bytecode> load_bytecode(std::istream& is) {
     state.version = 1;
   } else if (version == 2) {
     state.version = 2;
+  } else if (version == 3) {
+    state.version = 3;
   } else {
     return std::unexpected(error_ctx{0, error_code::type_mismatch, "Unsupported bytecode version"});
   }
@@ -429,9 +434,26 @@ bytecode read_bytecode_body(std::istream& is, read_state& state) {
     ref.compare_rhs_text = std::move(cmp_text);
     ref.compare_rhs_has_dot = cmp_has_dot;
     ref.filter_flags = filter_flags;
-    if (state.version >= 2) {
-      ref.section_reverse = read_u8(is, state) != 0;
-      ref.section_take = read_u32_le(is, state);
+    if (state.version >= 3) {
+      ref.section_op_count = read_u8(is, state);
+      for (std::uint8_t si = 0; si < ref.section_op_count && si < bc_var_ref::max_section_ops; ++si) {
+        ref.section_ops[si].kind = static_cast<section_filter_op_kind>(read_u8(is, state));
+        ref.section_ops[si].arg  = static_cast<std::int32_t>(read_u32_le(is, state));
+      }
+    } else if (state.version >= 2) {
+      auto sec_rev = read_u8(is, state) != 0;
+      auto sec_take_raw = read_u32_le(is, state);
+      if (sec_rev) {
+        ref.section_ops[0] = {section_filter_op_kind::reverse, 0};
+        ref.section_op_count = 1;
+      }
+      if (sec_take_raw > 0) {
+        auto idx = ref.section_op_count;
+        if (idx < bc_var_ref::max_section_ops) {
+          ref.section_ops[idx] = {section_filter_op_kind::take, static_cast<std::int32_t>(sec_take_raw - 1u)};
+          ref.section_op_count = idx + 1;
+        }
+      }
     }
     if (!state.ok) return bc;
 

@@ -529,23 +529,26 @@ class bc_compiler {
    *          セクション命令には /section の次の命令位置がジャンプ先として書き込まれる。
    */
   void compile_section(std::string_view key) {
-    /** セクションキーをパイプ分割し reverse/take フィルタを検出する（ベースキー = parts[0]） */
+    /** セクションキーをパイプ分割しセクションフィルタを検出する（ベースキー = parts[0]） */
     auto parts     = split_by_pipe(key);
     key            = parts[0];
-    section_filter_entry fl;
+    std::vector<section_filter_op> pipeline;
     for (std::size_t fi = 1; fi < parts.size(); ++fi) {
       auto sf = parse_section_filter(parts[fi]);
       if (!sf) {
         bc_.error = error_ctx{pos_, error_code::unknown_filter, parts[fi]};
         return;
       }
-      fl.reverse |= sf->reverse;
-      if (sf->take) fl.take = sf->take;
+      pipeline.push_back(*sf);
     }
 
     auto idx = bc_.add_var_ref(static_cast<std::string>(key));
-    bc_.var_refs[idx].section_reverse = fl.reverse ? 1 : 0;
-    bc_.var_refs[idx].section_take    = fl.take ? static_cast<std::uint32_t>(*fl.take) + 1u : 0;  // N+1 エンコード（design amendment opt A）
+    auto& ref = bc_.var_refs[idx];
+    ref.section_op_count = static_cast<std::uint8_t>(std::min(pipeline.size(), static_cast<std::size_t>(bc_var_ref::max_section_ops)));
+    for (std::uint8_t i = 0; i < ref.section_op_count; ++i) {
+      ref.section_ops[i].kind = pipeline[i].kind;
+      ref.section_ops[i].arg  = pipeline[i].arg;
+    }
     resolve_ref_indices(idx, key);
     bc_.add_instruction(bc_opcode::emit_section, 0, idx);
 

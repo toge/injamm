@@ -99,8 +99,14 @@ struct var_ref {
   std::string compare_rhs_text;           /**< 右オペランド文字列 */
   bool compare_rhs_has_dot = false;       /**< 右オペランドがドット区切りパスか */
   std::uint8_t filter_flags = 0;          /**< フィルタ特殊フラグ */
-  std::uint8_t section_reverse = 0;       /**< セクション反転フラグ（1 = reverse フィルタ） */
-  std::uint32_t section_take = 0;         /**< セクション要素数上限（0 = 無制限） */
+  /** @brief セクションフィルタパイプライン */
+  struct section_op {
+    injamm::detail::section_filter_op_kind kind = injamm::detail::section_filter_op_kind::reverse;
+    std::int32_t arg = 0;
+  };
+  static constexpr std::uint8_t max_section_ops = 4;
+  std::array<section_op, max_section_ops> section_ops{};
+  std::uint8_t section_op_count = 0;
   std::vector<string_filter_entry> filters;     /**< 文字列フィルタチェーン */
   std::vector<int_filter_entry> int_filters;    /**< 整数フィルタチェーン */
   std::vector<float_filter_entry> float_filters; /**< 実数フィルタチェーン */
@@ -240,9 +246,26 @@ public:
     ref.compare_rhs_text = read_string();
     ref.compare_rhs_has_dot = read_u8() != 0;
     ref.filter_flags = read_u8();
-    if (version_ >= 2) {
-      ref.section_reverse = read_u8() != 0;
-      ref.section_take = read_u32_le();
+    if (version_ >= 3) {
+      ref.section_op_count = read_u8();
+      for (std::uint8_t si = 0; si < ref.section_op_count && si < bc::var_ref::max_section_ops; ++si) {
+        ref.section_ops[si].kind = static_cast<injamm::detail::section_filter_op_kind>(read_u8());
+        ref.section_ops[si].arg  = static_cast<std::int32_t>(read_u32_le());
+      }
+    } else if (version_ >= 2) {
+      auto sec_rev = read_u8() != 0;
+      auto sec_take_raw = read_u32_le();
+      if (sec_rev) {
+        ref.section_ops[0] = {injamm::detail::section_filter_op_kind::reverse, 0};
+        ref.section_op_count = 1;
+      }
+      if (sec_take_raw > 0) {
+        auto idx = ref.section_op_count;
+        if (idx < bc::var_ref::max_section_ops) {
+          ref.section_ops[idx] = {injamm::detail::section_filter_op_kind::take, static_cast<std::int32_t>(sec_take_raw - 1u)};
+          ref.section_op_count = idx + 1;
+        }
+      }
     }
 
     auto fc = read_u64_le();
@@ -301,9 +324,9 @@ public:
 
   /**
    * @brief バイトコードを読み込み
-   * @details マジック "IJBC" + バージョン 1/2 のヘッダを検証し、
-   *          バイトコード本体を読み込む。バージョン 1 はセクションフィルタ
-   *          （section_reverse / section_take）を含まない。
+   * @details マジック "IJBC" + バージョン 1/2/3 のヘッダを検証し、
+   *          バイトコード本体を読み込む。バージョン 1 はセクションフィルタを
+   *          含まない。バージョン 3 からパイプラインモデルを採用。
    * @return 正常に読み込まれた場合の bytecode、解析失敗時は nullopt
    */
   std::optional<bc::bytecode> read_bytecode() {
@@ -735,21 +758,41 @@ class code_generator {
       auto access = resolve_access(ref);
       ++loop_depth_;
       auto idx = std::to_string(loop_depth_);
-      auto const sec_reverse = ref.section_reverse != 0;
-      auto const sec_take    = ref.section_take;
-      if (sec_reverse || sec_take) {
-        /* reverse/take がある場合はインデックス形式で生成（range-for では制御不可） */
+      if (ref.section_op_count > 0) {
+        /* セクションフィルタがある場合はインデックス形式で生成 */
         emit("auto _size" + idx + " = " + access + ".size();");
-        if (sec_take) {
-          emit("if (_size" + idx + " > " + std::to_string(sec_take - 1u) + ") _size" + idx + " = " + std::to_string(sec_take - 1u) + ";");
+        emit("std::size_t _lo" + idx + " = 0, _hi" + idx + " = _size" + idx + ";");
+        emit("bool _bwd" + idx + " = false;");
+        for (std::uint8_t si = 0; si < ref.section_op_count; ++si) {
+          auto const& sop = ref.section_ops[si];
+          auto n_str = std::to_string(sop.arg);
+          switch (sop.kind) {
+            case injamm::detail::section_filter_op_kind::reverse:
+              emit("_bwd" + idx + " = !_bwd" + idx + ";");
+              break;
+            case injamm::detail::section_filter_op_kind::take:
+              emit("if (_bwd" + idx + ") _lo" + idx + " = std::max(_lo" + idx + ", _hi" + idx + " - " + n_str + "u);");
+              emit("else _hi" + idx + " = std::min(_hi" + idx + ", _lo" + idx + " + " + n_str + "u);");
+              break;
+            case injamm::detail::section_filter_op_kind::skip:
+              emit("if (_bwd" + idx + ") _hi" + idx + " = (_hi" + idx + " > " + n_str + "u ? _hi" + idx + " - " + n_str + "u : _lo" + idx + ");");
+              emit("else _lo" + idx + " = std::min(_hi" + idx + ", _lo" + idx + " + " + n_str + "u);");
+              break;
+            case injamm::detail::section_filter_op_kind::take_last:
+              emit("if (_bwd" + idx + ") _hi" + idx + " = std::min(_hi" + idx + ", _lo" + idx + " + " + n_str + "u);");
+              emit("else _lo" + idx + " = std::max(_lo" + idx + ", _hi" + idx + " - " + n_str + "u);");
+              break;
+            case injamm::detail::section_filter_op_kind::skip_last:
+              emit("if (_bwd" + idx + ") _lo" + idx + " = std::min(_hi" + idx + ", _lo" + idx + " + " + n_str + "u);");
+              emit("else _hi" + idx + " = (_hi" + idx + " > " + n_str + "u ? _hi" + idx + " - " + n_str + "u : _lo" + idx + ");");
+              break;
+          }
         }
-        emit("for (std::size_t _i" + idx + " = 0; _i" + idx + " < _size" + idx + "; ++_i" + idx + ") {");
+        emit("auto _count" + idx + " = _hi" + idx + " - _lo" + idx + ";");
+        emit("for (std::size_t _i" + idx + " = 0; _i" + idx + " < _count" + idx + "; ++_i" + idx + ") {");
         ++indent_;
-        if (sec_reverse) {
-          emit("const auto& _item" + idx + " = " + access + "[_size" + idx + " - 1 - _i" + idx + "];");
-        } else {
-          emit("const auto& _item" + idx + " = " + access + "[_i" + idx + "];");
-        }
+        emit("auto _idx" + idx + " = _bwd" + idx + " ? (_hi" + idx + " - 1 - _i" + idx + ") : (_lo" + idx + " + _i" + idx + ");");
+        emit("const auto& _item" + idx + " = " + access + "[_idx" + idx + "];");
       } else if (index_loops_.count(&inst) != 0) {
         /* @index/@first/@last/@size 等を参照するループはインデックス形式を維持 */
         emit("auto _size" + idx + " = " + access + ".size();");

@@ -48,8 +48,8 @@ struct ct_parsed_template {
   std::array<bool, N>                                                   partial_local{};       /**< @brief local partial の場合 true（名前検索では参照不可） */
   std::size_t                                                           partial_total{};       /**< @brief 登録された partial 名の総数（#partialdef + 外部 {{> }} 参照） */
   std::array<std::string_view, N>                                       compare_rhs_strs{};    /**< @brief if_else の文字列比較 RHS（空 = 不使用） */
-  std::array<std::uint8_t, N>                                           section_reverse{};     /**< @brief セクション反転フラグ */
-  std::array<std::uint32_t, N>                                          section_take{};        /**< @brief セクション要素数上限（0 = 無制限、N+1 = take(N-1)） */
+  std::array<std::array<bc_var_ref::section_op, bc_var_ref::max_section_ops>, N> section_ops{}; /**< @brief セクションフィルタパイプライン */
+  std::array<std::uint8_t, N>                                           section_op_count{};    /**< @brief セクションフィルタオペコード数 */
   std::size_t                                                           size = 0;              /**< @brief 現在の有効チャンク数 */
 
   /**
@@ -113,7 +113,7 @@ struct ct_parsed_template {
    * @param else_end   else 節の終了インデックス（省略時は 0）
    */
   constexpr void push_section(std::string_view key, std::size_t body_start, std::size_t body_end, std::size_t else_start = 0, std::size_t else_end = 0,
-                              std::uint8_t reverse = 0, std::uint32_t take = 0) {
+                              std::span<bc_var_ref::section_op const> ops = {}) {
     if (size >= N) {
       throw std::overflow_error("ct_parsed_template: chunk buffer overflow");
     }
@@ -123,8 +123,10 @@ struct ct_parsed_template {
     body_ends[size]   = body_end;
     else_starts[size] = else_start;
     else_ends[size]   = else_end;
-    section_reverse[size] = reverse;
-    section_take[size]    = take;
+    auto count = static_cast<std::uint8_t>(std::min<std::size_t>(ops.size(), bc_var_ref::max_section_ops));
+    section_op_count[size] = count;
+    for (std::uint8_t i = 0; i < count; ++i)
+      section_ops[size][i] = ops[i];
     ++size;
   }
 

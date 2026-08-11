@@ -620,6 +620,44 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
 
   // -- shared section/inverted/filter implementations (both dispatch paths delegate here) --
 
+  /** @brief セクションフィルタパイプラインからイテレーションウィンドウを畳み込む
+   *  @details ops を順に適用し、[lo, hi) + 方向 (bwd) を計算する。 */
+  struct section_window {
+    std::uint32_t lo = 0;
+    std::uint32_t hi = 0;
+    bool bwd = false;
+  };
+
+  static section_window fold_section_ops(bc_var_ref const& ref, std::uint32_t sz) {
+    section_window w{0, sz, false};
+    for (std::uint8_t i = 0; i < ref.section_op_count; ++i) {
+      auto const& op = ref.section_ops[i];
+      auto n = static_cast<std::uint32_t>(op.arg);
+      switch (op.kind) {
+        case section_filter_op_kind::reverse:
+          w.bwd = !w.bwd;
+          break;
+        case section_filter_op_kind::take:
+          if (w.bwd) w.lo = (w.hi > n ? std::max(w.lo, w.hi - n) : w.lo);
+          else       w.hi = std::min(w.hi, w.lo + n);
+          break;
+        case section_filter_op_kind::skip:
+          if (w.bwd) w.hi = (w.hi > n ? w.hi - n : w.lo);
+          else       w.lo = std::min(w.hi, w.lo + n);
+          break;
+        case section_filter_op_kind::take_last:
+          if (w.bwd) w.hi = std::min(w.hi, w.lo + n);
+          else       w.lo = (w.hi > n ? std::max(w.lo, w.hi - n) : w.lo);
+          break;
+        case section_filter_op_kind::skip_last:
+          if (w.bwd) w.lo = std::min(w.hi, w.lo + n);
+          else       w.hi = (w.hi > n ? w.hi - n : w.lo);
+          break;
+      }
+    }
+    return w;
+  }
+
   static std::expected<void, error_ctx> do_section(bc_executor& ex, std::size_t& pc) {
     auto const& instr = ex.bc_.instructions[pc];
     auto const& ref   = ex.bc_.var_refs[instr.operand2];
@@ -632,19 +670,19 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
     auto section_body = [&](auto const& field) -> std::expected<void, error_ctx> {
       entered = true;
       using FT = std::remove_cvref_t<decltype(field)>;
-      bool const reverse = ref.section_reverse != 0;
-      auto const take    = ref.section_take;  // 0=no-filter(unlimited), N+1=take(N-1) (design amendment opt A)
       if constexpr (ct_is_vector_like<FT>) {
         if (!field.empty()) is_falsy = false;
         auto const sz = static_cast<std::uint32_t>(field.size());
-        auto count = take ? std::min(static_cast<std::uint32_t>(take - 1u), sz) : sz;
+        auto w = fold_section_ops(ref, sz);
+        auto count = w.hi - w.lo;
         using elem_t = typename FT::value_type;
         bc_loop_state ls;
         ls.parent = ex.loop_;
         ls.count = count;
         for (ls.index = 0; ls.index < count; ++ls.index) {
           ls.continue_flag = false;
-          auto const& elem = reverse ? field[sz - 1u - ls.index] : field[ls.index];
+          auto idx = w.bwd ? (w.hi - 1u - ls.index) : (w.lo + ls.index);
+          auto const& elem = field[idx];
           ls.binding_name = ref.key;
           ls.binding_elem = &elem;
           ls.binding_resolve = &resolve_binding_var<elem_t>;
@@ -669,13 +707,14 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
       } else if constexpr (ct_is_map_like<FT>) {
         if (!field.empty()) is_falsy = false;
         auto const sz = static_cast<std::uint32_t>(field.size());
-        auto count = take ? std::min(static_cast<std::uint32_t>(take - 1u), sz) : sz;
+        auto w = fold_section_ops(ref, sz);
+        auto count = w.hi - w.lo;
         bc_loop_state ls;
         ls.parent = ex.loop_;
         ls.count = count;
         std::uint32_t emitted = 0;
         auto visit = [&](auto const& k, auto const& v) -> std::expected<void, error_ctx> {
-          if (take && emitted >= take - 1u) return {};
+          if (emitted >= count) return {};
           ls.key = std::string_view{k};
           using val_t = std::remove_cvref_t<decltype(v)>;
           ls.binding_name = ref.key;
@@ -688,15 +727,17 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
           return r2;
         };
         std::expected<void, error_ctx> map_res{};
-        if (reverse) {
-          // リバース: 一時 vector に実体化してから逆順反復（unordered_map にも対応）
+        if (w.bwd) {
           using pair_t = std::remove_cvref_t<decltype(*field.begin())>;
           std::vector<pair_t> temp(field.begin(), field.end());
-          for (std::size_t i = temp.size(); i > 0 && !map_res && !ls.break_flag; --i) {
-            map_res = visit(temp[i - 1].first, temp[i - 1].second);
+          for (std::uint32_t i = 0; i < count && !map_res && !ls.break_flag; ++i) {
+            auto idx = w.hi - 1u - i;
+            map_res = visit(temp[idx].first, temp[idx].second);
           }
         } else {
+          std::uint32_t skipped = 0;
           for (auto const& [k, v] : field) {
+            if (skipped < w.lo) { ++skipped; continue; }
             map_res = visit(k, v);
             if (!map_res || ls.break_flag) break;
           }
@@ -706,16 +747,17 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
         if (!field.empty()) is_falsy = false;
         using elem_t = typename FT::value_type;
         auto const sz = static_cast<std::uint32_t>(field.size());
-        auto count = take ? std::min(static_cast<std::uint32_t>(take - 1u), sz) : sz;
+        auto w = fold_section_ops(ref, sz);
+        auto count = w.hi - w.lo;
         bc_loop_state ls;
         ls.parent = ex.loop_;
         ls.count = count;
         std::uint32_t emitted = 0;
-        if (reverse) {
-          // 一時 vector に実体化してから逆順反復（unordered_set にも対応）
+        if (w.bwd) {
           std::vector<elem_t> temp(field.begin(), field.end());
-          for (std::size_t i = temp.size(); i > 0 && emitted < count; --i, ++emitted) {
-            auto const& elem = temp[i - 1];
+          for (std::uint32_t i = 0; i < count; ++i) {
+            auto idx = w.hi - 1u - i;
+            auto const& elem = temp[idx];
             ls.index = emitted;
             ls.continue_flag = false;
             ls.binding_name = ref.key;
@@ -727,9 +769,12 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
             if (!r2) return r2;
             if (ls.continue_flag) { ls.continue_flag = false; --emitted; continue; }
             if (ls.break_flag) break;
+            ++emitted;
           }
         } else {
+          std::uint32_t skipped = 0;
           for (auto const& elem : field) {
+            if (skipped < w.lo) { ++skipped; continue; }
             if (emitted >= count) break;
             ls.index = emitted;
             ls.continue_flag = false;
@@ -763,39 +808,69 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
         ls.count = 0;
         ls.index = 0;
         auto it = field.begin();
-        auto end = field.end();
-        if (!(it != end)) return {};
+        auto end_field = field.end();
+        if (!(it != end_field)) return {};
         is_falsy = false;
-        if (reverse) {
-          if constexpr (std::bidirectional_iterator<decltype(it)>) {
-            // bidirectional: rbegin/rend で逆順
-            auto rit = field.rbegin();
-            auto rend = field.rend();
-            std::uint32_t emitted = 0;
-            for (; rit != rend; ++rit) {
-              if (take && emitted >= take - 1u) break;
-              auto const& elem = *rit;
-              ls.index = emitted;
-              ls.continue_flag = false;
-              ls.binding_name = ref.key;
-              ls.binding_elem = &elem;
-              ls.binding_resolve = &resolve_binding_var<elem_t>;
-              ls.binding_truthy = &eval_binding_truthy<elem_t>;
-              bc_executor<elem_t, RootT> child_exec(ex.bc_, elem, ex.root_value_, &ls, ex.out_);
-              auto r2 = child_exec.execute_impl(pc + 1, body_end - 1);
-              if (!r2) return r2;
-              if (ls.continue_flag) { ls.continue_flag = false; continue; }
-              if (ls.break_flag) break;
-              ++emitted;
+        // std::distance が使えない型（end() が nullptr_t を返す等）でも安全に処理するため、
+        // ウィンドウ計算は size() が利用可能な場合のみ行い、それ以外はストリーミング。
+        constexpr bool has_size = requires { field.size(); };
+        if constexpr (has_size) {
+          auto const sz = static_cast<std::uint32_t>(field.size());
+          auto w = fold_section_ops(ref, sz);
+          auto count = w.hi - w.lo;
+          ls.count = count;
+          if (w.bwd) {
+            if constexpr (std::bidirectional_iterator<decltype(it)>) {
+              auto rit = field.rbegin();
+              auto rend = field.rend();
+              std::uint32_t emitted = 0;
+              for (; rit != rend; ++rit) {
+                if (emitted >= count) break;
+                auto const& elem = *rit;
+                ls.index = emitted;
+                ls.continue_flag = false;
+                ls.binding_name = ref.key;
+                ls.binding_elem = &elem;
+                ls.binding_resolve = &resolve_binding_var<elem_t>;
+                ls.binding_truthy = &eval_binding_truthy<elem_t>;
+                bc_executor<elem_t, RootT> child_exec(ex.bc_, elem, ex.root_value_, &ls, ex.out_);
+                auto r2 = child_exec.execute_impl(pc + 1, body_end - 1);
+                if (!r2) return r2;
+                if (ls.continue_flag) { ls.continue_flag = false; continue; }
+                if (ls.break_flag) break;
+                ++emitted;
+              }
+              ls.count = emitted;
+            } else {
+              // forward-only: 逆順不可、forward+skip のみ
+              std::uint32_t emitted = 0;
+              std::uint32_t skipped = 0;
+              for (; it != end_field; ++it) {
+                if (skipped < w.lo) { ++skipped; continue; }
+                if (emitted >= count) break;
+                auto const& elem = *it;
+                ls.index = emitted;
+                ls.continue_flag = false;
+                ls.binding_name = ref.key;
+                ls.binding_elem = &elem;
+                ls.binding_resolve = &resolve_binding_var<elem_t>;
+                ls.binding_truthy = &eval_binding_truthy<elem_t>;
+                bc_executor<elem_t, RootT> child_exec(ex.bc_, elem, ex.root_value_, &ls, ex.out_);
+                auto r2 = child_exec.execute_impl(pc + 1, body_end - 1);
+                if (!r2) return r2;
+                if (ls.continue_flag) { ls.continue_flag = false; continue; }
+                if (ls.break_flag) break;
+                ++emitted;
+              }
+              ls.count = emitted;
             }
-            ls.count = emitted;
           } else {
-            // forward-only: 逆順不可、take 制限のみ
+            std::uint32_t skipped = 0;
             std::uint32_t emitted = 0;
-            for (; it != end; ++it) {
-              if (take && emitted >= take - 1u) break;
+            for (; it != end_field; ++it, ++ls.index) {
+              if (skipped < w.lo) { ++skipped; continue; }
+              if (emitted >= count) break;
               auto const& elem = *it;
-              ls.index = emitted;
               ls.continue_flag = false;
               ls.binding_name = ref.key;
               ls.binding_elem = &elem;
@@ -811,9 +886,21 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
             ls.count = emitted;
           }
         } else {
+          // size() なし: forward/streaming のみ対応、take 制限のみ適用
           std::uint32_t emitted = 0;
-          for (; it != end; ++it, ++ls.index) {
-            if (take && emitted >= take - 1u) break;
+          bool const has_ops = ref.section_op_count > 0;
+          section_window w{};
+          if (has_ops) {
+            // size 不明のため、skip/take のストリーミング近似（skip_last/take_last は未対応）
+            auto const sz_approx = static_cast<std::uint32_t>(999999u);
+            w = fold_section_ops(ref, sz_approx);
+          }
+          auto count = has_ops ? (w.hi - w.lo) : 999999u;
+          ls.count = count;
+          std::uint32_t skipped = 0;
+          for (; it != end_field; ++it, ++ls.index) {
+            if (has_ops && skipped < w.lo) { ++skipped; continue; }
+            if (emitted >= count) break;
             auto const& elem = *it;
             ls.continue_flag = false;
             ls.binding_name = ref.key;
@@ -833,19 +920,20 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
         is_falsy = false;
         constexpr auto sz = glz::reflect<FT>::size;
         auto tied = glz::to_tie(field);
-        auto count = take ? std::min(static_cast<std::size_t>(take - 1u), static_cast<std::size_t>(sz)) : static_cast<std::size_t>(sz);
+        auto w = fold_section_ops(ref, static_cast<std::uint32_t>(sz));
+        auto count = w.hi - w.lo;
         std::expected<void, error_ctx> res{};
-        if (reverse) {
+        if (w.bwd) {
           // リバース: I=0→最後の要素、I=1→その前... のように評価
           [&]<std::size_t... I>(std::index_sequence<I...>) {
             (([&] {
                if (!res) return;
-               if (take && I >= count) return;
+               if (static_cast<std::uint32_t>(I) < w.lo || static_cast<std::uint32_t>(I) >= w.hi) return;
                constexpr auto src_idx = sz - 1u - I;
                using elem_t = std::remove_cvref_t<decltype(glz::get<src_idx>(tied))>;
                bc_loop_state ls;
                ls.parent = ex.loop_;
-               ls.count = count; ls.index = I; ls.key = glz::reflect<FT>::keys[src_idx];
+               ls.count = count; ls.index = static_cast<std::uint32_t>(I - w.lo); ls.key = glz::reflect<FT>::keys[src_idx];
                ls.binding_name = ref.key;
                ls.binding_elem = &glz::get<src_idx>(tied);
                ls.binding_resolve = &resolve_binding_var<elem_t>;
@@ -855,20 +943,21 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
             }()), ...);
           }(std::make_index_sequence<sz>{});
         } else {
-          // フォワード: 既存と同一（フィルタ時のみ take 制限）
+          // フォワード
           [&]<std::size_t... I>(std::index_sequence<I...>) {
             (([&] {
                if (!res) return;
-               if (take && I >= count) return;
-               using elem_t = std::remove_cvref_t<decltype(glz::get<I>(tied))>;
+               if (static_cast<std::uint32_t>(I) < w.lo || static_cast<std::uint32_t>(I) >= w.hi) return;
+               constexpr auto src_idx = I;
+               using elem_t = std::remove_cvref_t<decltype(glz::get<src_idx>(tied))>;
                bc_loop_state ls;
                ls.parent = ex.loop_;
-               ls.count = count; ls.index = I; ls.key = glz::reflect<FT>::keys[I];
+               ls.count = count; ls.index = static_cast<std::uint32_t>(I - w.lo); ls.key = glz::reflect<FT>::keys[src_idx];
                ls.binding_name = ref.key;
-               ls.binding_elem = &glz::get<I>(tied);
+               ls.binding_elem = &glz::get<src_idx>(tied);
                ls.binding_resolve = &resolve_binding_var<elem_t>;
                ls.binding_truthy = &eval_binding_truthy<elem_t>;
-               bc_executor<elem_t, RootT> child_exec(ex.bc_, glz::get<I>(tied), ex.root_value_, &ls, ex.out_);
+               bc_executor<elem_t, RootT> child_exec(ex.bc_, glz::get<src_idx>(tied), ex.root_value_, &ls, ex.out_);
                res = child_exec.execute_impl(pc + 1, body_end - 1);
             }()), ...);
           }(std::make_index_sequence<sz>{});
