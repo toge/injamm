@@ -84,6 +84,7 @@ namespace injamm::detail {
   case string_filter::pad:        return "pad";
   case string_filter::pluralize:  return "pluralize";
   case string_filter::format:     return "format";
+  case string_filter::repeat:     return "repeat";
   }
   return "unknown";
 }

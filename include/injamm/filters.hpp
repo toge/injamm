@@ -13,6 +13,27 @@
 #include <optional>
 #include <string>
 
+// Workaround for glaze bug: on Emscripten, GLZ_FASTFLOAT_32BIT is defined
+// (because __EMSCRIPTEN__ is treated as 32-bit), which makes
+// glz::full_multiplication (atoi.hpp) call _umul128. But _umul128 is defined
+// in glz::fast_float, which is not visible from glz (and is not defined at
+// all when __MINGW64__ is set). Defining glz::_umul128 (and
+// glz::fast_float::_umul128 when __MINGW64__ is set) makes the calls resolve.
+#if defined(__EMSCRIPTEN__)
+namespace glz {
+inline constexpr std::uint64_t _umul128(std::uint64_t ab, std::uint64_t cd, std::uint64_t* hi) {
+  return fast_float::umul128_generic(ab, cd, hi);
+}
+#if defined(__MINGW64__)
+namespace fast_float {
+inline constexpr std::uint64_t _umul128(std::uint64_t ab, std::uint64_t cd, std::uint64_t* hi) {
+  return umul128_generic(ab, cd, hi);
+}
+} // namespace fast_float
+#endif
+} // namespace glz
+#endif
+
 namespace injamm::detail {
 
 /**
