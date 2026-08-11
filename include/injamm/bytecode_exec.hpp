@@ -632,19 +632,24 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
     auto section_body = [&](auto const& field) -> std::expected<void, error_ctx> {
       entered = true;
       using FT = std::remove_cvref_t<decltype(field)>;
+      bool const reverse = ref.section_reverse != 0;
+      auto const take    = ref.section_take;  // 0=no-filter(unlimited), N+1=take(N-1) (design amendment opt A)
       if constexpr (ct_is_vector_like<FT>) {
         if (!field.empty()) is_falsy = false;
+        auto const sz = static_cast<std::uint32_t>(field.size());
+        auto count = take ? std::min(static_cast<std::uint32_t>(take - 1u), sz) : sz;
         using elem_t = typename FT::value_type;
         bc_loop_state ls;
         ls.parent = ex.loop_;
-        ls.count = static_cast<std::uint32_t>(field.size());
-        for (ls.index = 0; ls.index < static_cast<std::uint32_t>(field.size()); ++ls.index) {
+        ls.count = count;
+        for (ls.index = 0; ls.index < count; ++ls.index) {
           ls.continue_flag = false;
+          auto const& elem = reverse ? field[sz - 1u - ls.index] : field[ls.index];
           ls.binding_name = ref.key;
-          ls.binding_elem = &field[ls.index];
+          ls.binding_elem = &elem;
           ls.binding_resolve = &resolve_binding_var<elem_t>;
           ls.binding_truthy = &eval_binding_truthy<elem_t>;
-          bc_executor<elem_t, RootT> child_exec(ex.bc_, field[ls.index], ex.root_value_, &ls, ex.out_);
+          bc_executor<elem_t, RootT> child_exec(ex.bc_, elem, ex.root_value_, &ls, ex.out_);
           auto r2 = child_exec.execute_impl(pc + 1, body_end - 1);
           if (!r2) return r2;
           if (ls.continue_flag) { ls.continue_flag = false; continue; }
@@ -663,10 +668,14 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
         }
       } else if constexpr (ct_is_map_like<FT>) {
         if (!field.empty()) is_falsy = false;
+        auto const sz = static_cast<std::uint32_t>(field.size());
+        auto count = take ? std::min(static_cast<std::uint32_t>(take - 1u), sz) : sz;
         bc_loop_state ls;
         ls.parent = ex.loop_;
-        ls.count = static_cast<std::uint32_t>(field.size());
-        for (auto const& [k, v] : field) {
+        ls.count = count;
+        std::uint32_t emitted = 0;
+        auto visit = [&](auto const& k, auto const& v) -> std::expected<void, error_ctx> {
+          if (take && emitted >= take - 1u) return {};
           ls.key = std::string_view{k};
           using val_t = std::remove_cvref_t<decltype(v)>;
           ls.binding_name = ref.key;
@@ -675,28 +684,66 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
           ls.binding_truthy = &eval_binding_truthy<val_t>;
           bc_executor<val_t, RootT> child_exec(ex.bc_, v, ex.root_value_, &ls, ex.out_);
           auto r2 = child_exec.execute_impl(pc + 1, body_end - 1);
-          if (!r2) return r2;
-          if (ls.break_flag) break;
-          ++ls.index;
+          if (r2) { ++emitted; ++ls.index; }
+          return r2;
+        };
+        std::expected<void, error_ctx> map_res{};
+        if (reverse) {
+          // リバース: 一時 vector に実体化してから逆順反復（unordered_map にも対応）
+          using pair_t = std::remove_cvref_t<decltype(*field.begin())>;
+          std::vector<pair_t> temp(field.begin(), field.end());
+          for (std::size_t i = temp.size(); i > 0 && !map_res && !ls.break_flag; --i) {
+            map_res = visit(temp[i - 1].first, temp[i - 1].second);
+          }
+        } else {
+          for (auto const& [k, v] : field) {
+            map_res = visit(k, v);
+            if (!map_res || ls.break_flag) break;
+          }
         }
+        if (!map_res) return map_res;
       } else if constexpr (ct_is_set_like<FT>) {
         if (!field.empty()) is_falsy = false;
         using elem_t = typename FT::value_type;
+        auto const sz = static_cast<std::uint32_t>(field.size());
+        auto count = take ? std::min(static_cast<std::uint32_t>(take - 1u), sz) : sz;
         bc_loop_state ls;
         ls.parent = ex.loop_;
-        ls.count = static_cast<std::uint32_t>(field.size());
-        for (auto const& elem : field) {
-          ls.continue_flag = false;
-          ls.binding_name = ref.key;
-          ls.binding_elem = &elem;
-          ls.binding_resolve = &resolve_binding_var<elem_t>;
-          ls.binding_truthy = &eval_binding_truthy<elem_t>;
-          bc_executor<elem_t, RootT> child_exec(ex.bc_, elem, ex.root_value_, &ls, ex.out_);
-          auto r2 = child_exec.execute_impl(pc + 1, body_end - 1);
-          if (!r2) return r2;
-          if (ls.continue_flag) { ls.continue_flag = false; continue; }
-          if (ls.break_flag) break;
-          ++ls.index;
+        ls.count = count;
+        std::uint32_t emitted = 0;
+        if (reverse) {
+          // 一時 vector に実体化してから逆順反復（unordered_set にも対応）
+          std::vector<elem_t> temp(field.begin(), field.end());
+          for (std::size_t i = temp.size(); i > 0 && emitted < count; --i, ++emitted) {
+            auto const& elem = temp[i - 1];
+            ls.index = emitted;
+            ls.continue_flag = false;
+            ls.binding_name = ref.key;
+            ls.binding_elem = &elem;
+            ls.binding_resolve = &resolve_binding_var<elem_t>;
+            ls.binding_truthy = &eval_binding_truthy<elem_t>;
+            bc_executor<elem_t, RootT> child_exec(ex.bc_, elem, ex.root_value_, &ls, ex.out_);
+            auto r2 = child_exec.execute_impl(pc + 1, body_end - 1);
+            if (!r2) return r2;
+            if (ls.continue_flag) { ls.continue_flag = false; --emitted; continue; }
+            if (ls.break_flag) break;
+          }
+        } else {
+          for (auto const& elem : field) {
+            if (emitted >= count) break;
+            ls.index = emitted;
+            ls.continue_flag = false;
+            ls.binding_name = ref.key;
+            ls.binding_elem = &elem;
+            ls.binding_resolve = &resolve_binding_var<elem_t>;
+            ls.binding_truthy = &eval_binding_truthy<elem_t>;
+            bc_executor<elem_t, RootT> child_exec(ex.bc_, elem, ex.root_value_, &ls, ex.out_);
+            auto r2 = child_exec.execute_impl(pc + 1, body_end - 1);
+            if (!r2) return r2;
+            if (ls.continue_flag) { ls.continue_flag = false; continue; }
+            if (ls.break_flag) break;
+            ++emitted;
+          }
         }
       } else if constexpr (std::same_as<FT, std::string> || std::same_as<FT, std::string_view> || char_pointer_v<FT>) {
         if (!to_sv(field).empty()) {
@@ -713,46 +760,95 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
         using elem_t = typename FT::value_type;
         bc_loop_state ls;
         ls.parent = ex.loop_;
-        ls.count = 0;
-        ls.index = 0;
-        auto it = field.begin();
-        auto end = field.end();
-        if (!(it != end)) return {};
-        is_falsy = false;
-        for (; it != end; ++it, ++ls.index) {
-          auto const& elem = *it;
-          ls.continue_flag = false;
-          ls.binding_name = ref.key;
-          ls.binding_elem = &elem;
-          ls.binding_resolve = &resolve_binding_var<elem_t>;
-          ls.binding_truthy = &eval_binding_truthy<elem_t>;
-          bc_executor<elem_t, RootT> child_exec(ex.bc_, elem, ex.root_value_, &ls, ex.out_);
-          auto r2 = child_exec.execute_impl(pc + 1, body_end - 1);
-          if (!r2) return r2;
-          if (ls.continue_flag) { ls.continue_flag = false; continue; }
-          if (ls.break_flag) break;
+        if (reverse) {
+          // forward_iterable のリバース: 一時 vector に実体化してから逆順反復
+          std::vector<elem_t> temp(field.begin(), field.end());
+          auto const sz = static_cast<std::uint32_t>(temp.size());
+          auto count = take ? std::min(static_cast<std::uint32_t>(take - 1u), sz) : sz;
+          ls.count = count;
+          is_falsy = (count == 0);
+          for (std::uint32_t i = 0; i < count; ++i) {
+            auto const& elem = temp[sz - 1u - i];
+            ls.index = i;
+            ls.continue_flag = false;
+            ls.binding_name = ref.key;
+            ls.binding_elem = &elem;
+            ls.binding_resolve = &resolve_binding_var<elem_t>;
+            ls.binding_truthy = &eval_binding_truthy<elem_t>;
+            bc_executor<elem_t, RootT> child_exec(ex.bc_, elem, ex.root_value_, &ls, ex.out_);
+            auto r2 = child_exec.execute_impl(pc + 1, body_end - 1);
+            if (!r2) return r2;
+            if (ls.continue_flag) { ls.continue_flag = false; continue; }
+            if (ls.break_flag) break;
+          }
+        } else {
+          auto it = field.begin();
+          auto end = field.end();
+          if (!(it != end)) return {};
+          is_falsy = false;
+          auto const sz = static_cast<std::uint32_t>(std::distance(it, end));
+          auto count = take ? std::min(static_cast<std::uint32_t>(take - 1u), sz) : sz;
+          ls.count = count;
+          std::uint32_t emitted = 0;
+          for (; it != end && emitted < count; ++it, ++emitted) {
+            auto const& elem = *it;
+            ls.index = emitted;
+            ls.continue_flag = false;
+            ls.binding_name = ref.key;
+            ls.binding_elem = &elem;
+            ls.binding_resolve = &resolve_binding_var<elem_t>;
+            ls.binding_truthy = &eval_binding_truthy<elem_t>;
+            bc_executor<elem_t, RootT> child_exec(ex.bc_, elem, ex.root_value_, &ls, ex.out_);
+            auto r2 = child_exec.execute_impl(pc + 1, body_end - 1);
+            if (!r2) return r2;
+            if (ls.continue_flag) { ls.continue_flag = false; continue; }
+            if (ls.break_flag) break;
+          }
         }
-        ls.count = static_cast<std::uint32_t>(ls.index);
       } else if constexpr (ct_glz_reflectable<FT>) {
         is_falsy = false;
         constexpr auto sz = glz::reflect<FT>::size;
         auto tied = glz::to_tie(field);
+        auto count = take ? std::min(static_cast<std::size_t>(take - 1u), static_cast<std::size_t>(sz)) : static_cast<std::size_t>(sz);
         std::expected<void, error_ctx> res{};
-        [&]<std::size_t... I>(std::index_sequence<I...>) {
-          (([&] {
-             if (!res) return;
-             using elem_t = std::remove_cvref_t<decltype(glz::get<I>(tied))>;
-             bc_loop_state ls;
-             ls.parent = ex.loop_;
-             ls.count = sz; ls.index = I; ls.key = glz::reflect<FT>::keys[I];
-             ls.binding_name = ref.key;
-             ls.binding_elem = &glz::get<I>(tied);
-             ls.binding_resolve = &resolve_binding_var<elem_t>;
-             ls.binding_truthy = &eval_binding_truthy<elem_t>;
-             bc_executor<elem_t, RootT> child_exec(ex.bc_, glz::get<I>(tied), ex.root_value_, &ls, ex.out_);
-             res = child_exec.execute_impl(pc + 1, body_end - 1);
-          }()), ...);
-        }(std::make_index_sequence<sz>{});
+        if (reverse) {
+          // リバース: I=0→最後の要素、I=1→その前... のように評価
+          [&]<std::size_t... I>(std::index_sequence<I...>) {
+            (([&] {
+               if (!res) return;
+               if (take && I >= count) return;
+               constexpr auto src_idx = sz - 1u - I;
+               using elem_t = std::remove_cvref_t<decltype(glz::get<src_idx>(tied))>;
+               bc_loop_state ls;
+               ls.parent = ex.loop_;
+               ls.count = count; ls.index = I; ls.key = glz::reflect<FT>::keys[src_idx];
+               ls.binding_name = ref.key;
+               ls.binding_elem = &glz::get<src_idx>(tied);
+               ls.binding_resolve = &resolve_binding_var<elem_t>;
+               ls.binding_truthy = &eval_binding_truthy<elem_t>;
+               bc_executor<elem_t, RootT> child_exec(ex.bc_, glz::get<src_idx>(tied), ex.root_value_, &ls, ex.out_);
+               res = child_exec.execute_impl(pc + 1, body_end - 1);
+            }()), ...);
+          }(std::make_index_sequence<sz>{});
+        } else {
+          // フォワード: 既存と同一（フィルタ時のみ take 制限）
+          [&]<std::size_t... I>(std::index_sequence<I...>) {
+            (([&] {
+               if (!res) return;
+               if (take && I >= count) return;
+               using elem_t = std::remove_cvref_t<decltype(glz::get<I>(tied))>;
+               bc_loop_state ls;
+               ls.parent = ex.loop_;
+               ls.count = count; ls.index = I; ls.key = glz::reflect<FT>::keys[I];
+               ls.binding_name = ref.key;
+               ls.binding_elem = &glz::get<I>(tied);
+               ls.binding_resolve = &resolve_binding_var<elem_t>;
+               ls.binding_truthy = &eval_binding_truthy<elem_t>;
+               bc_executor<elem_t, RootT> child_exec(ex.bc_, glz::get<I>(tied), ex.root_value_, &ls, ex.out_);
+               res = child_exec.execute_impl(pc + 1, body_end - 1);
+            }()), ...);
+          }(std::make_index_sequence<sz>{});
+        }
         return res;
       }
       return {};
