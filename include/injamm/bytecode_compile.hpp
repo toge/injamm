@@ -529,7 +529,23 @@ class bc_compiler {
    *          セクション命令には /section の次の命令位置がジャンプ先として書き込まれる。
    */
   void compile_section(std::string_view key) {
-    auto idx = bc_.add_var_ref(key);
+    /** セクションキーをパイプ分割し reverse/take フィルタを検出する（ベースキー = parts[0]） */
+    auto parts     = split_by_pipe(key);
+    key            = parts[0];
+    section_filter_entry fl;
+    for (std::size_t fi = 1; fi < parts.size(); ++fi) {
+      auto sf = parse_section_filter(parts[fi]);
+      if (!sf) {
+        bc_.error = error_ctx{pos_, error_code::unknown_filter, parts[fi]};
+        return;
+      }
+      fl.reverse |= sf->reverse;
+      if (sf->take) fl.take = sf->take;
+    }
+
+    auto idx = bc_.add_var_ref(static_cast<std::string>(key));
+    bc_.var_refs[idx].section_reverse = fl.reverse ? 1 : 0;
+    bc_.var_refs[idx].section_take    = fl.take ? static_cast<std::uint32_t>(*fl.take) + 1u : 0;  // N+1 エンコード（design amendment opt A）
     resolve_ref_indices(idx, key);
     bc_.add_instruction(bc_opcode::emit_section, 0, idx);
 
