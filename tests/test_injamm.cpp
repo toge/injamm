@@ -4484,3 +4484,67 @@ TEST_CASE("partial_nested_engine_deep", "[injamm][partial][engine]") {
   CHECK(*row == "<tr><td>Alice</td></tr>");
 }
 
+// ============================================================
+// セクションフィルタ (reverse/take) テスト用データ型
+// ============================================================
+
+struct SectionFilterData {
+  std::vector<int> items{1, 2, 3, 4}; /**< 整数リスト */
+};
+
+template <>
+struct glz::meta<SectionFilterData> {
+  static constexpr auto value = glz::object("items", &SectionFilterData::items);
+};
+
+struct SectionFilterData5 {
+  std::vector<int> items{1, 2, 3, 4, 5}; /**< 5要素整数リスト */
+};
+
+template <>
+struct glz::meta<SectionFilterData5> {
+  static constexpr auto value = glz::object("items", &SectionFilterData5::items);
+};
+
+TEST_CASE("section reverse", "[section][filter]") {
+  auto out = injamm::engine<SectionFilterData>("{{#items | reverse}}{{this}} {{/items}}").render(SectionFilterData{});
+  REQUIRE(out);
+  CHECK(*out == "4 3 2 1 ");
+}
+
+TEST_CASE("section take", "[section][filter]") {
+  auto out = injamm::engine<SectionFilterData>("{{#items | take(3)}}{{this}} {{/items}}").render(SectionFilterData{});
+  REQUIRE(out);
+  CHECK(*out == "1 2 3 ");
+
+  auto out2 = injamm::engine<SectionFilterData>("{{#items | take(0)}}X{{/items}}").render(SectionFilterData{});
+  REQUIRE(out2);
+  CHECK(*out2 == "");
+
+  auto out3 = injamm::engine<SectionFilterData>("{{#items | take(99)}}{{this}} {{/items}}").render(SectionFilterData{});
+  REQUIRE(out3);
+  CHECK(*out3 == "1 2 3 4 ");
+}
+
+TEST_CASE("section reverse take chain", "[section][filter]") {
+  auto out = injamm::engine<SectionFilterData5>(
+      "{{#items | reverse | take(2)}}[{{loop.index}}:{{loop.is_first}}:{{loop.is_last}}={{this}}]{{/items}}")
+      .render(SectionFilterData5{});
+  REQUIRE(out);
+  CHECK(*out == "[0:true:false=5][1:false:true=4]");
+}
+
+TEST_CASE("section take loop.size", "[section][filter]") {
+  auto out = injamm::engine<SectionFilterData>("{{#items | take(2)}}size={{loop.size}} {{/items}}").render(SectionFilterData{});
+  REQUIRE(out);
+  CHECK(*out == "size=2 size=2 ");
+}
+
+TEST_CASE("section unknown filter error", "[section][filter]") {
+  auto eng = injamm::engine<SectionFilterData>("{{#items | bogus}}x{{/items}}");
+  SectionFilterData data{};
+  auto result = eng.render(data);
+  REQUIRE(!result.has_value());
+  CHECK(result.error().ec == injamm::error_code::unknown_filter);
+}
+
