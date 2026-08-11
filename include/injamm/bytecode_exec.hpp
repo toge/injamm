@@ -760,19 +760,22 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
         using elem_t = typename FT::value_type;
         bc_loop_state ls;
         ls.parent = ex.loop_;
+        ls.count = 0;
+        ls.index = 0;
+        auto it = field.begin();
+        auto end = field.end();
+        if (!(it != end)) return {};
+        is_falsy = false;
         if (reverse) {
-          // forward_iterable のリバース: bidirectional なら rbegin/rend
-          // forward-only の場合は順方向のみ（逆順不可）
-          if constexpr (std::bidirectional_iterator<decltype(field.begin())>) {
-            auto count = take ? std::min(static_cast<std::uint32_t>(take - 1u), static_cast<std::uint32_t>(std::distance(field.begin(), field.end())))
-                              : static_cast<std::uint32_t>(std::distance(field.begin(), field.end()));
-            ls.count = count;
-            is_falsy = (count == 0);
+          if constexpr (std::bidirectional_iterator<decltype(it)>) {
+            // bidirectional: rbegin/rend で逆順
             auto rit = field.rbegin();
             auto rend = field.rend();
-            for (std::uint32_t i = 0; i < count && rit != rend; ++rit, ++i) {
+            std::uint32_t emitted = 0;
+            for (; rit != rend; ++rit) {
+              if (take && emitted >= take - 1u) break;
               auto const& elem = *rit;
-              ls.index = i;
+              ls.index = emitted;
               ls.continue_flag = false;
               ls.binding_name = ref.key;
               ls.binding_elem = &elem;
@@ -783,18 +786,14 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
               if (!r2) return r2;
               if (ls.continue_flag) { ls.continue_flag = false; continue; }
               if (ls.break_flag) break;
+              ++emitted;
             }
+            ls.count = emitted;
           } else {
-            // forward-only: 逆順不可。順方向に take 限制限のみ
-            auto it = field.begin();
-            auto end = field.end();
-            if (!(it != end)) return {};
-            is_falsy = false;
-            auto const full_sz = static_cast<std::uint32_t>(std::distance(it, end));
-            auto count = take ? std::min(static_cast<std::uint32_t>(take - 1u), full_sz) : full_sz;
-            ls.count = count;
+            // forward-only: 逆順不可、take 制限のみ
             std::uint32_t emitted = 0;
-            for (; it != end && emitted < count; ++it, ++emitted) {
+            for (; it != end; ++it) {
+              if (take && emitted >= take - 1u) break;
               auto const& elem = *it;
               ls.index = emitted;
               ls.continue_flag = false;
@@ -807,20 +806,15 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
               if (!r2) return r2;
               if (ls.continue_flag) { ls.continue_flag = false; continue; }
               if (ls.break_flag) break;
+              ++emitted;
             }
+            ls.count = emitted;
           }
         } else {
-          auto it = field.begin();
-          auto end = field.end();
-          if (!(it != end)) return {};
-          is_falsy = false;
-          auto const sz = static_cast<std::uint32_t>(std::distance(it, end));
-          auto count = take ? std::min(static_cast<std::uint32_t>(take - 1u), sz) : sz;
-          ls.count = count;
           std::uint32_t emitted = 0;
-          for (; it != end && emitted < count; ++it, ++emitted) {
+          for (; it != end; ++it, ++ls.index) {
+            if (take && emitted >= take - 1u) break;
             auto const& elem = *it;
-            ls.index = emitted;
             ls.continue_flag = false;
             ls.binding_name = ref.key;
             ls.binding_elem = &elem;
@@ -831,7 +825,9 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
             if (!r2) return r2;
             if (ls.continue_flag) { ls.continue_flag = false; continue; }
             if (ls.break_flag) break;
+            ++emitted;
           }
+          ls.count = emitted;
         }
       } else if constexpr (ct_glz_reflectable<FT>) {
         is_falsy = false;
