@@ -3,19 +3,7 @@
 include(CMakeFindDependencyMacro)
 find_dependency(glaze CONFIG REQUIRED)
 if(@ENABLE_ENUM@)
-  if(NOT TARGET enchantum::enchantum)
-    find_path(_ENCHANTUM_INCLUDE_DIR enchantum/enchantum.hpp)
-    if(NOT _ENCHANTUM_INCLUDE_DIR)
-      message(FATAL_ERROR "injamm requires enchantum headers (enchantum/enchantum.hpp). Please install enchantum.")
-    endif()
-    add_library(enchantum::enchantum INTERFACE IMPORTED)
-    set_target_properties(enchantum::enchantum PROPERTIES
-      INTERFACE_INCLUDE_DIRECTORIES "${_ENCHANTUM_INCLUDE_DIR}"
-      INTERFACE_COMPILE_DEFINITIONS "ENCHANTUM_ENABLE_MSVC_SPEEDUP=$<BOOL:ON>"
-      INTERFACE_COMPILE_FEATURES "cxx_std_17"
-    )
-    unset(_ENCHANTUM_INCLUDE_DIR CACHE)
-  endif()
+  find_dependency(enchantum CONFIG REQUIRED)
 endif()
 
 include("${CMAKE_CURRENT_LIST_DIR}/injammTargets.cmake")

@@ -35,29 +35,7 @@ if(USE_FMT)
 endif()
 
 if(ENABLE_ENUM)
-  # enchantum: vcpkg port の enchantumConfig.cmake が enchantumTargets.cmake を
-  # cmake/ サブディレクトリではなく直下に期待するため CONFIG find は使わず、
-  # ヘッダパスを直接解決してターゲットを手動作成する。
-  # TODO: vcpkg の enchantum port が修正されたら、以下の標準的な find_package に移行してください:
-  # find_package(enchantum CONFIG REQUIRED)
-  # target_link_libraries(injamm INTERFACE enchantum::enchantum)
-  find_path(ENCHANTUM_INCLUDE_DIR enchantum/enchantum.hpp
-    PATHS
-      "${CMAKE_CURRENT_BINARY_DIR}/vcpkg_installed/${VCPKG_TARGET_TRIPLET}/include"
-      "${VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/include"
-      "${_VCPKG_INSTALLED_DIR}/${VCPKG_TARGET_TRIPLET}/include"
-  )
-  if(NOT ENCHANTUM_INCLUDE_DIR)
-    message(FATAL_ERROR "enchantum headers not found. Please install enchantum via vcpkg.")
-  endif()
-  if(NOT TARGET enchantum::enchantum)
-    add_library(enchantum::enchantum INTERFACE IMPORTED)
-    set_target_properties(enchantum::enchantum PROPERTIES
-      INTERFACE_INCLUDE_DIRECTORIES "${ENCHANTUM_INCLUDE_DIR}"
-      INTERFACE_COMPILE_DEFINITIONS "ENCHANTUM_ENABLE_MSVC_SPEEDUP=$<BOOL:ON>"
-      INTERFACE_COMPILE_FEATURES "cxx_std_17"
-    )
-  endif()
+  find_package(enchantum CONFIG REQUIRED)
 endif()
 
 # ---- ライブラリ定義 ----
