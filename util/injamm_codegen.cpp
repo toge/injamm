@@ -99,6 +99,8 @@ struct var_ref {
   std::string compare_rhs_text;           /**< 右オペランド文字列 */
   bool compare_rhs_has_dot = false;       /**< 右オペランドがドット区切りパスか */
   std::uint8_t filter_flags = 0;          /**< フィルタ特殊フラグ */
+  std::uint8_t section_reverse = 0;       /**< セクション反転フラグ（1 = reverse フィルタ） */
+  std::uint32_t section_take = 0;         /**< セクション要素数上限（0 = 無制限） */
   std::vector<string_filter_entry> filters;     /**< 文字列フィルタチェーン */
   std::vector<int_filter_entry> int_filters;    /**< 整数フィルタチェーン */
   std::vector<float_filter_entry> float_filters; /**< 実数フィルタチェーン */
@@ -139,6 +141,7 @@ class reader {
   const char* data_;  /**< 入力バッファへのポインタ */
   std::size_t pos_ = 0;  /**< 現在の読み込み位置 */
   std::size_t size_;  /**< バッファサイズ */
+  int version_ = 1;  /**< バイトコードバージョン（v2 以降はセクションフィルタを読み込む） */
 
 public:
   /**
@@ -237,6 +240,10 @@ public:
     ref.compare_rhs_text = read_string();
     ref.compare_rhs_has_dot = read_u8() != 0;
     ref.filter_flags = read_u8();
+    if (version_ >= 2) {
+      ref.section_reverse = read_u8() != 0;
+      ref.section_take = read_u32_le();
+    }
 
     auto fc = read_u64_le();
     ref.filters.reserve(fc);
@@ -294,8 +301,9 @@ public:
 
   /**
    * @brief バイトコードを読み込み
-   * @details マジック "IJBC" + バージョン 1 のヘッダを検証し、
-   *          バイトコード本体を読み込む。
+   * @details マジック "IJBC" + バージョン 1/2 のヘッダを検証し、
+   *          バイトコード本体を読み込む。バージョン 1 はセクションフィルタ
+   *          （section_reverse / section_take）を含まない。
    * @return 正常に読み込まれた場合の bytecode、解析失敗時は nullopt
    */
   std::optional<bc::bytecode> read_bytecode() {
@@ -307,7 +315,13 @@ public:
       return std::nullopt;
 
     auto version = read_u32_le();
-    if (version != 1) return std::nullopt;
+    if (version == 1) {
+      version_ = 1;
+    } else if (version == 2) {
+      version_ = 2;
+    } else {
+      return std::nullopt;
+    }
 
     return read_bytecode_body();
   }
