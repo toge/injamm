@@ -8,6 +8,24 @@
 #include <set>
 #include <vector>
 
+struct CtSectionFilterData {
+  std::vector<int> items{1, 2, 3, 4};
+};
+
+template <>
+struct glz::meta<CtSectionFilterData> {
+  static constexpr auto value = glz::object("items", &CtSectionFilterData::items);
+};
+
+struct CtSectionFilterData5 {
+  std::vector<int> items{1, 2, 3, 4, 5};
+};
+
+template <>
+struct glz::meta<CtSectionFilterData5> {
+  static constexpr auto value = glz::object("items", &CtSectionFilterData5::items);
+};
+
 // ---- NTTP テスト用データ型 ----
 
 struct CtUser {
@@ -2798,4 +2816,49 @@ TEST_CASE("ct_dot alias for this ({{.}})", "[injamm][ct][feature][e3]") {
   auto   r = injamm::render<"{{this}} vs {{.}}">(d);
   REQUIRE(r);
   CHECK(*r == "{&quot;name&quot;:&quot;&lt;test&gt;&quot;,&quot;age&quot;:25} vs {&quot;name&quot;:&quot;&lt;test&gt;&quot;,&quot;age&quot;:25}");
+}
+
+TEST_CASE("ct section reverse", "[ct][section][filter]") {
+  CtSectionFilterData data{};
+  data.items = {1, 2, 3};
+  auto constexpr tmpl = injamm::fixed_string("{{#items | reverse}}{{this}} {{/items}}");
+  auto out = injamm::render<tmpl>(data);
+  REQUIRE(out);
+  CHECK(*out == "3 2 1 ");
+}
+
+TEST_CASE("ct section take", "[ct][section][filter]") {
+  CtSectionFilterData data{};
+  data.items = {1, 2, 3, 4};
+  auto constexpr tmpl = injamm::fixed_string("{{#items | take(3)}}{{this}} {{/items}}");
+  auto out = injamm::render<tmpl>(data);
+  REQUIRE(out);
+  CHECK(*out == "1 2 3 ");
+}
+
+TEST_CASE("ct section take zero", "[ct][section][filter]") {
+  CtSectionFilterData data{};
+  data.items = {1, 2, 3, 4};
+  auto constexpr tmpl = injamm::fixed_string("{{#items | take(0)}}X{{/items}}");
+  auto out = injamm::render<tmpl>(data);
+  REQUIRE(out);
+  CHECK(*out == "");
+}
+
+TEST_CASE("ct section reverse take chain", "[ct][section][filter]") {
+  CtSectionFilterData5 data{};
+  data.items = {1, 2, 3, 4, 5};
+  auto constexpr tmpl = injamm::fixed_string("{{#items | reverse | take(2)}}[{{loop.index}}:{{loop.is_first}}:{{loop.is_last}}={{this}}]{{/items}}");
+  auto out = injamm::render<tmpl>(data);
+  REQUIRE(out);
+  CHECK(*out == "[0:true:false=5][1:false:true=4]");
+}
+
+TEST_CASE("ct section take loop.size", "[ct][section][filter]") {
+  CtSectionFilterData data{};
+  data.items = {1, 2, 3, 4};
+  auto constexpr tmpl = injamm::fixed_string("{{#items | take(2)}}size={{loop.size}} {{/items}}");
+  auto out = injamm::render<tmpl>(data);
+  REQUIRE(out);
+  CHECK(*out == "size=2 size=2 ");
 }

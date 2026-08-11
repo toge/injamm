@@ -35,6 +35,10 @@ struct ct_var_ref {
   bool has_compare_rhs = false;
   /** @brief 文字列比較用 RHS（非空 = 文字列比較） */
   string_ref compare_rhs_str{};
+  /** @brief セクション反転フラグ */
+  std::uint8_t section_reverse = 0;
+  /** @brief セクション要素数上限（0 = 無制限、N+1 = take(N)） */
+  std::uint32_t section_take = 0;
 };
 
 struct ct_lit_entry {
@@ -131,6 +135,8 @@ bytecode to_bytecode(ct_bytecode<N> const& ct) {
       ref.compare_rhs_kind = compare_operand_kind::string_literal;
       ref.compare_rhs_text.assign(ct.var_refs[i].compare_rhs_str.data, ct.var_refs[i].compare_rhs_str.size);
     }
+    ref.section_reverse = ct.var_refs[i].section_reverse;
+    ref.section_take    = ct.var_refs[i].section_take;
     bc.var_refs.push_back(std::move(ref));
   }
   // バッファ事前確保用に全リテラルの合計サイズを計算
@@ -500,6 +506,8 @@ consteval void compile_chunk_range(ct_bytecode_builder<N>& b,
     case ct_chunk_kind::section: {
       auto vridx = b.add_var_ref({chunks.texts[i].data(), chunks.texts[i].size()},
                                   static_cast<std::uint32_t>(chunks.field_indices[i]));
+      b.bc.var_refs[vridx].section_reverse = chunks.section_reverse[i];
+      b.bc.var_refs[vridx].section_take    = chunks.section_take[i];
       auto sec_instr = b.current_offset();
       b.emit(bc_opcode::emit_section, 0, vridx);
       compile_chunk_range(b, chunks, chunks.body_starts[i], chunks.body_ends[i]);

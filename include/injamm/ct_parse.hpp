@@ -56,9 +56,11 @@ struct ct_parse_context {
    * @param body_end   本体の終了チャンクインデックス
    * @return 追加されたチャンクのインデックス
    */
-  constexpr std::size_t push_section(std::string_view key, std::size_t body_start, std::size_t body_end) {
+  constexpr std::size_t push_section(std::string_view key, std::size_t body_start, std::size_t body_end,
+                                      std::size_t else_start = 0, std::size_t else_end = 0,
+                                      std::uint8_t reverse = 0, std::uint32_t take = 0) {
     auto idx = tmpl.size;
-    tmpl.push_section(key, body_start, body_end);
+    tmpl.push_section(key, body_start, body_end, else_start, else_end, reverse, take);
     return idx;
   }
 
@@ -634,6 +636,27 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
         if (key.empty()) continue;
       }
 
+      // -- セクションフィルタ（reverse/take）のパイプ分割 --
+      /** @brief セクションキーから reverse/take フィルタを抽出し、close_key をベースキーに設定 */
+      std::uint8_t sec_reverse = 0;
+      std::uint32_t sec_take = 0;
+      {
+        auto parts = split_by_pipe(close_key);
+        if (parts.size() > 1) {
+          close_key = parts[0];
+          for (std::size_t fi = 1; fi < parts.size(); ++fi) {
+            auto sf = parse_section_filter(parts[fi]);
+            if (!sf) {
+              // CT パスでは未知フィルタを無視（constexpr に error_ctx 機構なし）
+              continue;
+            }
+            if (sf->reverse) sec_reverse = 1;
+            if (sf->take) sec_take = static_cast<std::uint32_t>(*sf->take) + 1u;  // N+1 エンコード
+          }
+          key = close_key;  // チャンクにはベースキーを格納
+        }
+      }
+
       // -- {{#key}} 通常セクションの処理 --
       /**
        * @brief 通常セクションの解析
@@ -697,7 +720,8 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
         }
 
         /** @brief セクションチャンクを追加し、本体を再帰パース */
-        auto chunk_idx = ctx.push_section(key, 0, 0);
+        key = close_key;  // チャンクにはベースキーを格納
+        auto chunk_idx = ctx.push_section(key, 0, 0, 0, 0, sec_reverse, sec_take);
         auto body_start_idx = ctx.tmpl.size;
         ct_parse_into(ctx, main_body, trim_blocks, lstrip_blocks);
         auto body_end_idx = ctx.tmpl.size;
