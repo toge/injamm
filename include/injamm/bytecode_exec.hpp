@@ -893,7 +893,10 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
     bool raw = ex.bc_.instructions[pc].op == bc_opcode::emit_var_raw;
     auto const& ref = ex.bc_.var_refs[ex.bc_.instructions[pc].operand];
     if (ref.is_loop_parent && resolve_loop_parent_var(ex, ref.special, raw)) { ++pc; return {}; }
-    if (ref.binding_first && try_resolve_loop_binding(ex, ref, raw)) { ++pc; return {}; }
+    if (ref.binding_first && ref.special == special_var_kind::none && try_resolve_loop_binding(ex, ref, raw)) {
+      ++pc;
+      return {};
+    }
     bool        found = false;
     auto        r = for_each_field_ref(ex.value_, ref,[&](auto const& field) { found = true; ex.emit_var_value(field, raw); });
     if (!r && r.error().ec != error_code::unknown_key) return std::unexpected(r.error());
@@ -909,7 +912,10 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
     ex.out_.append(ex.bc_.literals[ex.bc_.instructions[pc].operand]);
     auto const& ref = ex.bc_.var_refs[ex.bc_.instructions[pc].operand2];
     if (ref.is_loop_parent && resolve_loop_parent_var(ex, ref.special, raw)) { ++pc; return {}; }
-    if (ref.binding_first && try_resolve_loop_binding(ex, ref, raw)) { ++pc; return {}; }
+    if (ref.binding_first && ref.special == special_var_kind::none && try_resolve_loop_binding(ex, ref, raw)) {
+      ++pc;
+      return {};
+    }
     bool        found = false;
     auto        r = for_each_field_ref(ex.value_, ref,[&](auto const& field) { found = true; ex.emit_var_value(field, raw); });
     if (!r && r.error().ec != error_code::unknown_key) return std::unexpected(r.error());
