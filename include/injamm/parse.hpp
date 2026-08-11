@@ -395,6 +395,24 @@ constexpr std::size_t constexpr_find_tag(std::string_view haystack, std::string_
   return std::nullopt;
 }
 
+/** @brief セクションフィルタ（{{#key | reverse}} / {{#key | take(n)}}） */
+struct section_filter_entry {
+  bool reverse = false;            /**< true で反転反復 */
+  std::optional<int> take;         /**< 要素数上限（未指定=nullopt, take(0)=0 → 0回反復） */
+};
+
+/** @brief セクションフィルタ名を解析する */
+[[nodiscard]] constexpr std::optional<section_filter_entry> parse_section_filter(std::string_view name) noexcept {
+  if (name == "reverse")
+    return section_filter_entry{true, std::nullopt};
+  auto paren = constexpr_find(name, '(');
+  if (paren != std::string_view::npos && name.back() == ')' && name.substr(0, paren) == "take") {
+    auto arg_str = name.substr(paren + 1, name.size() - paren - 2);
+    return section_filter_entry{false, parse_int_arg(arg_str)};
+  }
+  return std::nullopt;
+}
+
 /**
  * @brief フィルタ名文字列を float_filter 列挙値に変換する
  * @param name フィルタ名（"numify" / "precision" / "abs" / "neg"）
