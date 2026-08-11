@@ -731,10 +731,26 @@ class code_generator {
       emit("append_value(out, " + access + ");");
     }
     else if (op == bc::opcode::emit_section) {
-      auto access = resolve_access(bc.var_refs[inst.operand2]);
+      auto const& ref = bc.var_refs[inst.operand2];
+      auto access = resolve_access(ref);
       ++loop_depth_;
       auto idx = std::to_string(loop_depth_);
-      if (index_loops_.count(&inst) != 0) {
+      auto const sec_reverse = ref.section_reverse != 0;
+      auto const sec_take    = ref.section_take;
+      if (sec_reverse || sec_take) {
+        /* reverse/take がある場合はインデックス形式で生成（range-for では制御不可） */
+        emit("auto _size" + idx + " = " + access + ".size();");
+        if (sec_take) {
+          emit("if (_size" + idx + " > " + std::to_string(sec_take - 1u) + ") _size" + idx + " = " + std::to_string(sec_take - 1u) + ";");
+        }
+        emit("for (std::size_t _i" + idx + " = 0; _i" + idx + " < _size" + idx + "; ++_i" + idx + ") {");
+        ++indent_;
+        if (sec_reverse) {
+          emit("const auto& _item" + idx + " = " + access + "[_size" + idx + " - 1 - _i" + idx + "];");
+        } else {
+          emit("const auto& _item" + idx + " = " + access + "[_i" + idx + "];");
+        }
+      } else if (index_loops_.count(&inst) != 0) {
         /* @index/@first/@last/@size 等を参照するループはインデックス形式を維持 */
         emit("auto _size" + idx + " = " + access + ".size();");
         emit("for (std::size_t _i" + idx + " = 0; _i" + idx + " < _size" + idx + "; ++_i" + idx + ") {");
