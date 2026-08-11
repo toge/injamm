@@ -761,25 +761,53 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
         bc_loop_state ls;
         ls.parent = ex.loop_;
         if (reverse) {
-          // forward_iterable のリバース: 一時 vector に実体化してから逆順反復
-          std::vector<elem_t> temp(field.begin(), field.end());
-          auto const sz = static_cast<std::uint32_t>(temp.size());
-          auto count = take ? std::min(static_cast<std::uint32_t>(take - 1u), sz) : sz;
-          ls.count = count;
-          is_falsy = (count == 0);
-          for (std::uint32_t i = 0; i < count; ++i) {
-            auto const& elem = temp[sz - 1u - i];
-            ls.index = i;
-            ls.continue_flag = false;
-            ls.binding_name = ref.key;
-            ls.binding_elem = &elem;
-            ls.binding_resolve = &resolve_binding_var<elem_t>;
-            ls.binding_truthy = &eval_binding_truthy<elem_t>;
-            bc_executor<elem_t, RootT> child_exec(ex.bc_, elem, ex.root_value_, &ls, ex.out_);
-            auto r2 = child_exec.execute_impl(pc + 1, body_end - 1);
-            if (!r2) return r2;
-            if (ls.continue_flag) { ls.continue_flag = false; continue; }
-            if (ls.break_flag) break;
+          // forward_iterable のリバース: bidirectional なら rbegin/rend
+          // forward-only の場合は順方向のみ（逆順不可）
+          if constexpr (std::bidirectional_iterator<decltype(field.begin())>) {
+            auto count = take ? std::min(static_cast<std::uint32_t>(take - 1u), static_cast<std::uint32_t>(std::distance(field.begin(), field.end())))
+                              : static_cast<std::uint32_t>(std::distance(field.begin(), field.end()));
+            ls.count = count;
+            is_falsy = (count == 0);
+            auto rit = field.rbegin();
+            auto rend = field.rend();
+            for (std::uint32_t i = 0; i < count && rit != rend; ++rit, ++i) {
+              auto const& elem = *rit;
+              ls.index = i;
+              ls.continue_flag = false;
+              ls.binding_name = ref.key;
+              ls.binding_elem = &elem;
+              ls.binding_resolve = &resolve_binding_var<elem_t>;
+              ls.binding_truthy = &eval_binding_truthy<elem_t>;
+              bc_executor<elem_t, RootT> child_exec(ex.bc_, elem, ex.root_value_, &ls, ex.out_);
+              auto r2 = child_exec.execute_impl(pc + 1, body_end - 1);
+              if (!r2) return r2;
+              if (ls.continue_flag) { ls.continue_flag = false; continue; }
+              if (ls.break_flag) break;
+            }
+          } else {
+            // forward-only: 逆順不可。順方向に take 限制限のみ
+            auto it = field.begin();
+            auto end = field.end();
+            if (!(it != end)) return {};
+            is_falsy = false;
+            auto const full_sz = static_cast<std::uint32_t>(std::distance(it, end));
+            auto count = take ? std::min(static_cast<std::uint32_t>(take - 1u), full_sz) : full_sz;
+            ls.count = count;
+            std::uint32_t emitted = 0;
+            for (; it != end && emitted < count; ++it, ++emitted) {
+              auto const& elem = *it;
+              ls.index = emitted;
+              ls.continue_flag = false;
+              ls.binding_name = ref.key;
+              ls.binding_elem = &elem;
+              ls.binding_resolve = &resolve_binding_var<elem_t>;
+              ls.binding_truthy = &eval_binding_truthy<elem_t>;
+              bc_executor<elem_t, RootT> child_exec(ex.bc_, elem, ex.root_value_, &ls, ex.out_);
+              auto r2 = child_exec.execute_impl(pc + 1, body_end - 1);
+              if (!r2) return r2;
+              if (ls.continue_flag) { ls.continue_flag = false; continue; }
+              if (ls.break_flag) break;
+            }
           }
         } else {
           auto it = field.begin();
