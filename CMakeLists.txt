@@ -30,7 +30,6 @@ option(USE_FMT "Use fmt instead of std::vformat for format filter (workaround fo
 
 # ---- 依存 ----
 find_package(glaze CONFIG REQUIRED)
-find_package(FastFloat CONFIG REQUIRED)
 if(USE_FMT)
   find_package(fmt CONFIG REQUIRED)
 endif()
@@ -70,10 +69,10 @@ target_include_directories(injamm INTERFACE
   $<INSTALL_INTERFACE:include>
 )
 if(ENABLE_ENUM)
-  target_link_libraries(injamm INTERFACE glaze::glaze FastFloat::fast_float enchantum::enchantum)
+  target_link_libraries(injamm INTERFACE glaze::glaze enchantum::enchantum)
 else()
   target_compile_definitions(injamm INTERFACE INJAMM_NO_ENUM_REGISTRY)
-  target_link_libraries(injamm INTERFACE glaze::glaze FastFloat::fast_float)
+  target_link_libraries(injamm INTERFACE glaze::glaze)
 endif()
 if(USE_FMT)
   target_link_libraries(injamm INTERFACE fmt::fmt)

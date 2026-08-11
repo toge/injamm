@@ -6,7 +6,7 @@
 #include "types.hpp"
 #include <array>
 #include <charconv>
-#include <fast_float/fast_float.h>
+#include <glaze/util/fast_float.hpp>
 #include <glaze/util/zmij.hpp>
 #include <cmath>
 #include <expected>
@@ -236,7 +236,7 @@ constexpr void apply_string_filter(std::string& str, string_filter_entry entry) 
     auto size = str.size();
     if (str.find('.') != std::string::npos || str.find('e') != std::string::npos || str.find('E') != std::string::npos) {
       double val{};
-      if (auto [p, ec] = fast_float::from_chars(data, data + size, val); ec == std::errc()) {
+      if (auto [p, ec] = glz::fast_float::from_chars(data, data + size, val); ec == std::errc()) {
         std::array<char, glz::zmij::double_buffer_size> buf;
         auto end = glz::to_chars(buf.data(), std::abs(val));
         str.assign(buf.data(), end - buf.data());
@@ -289,7 +289,7 @@ constexpr void apply_string_filter(std::string& str, string_filter_entry entry) 
     auto size = str.size();
     if (str.find('.') != std::string::npos || str.find('e') != std::string::npos || str.find('E') != std::string::npos) {
       double val{};
-      if (auto [p, ec] = fast_float::from_chars(data, data + size, val); ec == std::errc()) {
+      if (auto [p, ec] = glz::fast_float::from_chars(data, data + size, val); ec == std::errc()) {
         std::array<char, glz::zmij::double_buffer_size> buf;
         auto end = glz::to_chars(buf.data(), -val);
         str.assign(buf.data(), end - buf.data());
@@ -331,7 +331,7 @@ constexpr void apply_string_filter(std::string& str, string_filter_entry entry) 
     auto size = str.size();
     if (str.find('.') != std::string::npos || str.find('e') != std::string::npos || str.find('E') != std::string::npos) {
       double val{};
-      if (auto [p, ec] = fast_float::from_chars(data, data + size, val); ec == std::errc()) {
+      if (auto [p, ec] = glz::fast_float::from_chars(data, data + size, val); ec == std::errc()) {
         bool negative = val < 0;
         if (negative)
           val = -val;
@@ -407,7 +407,7 @@ constexpr void apply_string_filter(std::string& str, string_filter_entry entry) 
     auto size = str.size();
     if (str.find('.') != std::string::npos || str.find('e') != std::string::npos || str.find('E') != std::string::npos) {
       double val{};
-      if (auto [p, ec] = fast_float::from_chars(data, data + size, val); ec == std::errc()) {
+      if (auto [p, ec] = glz::fast_float::from_chars(data, data + size, val); ec == std::errc()) {
         str = val < 0 ? "true" : "false";
       } else {
         long long val2{};
@@ -433,7 +433,7 @@ constexpr void apply_string_filter(std::string& str, string_filter_entry entry) 
     auto size   = str.size();
     if (str.find('.') != std::string::npos || str.find('e') != std::string::npos || str.find('E') != std::string::npos) {
       double val{};
-      if (auto [p, ec] = fast_float::from_chars(data, data + size, val); ec == std::errc()) {
+      if (auto [p, ec] = glz::fast_float::from_chars(data, data + size, val); ec == std::errc()) {
         str = (static_cast<long long>(val) == target) ? "true" : "false";
       } else {
         long long val2{};
@@ -465,7 +465,7 @@ constexpr void apply_string_filter(std::string& str, string_filter_entry entry) 
     bool result = false;
     if (str.find('.') != std::string::npos || str.find('e') != std::string::npos || str.find('E') != std::string::npos) {
       double val{};
-      if (auto [p, ec] = fast_float::from_chars(data, data + size, val); ec == std::errc()) {
+      if (auto [p, ec] = glz::fast_float::from_chars(data, data + size, val); ec == std::errc()) {
         double ftarget = static_cast<double>(entry.arg);
         switch (entry.filter) {
         case int_filter::ne:
@@ -543,7 +543,7 @@ constexpr void apply_string_filter(std::string& str, string_filter_entry entry) 
     auto size   = str.size();
     if (str.find('.') != std::string::npos || str.find('e') != std::string::npos || str.find('E') != std::string::npos) {
       double val{};
-      if (auto [p, ec] = fast_float::from_chars(data, data + size, val); ec == std::errc()) {
+      if (auto [p, ec] = glz::fast_float::from_chars(data, data + size, val); ec == std::errc()) {
         std::array<char, glz::zmij::double_buffer_size> buf;
         auto end = glz::to_chars(buf.data(), val + arg);
         str.assign(buf.data(), end - buf.data());
@@ -565,7 +565,7 @@ constexpr void apply_string_filter(std::string& str, string_filter_entry entry) 
     auto size   = str.size();
     if (str.find('.') != std::string::npos || str.find('e') != std::string::npos || str.find('E') != std::string::npos) {
       double val{};
-      if (auto [p, ec] = fast_float::from_chars(data, data + size, val); ec == std::errc()) {
+      if (auto [p, ec] = glz::fast_float::from_chars(data, data + size, val); ec == std::errc()) {
         std::array<char, glz::zmij::double_buffer_size> buf;
         auto end = glz::to_chars(buf.data(), val - arg);
         str.assign(buf.data(), end - buf.data());
@@ -587,7 +587,7 @@ constexpr void apply_string_filter(std::string& str, string_filter_entry entry) 
     auto size   = str.size();
     if (str.find('.') != std::string::npos || str.find('e') != std::string::npos || str.find('E') != std::string::npos) {
       double val{};
-      if (auto [p, ec] = fast_float::from_chars(data, data + size, val); ec == std::errc()) {
+      if (auto [p, ec] = glz::fast_float::from_chars(data, data + size, val); ec == std::errc()) {
         std::array<char, glz::zmij::double_buffer_size> buf;
         auto end = glz::to_chars(buf.data(), val * arg);
         str.assign(buf.data(), end - buf.data());
@@ -612,7 +612,7 @@ constexpr void apply_string_filter(std::string& str, string_filter_entry entry) 
     }
     if (str.find('.') != std::string::npos || str.find('e') != std::string::npos || str.find('E') != std::string::npos) {
       double val{};
-      if (auto [p, ec] = fast_float::from_chars(data, data + size, val); ec == std::errc()) {
+      if (auto [p, ec] = glz::fast_float::from_chars(data, data + size, val); ec == std::errc()) {
         std::array<char, glz::zmij::double_buffer_size> buf;
         auto end = glz::to_chars(buf.data(), val / arg);
         str.assign(buf.data(), end - buf.data());
@@ -662,7 +662,7 @@ constexpr void apply_float_filter(std::string& str, float_filter_entry entry) {
   switch (entry.filter) {
   case float_filter::precision: {
     double val{};
-    if (auto [p, ec] = fast_float::from_chars(str.data(), str.data() + str.size(), val); ec == std::errc()) {
+    if (auto [p, ec] = glz::fast_float::from_chars(str.data(), str.data() + str.size(), val); ec == std::errc()) {
       std::array<char, 64> buf;
       auto [ptr, ec2] = std::to_chars(buf.data(), buf.data() + buf.size(), val, std::chars_format::fixed, static_cast<int>(entry.arg));
       if (ec2 == std::errc()) {

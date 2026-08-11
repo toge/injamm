@@ -11,13 +11,12 @@ Glaze でメタプログラミングされた C++ 構造体をコンテキスト
 
 - **ヘッダオンリー**: インクルードするだけで使用可能
 - **高速**: コンパイル時テンプレートパース、Computed goto ディスパッチ（GCC）、Glaze リフレクションによる O(1) フィールドアクセス
-- **依存最小**: [Glaze](https://github.com/stephenberry/glaze) + [FastFloat](https://github.com/lemire/fast_float) のみ必須。enum 名前解決は [enchantum](https://github.com/anomalyco/enchantum)（オプション、`ENABLE_ENUM` で切替）
+- **依存最小**: [Glaze](https://github.com/stephenberry/glaze) のみ必須。enum 名前解決は [enchantum](https://github.com/anomalyco/enchantum)（オプション、`ENABLE_ENUM` で切替）
 
 ## 要件
 
 - C++23 対応コンパイラ（GCC 14+ 推奨）
-- [Glaze](https://github.com/stephenberry/glaze)
-- [FastFloat](https://github.com/lemire/fast_float)（高速浮動小数点解析）
+- [Glaze](https://github.com/stephenberry/glaze)（高速浮動小数点解析も glaze 内蔵の fast_float を利用）
 - [enchantum](https://github.com/anomalyco/enchantum)（C++20 enum→string 反射ライブラリ、オプション。`ENABLE_ENUM=OFF` で不要）
 
 ## ビルド・インストール

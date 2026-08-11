@@ -2,7 +2,6 @@
 
 include(CMakeFindDependencyMacro)
 find_dependency(glaze CONFIG REQUIRED)
-find_dependency(FastFloat CONFIG REQUIRED)
 if(@ENABLE_ENUM@)
   if(NOT TARGET enchantum::enchantum)
     find_path(_ENCHANTUM_INCLUDE_DIR enchantum/enchantum.hpp)

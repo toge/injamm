@@ -37,8 +37,7 @@ CMake オプション: `ENABLE_THREADED_DISPATCH`（デフォルト ON、GCC の
 
 ## 依存関係
 
-- `glaze`（必須、vcpkg）
-- `fast-float`（必須、vcpkg）
+- `glaze`（必須、vcpkg。fast_float は glaze 内蔵のものを利用）
 - `fmt`（AppleClang のみ、vcpkg）
 - `catch2`（テストのみ、vcpkg）
 - `frozenchars`（GCC NTTP テストのみ、vcpkg）
