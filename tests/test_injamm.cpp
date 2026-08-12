@@ -2965,6 +2965,31 @@ TEST_CASE("if_eq_with_else", "[injamm][compare]") {
   CHECK(*r == "A");
 }
 
+TEST_CASE("if_eq_float_no_truncation", "[injamm][compare]") {
+  /** double 5.9 は long long へ切り捨てると 5 になり誤一致していた（回帰テスト） */
+  BcFloatData data{5.9};
+  auto bc = injamm::engine<BcFloatData>("{{#if value == 5}}match{{else}}no{{/if}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "no");
+}
+
+TEST_CASE("if_eq_float_exact", "[injamm][compare]") {
+  BcFloatData data{5.0};
+  auto bc = injamm::engine<BcFloatData>("{{#if value == 5}}match{{else}}no{{/if}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "match");
+}
+
+TEST_CASE("if_gt_float", "[injamm][compare]") {
+  BcFloatData data{5.9};
+  auto bc = injamm::engine<BcFloatData>("{{#if value > 5}}big{{else}}small{{/if}}");
+  auto r = bc.render(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "big");
+}
+
 TEST_CASE("tilde_whitespace_trim_var", "[injamm][tilde]") {
   BcUser data{"Alice", 30};
   auto bc = injamm::engine<BcUser>("Hello {{~ name ~}}!");

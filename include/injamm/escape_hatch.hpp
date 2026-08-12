@@ -27,7 +27,9 @@
 
 #if __has_include(<frozenchars/mod/core.hpp>)
 #include <frozenchars/mod/core.hpp>
+#ifndef INJAMM_HAS_FROZENCHARS
 #define INJAMM_HAS_FROZENCHARS 1
+#endif
 #endif
 
 namespace injamm {

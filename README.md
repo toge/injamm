@@ -13,6 +13,16 @@ Glaze でメタプログラミングされた C++ 構造体をコンテキスト
 - **高速**: コンパイル時テンプレートパース、Computed goto ディスパッチ（GCC）、Glaze リフレクションによる O(1) フィールドアクセス
 - **依存最小**: [Glaze](https://github.com/stephenberry/glaze) のみ必須。enum 名前解決は [enchantum](https://github.com/anomalyco/enchantum)（オプション、`ENABLE_ENUM` で切替）
 
+## 注意: Mustache/inja との挙動の違い
+
+injamm は Mustache/inja サブセットですが、以下 2 点で挙動が異なります。
+
+- **存在しないキーはエラー**: `{{missing}}` のような未定義キーは空文字ではなく
+  `unknown_key` エラーを返します（Mustache は空文字、inja は例外を送出）。
+- **ループ内からルート参照は明示必須**: セクション内から外側（ルート）のデータを
+  参照する際、Mustache のような暗黙の親コンテキスト探索は行わず、`{{root.field}}`
+  の明示指定が必要です（[SYNTAX.md](SYNTAX.md) 参照）。
+
 ## 要件
 
 - C++23 対応コンパイラ（GCC 14+ 推奨）

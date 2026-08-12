@@ -1360,8 +1360,9 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
     return {};
   }
 
-  /** @brief 整数比較の共通ヘルパ（emit_if_eq/ne/gt/gte/lt/lte） */
-  static bool compare_ints(bc_opcode op, long long lv, long long rv) {
+  /** @brief 数値比較の共通ヘルパ（emit_if_eq/ne/gt/gte/lt/lte）。整数・実数共用。 */
+  template <class U>
+  static bool compare_vals(bc_opcode op, U lv, U rv) {
     switch (op) {
     case bc_opcode::emit_if_eq:  return lv == rv;
     case bc_opcode::emit_if_ne:  return lv != rv;
@@ -1381,10 +1382,15 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
     auto do_cmp = [&](auto const& field) {
       using FT = std::remove_cvref_t<decltype(field)>;
       if constexpr (std::is_arithmetic_v<FT>) {
-        cond = compare_ints(instr.op, static_cast<long long>(field), static_cast<long long>(rhs));
+        if constexpr (std::floating_point<FT>) {
+          /** 実数フィールド: double で比較（long long への切り捨てを回避） */
+          cond = compare_vals<double>(instr.op, static_cast<double>(field), static_cast<double>(rhs));
+        } else {
+          cond = compare_vals<long long>(instr.op, static_cast<long long>(field), static_cast<long long>(rhs));
+        }
       } else if constexpr (std::is_enum_v<FT>) {
         /** enum LHS: underlying 整数に変換して算術比較と同じロジックで評価 */
-        cond = compare_ints(instr.op, static_cast<long long>(static_cast<std::underlying_type_t<FT>>(field)), static_cast<long long>(rhs));
+        cond = compare_vals<long long>(instr.op, static_cast<long long>(static_cast<std::underlying_type_t<FT>>(field)), static_cast<long long>(rhs));
       } else if constexpr (std::same_as<FT, std::string> || std::same_as<FT, std::string_view> || char_pointer_v<FT>) {
         if (ref.compare_rhs_kind == compare_operand_kind::string_literal) {
           auto sv = to_sv(field);
@@ -1409,7 +1415,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
       case special_var_kind::loop_size:   lv = ex.loop_->count; break;
       default: ok = false; break;
       }
-      if (ok) { cond = compare_ints(instr.op, lv, static_cast<long long>(rhs)); }
+      if (ok) { cond = compare_vals<long long>(instr.op, lv, static_cast<long long>(rhs)); }
     } else {
       (void)for_each_field_ref(ex.value_, ref,do_cmp);
     }
@@ -1553,8 +1559,11 @@ public:
                 }
                 break;
               }
-              default:
+              case bc_opcode::halt:
                 return {};
+              default:
+                // is_simple 保証の破れ。黙って出力を打ち切らずエラーを返す。
+                return std::unexpected(error_ctx{.position = i, .ec = error_code::syntax_error});
             }
           }
           return {};
