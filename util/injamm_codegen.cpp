@@ -374,6 +374,12 @@ class code_generator {
   std::unordered_set<const bc::instruction*> index_loops_;
   std::ostringstream out_;     /**< 出力ストリーム */
 
+  // ponytail: フィルタの文字列引数は VM 同様 var_ref.filters に格納され、filter_string
+  // オペコードの operand3 には入らない。resolve_filtered で現在の var_ref を記録し、
+  // 後続の filter_string が対応エントリから文字列引数を読めるよう位置を追跡する。
+  bc::var_ref const* cur_filter_ref_ = nullptr; /**< フィルタチェーン中の現在の var_ref */
+  std::size_t filter_str_pos_ = 0;              /**< filter_string の処理位置 */
+
   /**
    * @brief インデント付きで 1 行出力
    * @param line 出力する行
@@ -935,6 +941,16 @@ class code_generator {
       auto const& ref = bc.var_refs[inst.operand2];
       auto access = resolve_access(ref);
       bool use_json = (ref.filter_flags & 1) != 0;
+      cur_filter_ref_ = &ref;
+      filter_str_pos_ = 0;
+      // format フィルタは型付き値に適用する（VM の do_resolve_filtered と同様）
+      bool use_format = (ref.filter_flags & 2) != 0;
+      std::string fmt_str;
+      if (use_format) {
+        for (auto const& f : ref.filters) {
+          if (f.filter == static_cast<std::uint8_t>(injamm::detail::string_filter::format)) { fmt_str = f.str_arg1; break; }
+        }
+      }
       if (use_json) {
         // serializable → serialize_value, reflectable → glz::write_json
         emit("if constexpr (::injamm::detail::serializable_v<decltype(" + access + ")>) {");
@@ -951,6 +967,21 @@ class code_generator {
         --indent_;
         emit("}");
       } else {
+        if (use_format) {
+          emit("if constexpr (::injamm::detail::is_chrono_time_point_v<decltype(" + access + ")>) {");
+          ++indent_;
+          emit("_filtered.clear(); ::injamm::detail::serialize_chrono(_filtered, " + access + ", " + cpp_string(fmt_str) + ");");
+          --indent_;
+          emit("} else if constexpr (std::is_arithmetic_v<decltype(" + access + ")> && !std::is_same_v<std::remove_cvref_t<decltype(" + access + ")>, bool>) {");
+          ++indent_;
+          emit("_filtered.clear(); ::injamm::detail::serialize_formatted(_filtered, " + access + ", " + cpp_string(fmt_str) + ");");
+          --indent_;
+          emit("} else if constexpr (std::is_same_v<std::remove_cvref_t<decltype(" + access + ")>, std::string> || std::is_same_v<std::remove_cvref_t<decltype(" + access + ")>, std::string_view>) {");
+          ++indent_;
+          emit("_filtered.clear(); ::injamm::detail::serialize_formatted(_filtered, ::injamm::detail::to_sv(" + access + "), " + cpp_string(fmt_str) + ");");
+          --indent_;
+          emit("} else ");
+        }
         // serializable → serialize_value, reflectable → glz::write_json, fallback → assign
         emit("if constexpr (::injamm::detail::serializable_v<decltype(" + access + ")>) {");
         ++indent_;
@@ -968,13 +999,17 @@ class code_generator {
       }
     }
     else if (op == bc::opcode::filter_string) {
-      // 汎用文字列フィルタ: operand2 = string_filter 種別, operand = arg1, operand3 = 文字列引数
+      // 汎用文字列フィルタ。文字列引数は VM と同様 var_ref.filters から読む
+      // （operand3 は substr の arg2 を除き未使用）。
       auto const kind = static_cast<injamm::detail::string_filter>(inst.operand2);
       auto const arg = std::to_string(inst.operand);
       std::string lit1, lit2;
-      if (inst.operand3 != UINT32_MAX) {
-        if (inst.operand3 < bc.literals.size()) lit1 = cpp_string(bc.literals[inst.operand3]);
-        if (kind == injamm::detail::string_filter::replace && inst.operand3 + 1 < bc.literals.size()) lit2 = cpp_string(bc.literals[inst.operand3 + 1]);
+      if (cur_filter_ref_ && filter_str_pos_ < cur_filter_ref_->filters.size()) {
+        auto const& fe = cur_filter_ref_->filters[filter_str_pos_++];
+        lit1 = cpp_string(fe.str_arg1);
+        lit2 = cpp_string(fe.str_arg2);
+      } else {
+        ++filter_str_pos_;
       }
       switch (kind) {
       case injamm::detail::string_filter::upper:      emit("filter_to_upper(_filtered);"); break;

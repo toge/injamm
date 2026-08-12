@@ -74,6 +74,7 @@ struct glz::meta<ItemData> {
 #include "render15.hpp"
 #include "render16.hpp"
 #include "render17.hpp"
+#include "render18.hpp"
 
 // ============================================================
 // テストヘルパ
@@ -209,6 +210,11 @@ int main() {
   // テスト9: セクションフィルタ（take_last が要素数を超えるケースのアンダーフロー防止）
   check("section filter take_last overflow", "{{#items | take_last(100)}}{{name}};{{/items}}", d,
     [](auto const& data) { return generated::render17(data); });
+
+  // テスト10: フィルタの文字列引数・整形系（codegen/VM ドリフト回帰）
+  check("filter drift (numify/zerofill/truncate/left/format/replace)",
+    "{{order_id | numify}}|{{order_id | zerofill(7)}}|{{email | truncate(8)}}|{{name | left(10)}}|{{total | format(\".2f\")}}|{{name | replace(\"i\",\"X\")}}", d,
+    [](auto const& data) { return generated::render18(data); });
 
   // バッファ再利用版のテスト
   check_into("into simple", "Hello {{name}}, age={{age}}", d,

@@ -376,24 +376,31 @@ class bc_compiler {
     }
   }
 
-  /** @brief フィルタ文字列引数を bc_.literals へ移して string_view の安定性を確保
-   *
-   *  string_filter_entry::str_arg1/str_arg2 はテンプレート文字列の一部を指す
-   *  string_view であり、bc_ の move 後はダングリングしうる。bc_.literals
-   *  にコピーして string_view を再設定することで、move 後も有効な参照を維持する。
-   */
-  void stabilize_filter_strings(std::uint32_t var_ref_idx) {
+   /** @brief フィルタ文字列引数を bc_.literals へ移して string_view の安定性を確保
+    *
+    *  string_filter_entry::str_arg1/str_arg2 はテンプレート文字列の一部を指す
+    *  string_view であり、bc_ の move 後はダングリングしうる。bc_.literals
+    *  にコピーして string_view を再設定することで、move 後も有効な参照を維持する。
+    *
+    *  全 var_ref を一括処理し、先に必要容量を reserve する。逐次処理すると後続の
+    *  add_literal（リテラル出力・他 var_ref の引数）で literals が再確保され、既に
+    *  設定した string_view がダングリングする（format フィルタが std::format_error
+    *  で落ちる既知バグ）。compile() 末尾で一度だけ呼ぶこと。
+    */
+  void stabilize_filter_strings() {
     std::size_t count = 0;
-    for (auto const& f : bc_.var_refs[var_ref_idx].filters) {
-      if (!f.str_arg1.empty()) ++count;
-      if (!f.str_arg2.empty()) ++count;
-    }
+    for (auto const& ref : bc_.var_refs)
+      for (auto const& f : ref.filters) {
+        if (!f.str_arg1.empty()) ++count;
+        if (!f.str_arg2.empty()) ++count;
+      }
     if (count == 0) return;
     bc_.literals.reserve(bc_.literals.size() + count);
-    for (auto& f : bc_.var_refs[var_ref_idx].filters) {
-      if (!f.str_arg1.empty()) f.str_arg1 = bc_.literals[bc_.add_literal(f.str_arg1)];
-      if (!f.str_arg2.empty()) f.str_arg2 = bc_.literals[bc_.add_literal(f.str_arg2)];
-    }
+    for (auto& ref : bc_.var_refs)
+      for (auto& f : ref.filters) {
+        if (!f.str_arg1.empty()) f.str_arg1 = bc_.literals[bc_.add_literal(f.str_arg1)];
+        if (!f.str_arg2.empty()) f.str_arg2 = bc_.literals[bc_.add_literal(f.str_arg2)];
+      }
   }
 
   /**
@@ -424,7 +431,6 @@ class bc_compiler {
     bc_.var_refs[idx].filters = filters;
     bc_.var_refs[idx].int_filters = int_filters;
     bc_.var_refs[idx].float_filters = float_filters;
-    stabilize_filter_strings(idx);
     // safe/json/format filter detection
     bool has_safe = false;
     bool has_json = false;
@@ -838,7 +844,6 @@ class bc_compiler {
     bc_.var_refs[idx].filters = filters;
     bc_.var_refs[idx].int_filters = int_filters;
     bc_.var_refs[idx].float_filters = float_filters;
-    stabilize_filter_strings(idx);
 
     /** {{#if x == N}} / {{#if x != N}} の比較演算子検出 */
     bc_opcode compare_op = bc_opcode::emit_if;
@@ -1442,6 +1447,7 @@ class bc_compiler {
       bc_.error = error_ctx{pos_, error_code::syntax_error, "stray closing tag"};
       return std::move(bc_);
     }
+    stabilize_filter_strings();
     bc_.add_instruction(bc_opcode::halt);
     for (auto const& lit : bc_.literals)
       bc_.literal_total_size += lit.size();

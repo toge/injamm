@@ -4104,6 +4104,23 @@ TEST_CASE("float: format precision", "[filter][format]") {
   CHECK(*result == "3.14");
 }
 
+TEST_CASE("format followed by literal (string_view stabilize)", "[filter][format][bug]") {
+  /** 後続リテラルで literals が再確保され string_view がダングリングしていた回帰テスト */
+  BcFloatData data{3.14159};
+  auto bc = injamm::engine<BcFloatData>("{{ value | format(\".2f\") }}x");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  CHECK(*result == "3.14x");
+}
+
+TEST_CASE("format between vars (string_view stabilize)", "[filter][format][bug]") {
+  BcFloatData data{3.14159};
+  auto bc = injamm::engine<BcFloatData>("{{ value | format(\".2f\") }}|{{ value }}");
+  auto result = bc.render(data);
+  REQUIRE(result);
+  CHECK(*result == "3.14|3.14159");
+}
+
 TEST_CASE("float: format scientific", "[filter][format]") {
   BcFloatData data{1234.5};
   auto bc = injamm::engine<BcFloatData>("{{ value | format(\".2e\") }}");
