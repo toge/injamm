@@ -342,6 +342,8 @@ public:
       version_ = 1;
     } else if (version == 2) {
       version_ = 2;
+    } else if (version == 3) {
+      version_ = 3;
     } else {
       return std::nullopt;
     }
@@ -771,7 +773,8 @@ class code_generator {
               emit("_bwd" + idx + " = !_bwd" + idx + ";");
               break;
             case injamm::detail::section_filter_op_kind::take:
-              emit("if (_bwd" + idx + ") _lo" + idx + " = std::max(_lo" + idx + ", _hi" + idx + " - " + n_str + "u);");
+              // VM の fold_section_ops と同様に _hi > n ガードで unsigned アンダーフローを防ぐ
+              emit("if (_bwd" + idx + ") _lo" + idx + " = (_hi" + idx + " > " + n_str + "u ? std::max(_lo" + idx + ", _hi" + idx + " - " + n_str + "u) : _lo" + idx + ");");
               emit("else _hi" + idx + " = std::min(_hi" + idx + ", _lo" + idx + " + " + n_str + "u);");
               break;
             case injamm::detail::section_filter_op_kind::skip:
@@ -780,7 +783,7 @@ class code_generator {
               break;
             case injamm::detail::section_filter_op_kind::take_last:
               emit("if (_bwd" + idx + ") _hi" + idx + " = std::min(_hi" + idx + ", _lo" + idx + " + " + n_str + "u);");
-              emit("else _lo" + idx + " = std::max(_lo" + idx + ", _hi" + idx + " - " + n_str + "u);");
+              emit("else _lo" + idx + " = (_hi" + idx + " > " + n_str + "u ? std::max(_lo" + idx + ", _hi" + idx + " - " + n_str + "u) : _lo" + idx + ");");
               break;
             case injamm::detail::section_filter_op_kind::skip_last:
               emit("if (_bwd" + idx + ") _lo" + idx + " = std::min(_hi" + idx + ", _lo" + idx + " + " + n_str + "u);");

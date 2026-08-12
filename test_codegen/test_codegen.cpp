@@ -72,6 +72,8 @@ struct glz::meta<ItemData> {
 #include "render5.hpp"
 #include "render14.hpp"
 #include "render15.hpp"
+#include "render16.hpp"
+#include "render17.hpp"
 
 // ============================================================
 // テストヘルパ
@@ -199,6 +201,14 @@ int main() {
   // テスト7: struct フィールドの JSON 出力 + 生出力
   check("struct field", "{{primary_item}}|{{& primary_item}}", d,
     [](auto const& data) { return generated::render15(data); });
+
+  // テスト8: セクションフィルタ（take が要素数を超えるケースのアンダーフロー防止）
+  check("section filter reverse+take overflow", "{{#items | reverse | take(100)}}{{name}};{{/items}}", d,
+    [](auto const& data) { return generated::render16(data); });
+
+  // テスト9: セクションフィルタ（take_last が要素数を超えるケースのアンダーフロー防止）
+  check("section filter take_last overflow", "{{#items | take_last(100)}}{{name}};{{/items}}", d,
+    [](auto const& data) { return generated::render17(data); });
 
   // バッファ再利用版のテスト
   check_into("into simple", "Hello {{name}}, age={{age}}", d,

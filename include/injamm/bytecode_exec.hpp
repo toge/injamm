@@ -16,6 +16,16 @@
 #define INJAMM_FAST_PATH 1
 #endif
 
+// handle_* は computed goto ラベルから呼ばれる。execute_impl が巨大なため GCC の
+// サイズベースインライナがスキップし、呼び出しコストがホットパスに乗る（計測で
+// section_loop が ~20% 劣化）。always_inline で強制インライン化し、直書きラベルと
+// 同等のコードにする。MSVC 等未対応コンパイラでは空マクロに退化する。
+#if defined(__GNUC__) || defined(__clang__)
+#define INJAMM_ALWAYS_INLINE [[gnu::always_inline]]
+#else
+#define INJAMM_ALWAYS_INLINE
+#endif
+
 #include "../injamm.hpp"
 #include "bytecode.hpp"
 #include "enum_io.hpp"
@@ -1092,13 +1102,13 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
 
   // -- handler functions (shared by both dispatch paths) --
 
-  static std::expected<void, error_ctx> handle_emit_literal(bc_executor& ex, std::size_t& pc, std::string&) {
+  INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_emit_literal(bc_executor& ex, std::size_t& pc, std::string&) {
     ex.out_.append(ex.bc_.literals[ex.bc_.instructions[pc].operand]);
     ++pc;
     return {};
   }
 
-  static std::expected<void, error_ctx> handle_emit_var(bc_executor& ex, std::size_t& pc, std::string&) {
+  INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_emit_var(bc_executor& ex, std::size_t& pc, std::string&) {
     bool raw = ex.bc_.instructions[pc].op == bc_opcode::emit_var_raw;
     auto const& ref = ex.bc_.var_refs[ex.bc_.instructions[pc].operand];
     if (ref.is_loop_parent && resolve_loop_parent_var(ex, ref.special, raw)) { ++pc; return {}; }
@@ -1116,7 +1126,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
     return {};
   }
 
-  static std::expected<void, error_ctx> handle_emit_litvar(bc_executor& ex, std::size_t& pc, std::string&) {
+  INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_emit_litvar(bc_executor& ex, std::size_t& pc, std::string&) {
     bool raw = ex.bc_.instructions[pc].op == bc_opcode::emit_litvar_raw;
     ex.out_.append(ex.bc_.literals[ex.bc_.instructions[pc].operand]);
     auto const& ref = ex.bc_.var_refs[ex.bc_.instructions[pc].operand2];
@@ -1135,7 +1145,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
     return {};
   }
 
-  static std::expected<void, error_ctx> handle_emit_at_root(bc_executor& ex, std::size_t& pc, std::string&) {
+  INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_emit_at_root(bc_executor& ex, std::size_t& pc, std::string&) {
     if constexpr (serializable_v<RootT>) {
       serialize_value(ex.out_, ex.root_value_);
     }
@@ -1143,7 +1153,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
     return {};
   }
 
-  static std::expected<void, error_ctx> handle_emit_at_root_field(bc_executor& ex, std::size_t& pc, std::string&) {
+  INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_emit_at_root_field(bc_executor& ex, std::size_t& pc, std::string&) {
     bool raw = ex.bc_.instructions[pc].op == bc_opcode::emit_at_root_field_raw;
     auto const& ref = ex.bc_.var_refs[ex.bc_.instructions[pc].operand];
     auto r = for_each_field_ref(ex.root_value_, ref,[&](auto const& field) { ex.emit_var_value(field, raw); });
@@ -1152,7 +1162,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
     return {};
   }
 
-  static std::expected<void, error_ctx> handle_emit_this(bc_executor& ex, std::size_t& pc, std::string&) {
+  INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_emit_this(bc_executor& ex, std::size_t& pc, std::string&) {
     if constexpr (std::same_as<T, std::string> || std::same_as<T, std::string_view> || char_pointer_v<T>) {
       html_escape_into(ex.out_, to_sv(ex.value_));
     } else {
@@ -1170,7 +1180,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
     return {};
   }
 
-  static std::expected<void, error_ctx> handle_emit_var_size(bc_executor& ex, std::size_t& pc, std::string&) {
+  INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_emit_var_size(bc_executor& ex, std::size_t& pc, std::string&) {
     auto const& ref = ex.bc_.var_refs[ex.bc_.instructions[pc].operand];
     auto r = for_each_field_ref(ex.value_, ref,[&](auto const& field) {
       using FT = std::remove_cvref_t<decltype(field)>;
@@ -1197,19 +1207,19 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
     return {};
   }
 
-  static std::expected<void, error_ctx> handle_emit_break(bc_executor& ex, std::size_t& pc, std::string&) {
+  INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_emit_break(bc_executor& ex, std::size_t& pc, std::string&) {
     if (ex.loop_) ex.loop_->break_flag = true;
     pc = SIZE_MAX;
     return {};
   }
 
-  static std::expected<void, error_ctx> handle_emit_continue(bc_executor& ex, std::size_t& pc, std::string&) {
+  INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_emit_continue(bc_executor& ex, std::size_t& pc, std::string&) {
     if (ex.loop_) ex.loop_->continue_flag = true;
     pc = SIZE_MAX;
     return {};
   }
 
-  static std::expected<void, error_ctx> handle_emit_at_index(bc_executor& ex, std::size_t& pc, std::string&) {
+  INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_emit_at_index(bc_executor& ex, std::size_t& pc, std::string&) {
     if (ex.loop_) {
       std::array<char, 16> buf;
       auto [ptr, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), ex.loop_->index);
@@ -1219,7 +1229,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
     return {};
   }
 
-  static std::expected<void, error_ctx> handle_emit_at_index1(bc_executor& ex, std::size_t& pc, std::string&) {
+  INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_emit_at_index1(bc_executor& ex, std::size_t& pc, std::string&) {
     if (ex.loop_) {
       std::array<char, 16> buf;
       auto [ptr, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), ex.loop_->index + 1);
@@ -1229,7 +1239,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
     return {};
   }
 
-  static std::expected<void, error_ctx> handle_emit_at_size(bc_executor& ex, std::size_t& pc, std::string&) {
+  INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_emit_at_size(bc_executor& ex, std::size_t& pc, std::string&) {
     if (ex.loop_) {
       std::array<char, 16> buf;
       auto [ptr, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), ex.loop_->count);
@@ -1239,19 +1249,19 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
     return {};
   }
 
-  static std::expected<void, error_ctx> handle_emit_at_first(bc_executor& ex, std::size_t& pc, std::string&) {
+  INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_emit_at_first(bc_executor& ex, std::size_t& pc, std::string&) {
     if (ex.loop_ && ex.loop_->index == 0) { ex.out_.append("true"); } else { ex.out_.append("false"); }
     ++pc;
     return {};
   }
 
-  static std::expected<void, error_ctx> handle_emit_at_last(bc_executor& ex, std::size_t& pc, std::string&) {
+  INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_emit_at_last(bc_executor& ex, std::size_t& pc, std::string&) {
     if (ex.loop_ && ex.loop_->index + 1 == ex.loop_->count) { ex.out_.append("true"); } else { ex.out_.append("false"); }
     ++pc;
     return {};
   }
 
-  static std::expected<void, error_ctx> handle_emit_at_key(bc_executor& ex, std::size_t& pc, std::string&) {
+  INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_emit_at_key(bc_executor& ex, std::size_t& pc, std::string&) {
     if (ex.loop_) {
       if (!ex.loop_->key.empty()) {
         ex.out_.append(ex.loop_->key);
@@ -1266,7 +1276,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
   }
 
   /** @brief 汎用文字列フィルタ（operand2 = string_filter 種別） */
-  static std::expected<void, error_ctx> handle_filter_string(bc_executor& ex, std::size_t& pc, std::string& filtered) {
+  INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_filter_string(bc_executor& ex, std::size_t& pc, std::string& filtered) {
     auto const& instr = ex.bc_.instructions[pc];
     auto        kind  = static_cast<string_filter>(instr.operand2);
     auto        arg   = static_cast<int>(instr.operand);
@@ -1285,7 +1295,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
     return {};
   }
 
-  static std::expected<void, error_ctx> handle_filter_int(bc_executor& ex, std::size_t& pc, std::string& filtered) {
+  INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_filter_int(bc_executor& ex, std::size_t& pc, std::string& filtered) {
     auto const& instr = ex.bc_.instructions[pc];
     auto        kind  = static_cast<int_filter>(instr.operand2);
     if (auto r = apply_int_filter(filtered, {kind, static_cast<int>(instr.operand)}); !r)
@@ -1294,7 +1304,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
     return {};
   }
 
-  static std::expected<void, error_ctx> handle_filter_float(bc_executor& ex, std::size_t& pc, std::string& filtered) {
+  INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_filter_float(bc_executor& ex, std::size_t& pc, std::string& filtered) {
     auto const& instr = ex.bc_.instructions[pc];
     auto        kind  = static_cast<float_filter>(instr.operand2);
     apply_float_filter(filtered, {kind, static_cast<int>(instr.operand)});
@@ -1313,36 +1323,36 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
     }
   }
 
-  static std::expected<void, error_ctx> handle_resolve_filtered(bc_executor& ex, std::size_t& pc, std::string& filtered) {
+  INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_resolve_filtered(bc_executor& ex, std::size_t& pc, std::string& filtered) {
     return do_resolve_filtered(ex, pc, filtered);
   }
 
-  static std::expected<void, error_ctx> handle_emit_filtered(bc_executor& ex, std::size_t& pc, std::string& filtered) {
+  INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_emit_filtered(bc_executor& ex, std::size_t& pc, std::string& filtered) {
     bool raw = ex.bc_.instructions[pc].op == bc_opcode::emit_filtered_raw;
     if (raw) { ex.out_.append(filtered); } else { html_escape_into(ex.out_, std::string_view{filtered}); }
     ++pc;
     return {};
   }
 
-  static std::expected<void, error_ctx> handle_emit_end(bc_executor&, std::size_t& pc, std::string&) {
+  INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_emit_end(bc_executor&, std::size_t& pc, std::string&) {
     ++pc;
     return {};
   }
 
-  static std::expected<void, error_ctx> handle_emit_halt(bc_executor&, std::size_t& pc, std::string&) {
+  INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_emit_halt(bc_executor&, std::size_t& pc, std::string&) {
     ++pc;
     return {};
   }
 
-  static std::expected<void, error_ctx> handle_emit_section(bc_executor& ex, std::size_t& pc, std::string&) {
+  INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_emit_section(bc_executor& ex, std::size_t& pc, std::string&) {
     return do_section(ex, pc);
   }
 
-  static std::expected<void, error_ctx> handle_emit_inverted(bc_executor& ex, std::size_t& pc, std::string&) {
+  INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_emit_inverted(bc_executor& ex, std::size_t& pc, std::string&) {
     return do_inverted(ex, pc);
   }
 
-  static std::expected<void, error_ctx> handle_emit_if(bc_executor& ex, std::size_t& pc, std::string&) {
+  INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_emit_if(bc_executor& ex, std::size_t& pc, std::string&) {
     auto const& instr = ex.bc_.instructions[pc];
     auto const& ref   = ex.bc_.var_refs[instr.operand2];
     bool cond = eval_var_truthy(ex, ref);
@@ -1363,7 +1373,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
     }
   }
 
-  static std::expected<void, error_ctx> handle_emit_if_cmp(bc_executor& ex, std::size_t& pc, std::string&) {
+  INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_emit_if_cmp(bc_executor& ex, std::size_t& pc, std::string&) {
     auto const& instr = ex.bc_.instructions[pc];
     auto const& ref   = ex.bc_.var_refs[instr.operand2];
     int rhs = ref.int_filters.empty() ? 0 : ref.int_filters[0].arg;
@@ -1407,7 +1417,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
     return {};
   }
 
-  static std::expected<void, error_ctx> handle_emit_if_logic(bc_executor& ex, std::size_t& pc, std::string&) {
+  INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_emit_if_logic(bc_executor& ex, std::size_t& pc, std::string&) {
     auto const& instr = ex.bc_.instructions[pc];
     auto const& lhs_ref = ex.bc_.var_refs[instr.operand2];
     bool cond = false;
@@ -1423,12 +1433,12 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
     return {};
   }
 
-  static std::expected<void, error_ctx> handle_emit_else(bc_executor& ex, std::size_t& pc, std::string&) {
+  INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_emit_else(bc_executor& ex, std::size_t& pc, std::string&) {
     pc = ex.bc_.instructions[pc].operand;
     return {};
   }
 
-  static std::expected<void, error_ctx> handle_emit_endif(bc_executor&, std::size_t& pc, std::string&) {
+  INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_emit_endif(bc_executor&, std::size_t& pc, std::string&) {
     ++pc;
     return {};
   }
@@ -1473,7 +1483,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
     return {};
   }
 
-  static std::expected<void, error_ctx> handle_emit_if_filtered(bc_executor& ex, std::size_t& pc, std::string& filtered) {
+  INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_emit_if_filtered(bc_executor& ex, std::size_t& pc, std::string& filtered) {
     auto const& instr = ex.bc_.instructions[pc];
     bool cond = !filtered.empty() && filtered != "false" && filtered != "0";
     if (!cond) { pc = instr.operand; } else { ++pc; }
@@ -1617,518 +1627,95 @@ public:
     goto* dispatch_table[_op];                                             \
   } while (0)
 
+// ponytail: 各ラベルの本体を handle_* 関数（switch フォールバックと共用）に委譲する。
+// 間接分岐の goto* は DISPATCH に残るため computed goto の恩恵は保持され、本体は
+// インライン展開（同一 TU の static メンバ）により直書きラベルと同等のコードになる。
+#define HANDLE(fn)                                                         \
+  do {                                                                     \
+    if (auto _r = fn(*this, pc, filtered_value_); !_r)                     \
+      return _r;                                                           \
+  } while (0)
+
     if (pc >= end)
       goto L_halt;
     DISPATCH();
 
-  /** @brief リテラル文字列を出力に追記する */
-  L_emit_literal: {
-    out_.append(bc_.literals[bc_.instructions[pc].operand]);
-    ++pc;
-    DISPATCH();
-  }
+  L_emit_literal: { HANDLE(handle_emit_literal); DISPATCH(); }
 
-  /** @brief 変数の値を出力する（raw / escaped） */
   L_emit_var:
-  L_emit_var_raw: {
-    auto const& ref = bc_.var_refs[bc_.instructions[pc].operand];
-    bool        raw = (bc_.instructions[pc].op == bc_opcode::emit_var_raw);
-    if (ref.is_loop_parent && resolve_loop_parent_var(*this, ref.special, raw)) { ++pc; DISPATCH(); }
-    if (ref.binding_first && try_resolve_loop_binding(*this, ref, raw)) { ++pc; DISPATCH(); }
-    bool        found = false;
-    auto        r = for_each_field_ref(value_, ref,[&](auto const& field) { found = true; emit_var_value(field, raw); });
-    if (!r && r.error().ec != error_code::unknown_key) return r;
-    if (found) { ++pc; DISPATCH(); }
-    if (try_resolve_loop_binding(*this, ref, raw)) { ++pc; DISPATCH(); }
-    if (!r) return r;
-    ++pc;
-    DISPATCH();
-  }
+  L_emit_var_raw: { HANDLE(handle_emit_var); DISPATCH(); }
 
-  /**
-   * @brief セクションブロックの開始
-   * @details 配列の場合はループして各要素を描画、bool の場合は真ならボディを描画。
-   *          ループ時は bc_loop_state を生成して子 executor に渡す。
-   */
-  L_emit_section: {
-    if (auto r = do_section(*this, pc); !r) return r;
-    DISPATCH();
-  }
+  L_emit_section: { HANDLE(handle_emit_section); DISPATCH(); }
 
-  /** @brief 実行終端（通常到達しない） */
-  L_emit_end: { ++pc; DISPATCH(); }
+  L_emit_end: { HANDLE(handle_emit_end); DISPATCH(); }
 
-  /**
-   * @brief 逆セクションの開始
-   * @details 配列が空または bool が偽の場合にボディを描画する。
-   *          条件が成立しなければ operand の位置（endif）にジャンプする。
-   */
-  L_emit_inverted: {
-    if (auto r = do_inverted(*this, pc); !r) return r;
-    DISPATCH();
-  }
+  L_emit_inverted: { HANDLE(handle_emit_inverted); DISPATCH(); }
 
-  /** @brief ループの @index を数値として出力する */
-  L_emit_at_index: {
-    if (loop_) {
-      std::array<char, 16> buf;
-      auto [ptr, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), loop_->index);
-      if (ec == std::errc{}) {
-        out_.append(buf.data(), static_cast<std::size_t>(ptr - buf.data()));
-      }
-    }
-    ++pc;
-    DISPATCH();
-  }
+  L_emit_at_index: { HANDLE(handle_emit_at_index); DISPATCH(); }
 
-  /** @brief ループの @index1 を 1 始まりの数値として出力する */
-  L_emit_at_index1: {
-    if (loop_) {
-      std::array<char, 16> buf;
-      auto [ptr, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), loop_->index + 1);
-      if (ec == std::errc{}) {
-        out_.append(buf.data(), static_cast<std::size_t>(ptr - buf.data()));
-      }
-    }
-    ++pc;
-    DISPATCH();
-  }
+  L_emit_at_index1: { HANDLE(handle_emit_at_index1); DISPATCH(); }
 
-  /** @brief ループの @size を総要素数として出力する */
-  L_emit_at_size: {
-    if (loop_) {
-      std::array<char, 16> buf;
-      auto [ptr, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), loop_->count);
-      if (ec == std::errc{}) {
-        out_.append(buf.data(), static_cast<std::size_t>(ptr - buf.data()));
-      }
-    }
-    ++pc;
-    DISPATCH();
-  }
+  L_emit_at_size: { HANDLE(handle_emit_at_size); DISPATCH(); }
 
-  /** @brief 変数の要素数を出力する ({{field.size}}) */
-  L_emit_var_size: {
-    auto const& ref = bc_.var_refs[bc_.instructions[pc].operand];
-    auto r = for_each_field_ref(value_, ref,[&](auto const& field) {
-      using FT = std::remove_cvref_t<decltype(field)>;
-      std::size_t sz = 0;
-      if constexpr (ct_is_vector_like<FT>) {
-        sz = field.size();
-      } else if constexpr (ct_is_map_like<FT>) {
-        sz = field.size();
-      } else if constexpr (ct_is_set_like<FT>) {
-        sz = field.size();
-      } else if constexpr (std::same_as<FT, std::string> || std::same_as<FT, std::string_view> || char_pointer_v<FT>) {
-        sz = to_sv(field).size();
-      }
-      std::array<char, 16> buf;
-      auto [ptr, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), sz);
-      if (ec == std::errc{}) {
-        out_.append(buf.data(), static_cast<std::size_t>(ptr - buf.data()));
-      }
-     });
-     if (!r) return r;
-     ++pc;
-     DISPATCH();
-   }
+  L_emit_var_size: { HANDLE(handle_emit_var_size); DISPATCH(); }
 
+  L_emit_at_first: { HANDLE(handle_emit_at_first); DISPATCH(); }
 
-  /** @brief ループ先頭なら "true" を出力する */
-  L_emit_at_first: {
-    if (loop_ && loop_->index == 0) {
-      out_.append("true");
-    } else {
-      out_.append("false");
-    }
-    ++pc;
-    DISPATCH();
-  }
+  L_emit_at_last: { HANDLE(handle_emit_at_last); DISPATCH(); }
 
-  /** @brief ループ末尾なら "true" を出力する */
-  L_emit_at_last: {
-    if (loop_ && loop_->index + 1 == loop_->count) {
-      out_.append("true");
-    } else {
-      out_.append("false");
-    }
-    ++pc;
-    DISPATCH();
-  }
+  L_emit_if: { HANDLE(handle_emit_if); DISPATCH(); }
 
-  /**
-   * @brief if 条件分岐
-   * @details @last/@first/@index の特殊変数または通常フィールドを評価し、
-   *          条件が偽なら operand（else または endif の位置）にジャンプする。
-   */
-  L_emit_if: {
-    auto const& instr = bc_.instructions[pc];
-    auto const& ref   = bc_.var_refs[instr.operand2];
-    /** special kind による整数比較評価（this / loop.* / loop.parent.* / 通常フィールド） */
-    bool cond = eval_var_truthy(*this, ref);
-    if (!cond) {
-      /** 条件偽: operand のジャンプ先（else の次 or endif の次）に移動 */
-      pc = instr.operand;
-    } else {
-      /** 条件真: 次の命令（then ブロック）に進む */
-      ++pc;
-    }
-    DISPATCH();
-  }
+  L_emit_if_cmp: { HANDLE(handle_emit_if_cmp); DISPATCH(); }
 
-  /** @brief if (var == int_literal): 整数フィールドがオペランド値と等しいとき真 */
-  L_emit_if_cmp: {
-    auto const& instr = bc_.instructions[pc];
-    auto const& ref   = bc_.var_refs[instr.operand2];
-    int rhs = 0;
-    if (!ref.int_filters.empty()) {
-      rhs = ref.int_filters[0].arg;
-    }
-    bool cond = false;
-    auto do_cmp = [&](auto const& field) {
-      using FT = std::remove_cvref_t<decltype(field)>;
-      if constexpr (std::is_arithmetic_v<FT>) {
-        cond = compare_ints(instr.op, static_cast<long long>(field), static_cast<long long>(rhs));
-      } else if constexpr (std::is_enum_v<FT>) {
-        /** enum LHS: underlying 整数に変換して算術比較と同じロジックで評価 */
-        cond = compare_ints(instr.op, static_cast<long long>(static_cast<std::underlying_type_t<FT>>(field)), static_cast<long long>(rhs));
-      } else if constexpr (std::same_as<FT, std::string> || std::same_as<FT, std::string_view> || char_pointer_v<FT>) {
-        if (ref.compare_rhs_kind == compare_operand_kind::string_literal) {
-          auto sv = to_sv(field);
-          switch (instr.op) {
-          case bc_opcode::emit_if_eq: cond = (sv == ref.compare_rhs_text); break;
-          case bc_opcode::emit_if_ne: cond = (sv != ref.compare_rhs_text); break;
-          default: break;
-          }
-        }
-      }
-    };
-    if (ref.special == special_var_kind::this_ && loop_) {
-      /** ループ要素自身との比較: ループボディ executor の value_ が現在要素 */
-      do_cmp(value_);
-    } else if (ref.special != special_var_kind::none && loop_) {
-      /** loop.index / loop.index1 / loop.size の数値比較（他の loop.* は常に偽） */
-      long long lv = 0;
-      bool      ok = true;
-      switch (ref.special) {
-      case special_var_kind::loop_index:  lv = loop_->index; break;
-      case special_var_kind::loop_index1: lv = loop_->index + 1; break;
-      case special_var_kind::loop_size:   lv = loop_->count; break;
-      default: ok = false; break;
-      }
-      if (ok) {
-        cond = compare_ints(instr.op, lv, static_cast<long long>(rhs));
-      }
-    } else {
-      (void)for_each_field_ref(value_, ref,do_cmp);
-    }
-    if (!cond) {
-      pc = instr.operand;
-    } else {
-      ++pc;
-    }
-    DISPATCH();
-  }
+  L_emit_if_not: { HANDLE(handle_emit_if_logic); DISPATCH(); }
 
-  /** @brief if (!a): 単項否定 */
-  L_emit_if_not: {
-    auto const& instr = bc_.instructions[pc];
-    auto const& ref   = bc_.var_refs[instr.operand2];
-    bool result = eval_var_truthy(*this, ref);
-    if (!result) {
-      ++pc;
-    } else {
-      pc = instr.operand;
-    }
-    DISPATCH();
-  }
+  L_emit_if_logic: { HANDLE(handle_emit_if_logic); DISPATCH(); }
 
-  /** @brief if (a || b) / if (a && b): 二項論理演算 */
-  L_emit_if_logic: {
-    auto const& instr  = bc_.instructions[pc];
-    auto const& lhs_ref = bc_.var_refs[instr.operand2];
-    bool lhs = eval_var_truthy(*this, lhs_ref);
-    auto const& rhs_ref = bc_.var_refs[instr.operand3];
-    bool rhs = eval_var_truthy(*this, rhs_ref);
-    bool cond = (instr.op == bc_opcode::emit_if_or) ? (lhs || rhs) : (lhs && rhs);
-    if (!cond) {
-      pc = instr.operand;
-    } else {
-      ++pc;
-    }
-    DISPATCH();
-  }
+  L_emit_else: { HANDLE(handle_emit_else); DISPATCH(); }
 
-  /** @brief else ブランチ: operand に設定されたジャンプ先に移動する */
-  L_emit_else: {
-    auto const& instr = bc_.instructions[pc];
-    pc                = instr.operand;
-    DISPATCH();
-  }
+  L_emit_endif: { HANDLE(handle_emit_endif); DISPATCH(); }
 
-  /** @brief endif: if ブロック終端、次の命令に進む */
-  L_emit_endif: {
-    ++pc;
-    DISPATCH();
-  }
+  L_emit_at_section: { HANDLE(handle_emit_at_section); DISPATCH(); }
 
-  /** @brief @var セクション: @index/@first/@last に基づく条件付き描画 */
-  L_emit_at_section: {
-    auto const& instr = bc_.instructions[pc];
-    bool        cond  = false;
-    if (loop_) {
-      auto kind = instr.operand2;
-      if (kind == 0) {
-        cond = loop_->index > 0;
-      } else if (kind == 1) {
-        cond = loop_->index == 0;
-      } else if (kind == 2) {
-        cond = loop_->index + 1 == loop_->count;
-      }
-    }
-    if (cond) {
-      auto body_end = instr.operand;
-      auto r        = execute_impl(pc + 1, body_end - 1);
-      if (!r)
-        return r;
-      pc = body_end;
-    } else {
-      pc = instr.operand;
-    }
-    DISPATCH();
-  }
+  L_emit_at_inverted: { HANDLE(handle_emit_at_inverted); DISPATCH(); }
 
-  /**
-   * @brief @var 逆セクション
-   * @details @index が 0、または @first/@last が偽のときにボディを描画する。
-   *          operand2 で @index(0)/@first(1)/@last(2) を区別する。
-   */
-  L_emit_at_inverted: {
-    auto const& instr = bc_.instructions[pc];
-    bool        cond  = false;
-    if (loop_) {
-      auto kind = instr.operand2;
-      if (kind == 0) {
-        /** @index: index != 0 のとき逆セクションをスキップ（index == 0 で描画） */
-        cond = loop_->index != 0;
-      } else if (kind == 1) {
-        /** @first: 先頭要素の場合は逆セクションをスキップ */
-        cond = loop_->index == 0;
-      } else if (kind == 2) {
-        /** @last: 末尾要素の場合は逆セクションをスキップ */
-        cond = loop_->index + 1 == loop_->count;
-      }
-    }
-    if (cond) {
-      /** 条件成立: ボディをスキップして operand にジャンプ */
-      pc = instr.operand;
-    } else {
-      /** 条件不成立: ボディを描画 */
-      auto body_end = instr.operand;
-      auto r        = execute_impl(pc + 1, body_end - 1);
-      if (!r)
-        return r;
-      pc = body_end;
-    }
-    DISPATCH();
-  }
-
-  /**
-   * @brief 融合命令: リテラル + 変数（最適化）
-   * @details パーサーが静的に隣接するリテラルと変数を検出した際に
-   *          一命令に統合する。出力バッファへの追記回数を削減できる。
-   */
   L_emit_litvar:
-  L_emit_litvar_raw: {
-    auto const& instr = bc_.instructions[pc];
-    /** リテラル部分を出力 */
-             out_.append(bc_.literals[instr.operand]);
-    /** 変数部分を出力 */
-    auto const& ref = bc_.var_refs[instr.operand2];
-    bool        raw = (instr.op == bc_opcode::emit_litvar_raw);
-    if (ref.is_loop_parent && resolve_loop_parent_var(*this, ref.special, raw)) { ++pc; DISPATCH(); }
-    if (ref.binding_first && try_resolve_loop_binding(*this, ref, raw)) { ++pc; DISPATCH(); }
-    bool        found = false;
-    auto        r = for_each_field_ref(value_, ref,[&](auto const& field) { found = true; emit_var_value(field, raw); });
-    if (!r && r.error().ec != error_code::unknown_key) return r;
-    if (found) { ++pc; DISPATCH(); }
-    if (try_resolve_loop_binding(*this, ref, raw)) { ++pc; DISPATCH(); }
-    if (!r) return r;
-    ++pc;
-    DISPATCH();
-  }
+  L_emit_litvar_raw: { HANDLE(handle_emit_litvar); DISPATCH(); }
 
-  /** @brief @root: ルートコンテキスト全体をシリアライズして出力する */
-  L_emit_at_root: {
-    if constexpr (serializable_v<RootT>) {
-      serialize_value(out_, root_value_);
-    }
-    ++pc;
-    DISPATCH();
-  }
+  L_emit_at_root: { HANDLE(handle_emit_at_root); DISPATCH(); }
 
-  /** @brief @root.field: ルートコンテキストのフィールドを解決して出力する */
   L_emit_at_root_field:
-  L_emit_at_root_field_raw: {
-    auto const& ref = bc_.var_refs[bc_.instructions[pc].operand];
-    bool        raw = (bc_.instructions[pc].op == bc_opcode::emit_at_root_field_raw);
-    auto        r   = for_each_field_ref(root_value_, ref,[&](auto const& field) { emit_var_value(field, raw); });
-    if (!r)
-      return r;
-    ++pc;
-    DISPATCH();
-  }
+  L_emit_at_root_field_raw: { HANDLE(handle_emit_at_root_field); DISPATCH(); }
 
-  /** @brief @key: ループ内の現在要素キー名を出力する */
-  L_emit_at_key: {
-    if (loop_) {
-      if (!loop_->key.empty()) {
-        out_.append(loop_->key);
-      } else {
-        /** キーが空の場合（配列反復など）はインデックスを文字列として出力 */
-        std::array<char, 16> buf;
-        auto [ptr, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), loop_->index);
-        if (ec == std::errc{}) {
-          out_.append(buf.data(), static_cast<std::size_t>(ptr - buf.data()));
-        }
-      }
-    }
-    ++pc;
-    DISPATCH();
-  }
+  L_emit_at_key: { HANDLE(handle_emit_at_key); DISPATCH(); }
 
-  /** @brief {{this}}: 現在のコンテキスト自体を出力する */
-  L_emit_this: {
-    if constexpr (std::same_as<T, std::string> || std::same_as<T, std::string_view> || char_pointer_v<T>) {
-      html_escape_into(out_, to_sv(value_));
-    } else {
-      this->emit_this_scratch_.clear();
-      if constexpr (serializable_v<T>) {
-        serialize_value(this->emit_this_scratch_, value_);
-      } else if constexpr (ct_glz_reflectable<T> && glz::write_supported<T, glz::JSON>) {
-        if (auto ec = glz::write_json(value_, this->emit_this_scratch_)) {
-          return std::unexpected(error_ctx{.position = pc, .ec = error_code::syntax_error});
-        }
-      }
-      html_escape_into(out_, this->emit_this_scratch_);
-    }
-    ++pc;
-    DISPATCH();
-  }
+  L_emit_this: { HANDLE(handle_emit_this); DISPATCH(); }
 
-  /** @brief フィルタ付き変数解決（フィルタを一括適用し個別命令をスキップ） */
-  L_resolve_filtered: {
-    if (auto r = do_resolve_filtered(*this, pc, filtered_value_); !r) return r;
-    DISPATCH();
-  }
+  L_resolve_filtered: { HANDLE(handle_resolve_filtered); DISPATCH(); }
 
-  /** @brief 汎用文字列フィルタ（operand=arg1, operand2=string_filter種別, operand3=文字列リテラル開始 or UINT32_MAX） */
-  L_filter_string: {
-    auto const& instr = bc_.instructions[pc];
-    auto        kind  = static_cast<string_filter>(instr.operand2);
-    auto        arg   = static_cast<int>(instr.operand);
-    // 文字列引数（replace / pluralize は old,new の2連続リテラル）
-    string_filter_entry entry{kind, arg, 0};
-    if (kind == string_filter::substr)
-      entry.arg2 = static_cast<int>(instr.operand3);
-    if (instr.operand3 != UINT32_MAX) {
-      auto lit_idx = instr.operand3;
-      if (lit_idx < bc_.literals.size())
-        entry.str_arg1 = bc_.literals[lit_idx];
-      if ((kind == string_filter::replace || kind == string_filter::pluralize) && lit_idx + 1 < bc_.literals.size())
-        entry.str_arg2 = bc_.literals[lit_idx + 1];
-    }
-    apply_string_filter(filtered_value_, entry);
-    ++pc;
-    DISPATCH();
-  }
+  L_filter_string: { HANDLE(handle_filter_string); DISPATCH(); }
 
-  /** @brief 汎用整数フィルタ（operand=arg, operand2=int_filter種別） */
-  L_filter_int: {
-    auto const& instr = bc_.instructions[pc];
-    auto        kind  = static_cast<int_filter>(instr.operand2);
-    if (auto err = apply_int_filter(filtered_value_, {kind, static_cast<int>(instr.operand)}); !err) {
-      return std::unexpected(err.error());
-    }
-    ++pc;
-    DISPATCH();
-  }
+  L_filter_int: { HANDLE(handle_filter_int); DISPATCH(); }
 
-  /** @brief 汎用実数フィルタ（operand=arg, operand2=float_filter種別） */
-  L_filter_float: {
-    auto const& instr = bc_.instructions[pc];
-    auto        kind  = static_cast<float_filter>(instr.operand2);
-    apply_float_filter(filtered_value_, {kind, static_cast<int>(instr.operand)});
-    ++pc;
-    DISPATCH();
-  }
+  L_filter_float: { HANDLE(handle_filter_float); DISPATCH(); }
 
-  /** @brief フィルタ後の文字列出力（エスケープあり） */
-  L_emit_filtered: {
-    html_escape_into(out_, std::string_view{filtered_value_});
-    ++pc;
-    DISPATCH();
-  }
+  L_emit_filtered: { HANDLE(handle_emit_filtered); DISPATCH(); }
 
-  /** @brief フィルタ後の文字列出力（生出力） */
-  L_emit_filtered_raw: {
-    out_.append(filtered_value_);
-    ++pc;
-    DISPATCH();
-  }
+  L_emit_filtered_raw: { HANDLE(handle_emit_filtered); DISPATCH(); }
 
-  /** @brief フィルタ適用済み値での if 分岐 */
-  L_emit_if_filtered: {
-    auto const& instr = bc_.instructions[pc];
-    bool        cond  = !filtered_value_.empty() && filtered_value_ != "false" && filtered_value_ != "0";
-    if (!cond) {
-      pc = instr.operand;
-    } else {
-      ++pc;
-    }
-    DISPATCH();
-  }
+  L_emit_if_filtered: { HANDLE(handle_emit_if_filtered); DISPATCH(); }
 
-  /** @brief ループ脱出: break_flag をセットして子 executor を終了 */
-  L_emit_break: {
-    if (loop_) {
-      loop_->break_flag = true;
-    }
-    return {};
-  }
+  L_emit_break: { HANDLE(handle_emit_break); return {}; }
 
-  /** @brief 次のイテレーションへスキップ: continue_flag をセットして子 executor を終了 */
-  L_emit_continue: {
-    if (loop_) {
-      loop_->continue_flag = true;
-    }
-    return {};
-  }
+  L_emit_continue: { HANDLE(handle_emit_continue); return {}; }
 
-  /** @brief partial呼び出し: プリコンパイル済みpartialバイトコードをサブexecutorで実行 */
-  L_call_partial: {
-    auto const& instr = bc_.instructions[pc];
-    if (instr.operand >= bc_.partial_entries.size()) {
-      return std::unexpected(error_ctx{.position = pc, .ec = error_code::syntax_error});
-    }
-    auto const& entry = bc_.partial_entries[instr.operand];
-    if (!entry.bc) {
-      return std::unexpected(error_ctx{.position = pc, .ec = error_code::syntax_error});
-    }
-    {
-      bc_executor<T, RootT> child_exec(*entry.bc, value_, root_value_, loop_, out_);
-      auto r = child_exec.execute();
-      if (!r)
-        return r;
-    }
-    ++pc;
-    DISPATCH();
-  }
+  L_call_partial: { HANDLE(handle_call_partial); DISPATCH(); }
 
   /** @brief プログラム終端 */
   L_halt: { return {}; }
 
 #undef DISPATCH
+#undef HANDLE
 
 #else
     /**
