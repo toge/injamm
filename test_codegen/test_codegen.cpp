@@ -153,6 +153,41 @@ void check_into(std::string_view name, std::string_view tmpl_str, auto const& da
   }
 }
 
+void check_sink(std::string_view name, std::string_view tmpl_str, auto const& data, auto gen_func) {
+  ++test_count;
+
+  injamm::engine<TestData> eng{std::string(tmpl_str)};
+  auto expected = eng.render(data);
+  if (!expected) {
+    std::cerr << "FAIL [" << name << "] injamm render failed: "
+              << expected.error().custom_error_message << "\n";
+    return;
+  }
+
+  // 生成コードを sink にストリーミング出力し、文字列版と一致することを確認する
+  std::string collected;
+  int chunks = 0;
+  injamm::callback_sink sink([&](std::string_view sv) {
+    collected.append(sv.data(), sv.size());
+    ++chunks;
+  }, 8);
+  auto result = gen_func(data, sink);
+  if (!result) {
+    std::cerr << "FAIL [" << name << "] generated render_sink failed\n";
+    return;
+  }
+  sink.flush();
+
+  if (*expected == collected) {
+    std::cout << "PASS [" << name << "] (chunks=" << chunks << ")\n";
+    ++pass_count;
+  } else {
+    std::cerr << "FAIL [" << name << "]\n";
+    std::cerr << "  expected (" << expected->size() << " bytes): [" << *expected << "]\n";
+    std::cerr << "  got      (" << collected.size() << " bytes): [" << collected << "]\n";
+  }
+}
+
 // ============================================================
 // テスト実行
 // ============================================================
@@ -227,6 +262,12 @@ int main() {
     [](auto const& data, std::string& out) { return generated::render14(data, out); });
   check_into("into struct field", "{{primary_item}}|{{& primary_item}}", d,
     [](auto const& data, std::string& out) { return generated::render15(data, out); });
+
+  // sink ストリーミング版のテスト
+  check_sink("sink simple", "Hello {{name}}, age={{age}}", d,
+    [](auto const& data, auto& sink) { return generated::render1(data, sink); });
+  check_sink("sink section+if", "Order #{{order_id}}:\n{{#if total > 1000}}[VIP]{{/if}}\n{{#items}}\n  {{name}}: ${{price}}\n{{/items}}\nTotal: ${{total}}", d,
+    [](auto const& data, auto& sink) { return generated::render5(data, sink); });
 
   std::cout << "\n=== 結果: " << pass_count << "/" << test_count << " passed ===\n";
   return (pass_count == test_count) ? 0 : 1;

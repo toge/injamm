@@ -20,61 +20,64 @@
 #endif
 
 #ifndef INJAMM_CODEGEN_DISABLE_SIMD
-inline void html_escape_append(std::string& out, std::string_view sv) {
+template <class Buffer>
+inline void html_escape_append(Buffer& out, std::string_view sv) {
   injamm::detail::html_escape_into(out, sv);
 }
 #else
-inline void html_escape_append(std::string& out, std::string_view sv) {
+template <class Buffer>
+inline void html_escape_append(Buffer& out, std::string_view sv) {
   for (char c : sv) {
     switch (c) {
-      case '&':  out += "&amp;";  break;
-      case '<':  out += "&lt;";   break;
-      case '>':  out += "&gt;";   break;
-      case '"': out += "&quot;"; break;
-      case '\'': out += "&#39;";  break;
-      default:   out += c;       break;
+      case '&':  out.append("&amp;");  break;
+      case '<':  out.append("&lt;");   break;
+      case '>':  out.append("&gt;");   break;
+      case '"': out.append("&quot;"); break;
+      case '\'': out.append("&#39;");  break;
+      default:   out.append(1, c);    break;
     }
   }
 }
 #endif
 
-template <typename N>
-inline void append_number(std::string& out, N n) {
+template <class Buffer, typename N>
+inline void append_number(Buffer& out, N n) {
   char buf[64];
   auto [ptr, ec] = std::to_chars(buf, buf + sizeof(buf), n);
-  out.append(buf, ptr);
+  out.append(buf, static_cast<std::size_t>(ptr - buf));
 }
 
 inline void filter_title(std::string& s) {
-  bool prev_space = true;
+  bool new_word = true;
   for (auto& c : s) {
-    if (prev_space && c >= 'a' && c <= 'z') c -= 32;
-    prev_space = (c == ' ');
+    if (c == ' ' || c == '\t') {
+      new_word = true;
+    } else if (new_word && c >= 'a' && c <= 'z') {
+      c -= 32;
+      new_word = false;
+    } else {
+      new_word = false;
+    }
   }
 }
 
 inline void filter_left(std::string& s, int n) {
   if (static_cast<int>(s.size()) < n)
-    s = std::string(static_cast<std::size_t>(n) - s.size(), ' ') + s;
-  else
-    s = s.substr(0, static_cast<std::size_t>(n));
+    s.insert(0, static_cast<std::size_t>(n) - s.size(), ' ');
 }
 
 inline void filter_right(std::string& s, int n) {
   if (static_cast<int>(s.size()) < n)
     s.append(static_cast<std::size_t>(n) - s.size(), ' ');
-  else
-    s = s.substr(s.size() - static_cast<std::size_t>(n));
 }
 
 inline void filter_center(std::string& s, int n) {
   if (static_cast<int>(s.size()) < n) {
-    auto total = static_cast<std::size_t>(n) - s.size();
-    auto left = total / 2;
-    auto right = total - left;
-    s = std::string(left, ' ') + s + std::string(right, ' ');
-  } else {
-    s = s.substr(0, static_cast<std::size_t>(n));
+    auto pad = static_cast<std::size_t>(n) - s.size();
+    auto left = pad / 2;
+    s.reserve(static_cast<std::size_t>(n));
+    s.insert(0, left, ' ');
+    s.append(pad - left, ' ');
   }
 }
 
@@ -123,11 +126,9 @@ inline void filter_pad(std::string& s, int n, std::string_view pad_str) {
 }
 
 inline void filter_pluralize(std::string& s, std::string_view sg, std::string_view pl) {
-  if (s == "1" || s == "1.0") {
-    if (!sg.empty()) s = std::string(sg);
-  } else {
-    if (!pl.empty()) s = std::string(pl);
-    else if (!sg.empty()) { s = std::string(sg); s += 's'; }
+  long long val = 0;
+  if (auto [p, ec] = std::from_chars(s.data(), s.data() + s.size(), val); ec == std::errc{}) {
+    s.assign((val == 1) ? sg : pl);
   }
 }
 
@@ -264,26 +265,26 @@ inline void filter_float_precision(std::string& s, int n) {
   }
 }
 
-template <typename V>
-inline void append_value(std::string& out, V const& v) {
+template <class Buffer, typename V>
+inline void append_value(Buffer& out, V const& v) {
   if constexpr (std::is_same_v<V, std::string> || std::is_same_v<V, std::string_view>) {
-    out += v;
+    out.append(v);
   } else if constexpr (std::is_same_v<V, const char*>) {
-    out += v ? v : "";
+    out.append(v ? v : "");
   } else if constexpr (std::is_same_v<V, bool>) {
-    out += v ? "true" : "false";
+    out.append(v ? "true" : "false");
   } else if constexpr (std::is_arithmetic_v<V>) {
     append_number(out, v);
   } else if constexpr (std::is_enum_v<V>) {
-    out += std::to_string(static_cast<std::underlying_type_t<V>>(v));
+    out.append(std::to_string(static_cast<std::underlying_type_t<V>>(v)));
   } else if constexpr (injamm::detail::serializable_v<V>) {
     serialize_value(out, v);
   } else if constexpr (injamm::detail::ct_glz_reflectable<V>) {
     std::string scratch;
     (void)::glz::write_json(v, scratch);
-    out += scratch;
+    out.append(scratch);
   } else {
-    out += v;
+    out.append(v);
   }
 }
 
@@ -307,14 +308,14 @@ constexpr std::size_t value_size(V const& v) {
   }
 }
 
-template <typename V>
-inline void html_escape_append_value(std::string& out, V const& v) {
+template <class Buffer, typename V>
+inline void html_escape_append_value(Buffer& out, V const& v) {
   if constexpr (std::is_same_v<V, std::string> || std::is_same_v<V, std::string_view>) {
     html_escape_append(out, v);
   } else if constexpr (std::is_same_v<V, const char*>) {
     html_escape_append(out, v ? v : "");
   } else if constexpr (std::is_same_v<V, bool>) {
-    out += v ? "true" : "false";
+    out.append(v ? "true" : "false");
   } else if constexpr (std::is_arithmetic_v<V>) {
     append_number(out, v);
   } else if constexpr (std::is_enum_v<V>) {
@@ -482,7 +483,12 @@ inline void filter_rtrim(std::string& s) {
 }
 
 inline void filter_truncate(std::string& s, int max_len) {
-  if (static_cast<int>(s.size()) > max_len) s.resize(static_cast<std::size_t>(max_len));
+  if (static_cast<int>(s.size()) > max_len && max_len >= 3) {
+    s.erase(static_cast<std::size_t>(max_len) - 3);
+    s.append("...");
+  } else if (static_cast<int>(s.size()) > max_len) {
+    s.erase(static_cast<std::size_t>(max_len));
+  }
 }
 
 inline void filter_substr(std::string& s, int pos, int len) {
@@ -491,21 +497,75 @@ inline void filter_substr(std::string& s, int pos, int len) {
   s = s.substr(static_cast<std::size_t>(pos), static_cast<std::size_t>(len));
 }
 
-inline void filter_numify(std::string& s) {
-  if (s.size() <= 3) return;
-  std::string result;
+/** @brief 数字列を右から 3 桁ごとにカンマ区切りする（numify 用） */
+inline void group_digits(std::string& out, std::string_view num) {
+  int digits = static_cast<int>(num.size());
+  int groups = (digits - 1) / 3;
+  out.resize(static_cast<std::size_t>(digits + groups), '\0');
+  int out_pos = static_cast<int>(out.size()) - 1;
   int count = 0;
-  for (int i = static_cast<int>(s.size()) - 1; i >= 0; --i) {
-    if (count == 3) { result = ',' + result; count = 0; }
-    result = s[static_cast<std::size_t>(i)] + result;
+  for (int i = digits - 1; i >= 0; --i) {
+    out[static_cast<std::size_t>(out_pos--)] = num[static_cast<std::size_t>(i)];
     ++count;
+    if (count % 3 == 0 && i > 0) out[static_cast<std::size_t>(out_pos--)] = ',';
   }
-  s = std::move(result);
 }
 
-inline void filter_zerofill(std::string& s, int width) {
-  if (static_cast<int>(s.size()) < width)
-    s = std::string(static_cast<std::size_t>(width) - s.size(), '0') + s;
+inline void filter_int_numify(std::string& s) {
+  bool has_frac = s.find('.') != std::string::npos || s.find('e') != std::string::npos || s.find('E') != std::string::npos;
+  if (has_frac) {
+    double val = 0.0;
+    if (auto [p, ec] = std::from_chars(s.data(), s.data() + s.size(), val); ec == std::errc{}) {
+      bool negative = val < 0;
+      if (negative) val = -val;
+      auto int_part = static_cast<long long>(val);
+      std::string num = std::to_string(int_part);
+      std::string grouped;
+      group_digits(grouped, num);
+      auto frac = val - static_cast<double>(int_part);
+      if (frac != 0.0) {
+        auto dot_pos = s.find('.');
+        std::size_t prec = 6;
+        if (dot_pos != std::string::npos) {
+          prec = s.size() - dot_pos - 1;
+          if (prec > 6) prec = 6;
+          if (prec == 0) prec = 1;
+        }
+        char buf[64];
+        if (auto [ptr, ec2] = std::to_chars(buf, buf + sizeof(buf), frac, std::chars_format::fixed, static_cast<int>(prec)); ec2 == std::errc{}) {
+          std::string_view frac_str(buf, static_cast<std::size_t>(ptr - buf));
+          if (frac_str.size() > 2) frac_str = frac_str.substr(1);  // "0.x" → ".x"
+          grouped += frac_str;
+        }
+      }
+      s = negative ? "-" + grouped : grouped;
+    }
+  } else {
+    long long val = 0;
+    if (auto [p, ec] = std::from_chars(s.data(), s.data() + s.size(), val); ec == std::errc{}) {
+      std::string num = std::to_string(val);
+      bool negative = !num.empty() && num[0] == '-';
+      if (negative) num.erase(0, 1);
+      std::string grouped;
+      group_digits(grouped, num);
+      s = negative ? "-" + grouped : grouped;
+    }
+  }
+}
+
+inline void filter_int_zerofill(std::string& s, int width) {
+  long long val = 0;
+  if (auto [p, ec] = std::from_chars(s.data(), s.data() + s.size(), val); ec == std::errc{}) {
+    auto digits_str = std::to_string(val);
+    bool negative = !digits_str.empty() && digits_str[0] == '-';
+    if (negative) digits_str.erase(0, 1);
+    int total = negative ? static_cast<int>(digits_str.size()) + 1 : static_cast<int>(digits_str.size());
+    if (total < width) {
+      auto padding = width - total;
+      if (negative) s = "-" + std::string(static_cast<std::size_t>(padding), '0') + digits_str;
+      else s = std::string(static_cast<std::size_t>(padding), '0') + digits_str;
+    }
+  }
 }
 
 inline void filter_repeat(std::string& s, int n) {

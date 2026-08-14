@@ -146,6 +146,17 @@ struct fixed_string {
 // ---- runtime field access concept (shared with sqlite3 ext) ----
 namespace detail {
 
+/** @brief 出力先 sink の制約。std::string も満たす（テンプレート sink 方式の中核）
+ *
+ *  escape_hatch.hpp / bytecode_exec.hpp の両方から参照されるため、全ヘッダが
+ *  必ず先にインクルードする types.hpp に置く（include 順に依存しない）。
+ */
+template <class S>
+concept output_sink = requires(S s, std::string_view sv) {
+  s.append(sv);
+  s.append(sv.data(), sv.size());
+};
+
 template <class T>
 concept runtime_field_accessible = requires(T const& t, std::string_view key) {
   { t.find(key) } -> std::same_as<std::string>;

@@ -80,13 +80,14 @@ struct bc_loop_state {
  *           computed goto（GCC）による高速ディスパッチを特徴とする。
  *          Mustache/inja サブセットの全命令を実行する。
  */
-template <class T, class RootT = T>
+template <class T, class RootT = T, class Sink = std::string>
+  requires output_sink<Sink>
 class bc_executor {
   bytecode const&      bc_;
   T const&             value_;
   RootT const&         root_value_;
   bc_loop_state const* loop_ = nullptr;
-  std::string&         out_;
+  Sink&                out_;
   std::string          emit_this_scratch_;
 
   /**
@@ -407,7 +408,8 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
    *          - カスタムstruct → serializable_v<FT> なら serialize_value、ct_glz_reflectable なら glz::write_json
    */
   /** @brief フィールド値を指定バッファに追記する（束縛リゾルバ兼用の静的版） */
-  static void emit_value_static(std::string& out, auto const& field, bool raw) {
+  template <class Buffer>
+  static void emit_value_static(Buffer& out, auto const& field, bool raw) {
     using FT = std::remove_cvref_t<decltype(field)>;
     if constexpr (std::same_as<FT, bool>) {
       if (field) {
@@ -465,7 +467,8 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
   void emit_var_value(auto const& field, bool raw) { emit_value_static(out_, field, raw); }
 
   /** @brief 数値を出力バッファに追記する共通ヘルパ */
-  static void append_number(std::string& out, std::uint32_t v) {
+  template <class Buffer>
+  static void append_number(Buffer& out, std::uint32_t v) {
     std::array<char, 16> buf;
     auto [ptr, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), v);
     if (ec == std::errc{}) out.append(buf.data(), static_cast<std::size_t>(ptr - buf.data()));
@@ -622,7 +625,16 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
       if (!lp->binding_resolve) continue;
       if (ref.key == lp->binding_name ||
           (ref.key.starts_with(lp->binding_name) && ref.key[lp->binding_name.size()] == '.')) {
-        return lp->binding_resolve(ex.out_, ref.key, raw, lp->binding_elem, lp->binding_name, ref.field_index);
+        if constexpr (std::is_same_v<Sink, std::string>) {
+          // std::string 出力は直接書き込み（scratch 経由だと余分な確保+コピーが発生する）
+          return lp->binding_resolve(ex.out_, ref.key, raw, lp->binding_elem, lp->binding_name, ref.field_index);
+        } else {
+          // 型消去リゾルバは std::string& にしか書けないため scratch 経由で sink に流す
+          std::string scratch;
+          bool ok = lp->binding_resolve(scratch, ref.key, raw, lp->binding_elem, lp->binding_name, ref.field_index);
+          if (ok) ex.out_.append(scratch);
+          return ok;
+        }
       }
     }
     return false;
@@ -697,7 +709,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
           ls.binding_elem = &elem;
           ls.binding_resolve = &resolve_binding_var<elem_t>;
           ls.binding_truthy = &eval_binding_truthy<elem_t>;
-          bc_executor<elem_t, RootT> child_exec(ex.bc_, elem, ex.root_value_, &ls, ex.out_);
+          bc_executor<elem_t, RootT, Sink> child_exec(ex.bc_, elem, ex.root_value_, &ls, ex.out_);
           auto r2 = child_exec.execute_impl(pc + 1, body_end - 1);
           if (!r2) return r2;
           if (ls.continue_flag) { ls.continue_flag = false; continue; }
@@ -710,7 +722,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
         is_falsy = !field.has_value();
         if (field.has_value()) {
           using inner_t = typename FT::value_type;
-          bc_executor<inner_t, RootT> child_exec(ex.bc_, *field, ex.root_value_, nullptr, ex.out_);
+          bc_executor<inner_t, RootT, Sink> child_exec(ex.bc_, *field, ex.root_value_, nullptr, ex.out_);
           auto r2 = child_exec.execute_impl(pc + 1, body_end - 1);
           if (!r2) return r2;
         }
@@ -731,7 +743,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
           ls.binding_elem = &v;
           ls.binding_resolve = &resolve_binding_var<val_t>;
           ls.binding_truthy = &eval_binding_truthy<val_t>;
-          bc_executor<val_t, RootT> child_exec(ex.bc_, v, ex.root_value_, &ls, ex.out_);
+          bc_executor<val_t, RootT, Sink> child_exec(ex.bc_, v, ex.root_value_, &ls, ex.out_);
           auto r2 = child_exec.execute_impl(pc + 1, body_end - 1);
           if (r2) { ++emitted; ++ls.index; }
           return r2;
@@ -774,7 +786,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
             ls.binding_elem = &elem;
             ls.binding_resolve = &resolve_binding_var<elem_t>;
             ls.binding_truthy = &eval_binding_truthy<elem_t>;
-            bc_executor<elem_t, RootT> child_exec(ex.bc_, elem, ex.root_value_, &ls, ex.out_);
+            bc_executor<elem_t, RootT, Sink> child_exec(ex.bc_, elem, ex.root_value_, &ls, ex.out_);
             auto r2 = child_exec.execute_impl(pc + 1, body_end - 1);
             if (!r2) return r2;
             if (ls.continue_flag) { ls.continue_flag = false; --emitted; continue; }
@@ -792,7 +804,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
             ls.binding_elem = &elem;
             ls.binding_resolve = &resolve_binding_var<elem_t>;
             ls.binding_truthy = &eval_binding_truthy<elem_t>;
-            bc_executor<elem_t, RootT> child_exec(ex.bc_, elem, ex.root_value_, &ls, ex.out_);
+            bc_executor<elem_t, RootT, Sink> child_exec(ex.bc_, elem, ex.root_value_, &ls, ex.out_);
             auto r2 = child_exec.execute_impl(pc + 1, body_end - 1);
             if (!r2) return r2;
             if (ls.continue_flag) { ls.continue_flag = false; continue; }
@@ -843,7 +855,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
                 ls.binding_elem = &elem;
                 ls.binding_resolve = &resolve_binding_var<elem_t>;
                 ls.binding_truthy = &eval_binding_truthy<elem_t>;
-                bc_executor<elem_t, RootT> child_exec(ex.bc_, elem, ex.root_value_, &ls, ex.out_);
+                bc_executor<elem_t, RootT, Sink> child_exec(ex.bc_, elem, ex.root_value_, &ls, ex.out_);
                 auto r2 = child_exec.execute_impl(pc + 1, body_end - 1);
                 if (!r2) return r2;
                 if (ls.continue_flag) { ls.continue_flag = false; continue; }
@@ -865,7 +877,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
                 ls.binding_elem = &elem;
                 ls.binding_resolve = &resolve_binding_var<elem_t>;
                 ls.binding_truthy = &eval_binding_truthy<elem_t>;
-                bc_executor<elem_t, RootT> child_exec(ex.bc_, elem, ex.root_value_, &ls, ex.out_);
+                bc_executor<elem_t, RootT, Sink> child_exec(ex.bc_, elem, ex.root_value_, &ls, ex.out_);
                 auto r2 = child_exec.execute_impl(pc + 1, body_end - 1);
                 if (!r2) return r2;
                 if (ls.continue_flag) { ls.continue_flag = false; continue; }
@@ -886,7 +898,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
               ls.binding_elem = &elem;
               ls.binding_resolve = &resolve_binding_var<elem_t>;
               ls.binding_truthy = &eval_binding_truthy<elem_t>;
-              bc_executor<elem_t, RootT> child_exec(ex.bc_, elem, ex.root_value_, &ls, ex.out_);
+              bc_executor<elem_t, RootT, Sink> child_exec(ex.bc_, elem, ex.root_value_, &ls, ex.out_);
               auto r2 = child_exec.execute_impl(pc + 1, body_end - 1);
               if (!r2) return r2;
               if (ls.continue_flag) { ls.continue_flag = false; continue; }
@@ -917,7 +929,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
             ls.binding_elem = &elem;
             ls.binding_resolve = &resolve_binding_var<elem_t>;
             ls.binding_truthy = &eval_binding_truthy<elem_t>;
-            bc_executor<elem_t, RootT> child_exec(ex.bc_, elem, ex.root_value_, &ls, ex.out_);
+            bc_executor<elem_t, RootT, Sink> child_exec(ex.bc_, elem, ex.root_value_, &ls, ex.out_);
             auto r2 = child_exec.execute_impl(pc + 1, body_end - 1);
             if (!r2) return r2;
             if (ls.continue_flag) { ls.continue_flag = false; continue; }
@@ -948,7 +960,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
                ls.binding_elem = &glz::get<src_idx>(tied);
                ls.binding_resolve = &resolve_binding_var<elem_t>;
                ls.binding_truthy = &eval_binding_truthy<elem_t>;
-               bc_executor<elem_t, RootT> child_exec(ex.bc_, glz::get<src_idx>(tied), ex.root_value_, &ls, ex.out_);
+               bc_executor<elem_t, RootT, Sink> child_exec(ex.bc_, glz::get<src_idx>(tied), ex.root_value_, &ls, ex.out_);
                res = child_exec.execute_impl(pc + 1, body_end - 1);
             }()), ...);
           }(std::make_index_sequence<sz>{});
@@ -967,7 +979,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
                ls.binding_elem = &glz::get<src_idx>(tied);
                ls.binding_resolve = &resolve_binding_var<elem_t>;
                ls.binding_truthy = &eval_binding_truthy<elem_t>;
-               bc_executor<elem_t, RootT> child_exec(ex.bc_, glz::get<src_idx>(tied), ex.root_value_, &ls, ex.out_);
+               bc_executor<elem_t, RootT, Sink> child_exec(ex.bc_, glz::get<src_idx>(tied), ex.root_value_, &ls, ex.out_);
                res = child_exec.execute_impl(pc + 1, body_end - 1);
             }()), ...);
           }(std::make_index_sequence<sz>{});
@@ -1505,7 +1517,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
     if (!entry.bc) {
       return std::unexpected(error_ctx{.position = pc, .ec = error_code::syntax_error});
     }
-    bc_executor<T, RootT> child_exec(*entry.bc, ex.value_, ex.root_value_, ex.loop_, ex.out_);
+    bc_executor<T, RootT, Sink> child_exec(*entry.bc, ex.value_, ex.root_value_, ex.loop_, ex.out_);
     auto r = child_exec.execute();
     if (!r)
       return std::unexpected(r.error());
@@ -1514,7 +1526,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
   }
 
 public:
-  bc_executor(bytecode const& bc, T const& value, RootT const& root_value, bc_loop_state const* loop, std::string& out) : bc_(bc), value_(value), root_value_(root_value), loop_(loop), out_(out) {}
+  bc_executor(bytecode const& bc, T const& value, RootT const& root_value, bc_loop_state const* loop, Sink& out) : bc_(bc), value_(value), root_value_(root_value), loop_(loop), out_(out) {}
 
   /**
    * @brief バイトコードの実行を開始する
@@ -1844,6 +1856,23 @@ std::expected<void, error_ctx> bc_execute_into(bytecode const& bc, T const& valu
   if (out.capacity() < estimated)
     out.reserve(estimated);
   bc_executor<T> exec(bc, value, value, nullptr, out);
+  return exec.execute();
+}
+
+/**
+ * @brief バイトコードを実行して任意の sink に出力する（コールバック/ストリーミング用）
+ * @tparam T    コンテキスト値の型
+ * @tparam Sink detail::output_sink を満たす出力先（append(std::string_view) と
+ *              append(char const*, std::size_t) を持つ。std::string も可）
+ * @param bc    バイトコード
+ * @param value コンテキスト値
+ * @param sink  出力先 sink（内容はクリアされない）
+ * @return std::expected<void, error_ctx> 実行結果
+ */
+template <class T, class Sink>
+  requires output_sink<Sink>
+std::expected<void, error_ctx> bc_execute_into_sink(bytecode const& bc, T const& value, Sink& sink) {
+  bc_executor<T, T, Sink> exec(bc, value, value, nullptr, sink);
   return exec.execute();
 }
 

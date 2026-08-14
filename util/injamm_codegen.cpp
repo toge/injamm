@@ -504,6 +504,7 @@ class code_generator {
    * @brief 出力先バッファ版レンダリング関数の先頭を生成
    * @details render(data, out) -> expected<void> のシグニチャと本体冒頭。
    *          既存の std::string を出力先として受け取りバッファを再利用する。
+   *          任意の sink（callback_sink 等）にも対応する（テンプレート sink 方式）。
    * @param reserve_size 文字列バッファの事前確保サイズ（バイト）
    * @param declare_filtered フィルタバッファ _filtered を先頭で宣言するか
    */
@@ -514,20 +515,27 @@ class code_generator {
     emit_raw(" * @brief テンプレート文字列から生成されたレンダリング関数（バッファ再利用版）");
     emit_raw(" *");
     emit_raw(" * @details injamm_codegen によって自動生成された関数。");
-    emit_raw(" *          出力先バッファを引数で受け取り、内部バッファを再利用することで");
-    emit_raw(" *          アロケーションを削減する。");
+    emit_raw(" *          出力先を引数で受け取る。std::string ならバッファを再利用し、");
+    emit_raw(" *          injamm::detail::output_sink を満たす型（callback_sink 等）なら");
+    emit_raw(" *          ストリーミング出力する。");
     emit_raw(" *");
-    emit_raw(" * @tparam T データ型（フィールドへのアクセスが必要）");
+    emit_raw(" * @tparam T    データ型（フィールドへのアクセスが必要）");
+    emit_raw(" * @tparam Sink 出力先型（std::string または output_sink を満たす型）");
     emit_raw(" * @param data レンダリング対象のデータ");
-    emit_raw(" * @param out  出力先バッファ（内容はクリアされる）");
+    emit_raw(" * @param out  出力先（std::string なら内容はクリアされる）");
     emit_raw(" * @return 正常時: void。エラー時: error_ctx");
     emit_raw(" */");
-    emit_raw("template <typename T>");
+    emit_raw("template <typename T, typename Sink = std::string>");
+    emit_raw("  requires injamm::detail::output_sink<Sink>");
     emit_raw("[[nodiscard]] std::expected<void, injamm::error_ctx>");
-    emit_raw(func_name + "(const T& data, std::string& out) {");
+    emit_raw(func_name + "(const T& data, Sink& out) {");
+    ++indent_;
+    emit("if constexpr (std::is_same_v<Sink, std::string>) {");
     ++indent_;
     emit("out.clear();");
     emit("out.reserve(" + std::to_string(reserve_size) + ");");
+    --indent_;
+    emit("}");
     if (declare_filtered) {
       // フィルタバッファは関数先頭で宣言し assign で再利用する
       // （ループ内フィルタで毎回アロケーションしないための工夫）
@@ -616,6 +624,7 @@ class code_generator {
     emit_raw(" *");
     emit_raw(" * @tparam T          データ型");
     emit_raw(" * @tparam PartialName partial 名（fixed_string 互換 NTTP）");
+    emit_raw(" * @tparam Sink       出力先型（std::string または output_sink を満たす型）");
     emit_raw(" * @param data レンダリング対象のデータ");
     emit_raw(" * @param out  出力先バッファ（内容は追記される）");
     emit_raw(" * @return 正常時: void。エラー時: error_ctx");
@@ -626,9 +635,10 @@ class code_generator {
     emit_raw(" *   auto result = generated::render_partial<\"header\">(data, out);");
     emit_raw(" * @endcode");
     emit_raw(" */");
-    emit_raw("template <injamm::fixed_string PartialName, typename T>");
+    emit_raw("template <injamm::fixed_string PartialName, typename T, typename Sink = std::string>");
+    emit_raw("  requires injamm::detail::output_sink<Sink>");
     emit_raw("[[nodiscard]] std::expected<void, injamm::error_ctx>");
-    emit_raw("render_partial(const T& data, std::string& out) {");
+    emit_raw("render_partial(const T& data, Sink& out) {");
     ++indent_;
 
     /* if constexpr チェーン: 各 partial 名を std::string_view で比較する。
@@ -751,7 +761,7 @@ class code_generator {
     auto op = inst.op;
 
     if (op == bc::opcode::emit_literal) {
-      emit("out += " + cpp_string(bc.literals[inst.operand]) + ";");
+      emit("out.append(" + cpp_string(bc.literals[inst.operand]) + ");");
     }
     else if (op == bc::opcode::emit_var) {
       auto access = resolve_access(bc.var_refs[inst.operand]);
@@ -863,11 +873,11 @@ class code_generator {
       emit("append_number(out, _i" + std::to_string(loop_depth_) + " + 1);");
     }
     else if (op == bc::opcode::emit_at_first) {
-      emit("out += (_i" + std::to_string(loop_depth_) + " == 0) ? \"true\" : \"false\";");
+      emit("out.append((_i" + std::to_string(loop_depth_) + " == 0) ? \"true\" : \"false\");");
     }
     else if (op == bc::opcode::emit_at_last) {
       auto d = std::to_string(loop_depth_);
-      emit("out += (_i" + d + " == _size" + d + " - 1) ? \"true\" : \"false\";");
+      emit("out.append((_i" + d + " == _size" + d + " - 1) ? \"true\" : \"false\");");
     }
     else if (op == bc::opcode::emit_at_size) {
       emit("append_number(out, _size" + std::to_string(loop_depth_) + ");");
@@ -905,11 +915,11 @@ class code_generator {
       emit("}");
     }
     else if (op == bc::opcode::emit_litvar) {
-      emit("out += " + cpp_string(bc.literals[inst.operand]) + ";");
+      emit("out.append(" + cpp_string(bc.literals[inst.operand]) + ");");
       emit("html_escape_append_value(out, " + resolve_access(bc.var_refs[inst.operand2]) + ");");
     }
     else if (op == bc::opcode::emit_litvar_raw) {
-      emit("out += " + cpp_string(bc.literals[inst.operand]) + ";");
+      emit("out.append(" + cpp_string(bc.literals[inst.operand]) + ");");
       emit("append_value(out, " + resolve_access(bc.var_refs[inst.operand2]) + ");");
     }
     else if (op == bc::opcode::emit_at_root) {
@@ -922,7 +932,7 @@ class code_generator {
       emit("append_value(out, data." + bc.var_refs[inst.operand].key + ");");
     }
     else if (op == bc::opcode::emit_at_key) {
-      emit("out += _key" + std::to_string(loop_depth_) + ";");
+      emit("out.append(_key" + std::to_string(loop_depth_) + ");");
     }
     else if (op == bc::opcode::emit_this) {
       if (loop_depth_ > 0) {
@@ -935,7 +945,7 @@ class code_generator {
       emit("html_escape_append(out, _filtered);");
     }
     else if (op == bc::opcode::emit_filtered_raw) {
-      emit("out += _filtered;");
+      emit("out.append(_filtered);");
     }
     else if (op == bc::opcode::resolve_filtered) {
       auto const& ref = bc.var_refs[inst.operand2];
@@ -1151,7 +1161,7 @@ public:
     std::string accumulated_literals;
     auto flush_literals = [&]() {
       if (!accumulated_literals.empty()) {
-        emit("out += " + cpp_string(accumulated_literals) + ";");
+        emit("out.append(" + cpp_string(accumulated_literals) + ");");
         accumulated_literals.clear();
       }
     };

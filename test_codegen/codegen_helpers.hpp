@@ -20,29 +20,31 @@
 #endif
 
 #ifndef INJAMM_CODEGEN_DISABLE_SIMD
-inline void html_escape_append(std::string& out, std::string_view sv) {
+template <class Buffer>
+inline void html_escape_append(Buffer& out, std::string_view sv) {
   injamm::detail::html_escape_into(out, sv);
 }
 #else
-inline void html_escape_append(std::string& out, std::string_view sv) {
+template <class Buffer>
+inline void html_escape_append(Buffer& out, std::string_view sv) {
   for (char c : sv) {
     switch (c) {
-      case '&':  out += "&amp;";  break;
-      case '<':  out += "&lt;";   break;
-      case '>':  out += "&gt;";   break;
-      case '"': out += "&quot;"; break;
-      case '\'': out += "&#39;";  break;
-      default:   out += c;       break;
+      case '&':  out.append("&amp;");  break;
+      case '<':  out.append("&lt;");   break;
+      case '>':  out.append("&gt;");   break;
+      case '"': out.append("&quot;"); break;
+      case '\'': out.append("&#39;");  break;
+      default:   out.append(1, c);    break;
     }
   }
 }
 #endif
 
-template <typename N>
-inline void append_number(std::string& out, N n) {
+template <class Buffer, typename N>
+inline void append_number(Buffer& out, N n) {
   char buf[64];
   auto [ptr, ec] = std::to_chars(buf, buf + sizeof(buf), n);
-  out.append(buf, ptr);
+  out.append(buf, static_cast<std::size_t>(ptr - buf));
 }
 
 inline void filter_title(std::string& s) {
@@ -263,26 +265,26 @@ inline void filter_float_precision(std::string& s, int n) {
   }
 }
 
-template <typename V>
-inline void append_value(std::string& out, V const& v) {
+template <class Buffer, typename V>
+inline void append_value(Buffer& out, V const& v) {
   if constexpr (std::is_same_v<V, std::string> || std::is_same_v<V, std::string_view>) {
-    out += v;
+    out.append(v);
   } else if constexpr (std::is_same_v<V, const char*>) {
-    out += v ? v : "";
+    out.append(v ? v : "");
   } else if constexpr (std::is_same_v<V, bool>) {
-    out += v ? "true" : "false";
+    out.append(v ? "true" : "false");
   } else if constexpr (std::is_arithmetic_v<V>) {
     append_number(out, v);
   } else if constexpr (std::is_enum_v<V>) {
-    out += std::to_string(static_cast<std::underlying_type_t<V>>(v));
+    out.append(std::to_string(static_cast<std::underlying_type_t<V>>(v)));
   } else if constexpr (injamm::detail::serializable_v<V>) {
     serialize_value(out, v);
   } else if constexpr (injamm::detail::ct_glz_reflectable<V>) {
     std::string scratch;
     (void)::glz::write_json(v, scratch);
-    out += scratch;
+    out.append(scratch);
   } else {
-    out += v;
+    out.append(v);
   }
 }
 
@@ -306,14 +308,14 @@ constexpr std::size_t value_size(V const& v) {
   }
 }
 
-template <typename V>
-inline void html_escape_append_value(std::string& out, V const& v) {
+template <class Buffer, typename V>
+inline void html_escape_append_value(Buffer& out, V const& v) {
   if constexpr (std::is_same_v<V, std::string> || std::is_same_v<V, std::string_view>) {
     html_escape_append(out, v);
   } else if constexpr (std::is_same_v<V, const char*>) {
     html_escape_append(out, v ? v : "");
   } else if constexpr (std::is_same_v<V, bool>) {
-    out += v ? "true" : "false";
+    out.append(v ? "true" : "false");
   } else if constexpr (std::is_arithmetic_v<V>) {
     append_number(out, v);
   } else if constexpr (std::is_enum_v<V>) {

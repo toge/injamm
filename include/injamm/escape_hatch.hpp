@@ -722,6 +722,28 @@ template <fixed_string Tmpl, std::same_as<bool> auto TrimBlocks = false, std::sa
 }
 
 /**
+ * @brief NTTP ベースのレンダリング（ストリーミング sink 版）
+ *
+ * @details render() の sink 出力オーバーロード。出力全体を std::string に
+ *          構築せず断片単位で sink に書き出す。callback_sink<Fn> を渡すと
+ *          コールバック関数で断片を受け取れる。
+ *
+ * @tparam Tmpl コンパイル時テンプレート文字列（fixed_string リテラル）
+ * @tparam Sink detail::output_sink を満たす型（std::string は除外）
+ * @param value コンテキスト値の const 参照
+ * @param sink  出力先 sink
+ * @return expected<void> 実行結果、またはエラー
+ */
+template <fixed_string Tmpl, std::same_as<bool> auto TrimBlocks = false, std::same_as<bool> auto LstripBlocks = false, typename T, typename Sink>
+  requires detail::output_sink<Sink> && (!std::same_as<std::remove_cvref_t<Sink>, std::string>)
+[[nodiscard]] expected<void> render(T const& value, Sink& sink) {
+  using D = detail::nttp_render_data<Tmpl, TrimBlocks != 0, LstripBlocks != 0, T>;
+  if constexpr (D::ct_bc.error.ec != error_code::none)
+    return std::unexpected(D::ct_bc.error);
+  return detail::bc_execute_into_sink(detail::nttp_partial_bytecode_holder<D, T>(), value, sink);
+}
+
+/**
  * @brief NTTP ベースのレンダリング（@var 定数展開版）
  *
  * @details テンプレート引数 Tmpl で渡された文字列中の @var(name) を
@@ -770,6 +792,31 @@ template <fixed_string Tmpl, fixed_string... Entries, typename T>
   return detail::bc_execute_into(detail::nttp_bytecode_holder<D>(), value, out);
 }
 
+/**
+ * @brief NTTP ベースのレンダリング（@var 定数展開 + ストリーミング sink 版）
+ *
+ * @details @var 定数展開の結果を断片単位で sink に書き出す。
+ *
+ * @tparam Tmpl    コンパイル時テンプレート文字列（fixed_string リテラル）
+ * @tparam Entries キー・バリューペア（キー1, 値1, キー2, 値2, ...）
+ * @tparam T       コンテキスト値の型
+ * @tparam Sink    detail::output_sink を満たす型（std::string は除外）
+ * @param value    コンテキスト値の const 参照
+ * @param sink     出力先 sink
+ * @return expected<void> 実行結果、またはエラー
+ */
+template <fixed_string Tmpl, fixed_string... Entries, typename T, typename Sink>
+  requires(sizeof...(Entries) > 0 && (detail::is_fixed_string_type_v<decltype(Entries)> && ...) &&
+          detail::output_sink<Sink> && !std::same_as<std::remove_cvref_t<Sink>, std::string>)
+[[nodiscard]] expected<void> render(T const& value, Sink& sink) {
+  static_assert(sizeof...(Entries) % 2 == 0, "injamm: @var entries must be key-value pairs (even count). "
+                                             "Example: render<tmpl, \"key1\", \"value1\", \"key2\", \"value2\">(data, sink)");
+  using D = detail::nttp_atvar_data<Tmpl, T, Entries...>;
+  if constexpr (D::ct_bc.error.ec != error_code::none)
+    return std::unexpected(D::ct_bc.error);
+  return detail::bc_execute_into_sink(detail::nttp_bytecode_holder<D>(), value, sink);
+}
+
 #if INJAMM_HAS_FROZENCHARS
 
 // FrozenString 対応: Tmpl が fixed_string でない場合のみ選択（auto NTTP）
@@ -800,6 +847,16 @@ template <auto Tmpl, std::same_as<bool> auto TrimBlocks = false, std::same_as<bo
   return detail::bc_execute_into(detail::nttp_partial_bytecode_holder<D, T>(), value, out);
 }
 
+template <auto Tmpl, std::same_as<bool> auto TrimBlocks = false, std::same_as<bool> auto LstripBlocks = false, typename T, typename Sink>
+  requires (!detail::is_fixed_string_type_v<decltype(Tmpl)> && detail::output_sink<Sink> &&
+            !std::same_as<std::remove_cvref_t<Sink>, std::string>)
+[[nodiscard]] expected<void> render(T const& value, Sink& sink) {
+  using D = detail::nttp_render_data<Tmpl, TrimBlocks != 0, LstripBlocks != 0, T>;
+  if constexpr (D::ct_bc.error.ec != error_code::none)
+    return std::unexpected(D::ct_bc.error);
+  return detail::bc_execute_into_sink(detail::nttp_partial_bytecode_holder<D, T>(), value, sink);
+}
+
 template <auto Tmpl, auto... Entries, typename T>
   requires(sizeof...(Entries) > 0 && !detail::is_fixed_string_type_v<decltype(Tmpl)> &&
           (!detail::is_fixed_string_type_v<decltype(Entries)> && ...))
@@ -822,6 +879,19 @@ template <auto Tmpl, auto... Entries, typename T>
   if constexpr (D::ct_bc.error.ec != error_code::none)
     return std::unexpected(D::ct_bc.error);
   return detail::bc_execute_into(detail::nttp_bytecode_holder<D>(), value, out);
+}
+
+template <auto Tmpl, auto... Entries, typename T, typename Sink>
+  requires(sizeof...(Entries) > 0 && !detail::is_fixed_string_type_v<decltype(Tmpl)> &&
+          (!detail::is_fixed_string_type_v<decltype(Entries)> && ...) &&
+          detail::output_sink<Sink> && !std::same_as<std::remove_cvref_t<Sink>, std::string>)
+[[nodiscard]] expected<void> render(T const& value, Sink& sink) {
+  static_assert(sizeof...(Entries) % 2 == 0, "injamm: @var entries must be key-value pairs (even count). "
+                                             "Example: render<tmpl, \"key1\", \"value1\", \"key2\", \"value2\">(data, sink)");
+  using D = detail::nttp_atvar_data<Tmpl, T, Entries...>;
+  if constexpr (D::ct_bc.error.ec != error_code::none)
+    return std::unexpected(D::ct_bc.error);
+  return detail::bc_execute_into_sink(detail::nttp_bytecode_holder<D>(), value, sink);
 }
 
 #endif
@@ -851,6 +921,34 @@ template <fixed_string Tmpl, std::same_as<bool> auto TrimBlocks = false, std::sa
   if (it == bc.partial_entries.end())
     return std::unexpected(error_ctx{0, error_code::unknown_key, partial_name});
   return detail::bc_execute(*it->bc, value);
+}
+
+/**
+ * @brief NTTP ベースの名前付き partial レンダリング（ストリーミング sink 版）
+ *
+ * @details 指定 partial のレンダリング結果を断片単位で sink に書き出す。
+ *
+ * @tparam Tmpl コンパイル時テンプレート文字列（fixed_string リテラル）
+ * @tparam T    コンテキスト値の型
+ * @tparam Sink detail::output_sink を満たす型
+ * @param value        コンテキスト値の const 参照
+ * @param partial_name レンダリングする partial の名前
+ * @param sink         出力先 sink
+ * @return expected<void> 実行結果、またはエラー
+ */
+template <fixed_string Tmpl, std::same_as<bool> auto TrimBlocks = false, std::same_as<bool> auto LstripBlocks = false, typename T, typename Sink>
+  requires detail::output_sink<Sink>
+[[nodiscard]] expected<void> render_partial(T const& value, std::string_view partial_name, Sink& sink) {
+  using D = detail::nttp_render_data<Tmpl, TrimBlocks != 0, LstripBlocks != 0, T>;
+  if constexpr (D::ct_bc.error.ec != error_code::none)
+    return std::unexpected(D::ct_bc.error);
+  auto& bc = detail::nttp_partial_bytecode_holder<D, T>();
+  if (bc.error.ec != error_code::none)
+    return std::unexpected(bc.error);
+  auto it = std::find_if(bc.partial_entries.begin(), bc.partial_entries.end(), [&](auto const& e) { return !e.local && e.name == partial_name; });
+  if (it == bc.partial_entries.end())
+    return std::unexpected(error_ctx{0, error_code::unknown_key, partial_name});
+  return detail::bc_execute_into_sink(*it->bc, value, sink);
 }
 
 /**
@@ -912,6 +1010,22 @@ template <fixed_string Tmpl, fixed_string PartialName, std::same_as<bool> auto T
   return detail::bc_execute(*bc.partial_entries.back().bc, value);
 }
 
+template <fixed_string Tmpl, fixed_string PartialName, std::same_as<bool> auto TrimBlocks = false, std::same_as<bool> auto LstripBlocks = false, typename T, typename Sink>
+  requires (detail::output_sink<Sink> && !std::same_as<std::remove_cvref_t<Sink>, std::string>)
+[[nodiscard]] expected<void> render_partial(T const& value, Sink& sink) {
+  using D = detail::nttp_render_data<Tmpl, TrimBlocks != 0, LstripBlocks != 0, T>;
+  constexpr auto target_sv = detail::nttp_string_view(PartialName);
+  constexpr auto closure = detail::compute_partial_closure(D::parsed, D::tmpl_sv, target_sv);
+  static_assert(closure.found, "injamm: {{#partialdef <PartialName>}} not found in the template.");
+  if constexpr (D::ct_bc.error.ec != error_code::none)
+    return std::unexpected(D::ct_bc.error);
+  auto& bc = detail::nttp_selected_partial_holder<D, PartialName, T>();
+  if (bc.error.ec != error_code::none)
+    return std::unexpected(bc.error);
+  // ponytail: 対象 partial は post-order DFS で末尾に push されるため必ず back()
+  return detail::bc_execute_into_sink(*bc.partial_entries.back().bc, value, sink);
+}
+
 #if INJAMM_HAS_FROZENCHARS
 
 /**
@@ -934,6 +1048,21 @@ template <auto Tmpl, bool TrimBlocks = false, bool LstripBlocks = false, typenam
   if (it == bc.partial_entries.end())
     return std::unexpected(error_ctx{0, error_code::unknown_key, partial_name});
   return detail::bc_execute(*it->bc, value);
+}
+
+template <auto Tmpl, bool TrimBlocks = false, bool LstripBlocks = false, typename T, typename Sink>
+  requires (!detail::is_fixed_string_type_v<decltype(Tmpl)> && detail::output_sink<Sink>)
+[[nodiscard]] expected<void> render_partial(T const& value, std::string_view partial_name, Sink& sink) {
+  using D = detail::nttp_render_data<Tmpl, TrimBlocks != 0, LstripBlocks != 0, T>;
+  if constexpr (D::ct_bc.error.ec != error_code::none)
+    return std::unexpected(D::ct_bc.error);
+  auto& bc = detail::nttp_partial_bytecode_holder<D, T>();
+  if (bc.error.ec != error_code::none)
+    return std::unexpected(bc.error);
+  auto it = std::find_if(bc.partial_entries.begin(), bc.partial_entries.end(), [&](auto const& e) { return !e.local && e.name == partial_name; });
+  if (it == bc.partial_entries.end())
+    return std::unexpected(error_ctx{0, error_code::unknown_key, partial_name});
+  return detail::bc_execute_into_sink(*it->bc, value, sink);
 }
 
 template <auto Tmpl, typename Reg, bool TrimBlocks = false, bool LstripBlocks = false, typename T>
@@ -974,6 +1103,23 @@ template <auto Tmpl, fixed_string PartialName, std::same_as<bool> auto TrimBlock
   return detail::bc_execute(*bc.partial_entries.back().bc, value);
 }
 
+template <auto Tmpl, fixed_string PartialName, std::same_as<bool> auto TrimBlocks = false, std::same_as<bool> auto LstripBlocks = false, typename T, typename Sink>
+  requires (!detail::is_fixed_string_type_v<decltype(Tmpl)> && detail::output_sink<Sink> &&
+            !std::same_as<std::remove_cvref_t<Sink>, std::string>)
+[[nodiscard]] expected<void> render_partial(T const& value, Sink& sink) {
+  using D = detail::nttp_render_data<Tmpl, TrimBlocks != 0, LstripBlocks != 0, T>;
+  constexpr auto target_sv = detail::nttp_string_view(PartialName);
+  constexpr auto closure = detail::compute_partial_closure(D::parsed, D::tmpl_sv, target_sv);
+  static_assert(closure.found, "injamm: {{#partialdef <PartialName>}} not found in the template.");
+  if constexpr (D::ct_bc.error.ec != error_code::none)
+    return std::unexpected(D::ct_bc.error);
+  auto& bc = detail::nttp_selected_partial_holder<D, PartialName, T>();
+  if (bc.error.ec != error_code::none)
+    return std::unexpected(bc.error);
+  // ponytail: 対象 partial は post-order DFS で末尾に push されるため必ず back()
+  return detail::bc_execute_into_sink(*bc.partial_entries.back().bc, value, sink);
+}
+
 /**
  * @brief NTTP ベースの名前付き partial レンダリング（partial 名をテンプレート引数で指定、FrozenString 対応）
  */
@@ -991,6 +1137,23 @@ template <auto Tmpl, auto PartialName, std::same_as<bool> auto TrimBlocks = fals
     return std::unexpected(bc.error);
   // ponytail: 対象 partial は post-order DFS で末尾に push されるため必ず back()
   return detail::bc_execute(*bc.partial_entries.back().bc, value);
+}
+
+template <auto Tmpl, auto PartialName, std::same_as<bool> auto TrimBlocks = false, std::same_as<bool> auto LstripBlocks = false, typename T, typename Sink>
+  requires (!detail::is_fixed_string_type_v<decltype(Tmpl)> && !detail::is_fixed_string_type_v<decltype(PartialName)> &&
+            detail::output_sink<Sink> && !std::same_as<std::remove_cvref_t<Sink>, std::string>)
+[[nodiscard]] expected<void> render_partial(T const& value, Sink& sink) {
+  using D = detail::nttp_render_data<Tmpl, TrimBlocks != 0, LstripBlocks != 0, T>;
+  constexpr auto target_sv = detail::nttp_string_view(PartialName);
+  constexpr auto closure = detail::compute_partial_closure(D::parsed, D::tmpl_sv, target_sv);
+  static_assert(closure.found, "injamm: {{#partialdef <PartialName>}} not found in the template.");
+  if constexpr (D::ct_bc.error.ec != error_code::none)
+    return std::unexpected(D::ct_bc.error);
+  auto& bc = detail::nttp_selected_partial_holder<D, PartialName, T>();
+  if (bc.error.ec != error_code::none)
+    return std::unexpected(bc.error);
+  // ponytail: 対象 partial は post-order DFS で末尾に push されるため必ず back()
+  return detail::bc_execute_into_sink(*bc.partial_entries.back().bc, value, sink);
 }
 
 #endif
@@ -1018,6 +1181,41 @@ template <typename T>
 [[nodiscard]] auto bind(T const& value) -> detail::bound_context<detail::name_list<fixed_string{"_"}>, T> {
   return detail::bound_context<detail::name_list<fixed_string{"_"}>, T>{std::forward_as_tuple(value)};
 }
+
+/**
+ * @brief 出力をコールバック関数にストリーミングする sink
+ *
+ * @details レンダリング結果を断片単位で受け取り、内部バッファに chunk_size バイト
+ *          溜まるまで蓄積してからコールバック fn_(std::string_view) を呼ぶ。
+ *          ファイル出力やネットワーク送信で出力全体を std::string に構築せずに
+ *          書き出すために使う。render() 完了後は flush() で残りを排出する。
+ *
+ * @tparam Fn void(std::string_view) を呼び出せる関数オブジェクト型
+ */
+template <class Fn>
+class callback_sink {
+public:
+  explicit callback_sink(Fn fn, std::size_t chunk_size = 4096) : fn_(std::move(fn)), chunk_size_(chunk_size) {}
+
+  void append(std::string_view sv) {
+    if (!buf_.empty() && buf_.size() + sv.size() > chunk_size_) flush();
+    buf_.append(sv.data(), sv.size());
+  }
+  void append(char const* p, std::size_t n) { append(std::string_view{p, n}); }
+
+  /** @brief 蓄積中の残り出力をコールバックに渡す */
+  void flush() {
+    if (!buf_.empty()) {
+      fn_(std::string_view{buf_.data(), buf_.size()});
+      buf_.clear();
+    }
+  }
+
+private:
+  Fn          fn_;
+  std::size_t chunk_size_;
+  std::string buf_;
+};
 
 /**
  * @brief バイトコード VM（実行時コンパイル）
@@ -1133,6 +1331,48 @@ class engine {
       return std::unexpected(bc_.error);
     }
     return detail::bc_execute_into(bc_, value, out);
+  }
+
+  /**
+   * @brief レンダリング結果を任意の sink にストリーミング出力する
+   *
+   * @details 出力全体を std::string に構築せず、断片単位で sink に書き出す。
+   *          ファイル出力やネットワーク送信時にメモリ確保を抑制できる。
+   *          callback_sink<Fn> を渡すとコールバック関数で断片を受け取れる。
+   *
+   * @tparam Sink detail::output_sink を満たす型（append を持つ。std::string は除外）
+   * @param value コンテキスト値の const 参照
+   * @param sink  出力先 sink（render 完了後に flush() が必要な場合あり）
+   * @return expected<void> 実行結果、またはエラー
+   */
+  template <class Sink>
+    requires detail::output_sink<Sink> && (!std::same_as<std::remove_cvref_t<Sink>, std::string>)
+  [[nodiscard]] expected<void> render(T const& value, Sink& sink) const {
+    if (bc_.error.ec != error_code::none) {
+      return std::unexpected(bc_.error);
+    }
+    return detail::bc_execute_into_sink(bc_, value, sink);
+  }
+
+  /**
+   * @brief 名前付き partial を任意の sink にストリーミング出力する
+   *
+   * @param value コンテキスト値の const 参照
+   * @param partial_name レンダリングする partial の名前
+   * @param sink  出力先 sink
+   * @return expected<void> 実行結果、またはエラー
+   */
+  template <class Sink>
+    requires detail::output_sink<Sink>
+  [[nodiscard]] expected<void> render(T const& value, std::string_view partial_name, Sink& sink) const {
+    if (bc_.error.ec != error_code::none) {
+      return std::unexpected(bc_.error);
+    }
+    auto it = std::find_if(bc_.partial_entries.begin(), bc_.partial_entries.end(), [&](auto const& e) { return !e.local && e.name == partial_name; });
+    if (it == bc_.partial_entries.end()) {
+      return std::unexpected(error_ctx{0, error_code::unknown_key, partial_name});
+    }
+    return detail::bc_execute_into_sink(*it->bc, value, sink);
   }
 
   /**

@@ -131,4 +131,7 @@ std::expected<std::string, error_ctx> bc_execute(bytecode const& bc, T const& va
 template <class T>
 std::expected<void, error_ctx> bc_execute_into(bytecode const& bc, T const& value, std::string& out);
 
+template <class T, class Sink>
+std::expected<void, error_ctx> bc_execute_into_sink(bytecode const& bc, T const& value, Sink& sink);
+
 } // namespace injamm::detail

@@ -4672,3 +4672,115 @@ TEST_CASE("section unknown filter error", "[section][filter]") {
   CHECK(result.error().ec == injamm::error_code::unknown_filter);
 }
 
+// ---- コールバック sink（ストリーミング出力）テスト ----
+
+TEST_CASE("callback_sink engine streaming matches string render", "[sink]") {
+  injamm::engine<BcUsersData> eng("{{#users}}{{name}}={{age}};{{/users}}");
+  BcUsersData data{};
+  data.users = {{"alice", 30}, {"bob", 25}, {"carol", 40}};
+
+  auto expected = eng.render(data);
+  REQUIRE(expected);
+
+  std::string collected;
+  int chunks = 0;
+  injamm::callback_sink sink([&](std::string_view sv) {
+    collected.append(sv.data(), sv.size());
+    ++chunks;
+  }, 8);
+  auto r = eng.render(data, sink);
+  REQUIRE(r);
+  sink.flush();
+
+  CHECK(collected == *expected);
+  CHECK(chunks > 1);
+}
+
+TEST_CASE("callback_sink flush delivers remainder", "[sink]") {
+  injamm::engine<BcBoolData> eng("hello world");
+  std::string collected;
+  injamm::callback_sink sink([&](std::string_view sv) { collected.append(sv.data(), sv.size()); }, 1024);
+  auto r = eng.render(BcBoolData{true}, sink);
+  REQUIRE(r);
+  sink.flush();
+  CHECK(collected == "hello world");
+}
+
+TEST_CASE("nttp render with callback_sink", "[sink]") {
+  auto constexpr tmpl = injamm::fixed_string("{{#users}}{{name}};{{/users}}");
+  BcUsersData data{};
+  data.users = {{"alice", 30}, {"bob", 25}};
+
+  auto expected = injamm::render<tmpl>(data);
+  REQUIRE(expected);
+
+  std::string collected;
+  injamm::callback_sink sink([&](std::string_view sv) { collected.append(sv.data(), sv.size()); }, 4);
+  auto r = injamm::render<tmpl>(data, sink);
+  REQUIRE(r);
+  sink.flush();
+  CHECK(collected == *expected);
+}
+
+TEST_CASE("engine partial render with callback_sink", "[sink][partial]") {
+  BcPartialUser user{"Alice", 30};
+  auto eng = injamm::engine<BcPartialUser>{
+    "{{> header}}",
+    {injamm::make_partial<BcPartialUser>("header", "[{{name}}]")}
+  };
+  std::string collected;
+  injamm::callback_sink sink([&](std::string_view sv) { collected.append(sv.data(), sv.size()); }, 2);
+  auto r = eng.render(user, "header", sink);
+  REQUIRE(r);
+  sink.flush();
+  CHECK(collected == "[Alice]");
+}
+
+TEST_CASE("custom sink satisfying output_sink concept", "[sink]") {
+  struct vec_sink {
+    std::vector<std::string>& parts;
+    void append(std::string_view sv) { parts.emplace_back(sv); }
+    void append(char const* p, std::size_t n) { parts.emplace_back(p, n); }
+  };
+  injamm::engine<BcBoolData> eng("abc");
+  std::vector<std::string> parts;
+  vec_sink sink{parts};
+  auto r = eng.render(BcBoolData{true}, sink);
+  REQUIRE(r);
+  CHECK(parts.size() == 1);
+  CHECK(parts[0] == "abc");
+}
+
+TEST_CASE("nttp @var render with callback_sink", "[sink][atvar]") {
+  auto constexpr tmpl = injamm::fixed_string("{{@var(field)}}:{{age}}");
+  AtVarUser user{"Alice", 30};
+
+  auto expected = injamm::render<tmpl, "field", "name">(user);
+  REQUIRE(expected);
+
+  std::string collected;
+  injamm::callback_sink sink([&](std::string_view sv) { collected.append(sv.data(), sv.size()); }, 4);
+  auto r = injamm::render<tmpl, "field", "name">(user, sink);
+  REQUIRE(r);
+  sink.flush();
+  CHECK(collected == *expected);
+  CHECK(collected == "Alice:30");
+}
+
+TEST_CASE("nttp selected partial render with callback_sink", "[sink][partial]") {
+  auto constexpr tmpl = injamm::fixed_string("{{#partialdef name}}{{name}}{{/partialdef}}"
+                                             "{{#partialdef card}}{{#partial name}}:{{age}}/{{/partialdef}}");
+  BcPartialUser user{"Bob", 25};
+
+  auto expected = injamm::render_partial<tmpl, "card">(user);
+  REQUIRE(expected);
+
+  std::string collected;
+  injamm::callback_sink sink([&](std::string_view sv) { collected.append(sv.data(), sv.size()); }, 3);
+  auto r = injamm::render_partial<tmpl, "card">(user, sink);
+  REQUIRE(r);
+  sink.flush();
+  CHECK(collected == *expected);
+  CHECK(collected == "Bob:25/");
+}
+
