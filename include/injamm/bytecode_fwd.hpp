@@ -120,7 +120,8 @@ enum class section_filter_op_kind : std::uint8_t {
   take,        /**< 先頭 n 個を残す */
   skip,        /**< 先頭 n 個を捨てる */
   take_last,   /**< 末尾 n 個を残す */
-  skip_last    /**< 末尾 n 個を捨てる */
+  skip_last,   /**< 末尾 n 個を捨てる */
+  stride       /**< 先頭 n 個を残し m 個飛ばすことを繰り返す */
 };
 
 struct bytecode;

@@ -75,6 +75,8 @@ struct glz::meta<ItemData> {
 #include "render16.hpp"
 #include "render17.hpp"
 #include "render18.hpp"
+#include "render19.hpp"
+#include "render20.hpp"
 
 // ============================================================
 // テストヘルパ
@@ -250,6 +252,14 @@ int main() {
   check("filter drift (numify/zerofill/truncate/left/format/replace)",
     "{{order_id | numify}}|{{order_id | zerofill(7)}}|{{email | truncate(8)}}|{{name | left(10)}}|{{total | format(\".2f\")}}|{{name | replace(\"i\",\"X\")}}", d,
     [](auto const& data) { return generated::render18(data); });
+
+  // テスト11: セクションフィルタ stride（スキップする要素を持つ繰り返し）
+  TestData sdata;
+  sdata.items = {{"A",1,1.0},{"B",2,2.0},{"C",3,3.0},{"D",4,4.0},{"E",5,5.0},{"F",6,6.0}};
+  check("section stride", "{{#items | stride(3,1)}}{{name}};{{/items}}", sdata,
+    [](auto const& data) { return generated::render19(data); });
+  check("section reverse stride", "{{#items | reverse | stride(3,1)}}{{name}};{{/items}}", sdata,
+    [](auto const& data) { return generated::render20(data); });
 
   // バッファ再利用版のテスト
   check_into("into simple", "Hello {{name}}, age={{age}}", d,

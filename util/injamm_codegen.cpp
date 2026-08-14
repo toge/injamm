@@ -102,7 +102,8 @@ struct var_ref {
   /** @brief セクションフィルタパイプライン */
   struct section_op {
     injamm::detail::section_filter_op_kind kind = injamm::detail::section_filter_op_kind::reverse;
-    std::int32_t arg = 0;
+    std::int32_t arg = 0;   /**< take/skip/take_last/skip_last の引数、stride の取得数 */
+    std::int32_t arg2 = 0;  /**< stride のスキップ数 */
   };
   static constexpr std::uint8_t max_section_ops = 4;
   std::array<section_op, max_section_ops> section_ops{};
@@ -251,6 +252,8 @@ public:
       for (std::uint8_t si = 0; si < ref.section_op_count && si < bc::var_ref::max_section_ops; ++si) {
         ref.section_ops[si].kind = static_cast<injamm::detail::section_filter_op_kind>(read_u8());
         ref.section_ops[si].arg  = static_cast<std::int32_t>(read_u32_le());
+        if (version_ >= 4)
+          ref.section_ops[si].arg2 = static_cast<std::int32_t>(read_u32_le());
       }
     } else if (version_ >= 2) {
       auto sec_rev = read_u8() != 0;
@@ -344,6 +347,8 @@ public:
       version_ = 2;
     } else if (version == 3) {
       version_ = 3;
+    } else if (version == 4) {
+      version_ = 4;
     } else {
       return std::nullopt;
     }
@@ -372,6 +377,8 @@ class code_generator {
   int cond_section_depth_ = 0; /**< emit_at_section/inverted のネスト深度 */
   /**< インデックス形式（_iN/_sizeN）が必要な emit_section 命令 */
   std::unordered_set<const bc::instruction*> index_loops_;
+  /**< stride ループ深度（ループ末尾で _srcN を進める） */
+  std::unordered_set<int> stride_loops_;
   std::ostringstream out_;     /**< 出力ストリーム */
 
   // ponytail: フィルタの文字列引数は VM 同様 var_ref.filters に格納され、filter_string
@@ -781,6 +788,7 @@ class code_generator {
         emit("auto _size" + idx + " = " + access + ".size();");
         emit("std::size_t _lo" + idx + " = 0, _hi" + idx + " = _size" + idx + ";");
         emit("bool _bwd" + idx + " = false;");
+        bool has_stride = false;
         for (std::uint8_t si = 0; si < ref.section_op_count; ++si) {
           auto const& sop = ref.section_ops[si];
           auto n_str = std::to_string(sop.arg);
@@ -805,13 +813,29 @@ class code_generator {
               emit("if (_bwd" + idx + ") _lo" + idx + " = std::min(_hi" + idx + ", _lo" + idx + " + " + n_str + "u);");
               emit("else _hi" + idx + " = (_hi" + idx + " > " + n_str + "u ? _hi" + idx + " - " + n_str + "u : _lo" + idx + ");");
               break;
+            case injamm::detail::section_filter_op_kind::stride:
+              emit("std::size_t _st_take" + idx + " = " + std::to_string(std::max(sop.arg, 0)) + "u;");
+              emit("std::size_t _st_skip" + idx + " = " + std::to_string(std::max(sop.arg2, 0)) + "u;");
+              has_stride = true;
+              break;
           }
         }
-        emit("auto _count" + idx + " = _hi" + idx + " - _lo" + idx + ";");
-        emit("for (std::size_t _i" + idx + " = 0; _i" + idx + " < _count" + idx + "; ++_i" + idx + ") {");
-        ++indent_;
-        emit("auto _idx" + idx + " = _bwd" + idx + " ? (_hi" + idx + " - 1 - _i" + idx + ") : (_lo" + idx + " + _i" + idx + ");");
-        emit("const auto& _item" + idx + " = " + access + "[_idx" + idx + "];");
+        if (has_stride) {
+          stride_loops_.insert(loop_depth_);
+          emit("auto _block" + idx + " = _st_take" + idx + " + _st_skip" + idx + ";");
+          emit("auto _count" + idx + " = _st_take" + idx + " == 0 ? std::size_t(0) : ((_hi" + idx + " - _lo" + idx + ") / _block" + idx + " * _st_take" + idx + " + std::min(_st_take" + idx + ", (_hi" + idx + " - _lo" + idx + ") % _block" + idx + "));");
+          emit("std::size_t _src" + idx + " = _bwd" + idx + " ? (_hi" + idx + " - 1) : _lo" + idx + ";");
+          emit("for (std::size_t _i" + idx + " = 0; _i" + idx + " < _count" + idx + "; ++_i" + idx + ") {");
+          ++indent_;
+          emit("while (!(_src" + idx + " >= _lo" + idx + " && _src" + idx + " < _hi" + idx + " && ((_bwd" + idx + " ? (_hi" + idx + " - 1 - _src" + idx + ") : (_src" + idx + " - _lo" + idx + ")) % _block" + idx + ") < _st_take" + idx + ")) { if (_bwd" + idx + ") --_src" + idx + "; else ++_src" + idx + "; }");
+          emit("const auto& _item" + idx + " = " + access + "[_src" + idx + "];");
+        } else {
+          emit("auto _count" + idx + " = _hi" + idx + " - _lo" + idx + ";");
+          emit("for (std::size_t _i" + idx + " = 0; _i" + idx + " < _count" + idx + "; ++_i" + idx + ") {");
+          ++indent_;
+          emit("auto _idx" + idx + " = _bwd" + idx + " ? (_hi" + idx + " - 1 - _i" + idx + ") : (_lo" + idx + " + _i" + idx + ");");
+          emit("const auto& _item" + idx + " = " + access + "[_idx" + idx + "];");
+        }
       } else if (index_loops_.count(&inst) != 0) {
         /* @index/@first/@last/@size 等を参照するループはインデックス形式を維持 */
         emit("auto _size" + idx + " = " + access + ".size();");
@@ -856,6 +880,11 @@ class code_generator {
         emit("}");
         --cond_section_depth_;
       } else if (loop_depth_ > 0) {
+        if (stride_loops_.count(loop_depth_) != 0) {
+          auto sidx = std::to_string(loop_depth_);
+          emit("if (_bwd" + sidx + ") --_src" + sidx + "; else ++_src" + sidx + ";");
+          stride_loops_.erase(loop_depth_);
+        }
         --indent_;
         emit("}");
         --loop_depth_;

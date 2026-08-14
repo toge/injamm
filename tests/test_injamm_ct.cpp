@@ -2862,3 +2862,30 @@ TEST_CASE("ct section take loop.size", "[ct][section][filter]") {
   REQUIRE(out);
   CHECK(*out == "size=2 size=2 ");
 }
+
+TEST_CASE("ct section stride", "[ct][section][filter]") {
+  CtSectionFilterData5 data{};
+  data.items = {1, 2, 3, 4, 5};
+  auto constexpr tmpl = injamm::fixed_string("{{#items | stride(3,1)}}{{this}} {{/items}}");
+  auto out = injamm::render<tmpl>(data);
+  REQUIRE(out);
+  CHECK(*out == "1 2 3 5 ");
+}
+
+TEST_CASE("ct section stride reverse", "[ct][section][filter]") {
+  CtSectionFilterData5 data{};
+  data.items = {1, 2, 3, 4, 5};
+  auto constexpr tmpl = injamm::fixed_string("{{#items | reverse | stride(3,1)}}{{this}} {{/items}}");
+  auto out = injamm::render<tmpl>(data);
+  REQUIRE(out);
+  CHECK(*out == "5 4 3 1 ");
+}
+
+TEST_CASE("ct section stride pipeline", "[ct][section][filter]") {
+  CtSectionFilterData5 data{};
+  data.items = {1, 2, 3, 4, 5};
+  auto constexpr tmpl = injamm::fixed_string("{{#items | take(4) | stride(3,1)}}{{this}} {{/items}}");
+  auto out = injamm::render<tmpl>(data);
+  REQUIRE(out);
+  CHECK(*out == "1 2 3 ");
+}

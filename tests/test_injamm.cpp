@@ -4672,6 +4672,58 @@ TEST_CASE("section unknown filter error", "[section][filter]") {
   CHECK(result.error().ec == injamm::error_code::unknown_filter);
 }
 
+TEST_CASE("section stride", "[section][filter]") {
+  auto out = injamm::engine<SectionFilterData5>("{{#items | stride(3,1)}}{{this}} {{/items}}").render(SectionFilterData5{});
+  REQUIRE(out);
+  CHECK(*out == "1 2 3 5 ");
+
+  auto out2 = injamm::engine<SectionFilterData5>("{{#items | stride(2,0)}}{{this}} {{/items}}").render(SectionFilterData5{});
+  REQUIRE(out2);
+  CHECK(*out2 == "1 2 3 4 5 ");
+
+  auto out3 = injamm::engine<SectionFilterData5>("{{#items | stride(0,1)}}X{{/items}}").render(SectionFilterData5{});
+  REQUIRE(out3);
+  CHECK(*out3 == "");
+}
+
+TEST_CASE("section stride partial block", "[section][filter]") {
+  auto out = injamm::engine<SectionFilterData5>("{{#items | stride(2,3)}}{{this}} {{/items}}").render(SectionFilterData5{});
+  REQUIRE(out);
+  CHECK(*out == "1 2 ");
+}
+
+TEST_CASE("section stride pipeline", "[section][filter]") {
+  auto out1 = injamm::engine<SectionFilterData5>("{{#items | take(4) | stride(3,1)}}{{this}} {{/items}}").render(SectionFilterData5{});
+  REQUIRE(out1);
+  CHECK(*out1 == "1 2 3 ");
+
+  auto out2 = injamm::engine<SectionFilterData5>("{{#items | stride(3,1) | take(2)}}{{this}} {{/items}}").render(SectionFilterData5{});
+  REQUIRE(out2);
+  CHECK(*out2 == "1 2 ");
+}
+
+TEST_CASE("section reverse stride", "[section][filter]") {
+  auto out = injamm::engine<SectionFilterData5>("{{#items | reverse | stride(3,1)}}{{this}} {{/items}}").render(SectionFilterData5{});
+  REQUIRE(out);
+  CHECK(*out == "5 4 3 1 ");
+
+  auto out2 = injamm::engine<SectionFilterData5>("{{#items | reverse | take(4) | stride(3,1)}}{{this}} {{/items}}").render(SectionFilterData5{});
+  REQUIRE(out2);
+  CHECK(*out2 == "5 4 3 ");
+}
+
+TEST_CASE("section stride loop", "[section][filter]") {
+  auto out = injamm::engine<SectionFilterData5>("{{#items | stride(3,1)}}[{{loop.index}}:{{loop.is_first}}:{{loop.is_last}}:{{this}}]{{/items}}").render(SectionFilterData5{});
+  REQUIRE(out);
+  CHECK(*out == "[0:true:false:1][1:false:false:2][2:false:false:3][3:false:true:5]");
+}
+
+TEST_CASE("section stride map", "[section][filter]") {
+  auto out = injamm::engine<BcMapIntData>("{{#values | stride(1,1)}}{{loop.key}}={{this}} {{/values}}").render(BcMapIntData{{{"a", 1}, {"b", 2}, {"c", 3}}});
+  REQUIRE(out);
+  CHECK(*out == "a=1 c=3 ");
+}
+
 // ---- コールバック sink（ストリーミング出力）テスト ----
 
 TEST_CASE("callback_sink engine streaming matches string render", "[sink]") {

@@ -118,6 +118,7 @@ inline void write_var_ref(std::ostream& os, std::vector<std::string> const& lite
   for (std::uint8_t i = 0; i < ref.section_op_count; ++i) {
     write_u8(os, static_cast<std::uint8_t>(ref.section_ops[i].kind));
     write_u32_le(os, static_cast<std::uint32_t>(ref.section_ops[i].arg));
+    write_u32_le(os, static_cast<std::uint32_t>(ref.section_ops[i].arg2));
   }
 
   write_u64_le(os, ref.filters.size());
@@ -337,7 +338,7 @@ bytecode read_bytecode_body(std::istream& is, read_state& state);
 inline error_code save_bytecode(detail::bytecode const& bc, std::ostream& os) {
   constexpr char magic[] = {'I', 'J', 'B', 'C'};
   os.write(magic, 4);
-  detail::write_u32_le(os, 3); // バージョン 3（セクションフィルタパイプライン）
+  detail::write_u32_le(os, 4); // バージョン 4（セクションフィルタ stride 対応）
   if (!os) return error_code::no_read_input;
 
   detail::write_bytecode(os, bc);
@@ -375,6 +376,8 @@ expected<detail::bytecode> load_bytecode(std::istream& is) {
     state.version = 2;
   } else if (version == 3) {
     state.version = 3;
+  } else if (version == 4) {
+    state.version = 4;
   } else {
     return std::unexpected(error_ctx{0, error_code::type_mismatch, "Unsupported bytecode version"});
   }
@@ -439,6 +442,8 @@ bytecode read_bytecode_body(std::istream& is, read_state& state) {
       for (std::uint8_t si = 0; si < ref.section_op_count && si < bc_var_ref::max_section_ops; ++si) {
         ref.section_ops[si].kind = static_cast<section_filter_op_kind>(read_u8(is, state));
         ref.section_ops[si].arg  = static_cast<std::int32_t>(read_u32_le(is, state));
+        if (state.version >= 4)
+          ref.section_ops[si].arg2 = static_cast<std::int32_t>(read_u32_le(is, state));
       }
     } else if (state.version >= 2) {
       auto sec_rev = read_u8(is, state) != 0;

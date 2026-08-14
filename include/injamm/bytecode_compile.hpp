@@ -554,6 +554,7 @@ class bc_compiler {
     for (std::uint8_t i = 0; i < ref.section_op_count; ++i) {
       ref.section_ops[i].kind = pipeline[i].kind;
       ref.section_ops[i].arg  = pipeline[i].arg;
+      ref.section_ops[i].arg2 = pipeline[i].arg2;
     }
     resolve_ref_indices(idx, key);
     bc_.add_instruction(bc_opcode::emit_section, 0, idx);

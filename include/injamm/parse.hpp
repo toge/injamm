@@ -399,7 +399,8 @@ constexpr std::size_t constexpr_find_tag(std::string_view haystack, std::string_
 /** @brief セクションフィルタオペコード（{{#key | reverse}} / {{#key | take(n)}} / {{#key | skip(n)}} / ...） */
 struct section_filter_op {
   section_filter_op_kind kind;
-  int arg = 0; /**< take/skip/take_last/skip_last の引数 */
+  int arg = 0;  /**< take/skip/take_last/skip_last の引数、stride の取得数 */
+  int arg2 = 0; /**< stride のスキップ数 */
 };
 
 /** @brief セクションフィルタ名を解析する */
@@ -410,6 +411,14 @@ struct section_filter_op {
   if (paren != std::string_view::npos && name.back() == ')') {
     auto fn = name.substr(0, paren);
     auto arg_str = name.substr(paren + 1, name.size() - paren - 2);
+    if (fn == "stride") {
+      // stride(t,s): t 個取得して s 個飛ばす繰り返し
+      auto comma = constexpr_find(arg_str, ',');
+      if (comma == std::string_view::npos)
+        return section_filter_op{section_filter_op_kind::stride, parse_int_arg(arg_str), 0};
+      return section_filter_op{section_filter_op_kind::stride, parse_int_arg(arg_str.substr(0, comma)),
+                               parse_int_arg(arg_str.substr(comma + 1))};
+    }
     auto arg = parse_int_arg(arg_str);
     if (fn == "take") return section_filter_op{section_filter_op_kind::take, arg};
     if (fn == "skip") return section_filter_op{section_filter_op_kind::skip, arg};

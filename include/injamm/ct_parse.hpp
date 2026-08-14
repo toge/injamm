@@ -652,7 +652,7 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
               continue;
             }
             if (sec_ops.size() < bc_var_ref::max_section_ops)
-              sec_ops.push_back({sf->kind, sf->arg});
+              sec_ops.push_back({sf->kind, sf->arg, sf->arg2});
           }
           if (!exists_transformed)
             key = close_key;  // チャンクにはベースキーを格納（exists 変換時は変換済みキーを使用）

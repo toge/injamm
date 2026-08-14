@@ -648,6 +648,9 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
     std::uint32_t lo = 0;
     std::uint32_t hi = 0;
     bool bwd = false;
+    bool has_stride = false;   /**< stride オペコードが含まれるか */
+    std::uint32_t stride_take = 0; /**< stride の取得数 */
+    std::uint32_t stride_skip = 0; /**< stride のスキップ数 */
   };
 
   static section_window fold_section_ops(bc_var_ref const& ref, std::uint32_t sz) {
@@ -675,9 +678,35 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
           if (w.bwd) w.lo = std::min(w.hi, w.lo + n);
           else       w.hi = (w.hi > n ? w.hi - n : w.lo);
           break;
+        case section_filter_op_kind::stride: {
+          w.has_stride = true;
+          w.stride_take = static_cast<std::uint32_t>(std::max(op.arg, 0));
+          w.stride_skip = static_cast<std::uint32_t>(std::max(op.arg2, 0));
+          break;
+        }
       }
     }
     return w;
+  }
+
+  /** @brief 絶対インデックスがウィンドウ・stride 条件を満たすか判定する
+   *  @details bwd 時は stride パターンを hi 側基準でミラーする（既存 take/skip の末尾基準と同じ規則）。 */
+  static bool kept(section_window const& w, std::uint32_t abs_idx) {
+    if (abs_idx < w.lo || abs_idx >= w.hi) return false;
+    if (!w.has_stride) return true;
+    if (w.stride_take == 0) return false;
+    auto rel   = w.bwd ? (w.hi - 1u - abs_idx) : (abs_idx - w.lo);
+    auto block = w.stride_take + w.stride_skip;
+    return rel % block < w.stride_take;
+  }
+
+  /** @brief ウィンドウ内で kept() を満たす要素数 */
+  static std::uint32_t kept_count(section_window const& w) {
+    auto size = w.hi - w.lo;
+    if (!w.has_stride) return size;
+    if (w.stride_take == 0) return 0;
+    auto block = w.stride_take + w.stride_skip;
+    return (size / block) * w.stride_take + std::min(w.stride_take, size % block);
   }
 
   static std::expected<void, error_ctx> do_section(bc_executor& ex, std::size_t& pc) {
@@ -696,15 +725,17 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
         if (!field.empty()) is_falsy = false;
         auto const sz = static_cast<std::uint32_t>(field.size());
         auto w = fold_section_ops(ref, sz);
-        auto count = w.hi - w.lo;
+        auto count = kept_count(w);
         using elem_t = typename FT::value_type;
         bc_loop_state ls;
         ls.parent = ex.loop_;
         ls.count = count;
+        auto src = w.bwd ? (w.hi - 1u) : w.lo;
         for (ls.index = 0; ls.index < count; ++ls.index) {
           ls.continue_flag = false;
-          auto idx = w.bwd ? (w.hi - 1u - ls.index) : (w.lo + ls.index);
-          auto const& elem = field[idx];
+          if (w.has_stride)
+            while (!kept(w, src)) { if (w.bwd) --src; else ++src; }
+          auto const& elem = field[src];
           ls.binding_name = ref.key;
           ls.binding_elem = &elem;
           ls.binding_resolve = &resolve_binding_var<elem_t>;
@@ -712,6 +743,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
           bc_executor<elem_t, RootT, Sink> child_exec(ex.bc_, elem, ex.root_value_, &ls, ex.out_);
           auto r2 = child_exec.execute_impl(pc + 1, body_end - 1);
           if (!r2) return r2;
+          if (w.bwd) --src; else ++src;
           if (ls.continue_flag) { ls.continue_flag = false; continue; }
           if (ls.break_flag) break;
         }
@@ -730,7 +762,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
         if (!field.empty()) is_falsy = false;
         auto const sz = static_cast<std::uint32_t>(field.size());
         auto w = fold_section_ops(ref, sz);
-        auto count = w.hi - w.lo;
+        auto count = kept_count(w);
         bc_loop_state ls;
         ls.parent = ex.loop_;
         ls.count = count;
@@ -752,14 +784,18 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
         if (w.bwd) {
           using pair_t = std::remove_cvref_t<decltype(*field.begin())>;
           std::vector<pair_t> temp(field.begin(), field.end());
-          for (std::uint32_t i = 0; i < count && !map_res && !ls.break_flag; ++i) {
-            auto idx = w.hi - 1u - i;
-            map_res = visit(temp[idx].first, temp[idx].second);
+          for (std::uint32_t pos = w.hi; pos > w.lo && !map_res && !ls.break_flag && emitted < count;) {
+            --pos;
+            if (w.has_stride && !kept(w, pos)) continue;
+            map_res = visit(temp[pos].first, temp[pos].second);
           }
         } else {
-          std::uint32_t skipped = 0;
+          std::uint32_t pos = 0;
           for (auto const& [k, v] : field) {
-            if (skipped < w.lo) { ++skipped; continue; }
+            if (pos < w.lo) { ++pos; continue; }
+            if (pos >= w.hi) break;
+            if (w.has_stride && !kept(w, pos)) { ++pos; continue; }
+            ++pos;
             map_res = visit(k, v);
             if (!map_res || ls.break_flag) break;
           }
@@ -770,16 +806,17 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
         using elem_t = typename FT::value_type;
         auto const sz = static_cast<std::uint32_t>(field.size());
         auto w = fold_section_ops(ref, sz);
-        auto count = w.hi - w.lo;
+        auto count = kept_count(w);
         bc_loop_state ls;
         ls.parent = ex.loop_;
         ls.count = count;
         std::uint32_t emitted = 0;
         if (w.bwd) {
           std::vector<elem_t> temp(field.begin(), field.end());
-          for (std::uint32_t i = 0; i < count; ++i) {
-            auto idx = w.hi - 1u - i;
-            auto const& elem = temp[idx];
+          for (std::uint32_t pos = w.hi; pos > w.lo && emitted < count;) {
+            --pos;
+            if (w.has_stride && !kept(w, pos)) continue;
+            auto const& elem = temp[pos];
             ls.index = emitted;
             ls.continue_flag = false;
             ls.binding_name = ref.key;
@@ -794,10 +831,12 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
             ++emitted;
           }
         } else {
-          std::uint32_t skipped = 0;
+          std::uint32_t pos = 0;
           for (auto const& elem : field) {
-            if (skipped < w.lo) { ++skipped; continue; }
-            if (emitted >= count) break;
+            if (pos < w.lo) { ++pos; continue; }
+            if (pos >= w.hi) break;
+            if (w.has_stride && !kept(w, pos)) { ++pos; continue; }
+            ++pos;
             ls.index = emitted;
             ls.continue_flag = false;
             ls.binding_name = ref.key;
@@ -839,59 +878,42 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
         if constexpr (has_size) {
           auto const sz = static_cast<std::uint32_t>(field.size());
           auto w = fold_section_ops(ref, sz);
-          auto count = w.hi - w.lo;
+          auto count = kept_count(w);
           ls.count = count;
-          if (w.bwd) {
-            if constexpr (std::bidirectional_iterator<decltype(it)>) {
-              auto rit = field.rbegin();
-              auto rend = field.rend();
-              std::uint32_t emitted = 0;
-              for (; rit != rend; ++rit) {
-                if (emitted >= count) break;
-                auto const& elem = *rit;
-                ls.index = emitted;
-                ls.continue_flag = false;
-                ls.binding_name = ref.key;
-                ls.binding_elem = &elem;
-                ls.binding_resolve = &resolve_binding_var<elem_t>;
-                ls.binding_truthy = &eval_binding_truthy<elem_t>;
-                bc_executor<elem_t, RootT, Sink> child_exec(ex.bc_, elem, ex.root_value_, &ls, ex.out_);
-                auto r2 = child_exec.execute_impl(pc + 1, body_end - 1);
-                if (!r2) return r2;
-                if (ls.continue_flag) { ls.continue_flag = false; continue; }
-                if (ls.break_flag) break;
-                ++emitted;
-              }
-              ls.count = emitted;
-            } else {
-              // forward-only: 逆順不可、forward+skip のみ
-              std::uint32_t emitted = 0;
-              std::uint32_t skipped = 0;
-              for (; it != end_field; ++it) {
-                if (skipped < w.lo) { ++skipped; continue; }
-                if (emitted >= count) break;
-                auto const& elem = *it;
-                ls.index = emitted;
-                ls.continue_flag = false;
-                ls.binding_name = ref.key;
-                ls.binding_elem = &elem;
-                ls.binding_resolve = &resolve_binding_var<elem_t>;
-                ls.binding_truthy = &eval_binding_truthy<elem_t>;
-                bc_executor<elem_t, RootT, Sink> child_exec(ex.bc_, elem, ex.root_value_, &ls, ex.out_);
-                auto r2 = child_exec.execute_impl(pc + 1, body_end - 1);
-                if (!r2) return r2;
-                if (ls.continue_flag) { ls.continue_flag = false; continue; }
-                if (ls.break_flag) break;
-                ++emitted;
-              }
-              ls.count = emitted;
-            }
-          } else {
-            std::uint32_t skipped = 0;
+          if (w.bwd && std::bidirectional_iterator<decltype(it)>) {
+            auto rit = field.rbegin();
+            auto rend = field.rend();
             std::uint32_t emitted = 0;
+            auto pos = sz;
+            for (; rit != rend && emitted < count; ++rit) {
+              --pos;
+              if (w.has_stride && !kept(w, pos)) continue;
+              auto const& elem = *rit;
+              ls.index = emitted;
+              ls.continue_flag = false;
+              ls.binding_name = ref.key;
+              ls.binding_elem = &elem;
+              ls.binding_resolve = &resolve_binding_var<elem_t>;
+              ls.binding_truthy = &eval_binding_truthy<elem_t>;
+              bc_executor<elem_t, RootT, Sink> child_exec(ex.bc_, elem, ex.root_value_, &ls, ex.out_);
+              auto r2 = child_exec.execute_impl(pc + 1, body_end - 1);
+              if (!r2) return r2;
+              if (ls.continue_flag) { ls.continue_flag = false; continue; }
+              if (ls.break_flag) break;
+              ++emitted;
+            }
+            ls.count = emitted;
+          } else {
+            // forward（bwd 要求だが逆順不可の場合は forward 近似）
+            auto wf = w;
+            wf.bwd = false;
+            std::uint32_t emitted = 0;
+            std::uint32_t pos = 0;
             for (; it != end_field; ++it, ++ls.index) {
-              if (skipped < w.lo) { ++skipped; continue; }
-              if (emitted >= count) break;
+              if (pos < wf.lo) { ++pos; continue; }
+              if (pos >= wf.hi) break;
+              if (wf.has_stride && !kept(wf, pos)) { ++pos; continue; }
+              ++pos;
               auto const& elem = *it;
               ls.continue_flag = false;
               ls.binding_name = ref.key;
@@ -908,7 +930,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
             ls.count = emitted;
           }
         } else {
-          // size() なし: forward/streaming のみ対応、take 制限のみ適用
+          // size() なし: forward/streaming のみ対応
           std::uint32_t emitted = 0;
           bool const has_ops = ref.section_op_count > 0;
           section_window w{};
@@ -917,12 +939,19 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
             auto const sz_approx = static_cast<std::uint32_t>(999999u);
             w = fold_section_ops(ref, sz_approx);
           }
-          auto count = has_ops ? (w.hi - w.lo) : 999999u;
+          auto count = has_ops ? kept_count(w) : 999999u;
           ls.count = count;
           std::uint32_t skipped = 0;
+          std::uint32_t stride_block_pos = 0; /**< ストリーミング時の stride ブロック内位置 */
           for (; it != end_field; ++it, ++ls.index) {
             if (has_ops && skipped < w.lo) { ++skipped; continue; }
             if (emitted >= count) break;
+            if (has_ops && w.has_stride) {
+              if (w.stride_take == 0) break;
+              auto block = w.stride_take + w.stride_skip;
+              if (stride_block_pos % block >= w.stride_take) { ++stride_block_pos; continue; }
+              ++stride_block_pos;
+            }
             auto const& elem = *it;
             ls.continue_flag = false;
             ls.binding_name = ref.key;
@@ -943,44 +972,48 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
         constexpr auto sz = glz::reflect<FT>::size;
         auto tied = glz::to_tie(field);
         auto w = fold_section_ops(ref, static_cast<std::uint32_t>(sz));
-        auto count = w.hi - w.lo;
+        auto count = kept_count(w);
         std::expected<void, error_ctx> res{};
         if (w.bwd) {
           // リバース: I=0→最後の要素、I=1→その前... のように評価
+          std::uint32_t emitted = 0;
           [&]<std::size_t... I>(std::index_sequence<I...>) {
             (([&] {
                if (!res) return;
-               if (static_cast<std::uint32_t>(I) < w.lo || static_cast<std::uint32_t>(I) >= w.hi) return;
                constexpr auto src_idx = sz - 1u - I;
+               if (w.has_stride && !kept(w, static_cast<std::uint32_t>(src_idx))) return;
                using elem_t = std::remove_cvref_t<decltype(glz::get<src_idx>(tied))>;
                bc_loop_state ls;
                ls.parent = ex.loop_;
-               ls.count = count; ls.index = static_cast<std::uint32_t>(I - w.lo); ls.key = glz::reflect<FT>::keys[src_idx];
+               ls.count = count; ls.index = emitted; ls.key = glz::reflect<FT>::keys[src_idx];
                ls.binding_name = ref.key;
                ls.binding_elem = &glz::get<src_idx>(tied);
                ls.binding_resolve = &resolve_binding_var<elem_t>;
                ls.binding_truthy = &eval_binding_truthy<elem_t>;
                bc_executor<elem_t, RootT, Sink> child_exec(ex.bc_, glz::get<src_idx>(tied), ex.root_value_, &ls, ex.out_);
                res = child_exec.execute_impl(pc + 1, body_end - 1);
+               ++emitted;
             }()), ...);
           }(std::make_index_sequence<sz>{});
         } else {
           // フォワード
+          std::uint32_t emitted = 0;
           [&]<std::size_t... I>(std::index_sequence<I...>) {
             (([&] {
                if (!res) return;
-               if (static_cast<std::uint32_t>(I) < w.lo || static_cast<std::uint32_t>(I) >= w.hi) return;
                constexpr auto src_idx = I;
+               if (w.has_stride && !kept(w, static_cast<std::uint32_t>(src_idx))) return;
                using elem_t = std::remove_cvref_t<decltype(glz::get<src_idx>(tied))>;
                bc_loop_state ls;
                ls.parent = ex.loop_;
-               ls.count = count; ls.index = static_cast<std::uint32_t>(I - w.lo); ls.key = glz::reflect<FT>::keys[src_idx];
+               ls.count = count; ls.index = emitted; ls.key = glz::reflect<FT>::keys[src_idx];
                ls.binding_name = ref.key;
                ls.binding_elem = &glz::get<src_idx>(tied);
                ls.binding_resolve = &resolve_binding_var<elem_t>;
                ls.binding_truthy = &eval_binding_truthy<elem_t>;
                bc_executor<elem_t, RootT, Sink> child_exec(ex.bc_, glz::get<src_idx>(tied), ex.root_value_, &ls, ex.out_);
                res = child_exec.execute_impl(pc + 1, body_end - 1);
+               ++emitted;
             }()), ...);
           }(std::make_index_sequence<sz>{});
         }
