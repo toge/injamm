@@ -604,6 +604,25 @@ auto eng = injamm::engine<User>(std::move(*bc));
 | 7   | unknown_filter | 不明なフィルタ             |
 | 8   | division_by_zero | 除数ゼロエラー           |
 
+### エラー診断・フォーマット（`formatError` / `error_ctx::format`）
+
+エラー発生時にテンプレートの該当行・列番号および周辺コードスニペット付きで診断メッセージを整形できます。
+
+```cpp
+auto res = eng.render(data);
+if (!res) {
+  // コンパイラ風の診断メッセージを取得 (例: "template.html:2:8: error: Unknown key: foo\n  ...")
+  std::cerr << res.error().format(tmpl_string, "template.html");
+
+  // またはスタンドアロン関数を利用
+  std::cerr << injamm::formatError(tmpl_string, res.error(), "template.html");
+
+  // 行番号・列番号の個別取得
+  auto loc = injamm::getSourceLocation(tmpl_string, res.error().position);
+  std::cerr << "Line: " << loc.line << ", Column: " << loc.column << "\n";
+}
+```
+
 ## 注意事項
 
 - `render<fixed_string>` の戻り値型 `expected<std::string>` は、GCC 16 の `[[nodiscard]] expected<void, error_ctx>` と衝突する可能性があります。必要に応じて `void` 特殊化を無視してください。

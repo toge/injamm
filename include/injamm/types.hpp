@@ -1,9 +1,11 @@
 #pragma once
 
+#include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <expected>
 #include <ostream>
+#include <string>
 #include <string_view>
 #include <type_traits>
 
@@ -67,6 +69,38 @@ inline std::ostream& operator<<(std::ostream& os, error_code ec) {
   return os << error_code_to_message(ec);
 }
 
+/** @brief ソースコード上の位置情報 */
+struct source_location {
+  std::size_t      line   = 1;   /**< 行番号（1始まり） */
+  std::size_t      column = 1;   /**< 列番号（1始まり、バイト基準） */
+  std::string_view line_content; /**< 該当行の文字列スニペット（改行を含まない） */
+};
+
+/** @brief テンプレート文字列とバイトオフセットから行・列番号および該当行スニペットを抽出する */
+constexpr source_location getSourceLocation(std::string_view source, std::size_t position) noexcept {
+  auto const  pos        = std::min(position, source.size());
+  std::size_t line       = 1;
+  std::size_t col        = 1;
+  std::size_t line_start = 0;
+
+  for (std::size_t i = 0; i < pos; ++i) {
+    if (source[i] == '\n') {
+      ++line;
+      col        = 1;
+      line_start = i + 1;
+    } else {
+      ++col;
+    }
+  }
+
+  auto line_end = line_start;
+  while (line_end < source.size() && source[line_end] != '\n' && source[line_end] != '\r') {
+    ++line_end;
+  }
+
+  return source_location{.line = line, .column = col, .line_content = source.substr(line_start, line_end - line_start)};
+}
+
 /** @brief エラーコンテキスト
  *
  *  エラー発生位置とエラーコード、カスタムメッセージを保持する。
@@ -86,7 +120,53 @@ struct error_ctx {
 
   /** @brief エラーが発生しているか判定する */
   [[nodiscard]] bool has_error() const noexcept { return ec != error_code::none; }
+
+  /** @brief テンプレートエラーをコンパイラ風の診断メッセージにフォーマットする */
+  [[nodiscard]] std::string format(std::string_view source, std::string_view filename = "") const;
 };
+
+/** @brief テンプレートエラーをコンパイラ風の診断メッセージにフォーマットする */
+inline std::string formatError(std::string_view source, error_ctx const& err, std::string_view filename = "") {
+  if (!err.has_error()) {
+    return "No error";
+  }
+
+  auto const loc = getSourceLocation(source, err.position);
+  auto const msg = err.message();
+
+  std::string result;
+  if (!filename.empty()) {
+    result += filename;
+    result += ':';
+  }
+  result += std::to_string(loc.line);
+  result += ':';
+  result += std::to_string(loc.column);
+  result += ": error: ";
+  result += msg;
+  result += '\n';
+
+  result += "  ";
+  result += loc.line_content;
+  result += '\n';
+
+  result += "  ";
+  for (std::size_t i = 1; i < loc.column; ++i) {
+    if (i - 1 < loc.line_content.size() && loc.line_content[i - 1] == '\t') {
+      result += '\t';
+    } else {
+      result += ' ';
+    }
+  }
+  result += '^';
+  result += '\n';
+
+  return result;
+}
+
+inline std::string error_ctx::format(std::string_view source, std::string_view filename) const {
+  return formatError(source, *this, filename);
+}
 
 /** @brief レンダリングモードタグ: エスケープなし（デフォルト） */
 struct stencil_tag {};
@@ -146,59 +226,56 @@ struct fixed_string {
 // ---- runtime field access concept (shared with sqlite3 ext) ----
 namespace detail {
 
-/** @brief 出力先 sink の制約。std::string も満たす（テンプレート sink 方式の中核）
- *
- *  escape_hatch.hpp / bytecode_exec.hpp の両方から参照されるため、全ヘッダが
- *  必ず先にインクルードする types.hpp に置く（include 順に依存しない）。
- */
-template <class S>
-concept output_sink = requires(S s, std::string_view sv) {
-  s.append(sv);
-  s.append(sv.data(), sv.size());
-};
+  /** @brief 出力先 sink の制約。std::string も満たす（テンプレート sink 方式の中核）
+   *
+   *  escape_hatch.hpp / bytecode_exec.hpp の両方から参照されるため、全ヘッダが
+   *  必ず先にインクルードする types.hpp に置く（include 順に依存しない）。
+   */
+  template <class S>
+  concept output_sink = requires(S s, std::string_view sv) {
+    s.append(sv);
+    s.append(sv.data(), sv.size());
+  };
 
-template <class T>
-concept runtime_field_accessible = requires(T const& t, std::string_view key) {
-  { t.find(key) } -> std::same_as<std::string>;
-};
+  template <class T>
+  concept runtime_field_accessible = requires(T const& t, std::string_view key) {
+    { t.find(key) } -> std::same_as<std::string>;
+  };
 
-template <class T>
-concept forward_iterable = requires(T& t) {
-  typename T::value_type;
-  { t.begin() };
-  { t.end() };
-};
+  template <class T>
+  concept forward_iterable = requires(T& t) {
+    typename T::value_type;
+    { t.begin() };
+    { t.end() };
+  };
 
-/** @brief char ポインタ型（const char*, char*）かどうかを判定する
- *
- *  std::string / std::string_view は除外。nullptr 安全な string_view 変換は
- *  to_sv() を使用する。
- */
-template <class T>
-concept char_pointer_v = std::is_pointer_v<std::remove_cvref_t<T>> &&
-    std::same_as<std::remove_cv_t<std::remove_pointer_t<std::remove_cvref_t<T>>>, char>;
+  /** @brief char ポインタ型（const char*, char*）かどうかを判定する
+   *
+   *  std::string / std::string_view は除外。nullptr 安全な string_view 変換は
+   *  to_sv() を使用する。
+   */
+  template <class T>
+  concept char_pointer_v = std::is_pointer_v<std::remove_cvref_t<T>> && std::same_as<std::remove_cv_t<std::remove_pointer_t<std::remove_cvref_t<T>>>, char>;
 
-/** @brief std::string / std::string_view / char ポインタから安全に string_view を得る
- *
- *  nullptr ポインタは空 string_view に変換する。emit_value / truthy / section /
- *  comparison など、文字列系分岐で const char* にも対応するための統一入口。
- */
-template <class T>
-  requires std::same_as<std::remove_cvref_t<T>, std::string> ||
-           std::same_as<std::remove_cvref_t<T>, std::string_view> ||
-           char_pointer_v<T>
-constexpr std::string_view to_sv(T const& t) noexcept {
-  using D = std::remove_cvref_t<T>;
-  if constexpr (char_pointer_v<D>) {
-    return t ? std::string_view{t} : std::string_view{};
-  } else if constexpr (std::same_as<D, std::string_view>) {
-    return t;
-  } else {
-    return {t.data(), t.size()};  // std::string
+  /** @brief std::string / std::string_view / char ポインタから安全に string_view を得る
+   *
+   *  nullptr ポインタは空 string_view に変換する。emit_value / truthy / section /
+   *  comparison など、文字列系分岐で const char* にも対応するための統一入口。
+   */
+  template <class T>
+    requires std::same_as<std::remove_cvref_t<T>, std::string> || std::same_as<std::remove_cvref_t<T>, std::string_view> || char_pointer_v<T>
+  constexpr std::string_view to_sv(T const& t) noexcept {
+    using D = std::remove_cvref_t<T>;
+    if constexpr (char_pointer_v<D>) {
+      return t ? std::string_view{t} : std::string_view{};
+    } else if constexpr (std::same_as<D, std::string_view>) {
+      return t;
+    } else {
+      return {t.data(), t.size()};  // std::string
+    }
   }
-}
 
-} // namespace detail
+}  // namespace detail
 
 // ponytail: クラステンプレート推定ガイド。injamm::fixed_string("...") で N を推定可能に。
 template <std::size_t N>
