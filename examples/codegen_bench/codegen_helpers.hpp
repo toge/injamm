@@ -453,32 +453,39 @@ inline void filter_capitalize(std::string& s) {
   if (!s.empty()) s[0] = static_cast<char>(std::toupper(static_cast<unsigned char>(s[0])));
 }
 
-inline void filter_trim(std::string& s) {
-  auto start = s.find_first_not_of(" \t");
-  if (start == std::string::npos) {
-    s.clear();
+inline void filter_trim(std::string& s, std::string const& chars = "") {
+  if (chars.empty()) {
+    auto start = s.find_first_not_of(" \t\n\r\v\f");
+    if (start == std::string::npos) { s.clear(); }
+    else { auto end = s.find_last_not_of(" \t\n\r\v\f"); s.erase(end + 1); s.erase(0, start); }
   } else {
-    auto end = s.find_last_not_of(" \t");
-    s.erase(end + 1);
-    s.erase(0, start);
+    auto start = s.find_first_not_of(chars);
+    if (start == std::string::npos) { s.clear(); }
+    else { auto end = s.find_last_not_of(chars); s.erase(end + 1); s.erase(0, start); }
   }
 }
 
-inline void filter_ltrim(std::string& s) {
-  auto start = s.find_first_not_of(" \t");
-  if (start == std::string::npos) {
-    s.clear();
+inline void filter_ltrim(std::string& s, std::string const& chars = "") {
+  if (chars.empty()) {
+    auto start = s.find_first_not_of(" \t\n\r\v\f");
+    if (start == std::string::npos) { s.clear(); }
+    else { s.erase(0, start); }
   } else {
-    s.erase(0, start);
+    auto start = s.find_first_not_of(chars);
+    if (start == std::string::npos) { s.clear(); }
+    else { s.erase(0, start); }
   }
 }
 
-inline void filter_rtrim(std::string& s) {
-  auto end = s.find_last_not_of(" \t");
-  if (end == std::string::npos) {
-    s.clear();
+inline void filter_rtrim(std::string& s, std::string const& chars = "") {
+  if (chars.empty()) {
+    auto end = s.find_last_not_of(" \t\n\r\v\f");
+    if (end == std::string::npos) { s.clear(); }
+    else { s.erase(end + 1); }
   } else {
-    s.erase(end + 1);
+    auto end = s.find_last_not_of(chars);
+    if (end == std::string::npos) { s.clear(); }
+    else { s.erase(end + 1); }
   }
 }
 

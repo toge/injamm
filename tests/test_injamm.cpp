@@ -1040,6 +1040,70 @@ TEST_CASE("filter: rtrim", "[filter]") {
   REQUIRE(*result == "  hello");
 }
 
+TEST_CASE("filter: trim python whitespace", "[filter]") {
+  BcUser data{" \n\t hello \r ", 30};
+  auto   bc     = injamm::engine<BcUser>("{{name | trim}}");
+  auto   result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "hello");
+}
+
+TEST_CASE("filter: strip", "[filter]") {
+  BcUser data{" \n\t hello \r ", 30};
+  auto   bc     = injamm::engine<BcUser>("{{name | strip}}");
+  auto   result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "hello");
+}
+
+TEST_CASE("filter: lstrip", "[filter]") {
+  BcUser data{" \n\t hello \r ", 30};
+  auto   bc     = injamm::engine<BcUser>("{{name | lstrip}}");
+  auto   result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "hello \r ");
+}
+
+TEST_CASE("filter: rstrip", "[filter]") {
+  BcUser data{" \n\t hello \r ", 30};
+  auto   bc     = injamm::engine<BcUser>("{{name | rstrip}}");
+  auto   result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == " \n\t hello");
+}
+
+TEST_CASE("filter: strip chars", "[filter]") {
+  BcUser data{"xxhello worldyy", 30};
+  auto   bc     = injamm::engine<BcUser>("{{name | strip(\"xy\")}}");
+  auto   result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "hello world");
+}
+
+TEST_CASE("filter: lstrip chars", "[filter]") {
+  BcUser data{"xxhello worldyy", 30};
+  auto   bc     = injamm::engine<BcUser>("{{name | lstrip(\"xy\")}}");
+  auto   result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "hello worldyy");
+}
+
+TEST_CASE("filter: rstrip chars", "[filter]") {
+  BcUser data{"xxhello worldyy", 30};
+  auto   bc     = injamm::engine<BcUser>("{{name | rstrip(\"xy\")}}");
+  auto   result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "xxhello world");
+}
+
+TEST_CASE("filter: trim chars", "[filter]") {
+  BcUser data{"xyhello yx", 30};
+  auto   bc     = injamm::engine<BcUser>("{{name | trim(\"xy\")}}");
+  auto   result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "hello ");
+}
+
 TEST_CASE("filter: chaining", "[filter]") {
   BcUser data{"  hello  ", 30};
   auto   bc     = injamm::engine<BcUser>("{{name | trim | upper}}");

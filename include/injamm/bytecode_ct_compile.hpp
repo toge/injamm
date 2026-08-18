@@ -326,24 +326,29 @@ consteval void compile_chunk_range(ct_bytecode_builder<N>& b,
      for (std::uint8_t f = 0; f < chunks.filter_count[idx]; ++f) {
        auto const& sf = chunks.filters[idx][f];
        switch (sf.filter) {
-       case string_filter::upper:
-       case string_filter::lower:
-       case string_filter::capitalize:
-       case string_filter::title:
-       case string_filter::trim:
-       case string_filter::ltrim:
-       case string_filter::rtrim:
-       case string_filter::left:
-       case string_filter::right:
-       case string_filter::center:
-       case string_filter::truncate:
-       case string_filter::indent:
-       case string_filter::repeat:
-         b.emit(bc_opcode::filter_string, static_cast<std::uint32_t>(sf.arg1), static_cast<std::uint32_t>(sf.filter), UINT32_MAX);
-         break;
-       case string_filter::substr:
-         b.emit(bc_opcode::filter_string, static_cast<std::uint32_t>(sf.arg1), static_cast<std::uint32_t>(string_filter::substr), static_cast<std::uint32_t>(sf.arg2));
-         break;
+        case string_filter::upper:
+        case string_filter::lower:
+        case string_filter::capitalize:
+        case string_filter::title:
+        case string_filter::left:
+        case string_filter::right:
+        case string_filter::center:
+        case string_filter::truncate:
+        case string_filter::indent:
+        case string_filter::repeat:
+          b.emit(bc_opcode::filter_string, static_cast<std::uint32_t>(sf.arg1), static_cast<std::uint32_t>(sf.filter), UINT32_MAX);
+          break;
+        case string_filter::substr:
+          b.emit(bc_opcode::filter_string, static_cast<std::uint32_t>(sf.arg1), static_cast<std::uint32_t>(string_filter::substr), static_cast<std::uint32_t>(sf.arg2));
+          break;
+        case string_filter::trim:
+        case string_filter::ltrim:
+        case string_filter::rtrim: {
+          // Python 準拠 strip 系: 文字集合引数（省略時は空白セット）をリテラル化
+          auto t_idx = sf.str_arg1.empty() ? UINT32_MAX : b.add_literal({sf.str_arg1.data(), sf.str_arg1.size()});
+          b.emit(bc_opcode::filter_string, 0, static_cast<std::uint32_t>(sf.filter), t_idx);
+          break;
+        }
        case string_filter::replace: {
          auto old_idx = b.add_literal({sf.str_arg1.data(), sf.str_arg1.size()});
          auto new_idx = b.add_literal({sf.str_arg2.data(), sf.str_arg2.size()});

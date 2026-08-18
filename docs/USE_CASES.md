@@ -216,7 +216,7 @@ int main() {
 | `{{#continue}}` | 現在の要素をスキップして次へ |
 
 ### 主なフィルタ
-- **文字列**: `upper`, `lower`, `trim`, `truncate(n)`, `left(n)`, `right(n)`, `center(n)`, `substr(start, len)`
+- **文字列**: `upper`, `lower`, `trim`/`strip`（Python 空白セット、`strip("xy")` で文字集合指定可）, `truncate(n)`, `left(n)`, `right(n)`, `center(n)`, `substr(start, len)`
 - **整数**: `abs`, `hex`, `oct`, `bin`, `numify` (カンマ区切り), `zerofill(n)`, `mod(n)`, `eq(n)`
 - **実数**: `precision(n)`
 )`

@@ -531,9 +531,13 @@ auto bc2 = injamm::engine<User>("a\n  {{#active}}y{{/active}}", false, true);  /
 | `lower`       | ASCII 大文字→小文字   | `"HELLO"`       | `"hello"`       |
 | `capitalize`  | 先頭の文字を大文字    | `"hello"`       | `"Hello"`       |
 | `title`       | 各単語の先頭を大文字  | `"hello world"` | `"Hello World"` |
-| `trim`        | 前後の空白を除去      | `"  hi  "`      | `"hi"`          |
-| `ltrim`       | 先頭の空白を除去      | `"  hi"`        | `"hi"`          |
-| `rtrim`       | 末尾の空白を除去      | `"hi  "`        | `"hi"`          |
+| `trim`        | 前後の空白を除去（Python 空白セット） | `" \nhi\t "`   | `"hi"`         |
+| `ltrim`       | 先頭の空白を除去（Python 空白セット） | `"  \nhi"`     | `"hi"`         |
+| `rtrim`       | 末尾の空白を除去（Python 空白セット） | `"hi  \n"`     | `"hi"`         |
+| `strip`       | trim の別名                           | `" \nhi\t "`   | `"hi"`         |
+| `lstrip`      | ltrim の別名                          | `"  \nhi"`     | `"hi"`         |
+| `rstrip`      | rtrim の別名                          | `"hi  \n"`     | `"hi"`         |
+| `strip(chars)`| 指定文字集合を前後から除去           | `"xyhixy"`     | `"hi"`         |
 | `left(n)`     | n 文字枠に左寄せ      | `"hi"`          | `"        hi"`  |
 | `right(n)`    | n 文字枠に右寄せ      | `"hi"`          | `"hi        "`  |
 | `center(n)`   | n 文字枠に中央寄せ    | `"hi"`          | `"   hi    "`   |

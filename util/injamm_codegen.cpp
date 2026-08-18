@@ -1055,9 +1055,9 @@ class code_generator {
       case injamm::detail::string_filter::lower:      emit("filter_to_lower(_filtered);"); break;
       case injamm::detail::string_filter::capitalize: emit("filter_capitalize(_filtered);"); break;
       case injamm::detail::string_filter::title:      emit("filter_title(_filtered);"); break;
-      case injamm::detail::string_filter::trim:       emit("filter_trim(_filtered);"); break;
-      case injamm::detail::string_filter::ltrim:      emit("filter_ltrim(_filtered);"); break;
-      case injamm::detail::string_filter::rtrim:      emit("filter_rtrim(_filtered);"); break;
+      case injamm::detail::string_filter::trim:       emit("filter_trim(_filtered, " + (lit1.empty() ? "\"\"" : lit1) + ");"); break;
+      case injamm::detail::string_filter::ltrim:      emit("filter_ltrim(_filtered, " + (lit1.empty() ? "\"\"" : lit1) + ");"); break;
+      case injamm::detail::string_filter::rtrim:      emit("filter_rtrim(_filtered, " + (lit1.empty() ? "\"\"" : lit1) + ");"); break;
       case injamm::detail::string_filter::left:       emit("filter_left(_filtered, " + arg + ");"); break;
       case injamm::detail::string_filter::right:      emit("filter_right(_filtered, " + arg + ");"); break;
       case injamm::detail::string_filter::center:     emit("filter_center(_filtered, " + arg + ");"); break;

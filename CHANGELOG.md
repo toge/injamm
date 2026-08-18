@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-08-18
+
+- `strip` / `lstrip` / `rstrip` フィルタを追加（`trim` / `ltrim` / `rtrim` の別名）
+- `trim` / `ltrim` / `rtrim` を Python 準拠の空白セット（space/tab/LF/CR/VT/FF）対応に拡張し、`trim("xy")` 形式の文字集合引数をサポート（※従来はスペースとタブのみ除去）
+
 ## 2026-06-08
 
 - `ab75ecc` initial commit

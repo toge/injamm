@@ -906,6 +906,48 @@ TEST_CASE("ct_filter_trim", "[injamm][ct]") {
   REQUIRE(*r == "hello");
 }
 
+TEST_CASE("ct_filter_strip", "[injamm][ct]") {
+  auto constexpr tmpl = injamm::fixed_string("{{name | strip}}");
+  auto r              = injamm::render<tmpl>(CtUser{" \n\t hello \r ", 0});
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "hello");
+}
+
+TEST_CASE("ct_filter_lstrip", "[injamm][ct]") {
+  auto constexpr tmpl = injamm::fixed_string("{{name | lstrip}}");
+  auto r              = injamm::render<tmpl>(CtUser{" \n\t hello \r ", 0});
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "hello \r ");
+}
+
+TEST_CASE("ct_filter_rstrip", "[injamm][ct]") {
+  auto constexpr tmpl = injamm::fixed_string("{{name | rstrip}}");
+  auto r              = injamm::render<tmpl>(CtUser{" \n\t hello \r ", 0});
+  REQUIRE(r.has_value());
+  REQUIRE(*r == " \n\t hello");
+}
+
+TEST_CASE("ct_filter_strip_chars", "[injamm][ct]") {
+  auto constexpr tmpl = injamm::fixed_string("{{name | strip(\"xy\")}}");
+  auto r              = injamm::render<tmpl>(CtUser{"xxhello worldyy", 0});
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "hello world");
+}
+
+TEST_CASE("ct_filter_rstrip_chars", "[injamm][ct]") {
+  auto constexpr tmpl = injamm::fixed_string("{{name | rstrip(\"xy\")}}");
+  auto r              = injamm::render<tmpl>(CtUser{"xxhello worldyy", 0});
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "xxhello world");
+}
+
+TEST_CASE("ct_constfold_strip", "[injamm][ct][constfold]") {
+  auto constexpr tmpl = injamm::fixed_string("{{ \"  \nhi \t \" | strip }}");
+  auto r              = injamm::render<tmpl>(CtUser{"", 0});
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "hi");
+}
+
 TEST_CASE("ct_filter_left", "[injamm][ct]") {
   auto constexpr tmpl = injamm::fixed_string("{{name | left(5)}}");
   auto r              = injamm::render<tmpl>(CtUser{"hi", 0});

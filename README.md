@@ -420,9 +420,13 @@ auto r3 = injamm::render<"{{title}}: {{status}}">(Task{"fix bug", Status::Active
 | `lower`       | ASCII 大文字→小文字                                 | `{{name \| lower}}`       |
 | `capitalize`  | 先頭の文字を大文字                                  | `{{name \| capitalize}}`  |
 | `title`       | 単語の先頭を大文字                                  | `{{name \| title}}`       |
-| `trim`        | 先頭末尾の空白除去                                  | `{{name \| trim}}`        |
-| `ltrim`       | 先頭の空白除去                                      | `{{name \| ltrim}}`       |
-| `rtrim`       | 末尾の空白除去                                      | `{{name \| rtrim}}`       |
+| `trim`        | 先頭末尾の空白除去（Python 空白セット）           | `{{name \| trim}}`        |
+| `ltrim`       | 先頭の空白除去（Python 空白セット）               | `{{name \| ltrim}}`       |
+| `rtrim`       | 末尾の空白除去（Python 空白セット）               | `{{name \| rtrim}}`       |
+| `strip`       | trim の別名（先頭末尾の空白除去）                 | `{{name \| strip}}`       |
+| `lstrip`      | ltrim の別名（先頭の空白除去）                    | `{{name \| lstrip}}`      |
+| `rstrip`      | rtrim の別名（末尾の空白除去）                    | `{{name \| rstrip}}`      |
+| `strip(chars)`| 指定した文字集合を先頭末尾から除去                | `{{name \| strip("xy")}}` |
 | `left(n)`     | n 文字分の枠をとり左寄せ                            | `{{name \| left(10)}}`    |
 | `right(n)`    | n 文字分の枠をとり右寄せ                            | `{{name \| right(10)}}`   |
 | `center(n)`   | n 文字分の枠をとり中央寄せ                          | `{{name \| center(10)}}`  |

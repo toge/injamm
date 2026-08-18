@@ -316,6 +316,26 @@ constexpr std::size_t constexpr_find_tag(std::string_view haystack, std::string_
       }
       return string_filter_entry{string_filter::format, 0, 0, fmt_str, {}};
     }
+    // trim/lstrip/rstrip と strip/lstrip/rstrip: 除去する文字集合（引用符除去して保持、省略時は Python 空白セット）
+    auto make_strip = [&](string_filter kind) {
+      auto chars = trim_sv(args_str);
+      if (chars.size() >= 2 && chars.front() == '"' && chars.back() == '"') {
+        chars = chars.substr(1, chars.size() - 2);
+      }
+      return string_filter_entry{kind, 0, 0, chars, {}};
+    };
+    if (fname == "trim")
+      return make_strip(string_filter::trim);
+    if (fname == "ltrim")
+      return make_strip(string_filter::ltrim);
+    if (fname == "rtrim")
+      return make_strip(string_filter::rtrim);
+    if (fname == "strip")
+      return make_strip(string_filter::trim);
+    if (fname == "lstrip")
+      return make_strip(string_filter::ltrim);
+    if (fname == "rstrip")
+      return make_strip(string_filter::rtrim);
   }
   // 引数なしフィルタ
   if (name == "upper")
@@ -331,6 +351,13 @@ constexpr std::size_t constexpr_find_tag(std::string_view haystack, std::string_
   if (name == "ltrim")
     return string_filter_entry{string_filter::ltrim, 0, 0};
   if (name == "rtrim")
+    return string_filter_entry{string_filter::rtrim, 0, 0};
+  // strip/lstrip/rstrip は trim/ltrim/rtrim のエイリアス（Python 準拠の空白除去）
+  if (name == "strip")
+    return string_filter_entry{string_filter::trim, 0, 0};
+  if (name == "lstrip")
+    return string_filter_entry{string_filter::ltrim, 0, 0};
+  if (name == "rstrip")
     return string_filter_entry{string_filter::rtrim, 0, 0};
   if (name == "replace")
     return string_filter_entry{string_filter::replace, 0, 0};

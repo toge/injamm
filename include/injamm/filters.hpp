@@ -75,31 +75,63 @@ constexpr void apply_string_filter(std::string& str, string_filter_entry entry) 
     break;
   }
   case string_filter::trim: {
-    auto start = str.find_first_not_of(" \t");
-    if (start == std::string::npos) {
-      str.clear();
+    // Python 準拠: 引数省略時は空白文字集合（space/tab/LF/CR/VT/FF）、引数指定時はその文字集合を除去
+    // ponytail: Python の strip("") は no-op（空集合）だが、判別フラグの配線は過剰のため空白セット扱いとする
+    // ponytail: 分岐を二重化して no-arg パスを高速化。string_view 経由は find_first_not_of の最適化が効かず ~2x 遅い
+    if (entry.str_arg1.empty()) {
+      auto start = str.find_first_not_of(" \t\n\r\v\f");
+      if (start == std::string::npos) {
+        str.clear();
+      } else {
+        auto end = str.find_last_not_of(" \t\n\r\v\f");
+        str.erase(end + 1);
+        str.erase(0, start);
+      }
     } else {
-      auto end = str.find_last_not_of(" \t");
-      str.erase(end + 1);
-      str.erase(0, start);
+      auto start = str.find_first_not_of(entry.str_arg1);
+      if (start == std::string::npos) {
+        str.clear();
+      } else {
+        auto end = str.find_last_not_of(entry.str_arg1);
+        str.erase(end + 1);
+        str.erase(0, start);
+      }
     }
     break;
   }
   case string_filter::ltrim: {
-    auto start = str.find_first_not_of(" \t");
-    if (start == std::string::npos) {
-      str.clear();
+    if (entry.str_arg1.empty()) {
+      auto start = str.find_first_not_of(" \t\n\r\v\f");
+      if (start == std::string::npos) {
+        str.clear();
+      } else {
+        str.erase(0, start);
+      }
     } else {
-      str.erase(0, start);
+      auto start = str.find_first_not_of(entry.str_arg1);
+      if (start == std::string::npos) {
+        str.clear();
+      } else {
+        str.erase(0, start);
+      }
     }
     break;
   }
   case string_filter::rtrim: {
-    auto end = str.find_last_not_of(" \t");
-    if (end == std::string::npos) {
-      str.clear();
+    if (entry.str_arg1.empty()) {
+      auto end = str.find_last_not_of(" \t\n\r\v\f");
+      if (end == std::string::npos) {
+        str.clear();
+      } else {
+        str.erase(end + 1);
+      }
     } else {
-      str.erase(end + 1);
+      auto end = str.find_last_not_of(entry.str_arg1);
+      if (end == std::string::npos) {
+        str.clear();
+      } else {
+        str.erase(end + 1);
+      }
     }
     break;
   }
