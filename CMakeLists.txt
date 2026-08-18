@@ -4,10 +4,7 @@ project(injamm LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 23)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
-
-# CMake 3.30+ tries to find clang-scan-deps for C++20 module support.
-# Not needed for this project (traditional headers), and clang-scan-deps
-# may not be installed on all platforms (e.g. Fedora 41 clang).
+set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
 
 # ---- オプション ----
@@ -271,7 +268,7 @@ if(BUILD_UTIL)
     target_compile_features(test_codegen PRIVATE cxx_std_23)
     add_test(NAME codegen_test COMMAND test_codegen)
 
-    
+
     add_executable(test_ct_if
       util/test_ct_if.cpp
     )
