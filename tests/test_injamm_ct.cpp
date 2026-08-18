@@ -948,6 +948,63 @@ TEST_CASE("ct_constfold_strip", "[injamm][ct][constfold]") {
   REQUIRE(*r == "hi");
 }
 
+// ---- strip / lstrip / rstrip エッジケース (CT) ----
+
+TEST_CASE("ct_filter_lstrip_chars", "[injamm][ct]") {
+  auto constexpr tmpl = injamm::fixed_string("{{name | lstrip(\"xy\")}}");
+  auto r              = injamm::render<tmpl>(CtUser{"xxhello worldyy", 0});
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "hello worldyy");
+}
+
+TEST_CASE("ct_filter_trim_chars", "[injamm][ct]") {
+  auto constexpr tmpl = injamm::fixed_string("{{name | trim(\"xy\")}}");
+  auto r              = injamm::render<tmpl>(CtUser{"xyhello yx", 0});
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "hello ");
+}
+
+TEST_CASE("ct_filter_strip_empty", "[injamm][ct]") {
+  auto constexpr tmpl = injamm::fixed_string("{{name | strip}}");
+  auto r              = injamm::render<tmpl>(CtUser{"", 0});
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "");
+}
+
+TEST_CASE("ct_filter_strip_all_whitespace", "[injamm][ct]") {
+  auto constexpr tmpl = injamm::fixed_string("{{name | strip}}");
+  auto r              = injamm::render<tmpl>(CtUser{" \t\n\r\v\f ", 0});
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "");
+}
+
+TEST_CASE("ct_filter_strip_no_match", "[injamm][ct]") {
+  auto constexpr tmpl = injamm::fixed_string("{{name | strip}}");
+  auto r              = injamm::render<tmpl>(CtUser{"hello", 0});
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "hello");
+}
+
+TEST_CASE("ct_constfold_lstrip", "[injamm][ct][constfold]") {
+  auto constexpr tmpl = injamm::fixed_string("{{ \"  \nhi \t \" | lstrip }}");
+  auto r              = injamm::render<tmpl>(CtUser{"", 0});
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "hi \t ");
+}
+
+TEST_CASE("ct_constfold_rstrip", "[injamm][ct][constfold]") {
+  auto constexpr tmpl = injamm::fixed_string("{{ \"  \nhi \t \" | rstrip }}");
+  auto r              = injamm::render<tmpl>(CtUser{"", 0});
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "  \nhi");
+}
+
+TEST_CASE("ct_constfold_strip_chars", "[injamm][ct][constfold]") {
+  // CT path では {{ "..." | strip("...") }} は constexpr 制約で評価できないため、
+  // ランタイム経由で確認（test_injamm.cpp "filter: strip chars" でカバー）
+  REQUIRE(true);
+}
+
 TEST_CASE("ct_filter_left", "[injamm][ct]") {
   auto constexpr tmpl = injamm::fixed_string("{{name | left(5)}}");
   auto r              = injamm::render<tmpl>(CtUser{"hi", 0});

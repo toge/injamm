@@ -1104,6 +1104,120 @@ TEST_CASE("filter: trim chars", "[filter]") {
   REQUIRE(*result == "hello ");
 }
 
+// ---- strip / lstrip / rstrip エッジケース ----
+
+TEST_CASE("filter: strip empty string", "[filter]") {
+  BcUser data{"", 30};
+  auto   bc     = injamm::engine<BcUser>("{{name | strip}}");
+  auto   result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "");
+}
+
+TEST_CASE("filter: strip all whitespace", "[filter]") {
+  BcUser data{" \t\n\r\v\f ", 30};
+  auto   bc     = injamm::engine<BcUser>("{{name | strip}}");
+  auto   result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "");
+}
+
+TEST_CASE("filter: strip no match", "[filter]") {
+  BcUser data{"hello", 30};
+  auto   bc     = injamm::engine<BcUser>("{{name | strip}}");
+  auto   result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "hello");
+}
+
+TEST_CASE("filter: lstrip empty string", "[filter]") {
+  BcUser data{"", 30};
+  auto   bc     = injamm::engine<BcUser>("{{name | lstrip}}");
+  auto   result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "");
+}
+
+TEST_CASE("filter: rstrip empty string", "[filter]") {
+  BcUser data{"", 30};
+  auto   bc     = injamm::engine<BcUser>("{{name | rstrip}}");
+  auto   result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "");
+}
+
+TEST_CASE("filter: strip form feed and vertical tab", "[filter]") {
+  BcUser data{"\v\fhello\v\f", 30};
+  auto   bc     = injamm::engine<BcUser>("{{name | strip}}");
+  auto   result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "hello");
+}
+
+TEST_CASE("filter: strip chars multi char", "[filter]") {
+  BcUser data{"abcabc HELLO abcabc", 30};
+  auto   bc     = injamm::engine<BcUser>("{{name | strip(\"abc \")}}");
+  auto   result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "HELLO");
+}
+
+TEST_CASE("filter: lstrip chars empty result", "[filter]") {
+  BcUser data{"xxxx", 30};
+  auto   bc     = injamm::engine<BcUser>("{{name | lstrip(\"x\")}}");
+  auto   result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "");
+}
+
+TEST_CASE("filter: rstrip chars empty result", "[filter]") {
+  BcUser data{"xxxx", 30};
+  auto   bc     = injamm::engine<BcUser>("{{name | rstrip(\"x\")}}");
+  auto   result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "");
+}
+
+TEST_CASE("filter: strip chaining raw", "[filter]") {
+  BcUser data{" \n<script>\n ", 30};
+  auto   bc     = injamm::engine<BcUser>("{{{name | strip}}}");
+  auto   result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "<script>");
+}
+
+TEST_CASE("filter: strip then upper", "[filter]") {
+  BcUser data{"  hello  ", 30};
+  auto   bc     = injamm::engine<BcUser>("{{name | strip | upper}}");
+  auto   result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "HELLO");
+}
+
+TEST_CASE("filter: lstrip then upper", "[filter]") {
+  BcUser data{"  hello  ", 30};
+  auto   bc     = injamm::engine<BcUser>("{{name | lstrip | upper}}");
+  auto   result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "HELLO  ");
+}
+
+TEST_CASE("filter: rstrip then upper", "[filter]") {
+  BcUser data{"  hello  ", 30};
+  auto   bc     = injamm::engine<BcUser>("{{name | rstrip | upper}}");
+  auto   result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "  HELLO");
+}
+
+TEST_CASE("filter: strip with format-like chars", "[filter]") {
+  BcUser data{"##hello##", 30};
+  auto   bc     = injamm::engine<BcUser>("{{name | strip(\"#\")}}");
+  auto   result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "hello");
+}
+
 TEST_CASE("filter: chaining", "[filter]") {
   BcUser data{"  hello  ", 30};
   auto   bc     = injamm::engine<BcUser>("{{name | trim | upper}}");
