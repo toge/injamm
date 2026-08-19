@@ -4,7 +4,7 @@
     "glaze",
     {
       "name": "fmt",
-      "platform": "osx"
+      "platform": "osx | linux"
     },
     "catch2",
     "frozenchars",

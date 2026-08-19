@@ -15,6 +15,7 @@ option(BUILD_FUZZ "Build fuzz targets (requires -fsanitize=fuzzer)" OFF)
 option(ENABLE_ENUM "Enable enchantum-based enum string conversion" ON)
 option(ENABLE_SQLITE3 "Build injamm-sqlite3 extension" ON)
 option(BUILD_UTIL "Build CLI utilities" OFF)
+option(BENCH_FMT "Benchmark fmt::format (FMT_COMPILE) in injamm_bench_format" ON)
 
 # Apple Clang の libc++ は std::vformat("{:05}", ...) 等の 0 flag を
 # 正しくパースできない既知の不具合がある。fmt を使うことで回避する。
@@ -153,6 +154,7 @@ if(BUILD_TEST)
     tests/test_injamm_ct.cpp
     tests/test_injamm_ja.cpp
     tests/test_ct_overload.cpp
+    tests/test_ct_exec_crosscheck.cpp
   )
   if(_need_custom_main)
     target_sources(injamm_tests PRIVATE tests/em_catch2_main.cpp)
@@ -210,6 +212,21 @@ if(BUILD_EXAMPLE)
   target_compile_features(injamm_bench_delegate PRIVATE cxx_std_23)
   if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     target_compile_options(injamm_bench_delegate PRIVATE -march=native)
+  endif()
+
+  add_executable(injamm_bench_format
+    examples/bench_format.cpp
+  )
+  target_link_libraries(injamm_bench_format PRIVATE injamm)
+  target_include_directories(injamm_bench_format PRIVATE include)
+  target_compile_features(injamm_bench_format PRIVATE cxx_std_23)
+  if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    target_compile_options(injamm_bench_format PRIVATE -march=native)
+  endif()
+  if(BENCH_FMT)
+    find_package(fmt CONFIG REQUIRED)
+    target_link_libraries(injamm_bench_format PRIVATE fmt::fmt)
+    target_compile_definitions(injamm_bench_format PRIVATE INJAMM_BENCH_FMT)
   endif()
 
   add_executable(injamm_codegen_bench

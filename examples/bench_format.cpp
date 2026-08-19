@@ -121,6 +121,17 @@ struct glz::meta<BenchCatalog> {
   static constexpr auto value = object(&T::title, &T::items);
 };
 
+// ---- 長い直線 partial（列数が多いテーブル行）用 ----
+struct BenchWideRow {
+  std::string c1, c2, c3, c4, c5, c6, c7, c8;
+};
+
+template <>
+struct glz::meta<BenchWideRow> {
+  using T                     = BenchWideRow;
+  static constexpr auto value = object(&T::c1, &T::c2, &T::c3, &T::c4, &T::c5, &T::c6, &T::c7, &T::c8);
+};
+
 // ---- ヘルパー ----
 
 static double elapsed_us(auto const& start, auto const& end) {
@@ -353,6 +364,23 @@ int main() {
   constexpr int ITERSROW = 300000;
   double        ntRow     = bench("injamm NTTP partial (unroll)", ITERSROW, [&] { return injamm::render_partial<kTmplRow, injamm::fixed_string{"row"}>(bitem); });
   double        engRowV   = bench("injamm engine partial (VM)", ITERSROW, [&] { return engRow.render(bitem, "row"); });
+
+  // 長い直線 partial（8列）では命令ディスパッチの削減効果がより顕著になる
+  std::printf("\n--- wide straight-line partial (8 columns): unroll vs VM ---\n");
+  auto constexpr kTmplWide = injamm::fixed_string(
+      "{{#partialdef wide}}<tr><td>{{c1}}</td><td>{{c2}}</td><td>{{c3}}</td><td>{{c4}}</td>"
+      "<td>{{c5}}</td><td>{{c6}}</td><td>{{c7}}</td><td>{{c8}}</td></tr>{{/partialdef}}{{> wide}}");
+  BenchWideRow      wrow{"a", "b", "c", "d", "e", "f", "g", "h"};
+  injamm::engine<BenchWideRow> engWide(
+      "{{#partialdef wide}}<tr><td>{{c1}}</td><td>{{c2}}</td><td>{{c3}}</td><td>{{c4}}</td>"
+      "<td>{{c5}}</td><td>{{c6}}</td><td>{{c7}}</td><td>{{c8}}</td></tr>{{/partialdef}}{{> wide}}");
+  for (int i = 0; i < 1000; ++i) {
+    (void)injamm::render_partial<kTmplWide, injamm::fixed_string{"wide"}>(wrow);
+    (void)engWide.render(wrow, "wide");
+  }
+  constexpr int ITERSWIDE = 300000;
+  double        ntWide     = bench("injamm NTTP wide partial (unroll)", ITERSWIDE, [&] { return injamm::render_partial<kTmplWide, injamm::fixed_string{"wide"}>(wrow); });
+  double        engWideV   = bench("injamm engine wide partial (VM)", ITERSWIDE, [&] { return engWide.render(wrow, "wide"); });
 
   // ---- summary ratio table (ratio = std::format ns / injamm ns) ----
   std::printf("\n=== summary: ratio = std::format ns / injamm ns (1.0 = same, <1 format faster, >1 injamm faster) ===\n");

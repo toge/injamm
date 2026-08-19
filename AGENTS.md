@@ -33,12 +33,12 @@ CMake オプション: `ENABLE_THREADED_DISPATCH`（デフォルト ON、GCC の
 - `{{var}}` = HTML エスケープあり、`{{{var}}}` = 生出力（ステンシルモード）。
 - セクションの真偽: 非ゼロ数値、非空文字列、非ヌルポインタ = true。
 - `{{^section}}` = 逆セクション（偽/空のときに描画）。
-- テンプレートファイル: `include/injamm.hpp` が一次エントリポイント。`include/injamm/escape_hatch.hpp` が `engine`/`render` を公開。
+- テンプレートファイル: `include/injamm.hpp` が一次エントリポイント。`include/injamm/escape_hatch.hpp` が `engine`/`render` を公開。`include/injamm/ct_exec.hpp` が NTTP のコンパイル時アンロール実行器（単純テンプレートの高速パス、非該当は VM フォールバック）。
 
 ## 依存関係
 
 - `glaze`（必須、vcpkg。fast_float は glaze 内蔵のものを利用）
-- `fmt`（AppleClang のみ、vcpkg）
+- `fmt`（`format` フィルタの AppleClang フォールバック + `injamm_bench_format` の FMT_COMPILE 計測用。vcpkg、osx | linux）
 - `catch2`（テストのみ、vcpkg）
 - `frozenchars`（GCC NTTP テストのみ、vcpkg）
 - `enchantum`（`ENABLE_ENUM`=ON 時、vcpkg）
