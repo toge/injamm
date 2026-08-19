@@ -407,7 +407,11 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
    *          - enum → serialize_enum (enchantum)
    *          - カスタムstruct → serializable_v<FT> なら serialize_value、ct_glz_reflectable なら glz::write_json
    */
-  /** @brief フィールド値を指定バッファに追記する（束縛リゾルバ兼用の静的版） */
+  /** @brief フィールド値を指定バッファに追記する（束縛リゾルバ兼用の静的版）
+   *
+   *  @note ct_exec.hpp のコンパイル時アンロール実行器からも再利用するため public。
+   */
+public:
   template <class Buffer>
   static void emit_value_static(Buffer& out, auto const& field, bool raw) {
     using FT = std::remove_cvref_t<decltype(field)>;

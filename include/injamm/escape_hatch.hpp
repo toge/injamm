@@ -20,6 +20,7 @@
 #include "bytecode_debug.hpp"
 #include "bytecode_compile.hpp"
 #include "bytecode_exec.hpp"
+#include "ct_exec.hpp"
 #include <array>
 #include <atomic>
 #include <memory>
@@ -329,6 +330,36 @@ namespace detail {
     static constexpr auto             resolved = detail::resolve_field_indices<T>(parsed);
     static constexpr auto             ct_bc    = detail::ct_chunks_to_bytecode<T>(resolved);
     using partial_set = PartialSet;  ///< 外部レジストリ（ct_partials<...>） */
+  };
+
+  /**
+   * @brief 指定 partialdef 本文のコンパイル時パース（直線 only 限定版）
+   *
+   * @details メインテンプレート中で {{#partialdef name}}...{{/partialdef}} により定義された
+   *          partial 本文をコンパイル時（constexpr）にパースし、直線アンロール実行
+   *          （ct_executor）に必要な ct_bc を構築する。htmx の行更新など「直線のみの
+   *          partial」を毎回実行時コンパイルせずに高速レンダリングするのが目的。
+   *          section 等を含む場合 ct_bc にブロック命令が現れるため ct_is_unrollable が
+   *          false になり、呼び出し側で既存の実行時 VM にフォールバックされる。
+   *
+   * @tparam Tmpl      メインテンプレート文字列（NTTP）
+   * @tparam BodyStart 本文開始オフセット（partialdef 開始タグの直後）
+   * @tparam BodyEnd   本文終了オフセット（{{/partialdef}} の開始位置）
+   * @tparam Trim      引数テンプレート側の trim_blocks
+   * @tparam Lstrip    引数テンプレート側の lstrip_blocks
+   * @tparam T         コンテキスト型（glz::meta<T> 要特殊化）
+   */
+  template <auto Tmpl, std::size_t BodyStart, std::size_t BodyEnd, bool Trim, bool Lstrip, typename T>
+  struct nttp_partial_body_data {
+    static constexpr auto parsed = [] {
+      constexpr std::string_view sv   = nttp_string_view(Tmpl);
+      constexpr std::string_view body = sv.substr(BodyStart, BodyEnd - BodyStart);
+      ct_parse_context<body.size() + 1> ctx;
+      ct_parse_into(ctx, body, Trim, Lstrip);
+      return ctx.tmpl;
+    }();
+    static constexpr auto resolved = detail::resolve_field_indices<T>(parsed);
+    static constexpr auto ct_bc    = detail::ct_chunks_to_bytecode<T>(resolved);
   };
 
   // ct_partials<Pairs...> から partial_entries を取り出すトレイト
@@ -674,7 +705,18 @@ template <fixed_string Tmpl, std::same_as<bool> auto TrimBlocks = false, std::sa
   using D = detail::nttp_render_data<Tmpl, TrimBlocks != 0, LstripBlocks != 0, T>;
   if constexpr (D::ct_bc.error.ec != error_code::none)
     return std::unexpected(D::ct_bc.error);
-  return detail::bc_execute(detail::nttp_partial_bytecode_holder<D, T>(), value);
+  if constexpr (detail::ct_is_unrollable(D::ct_bc))
+    return detail::ct_executor<D, T>::run(value);
+  else if constexpr (detail::ct_is_hybrid_eligible(D::ct_bc)) {
+    auto const&                rbc  = detail::nttp_partial_bytecode_holder<D, T>();
+    std::string                out;
+    detail::bc_executor<T>     exec(rbc, value, value, nullptr, out);
+    auto                       r = detail::ct_hybrid_executor<D, T>::run_into(value, out, exec);
+    if (!r)
+      return std::unexpected(r.error());
+    return out;
+  } else
+    return detail::bc_execute(detail::nttp_partial_bytecode_holder<D, T>(), value);
 }
 
 /**
@@ -696,7 +738,18 @@ template <fixed_string Tmpl, typename Reg, bool TrimBlocks = false, bool LstripB
   using D = detail::nttp_render_data<Tmpl, TrimBlocks != 0, LstripBlocks != 0, T, Reg>;
   if constexpr (D::ct_bc.error.ec != error_code::none)
     return std::unexpected(D::ct_bc.error);
-  return detail::bc_execute(detail::nttp_partial_bytecode_holder<D, T>(), value);
+  if constexpr (detail::ct_is_unrollable(D::ct_bc))
+    return detail::ct_executor<D, T>::run(value);
+  else if constexpr (detail::ct_is_hybrid_eligible(D::ct_bc)) {
+    auto const&                rbc  = detail::nttp_partial_bytecode_holder<D, T>();
+    std::string                out;
+    detail::bc_executor<T>     exec(rbc, value, value, nullptr, out);
+    auto                       r = detail::ct_hybrid_executor<D, T>::run_into(value, out, exec);
+    if (!r)
+      return std::unexpected(r.error());
+    return out;
+  } else
+    return detail::bc_execute(detail::nttp_partial_bytecode_holder<D, T>(), value);
 }
 
 /**
@@ -718,7 +771,15 @@ template <fixed_string Tmpl, std::same_as<bool> auto TrimBlocks = false, std::sa
   using D = detail::nttp_render_data<Tmpl, TrimBlocks != 0, LstripBlocks != 0, T>;
   if constexpr (D::ct_bc.error.ec != error_code::none)
     return std::unexpected(D::ct_bc.error);
-  return detail::bc_execute_into(detail::nttp_partial_bytecode_holder<D, T>(), value, out);
+  if constexpr (detail::ct_is_unrollable(D::ct_bc)) {
+    detail::ct_executor<D, T>::run_into(value, out);
+    return {};
+  } else if constexpr (detail::ct_is_hybrid_eligible(D::ct_bc)) {
+    auto const&                rbc  = detail::nttp_partial_bytecode_holder<D, T>();
+    detail::bc_executor<T>     exec(rbc, value, value, nullptr, out);
+    return detail::ct_hybrid_executor<D, T>::run_into(value, out, exec);
+  } else
+    return detail::bc_execute_into(detail::nttp_partial_bytecode_holder<D, T>(), value, out);
 }
 
 /**
@@ -1096,11 +1157,19 @@ template <auto Tmpl, fixed_string PartialName, std::same_as<bool> auto TrimBlock
   static_assert(closure.found, "injamm: {{#partialdef <PartialName>}} not found in the template.");
   if constexpr (D::ct_bc.error.ec != error_code::none)
     return std::unexpected(D::ct_bc.error);
-  auto& bc = detail::nttp_selected_partial_holder<D, PartialName, T>();
-  if (bc.error.ec != error_code::none)
-    return std::unexpected(bc.error);
-  // ponytail: 対象 partial は post-order DFS で末尾に push されるため必ず back()
-  return detail::bc_execute(*bc.partial_entries.back().bc, value);
+  // 直線 only の partial 本文はコンパイル時アンロールで高速実行（htmx の行更新など）
+  constexpr auto body_start = closure.count > 0 ? D::parsed.partial_body_starts[closure.order[closure.count - 1]] : closure.nested_body_start;
+  constexpr auto body_end   = closure.count > 0 ? D::parsed.partial_body_ends[closure.order[closure.count - 1]] : closure.nested_body_end;
+  using BodyD = detail::nttp_partial_body_data<Tmpl, body_start, body_end, TrimBlocks != 0, LstripBlocks != 0, T>;
+  if constexpr (detail::ct_is_unrollable(BodyD::ct_bc))
+    return detail::ct_executor<BodyD, T>::run(value);
+  else {
+    auto& bc = detail::nttp_selected_partial_holder<D, PartialName, T>();
+    if (bc.error.ec != error_code::none)
+      return std::unexpected(bc.error);
+    // ponytail: 対象 partial は post-order DFS で末尾に push されるため必ず back()
+    return detail::bc_execute(*bc.partial_entries.back().bc, value);
+  }
 }
 
 template <auto Tmpl, fixed_string PartialName, std::same_as<bool> auto TrimBlocks = false, std::same_as<bool> auto LstripBlocks = false, typename T, typename Sink>
@@ -1132,11 +1201,19 @@ template <auto Tmpl, auto PartialName, std::same_as<bool> auto TrimBlocks = fals
   static_assert(closure.found, "injamm: {{#partialdef <PartialName>}} not found in the template.");
   if constexpr (D::ct_bc.error.ec != error_code::none)
     return std::unexpected(D::ct_bc.error);
-  auto& bc = detail::nttp_selected_partial_holder<D, PartialName, T>();
-  if (bc.error.ec != error_code::none)
-    return std::unexpected(bc.error);
-  // ponytail: 対象 partial は post-order DFS で末尾に push されるため必ず back()
-  return detail::bc_execute(*bc.partial_entries.back().bc, value);
+  // 直線 only の partial 本文はコンパイル時アンロールで高速実行（htmx の行更新など）
+  constexpr auto body_start = closure.count > 0 ? D::parsed.partial_body_starts[closure.order[closure.count - 1]] : closure.nested_body_start;
+  constexpr auto body_end   = closure.count > 0 ? D::parsed.partial_body_ends[closure.order[closure.count - 1]] : closure.nested_body_end;
+  using BodyD = detail::nttp_partial_body_data<Tmpl, body_start, body_end, TrimBlocks != 0, LstripBlocks != 0, T>;
+  if constexpr (detail::ct_is_unrollable(BodyD::ct_bc))
+    return detail::ct_executor<BodyD, T>::run(value);
+  else {
+    auto& bc = detail::nttp_selected_partial_holder<D, PartialName, T>();
+    if (bc.error.ec != error_code::none)
+      return std::unexpected(bc.error);
+    // ponytail: 対象 partial は post-order DFS で末尾に push されるため必ず back()
+    return detail::bc_execute(*bc.partial_entries.back().bc, value);
+  }
 }
 
 template <auto Tmpl, auto PartialName, std::same_as<bool> auto TrimBlocks = false, std::same_as<bool> auto LstripBlocks = false, typename T, typename Sink>
