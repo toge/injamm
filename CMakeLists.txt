@@ -15,7 +15,12 @@ option(BUILD_FUZZ "Build fuzz targets (requires -fsanitize=fuzzer)" OFF)
 option(ENABLE_ENUM "Enable enchantum-based enum string conversion" ON)
 option(ENABLE_SQLITE3 "Build injamm-sqlite3 extension" ON)
 option(BUILD_UTIL "Build CLI utilities" OFF)
-option(BENCH_FMT "Benchmark fmt::format (FMT_COMPILE) in injamm_bench_format" ON)
+if(WIN32)
+  set(_BENCH_FMT_DEFAULT OFF)
+else()
+  set(_BENCH_FMT_DEFAULT ON)
+endif()
+option(BENCH_FMT "Benchmark fmt::format (FMT_COMPILE) in injamm_bench_format" ${_BENCH_FMT_DEFAULT})
 
 # Apple Clang の libc++ は std::vformat("{:05}", ...) 等の 0 flag を
 # 正しくパースできない既知の不具合がある。fmt を使うことで回避する。
