@@ -142,8 +142,9 @@ constexpr std::string_view ct_literal() {
 /** @brief 変数値を出力する（フィールドインデックスはコンパイル時定数） */
 template <typename Data, typename T, std::uint32_t VarRefIdx>
 void ct_emit_var(T const& value, std::string& out, bool raw) {
-  auto const& ref   = Data::ct_bc.var_refs[VarRefIdx];
-  auto const& field = glz::get<static_cast<std::size_t>(ref.field_index)>(glz::to_tie(value));
+  auto const& ref  = Data::ct_bc.var_refs[VarRefIdx];
+  auto const  tied = glz::to_tie(value);
+  auto const& field = glz::get<static_cast<std::size_t>(ref.field_index)>(tied);
   bc_executor<T>::emit_value_static(out, field, raw);
 }
 
