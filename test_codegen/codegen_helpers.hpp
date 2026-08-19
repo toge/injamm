@@ -3,6 +3,7 @@
 #define INJAMM_CODEGEN_HELPERS_HPP
 
 #include <charconv>
+#include <cmath>
 #include <injamm/glz_dispatch.hpp>
 #include <string>
 #include <string_view>
@@ -82,17 +83,25 @@ inline void filter_center(std::string& s, int n) {
 }
 
 inline void filter_replace(std::string& s, std::string_view old_str, std::string_view new_str) {
-  if (old_str.empty()) return;
+  if (old_str.empty()) {
+    // VM (filters.hpp) と同一: 引数なし replace は全 '\n' を ' ' に置換
+    for (auto& c : s) {
+      if (c == '\n') c = ' ';
+    }
+    return;
+  }
   std::string result;
   std::size_t pos = 0;
-  while (true) {
+  while (pos < s.size()) {
     auto found = s.find(old_str, pos);
-    if (found == std::string::npos) break;
-    result.append(s.data() + pos, found - pos);
-    result += new_str;
+    if (found == std::string::npos) {
+      result.append(s, pos, std::string::npos);
+      break;
+    }
+    result.append(s, pos, found - pos);
+    result.append(new_str);
     pos = found + old_str.size();
   }
-  result.append(s.data() + pos, s.size() - pos);
   s = std::move(result);
 }
 
@@ -117,11 +126,14 @@ inline void filter_indent(std::string& s, int n) {
 }
 
 inline void filter_pad(std::string& s, int n, std::string_view pad_str) {
-  if (n <= 0 || pad_str.empty()) return;
-  while (static_cast<int>(s.size()) < n) {
-    s += pad_str;
-    if (static_cast<int>(s.size()) > n)
-      s.resize(static_cast<std::size_t>(n));
+  // ponytail: VM と同一 — pad_str 空なら " " をデフォルトに
+  if (n <= 0) return;
+  if (static_cast<int>(s.size()) < n) {
+    std::string_view use_pad = pad_str.empty() ? std::string_view{" "} : pad_str;
+    while (static_cast<int>(s.size()) < n) {
+      s.append(use_pad);
+    }
+    s.resize(static_cast<std::size_t>(n));
   }
 }
 
@@ -137,13 +149,36 @@ inline void filter_format(std::string& s) {
 }
 
 inline void filter_int_abs(std::string& s) {
-  if (!s.empty() && s[0] == '-') s.erase(0, 1);
+  // VM (filters.hpp) と同一: 小数/指数表記は double で処理
+  if (s.find('.') != std::string::npos || s.find('e') != std::string::npos || s.find('E') != std::string::npos) {
+    double val = 0.0;
+    if (auto [p, ec] = std::from_chars(s.data(), s.data() + s.size(), val); ec == std::errc{}) {
+      char buf[128];
+      auto [p2, ec2] = std::to_chars(buf, buf + sizeof(buf), std::abs(val));
+      if (ec2 == std::errc{}) {
+        s.assign(buf, p2);
+      }
+    }
+  } else {
+    long long val = 0;
+    if (auto [p, ec] = std::from_chars(s.data(), s.data() + s.size(), val); ec == std::errc{}) {
+      char buf[32];
+      auto [tp, tec] = std::to_chars(buf, buf + sizeof(buf), val);
+      if (tec == std::errc{}) {
+        std::string_view sv(buf, static_cast<std::size_t>(tp - buf));
+        if (!sv.empty() && sv[0] == '-') {
+          sv.remove_prefix(1);
+        }
+        s.assign(sv);
+      }
+    }
+  }
 }
 
 inline void filter_int_hex(std::string& s) {
-  int val = 0;
-  auto [ptr, ec] = std::from_chars(s.data(), s.data() + s.size(), val);
-  if (ec == std::errc{}) {
+  // ponytail: long long は filters.hpp と同一 (VM は long long)
+  long long val = 0;
+  if (auto [ptr, ec] = std::from_chars(s.data(), s.data() + s.size(), val); ec == std::errc{}) {
     char buf[32];
     auto [p, e] = std::to_chars(buf, buf + sizeof(buf), val, 16);
     s.assign(buf, p);
@@ -151,9 +186,8 @@ inline void filter_int_hex(std::string& s) {
 }
 
 inline void filter_int_oct(std::string& s) {
-  int val = 0;
-  auto [ptr, ec] = std::from_chars(s.data(), s.data() + s.size(), val);
-  if (ec == std::errc{}) {
+  long long val = 0;
+  if (auto [ptr, ec] = std::from_chars(s.data(), s.data() + s.size(), val); ec == std::errc{}) {
     char buf[32];
     auto [p, e] = std::to_chars(buf, buf + sizeof(buf), val, 8);
     s.assign(buf, p);
@@ -161,98 +195,250 @@ inline void filter_int_oct(std::string& s) {
 }
 
 inline void filter_int_bin(std::string& s) {
-  int val = 0;
-  auto [ptr, ec] = std::from_chars(s.data(), s.data() + s.size(), val);
-  if (ec == std::errc{}) {
-    std::string result;
-    if (val == 0) { result = "0"; }
-    else {
-      while (val > 0) { result = char('0' + (val & 1)) + result; val >>= 1; }
+  // ponytail: to_chars(base2) で負数も正しく処理 (VM と同一)
+  long long val = 0;
+  if (auto [ptr, ec] = std::from_chars(s.data(), s.data() + s.size(), val); ec == std::errc{}) {
+    char buf[64];
+    auto [p, ec2] = std::to_chars(buf, buf + sizeof(buf), val, 2);
+    if (ec2 == std::errc{}) {
+      s.assign(buf, p);
     }
-    s = std::move(result);
   }
 }
 
 inline void filter_int_neg(std::string& s) {
-  if (!s.empty() && s[0] == '-')
-    s.erase(0, 1);
-  else
-    s = "-" + s;
+  // VM (filters.hpp) と同一: 小数/指数表記は double で処理
+  if (s.find('.') != std::string::npos || s.find('e') != std::string::npos || s.find('E') != std::string::npos) {
+    double val = 0.0;
+    if (auto [p, ec] = std::from_chars(s.data(), s.data() + s.size(), val); ec == std::errc{}) {
+      char buf[128];
+      auto [p2, ec2] = std::to_chars(buf, buf + sizeof(buf), -val);
+      if (ec2 == std::errc{}) {
+        s.assign(buf, p2);
+      }
+    }
+  } else {
+    long long val = 0;
+    if (auto [p, ec] = std::from_chars(s.data(), s.data() + s.size(), val); ec == std::errc{}) {
+      char buf[32];
+      auto [tp, tec] = std::to_chars(buf, buf + sizeof(buf), val);
+      if (tec == std::errc{}) {
+        std::string_view sv(buf, static_cast<std::size_t>(tp - buf));
+        if (!sv.empty() && sv[0] == '-') {
+          sv.remove_prefix(1);
+          s.assign(sv);
+        } else {
+          s = std::string("-") + std::string(sv);
+        }
+      }
+    }
+  }
 }
 
 inline void filter_int_mod(std::string& s, int n) {
+  // ponytail: division_by_zero は静かに無視 (codegen は void 戻り値のためエラー返却不可)
   if (n == 0) return;
-  int val = 0;
-  auto [ptr, ec] = std::from_chars(s.data(), s.data() + s.size(), val);
-  if (ec == std::errc{}) {
+  long long val = 0;
+  if (auto [ptr, ec] = std::from_chars(s.data(), s.data() + s.size(), val); ec == std::errc{}) {
     val %= n;
     s = std::to_string(val);
   }
 }
 
 inline void filter_int_is_neg(std::string& s) {
-  s = (!s.empty() && s[0] == '-') ? "true" : "false";
+  // VM (filters.hpp) と同一: 数値パースしてから判定
+  if (s.find('.') != std::string::npos || s.find('e') != std::string::npos || s.find('E') != std::string::npos) {
+    double val = 0.0;
+    if (auto [p, ec] = std::from_chars(s.data(), s.data() + s.size(), val); ec == std::errc{}) {
+      s = val < 0 ? "true" : "false";
+      return;
+    }
+  }
+  long long val = 0;
+  if (auto [p, ec] = std::from_chars(s.data(), s.data() + s.size(), val); ec == std::errc{}) {
+    s = val < 0 ? "true" : "false";
+  } else {
+    s = "false";
+  }
+}
+
+/** @brief 小数文字列を含む場合の比較ヘルパ (VM の ne/gt/gte/lt/lte と同一ロジック) */
+inline bool filter_int_cmp_float(std::string_view s, int op, int target) {
+  // op: 0=ne, 1=gt, 2=gte, 3=lt, 4=lte
+  double val = 0.0;
+  if (auto [p, ec] = std::from_chars(s.data(), s.data() + s.size(), val); ec == std::errc{}) {
+    double ftarget = static_cast<double>(target);
+    switch (op) {
+      case 0: return val != ftarget;
+      case 1: return val > ftarget;
+      case 2: return val >= ftarget;
+      case 3: return val < ftarget;
+      case 4: return val <= ftarget;
+      default: return false;
+    }
+  }
+  return false;
 }
 
 inline void filter_int_eq(std::string& s, int n) {
-  int val = 0;
-  auto [ptr, ec] = std::from_chars(s.data(), s.data() + s.size(), val);
-  s = (ec == std::errc{} && val == n) ? "true" : "false";
+  long long val = 0;
+  if (auto [ptr, ec] = std::from_chars(s.data(), s.data() + s.size(), val); ec == std::errc{}) {
+    s = (val == n) ? "true" : "false";
+  } else {
+    s = "false";
+  }
 }
 
 inline void filter_int_ne(std::string& s, int n) {
-  int val = 0;
-  auto [ptr, ec] = std::from_chars(s.data(), s.data() + s.size(), val);
-  s = (ec == std::errc{} && val != n) ? "true" : "false";
+  if (s.find('.') != std::string::npos || s.find('e') != std::string::npos || s.find('E') != std::string::npos) {
+    s = filter_int_cmp_float(s, 0, n) ? "true" : "false";
+    return;
+  }
+  long long val = 0;
+  if (auto [ptr, ec] = std::from_chars(s.data(), s.data() + s.size(), val); ec == std::errc{}) {
+    s = (val != n) ? "true" : "false";
+  } else {
+    s = "false";
+  }
 }
 
 inline void filter_int_gt(std::string& s, int n) {
-  int val = 0;
-  auto [ptr, ec] = std::from_chars(s.data(), s.data() + s.size(), val);
-  s = (ec == std::errc{} && val > n) ? "true" : "false";
+  if (s.find('.') != std::string::npos || s.find('e') != std::string::npos || s.find('E') != std::string::npos) {
+    s = filter_int_cmp_float(s, 1, n) ? "true" : "false";
+    return;
+  }
+  long long val = 0;
+  if (auto [ptr, ec] = std::from_chars(s.data(), s.data() + s.size(), val); ec == std::errc{}) {
+    s = (val > n) ? "true" : "false";
+  } else {
+    s = "false";
+  }
 }
 
 inline void filter_int_gte(std::string& s, int n) {
-  int val = 0;
-  auto [ptr, ec] = std::from_chars(s.data(), s.data() + s.size(), val);
-  s = (ec == std::errc{} && val >= n) ? "true" : "false";
+  if (s.find('.') != std::string::npos || s.find('e') != std::string::npos || s.find('E') != std::string::npos) {
+    s = filter_int_cmp_float(s, 2, n) ? "true" : "false";
+    return;
+  }
+  long long val = 0;
+  if (auto [ptr, ec] = std::from_chars(s.data(), s.data() + s.size(), val); ec == std::errc{}) {
+    s = (val >= n) ? "true" : "false";
+  } else {
+    s = "false";
+  }
 }
 
 inline void filter_int_lt(std::string& s, int n) {
-  int val = 0;
-  auto [ptr, ec] = std::from_chars(s.data(), s.data() + s.size(), val);
-  s = (ec == std::errc{} && val < n) ? "true" : "false";
+  if (s.find('.') != std::string::npos || s.find('e') != std::string::npos || s.find('E') != std::string::npos) {
+    s = filter_int_cmp_float(s, 3, n) ? "true" : "false";
+    return;
+  }
+  long long val = 0;
+  if (auto [ptr, ec] = std::from_chars(s.data(), s.data() + s.size(), val); ec == std::errc{}) {
+    s = (val < n) ? "true" : "false";
+  } else {
+    s = "false";
+  }
 }
 
 inline void filter_int_lte(std::string& s, int n) {
-  int val = 0;
-  auto [ptr, ec] = std::from_chars(s.data(), s.data() + s.size(), val);
-  s = (ec == std::errc{} && val <= n) ? "true" : "false";
+  if (s.find('.') != std::string::npos || s.find('e') != std::string::npos || s.find('E') != std::string::npos) {
+    s = filter_int_cmp_float(s, 4, n) ? "true" : "false";
+    return;
+  }
+  long long val = 0;
+  if (auto [ptr, ec] = std::from_chars(s.data(), s.data() + s.size(), val); ec == std::errc{}) {
+    s = (val <= n) ? "true" : "false";
+  } else {
+    s = "false";
+  }
 }
 
 inline void filter_int_add(std::string& s, int n) {
-  int val = 0;
-  auto [ptr, ec] = std::from_chars(s.data(), s.data() + s.size(), val);
-  if (ec == std::errc{}) s = std::to_string(val + n);
+  // VM (filters.hpp) と同一: 小数/指数表記は double で処理
+  if (s.find('.') != std::string::npos || s.find('e') != std::string::npos || s.find('E') != std::string::npos) {
+    double val = 0.0;
+    if (auto [p, ec] = std::from_chars(s.data(), s.data() + s.size(), val); ec == std::errc{}) {
+      char buf[128];
+      auto [p2, ec2] = std::to_chars(buf, buf + sizeof(buf), val + n);
+      if (ec2 == std::errc{}) {
+        s.assign(buf, p2);
+      }
+    }
+  } else {
+    long long val = 0;
+    if (auto [p, ec] = std::from_chars(s.data(), s.data() + s.size(), val); ec == std::errc{}) {
+      char buf[32];
+      if (auto [tp, tec] = std::to_chars(buf, buf + sizeof(buf), val + n); tec == std::errc{}) {
+        s.assign(buf, tp - buf);
+      }
+    }
+  }
 }
 
 inline void filter_int_sub(std::string& s, int n) {
-  int val = 0;
-  auto [ptr, ec] = std::from_chars(s.data(), s.data() + s.size(), val);
-  if (ec == std::errc{}) s = std::to_string(val - n);
+  if (s.find('.') != std::string::npos || s.find('e') != std::string::npos || s.find('E') != std::string::npos) {
+    double val = 0.0;
+    if (auto [p, ec] = std::from_chars(s.data(), s.data() + s.size(), val); ec == std::errc{}) {
+      char buf[128];
+      auto [p2, ec2] = std::to_chars(buf, buf + sizeof(buf), val - n);
+      if (ec2 == std::errc{}) {
+        s.assign(buf, p2);
+      }
+    }
+  } else {
+    long long val = 0;
+    if (auto [p, ec] = std::from_chars(s.data(), s.data() + s.size(), val); ec == std::errc{}) {
+      char buf[32];
+      if (auto [tp, tec] = std::to_chars(buf, buf + sizeof(buf), val - n); tec == std::errc{}) {
+        s.assign(buf, tp - buf);
+      }
+    }
+  }
 }
 
 inline void filter_int_mul(std::string& s, int n) {
-  int val = 0;
-  auto [ptr, ec] = std::from_chars(s.data(), s.data() + s.size(), val);
-  if (ec == std::errc{}) s = std::to_string(val * n);
+  if (s.find('.') != std::string::npos || s.find('e') != std::string::npos || s.find('E') != std::string::npos) {
+    double val = 0.0;
+    if (auto [p, ec] = std::from_chars(s.data(), s.data() + s.size(), val); ec == std::errc{}) {
+      char buf[128];
+      auto [p2, ec2] = std::to_chars(buf, buf + sizeof(buf), val * n);
+      if (ec2 == std::errc{}) {
+        s.assign(buf, p2);
+      }
+    }
+  } else {
+    long long val = 0;
+    if (auto [p, ec] = std::from_chars(s.data(), s.data() + s.size(), val); ec == std::errc{}) {
+      char buf[32];
+      if (auto [tp, tec] = std::to_chars(buf, buf + sizeof(buf), val * n); tec == std::errc{}) {
+        s.assign(buf, tp - buf);
+      }
+    }
+  }
 }
 
 inline void filter_int_div(std::string& s, int n) {
+  // ponytail: division_by_zero は静かに無視 (codegen は void 戻り値のためエラー返却不可)
   if (n == 0) return;
-  int val = 0;
-  auto [ptr, ec] = std::from_chars(s.data(), s.data() + s.size(), val);
-  if (ec == std::errc{}) s = std::to_string(val / n);
+  if (s.find('.') != std::string::npos || s.find('e') != std::string::npos || s.find('E') != std::string::npos) {
+    double val = 0.0;
+    if (auto [p, ec] = std::from_chars(s.data(), s.data() + s.size(), val); ec == std::errc{}) {
+      char buf[128];
+      auto [p2, ec2] = std::to_chars(buf, buf + sizeof(buf), val / n);
+      if (ec2 == std::errc{}) {
+        s.assign(buf, p2);
+      }
+    }
+  } else {
+    long long val = 0;
+    if (auto [p, ec] = std::from_chars(s.data(), s.data() + s.size(), val); ec == std::errc{}) {
+      char buf[32];
+      if (auto [tp, tec] = std::to_chars(buf, buf + sizeof(buf), val / n); tec == std::errc{}) {
+        s.assign(buf, tp - buf);
+      }
+    }
+  }
 }
 
 inline void filter_float_precision(std::string& s, int n) {
@@ -499,9 +685,15 @@ inline void filter_truncate(std::string& s, int max_len) {
 }
 
 inline void filter_substr(std::string& s, int pos, int len) {
-  if (pos < 0) pos = 0;
+  // VM (filters.hpp) と同一: 負の start → clear、len<=0 → 末尾残す
+  if (pos < 0) { s.clear(); return; }
   if (pos >= static_cast<int>(s.size())) { s.clear(); return; }
-  s = s.substr(static_cast<std::size_t>(pos), static_cast<std::size_t>(len));
+  if (len > 0 && pos + len < static_cast<int>(s.size())) {
+    s.erase(static_cast<std::size_t>(pos + len));
+  }
+  if (pos > 0) {
+    s.erase(0, static_cast<std::size_t>(pos));
+  }
 }
 
 /** @brief 数字列を右から 3 桁ごとにカンマ区切りする（numify 用） */

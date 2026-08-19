@@ -33,6 +33,13 @@ struct glz::meta<User> {
 #include "render_ext3.hpp"
 #include "render_ext4.hpp"
 #include "render_ext5.hpp"
+#include "render_drift_hex.hpp"
+#include "render_drift_fcmp.hpp"
+#include "render_drift_fadd.hpp"
+#include "render_drift_repl.hpp"
+#include "render_drift_pad.hpp"
+#include "render_drift_sub1.hpp"
+#include "render_drift_sub2.hpp"
 
 // 新機能テスト用テンプレート
 struct Item2 {
@@ -167,6 +174,24 @@ int main() {
     [](auto const& d, std::string& out) { return generated::render9(d, out); });
   check_into("into json", "{{name|json}}", d,
     [](auto const& d, std::string& out) { return generated::render13(d, out); });
+
+  // ドリフト回帰テスト: codegen_helpers.hpp と filters.hpp の実装差分を防ぐ
+  // 各テストは VM (injamm::engine) と codegen (生成コード) の出力が一致することを確認
+  std::cout << "\n--- drift regression ---\n";
+  check_ext("drift hex", "{{age | hex}}", u,
+    [](auto const& d) { return generated::render_drift_hex(d); });
+  check_ext("drift float gt", "{{score | gt(90)}}", u,
+    [](auto const& d) { return generated::render_drift_fcmp(d); });
+  check_ext("drift float add", "{{score | add(1)}}", u,
+    [](auto const& d) { return generated::render_drift_fadd(d); });
+  check_ext("drift replace no-arg", "{{name | replace(\"\", \"X\")}}", u,
+    [](auto const& d) { return generated::render_drift_repl(d); });
+  check_ext("drift pad empty str", "{{name | pad(10, \"\")}}", u,
+    [](auto const& d) { return generated::render_drift_pad(d); });
+  check_ext("drift substr neg start", "{{name | substr(-1, 3)}}", u,
+    [](auto const& d) { return generated::render_drift_sub1(d); });
+  check_ext("drift substr len 0", "{{name | substr(1, 0)}}", u,
+    [](auto const& d) { return generated::render_drift_sub2(d); });
 
   std::cout << "\n=== 結果: " << pass_count << "/" << test_count << " passed ===\n";
   return (pass_count == test_count) ? 0 : 1;
