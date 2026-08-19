@@ -26,7 +26,6 @@
 #define INJAMM_ALWAYS_INLINE
 #endif
 
-#include "../injamm.hpp"
 #include "bytecode.hpp"
 #include "enum_io.hpp"
 #include "escape.hpp"
