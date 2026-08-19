@@ -37,7 +37,7 @@ template <typename T, typename Sink = std::string>
 render16(const T& data, Sink& out) {
   if constexpr (std::is_same_v<Sink, std::string>) {
     out.clear();
-    out.reserve(1);
+    out.reserve(33);
   }
   
   auto _size1 = data.items.size();

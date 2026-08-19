@@ -37,7 +37,7 @@ template <typename T, typename Sink = std::string>
 render14(const T& data, Sink& out) {
   if constexpr (std::is_same_v<Sink, std::string>) {
     out.clear();
-    out.reserve(2);
+    out.reserve(98);
   }
   
   html_escape_append_value(out, data.name);

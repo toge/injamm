@@ -33,7 +33,7 @@ template <typename T>
 [[nodiscard]] std::expected<void, injamm::error_ctx>
 render_a(const T& data, std::string& out) {
   out.clear();
-  out.reserve(5);
+  out.reserve(101);
   
   auto _size1 = data.items.size();
   for (std::size_t _i1 = 0; _i1 < _size1; ++_i1) {

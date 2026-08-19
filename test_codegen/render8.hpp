@@ -37,7 +37,7 @@ template <typename T, typename Sink = std::string>
 render8(const T& data, Sink& out) {
   if constexpr (std::is_same_v<Sink, std::string>) {
     out.clear();
-    out.reserve(1);
+    out.reserve(65);
   }
   
   for (const auto& _item1 : data.items) {

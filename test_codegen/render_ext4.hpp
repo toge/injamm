@@ -37,7 +37,7 @@ template <typename T, typename Sink = std::string>
 render_ext4(const T& data, Sink& out) {
   if constexpr (std::is_same_v<Sink, std::string>) {
     out.clear();
-    out.reserve(0);
+    out.reserve(32);
   }
   
   append_value(out, data.name);

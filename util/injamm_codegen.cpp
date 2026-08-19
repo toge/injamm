@@ -760,6 +760,40 @@ class code_generator {
   }
 
   /**
+   * @brief 補間値（変数・セクション内アイテム等）を出力する命令の数を数える
+   * @details reserve の過小見積もりを防ぐため、リテラル長に加えて補間値の推定サイズを
+   *          加算する。実行時の値サイズは不明なので、1値あたりの定数（k_interp_estimate）
+   *          で安全な過大見積もりを行う。
+   * @param bc 判定対象のバイトコード
+   * @return 補間値出力命令の総数
+   */
+  std::size_t count_interpolations(bc::bytecode const& bc) {
+    // ponytail: ループ内の補間も1回として数える。reserve はヒントであり、
+    // 実出力超過時は string が自動拡張される。過小見積もり（再確保）の回避が主目的。
+    std::size_t n = 0;
+    for (auto const& inst : bc.instructions) {
+      switch (inst.op) {
+        case bc::opcode::emit_var:
+        case bc::opcode::emit_var_raw:
+        case bc::opcode::emit_litvar:
+        case bc::opcode::emit_litvar_raw:
+        case bc::opcode::emit_at_root:
+        case bc::opcode::emit_at_root_field:
+        case bc::opcode::emit_at_root_field_raw:
+        case bc::opcode::emit_at_key:
+        case bc::opcode::emit_this:
+        case bc::opcode::emit_filtered:
+        case bc::opcode::emit_filtered_raw:
+          ++n;
+          break;
+        default:
+          break;
+      }
+    }
+    return n;
+  }
+
+  /**
    * @brief 個々のバイトコード命令を C++ コードに変換
    * @param inst 変換する命令
    * @param bc 含まれるバイトコード（リテラル・変数参照テーブルへのアクセス用）
@@ -1171,17 +1205,19 @@ public:
    * @return 生成された C++ ヘッダファイルの内容
    */
   std::string generate(bc::bytecode const& bc) {
-    // リテラルの合計サイズを計算して reserve に使用
+    // リテラルの合計サイズ + 補間値の推定サイズで reserve を過大見積もりする
     std::size_t total_literal_size = 0;
     for (auto const& lit : bc.literals) {
       total_literal_size += lit.size();
     }
+    constexpr std::size_t interp_estimate = 32;   // 補間値1つあたりの推定バイト数
+    std::size_t reserve_size = total_literal_size + count_interpolations(bc) * interp_estimate;
 
     emit_header();
     /* partial ディスパッチ関数を先に出力: メイン関数から render_partial<"name"> として
        呼び出せるようにする。partial がない場合は何も出力しない。 */
     emit_partial_dispatch(bc);
-    emit_render_into_start(total_literal_size, uses_filtered(bc));
+    emit_render_into_start(reserve_size, uses_filtered(bc));
 
     /* range-for 化の判定をループ命令の生成前に済ませる */
     precompute_index_loops(bc);

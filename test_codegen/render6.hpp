@@ -37,7 +37,7 @@ template <typename T, typename Sink = std::string>
 render6(const T& data, Sink& out) {
   if constexpr (std::is_same_v<Sink, std::string>) {
     out.clear();
-    out.reserve(12);
+    out.reserve(44);
   }
   
   out.append("Hello ");

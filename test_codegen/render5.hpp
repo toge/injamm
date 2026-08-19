@@ -37,7 +37,7 @@ template <typename T, typename Sink = std::string>
 render5(const T& data, Sink& out) {
   if constexpr (std::is_same_v<Sink, std::string>) {
     out.clear();
-    out.reserve(31);
+    out.reserve(159);
   }
   
   out.append("Order #");
