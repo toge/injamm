@@ -37,7 +37,6 @@ template <typename T, typename Sink = std::string>
 render_ext1(const T& data, Sink& out) {
   if constexpr (std::is_same_v<Sink, std::string>) {
     out.clear();
-    out.reserve(10);
   }
   
   if (data.age > 20) {

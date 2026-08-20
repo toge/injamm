@@ -540,7 +540,9 @@ class code_generator {
     emit("if constexpr (std::is_same_v<Sink, std::string>) {");
     ++indent_;
     emit("out.clear();");
-    emit("out.reserve(" + std::to_string(reserve_size) + ");");
+    if (reserve_size > 0) {
+      emit("out.reserve(" + std::to_string(reserve_size) + ");");
+    }
     --indent_;
     emit("}");
     if (declare_filtered) {
@@ -1211,7 +1213,16 @@ public:
       total_literal_size += lit.size();
     }
     constexpr std::size_t interp_estimate = 32;   // 補間値1つあたりの推定バイト数
+    // SSO 容量（libstdc++=15, MSVC=22 をカバーする最小値）。このサイズ以下の出力は
+    // std::string の SSO でヒープ確保なしで収まるため、reserve 自体を省略できる。
+    constexpr std::size_t sso_capacity = 15;
     std::size_t reserve_size = total_literal_size + count_interpolations(bc) * interp_estimate;
+    // SSO に収まる見込みの小テンプレートは reserve を省略し、ヒープ確保を避ける。
+    // 各補間値が最大 SSO 容量まで出力し得ると仮定しても全体が SSO に収まる場合のみ
+    // 省略する（リテラルのみで 15 バイト以下、または補間1つのみでリテラルなし）。
+    if (total_literal_size + count_interpolations(bc) * sso_capacity <= sso_capacity) {
+      reserve_size = 0;
+    }
 
     emit_header();
     /* partial ディスパッチ関数を先に出力: メイン関数から render_partial<"name"> として
