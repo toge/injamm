@@ -197,6 +197,7 @@ void emit_filter_chain(Emitter&& emit, std::vector<string_filter_entry> const& f
       case string_filter::pluralize:  emit(bc_opcode::filter_string, 0, static_cast<std::uint32_t>(string_filter::pluralize), no_str); break;
       case string_filter::format:     emit(bc_opcode::filter_string, 0, static_cast<std::uint32_t>(string_filter::format), no_str); break;
       case string_filter::repeat:     emit(bc_opcode::filter_string, static_cast<std::uint32_t>(f.arg1), static_cast<std::uint32_t>(string_filter::repeat), no_str); break;
+      case string_filter::urlencode:  emit(bc_opcode::filter_string, 0, static_cast<std::uint32_t>(string_filter::urlencode), no_str); break;
     }
   }
   for (auto f : int_filters) {
@@ -514,6 +515,28 @@ class bc_compiler {
       case at_var_kind::key:
         bc_.add_instruction(bc_opcode::emit_at_key);
         break;
+      case at_var_kind::even:
+      case at_var_kind::odd: {
+        /** {{loop.is_even}} / {{loop.is_odd}} 変数出力: 既存 emit_if 系命令への脱糖。
+         *  ホットな execute_impl（computed goto ディスパッチャ）に新オペコード・
+         *  新ハンドラを追加するとコードレイアウト変動で既存テンプレートの
+         *  性能が揺れるため、命令の追加は行わない。 */
+        auto idx = bc_.add_var_ref(key);
+        resolve_ref_indices(idx, key);
+        auto t_idx = bc_.add_literal("true");
+        auto f_idx = bc_.add_literal("false");
+        bc_.add_instruction(bc_opcode::emit_if, 0, idx);
+        auto if_idx = static_cast<std::uint32_t>(bc_.current_offset() - 1);
+        bc_.add_instruction(bc_opcode::emit_literal, t_idx);
+        auto else_idx = static_cast<std::uint32_t>(bc_.current_offset());
+        bc_.add_instruction(bc_opcode::emit_else, 0, 0);
+        bc_.add_instruction(bc_opcode::emit_literal, f_idx);
+        auto endif_addr = static_cast<std::uint32_t>(bc_.current_offset());
+        bc_.add_instruction(bc_opcode::emit_endif);
+        bc_.patch_jump(if_idx, else_idx + 1);
+        bc_.patch_jump(else_idx, endif_addr + 1);
+        break;
+      }
     }
   }
 
@@ -955,6 +978,26 @@ class bc_compiler {
   void compile_at_inverted(std::string_view key) {
     auto k = parse_loop_kind(key);
     if (!k) return;
+    if (*k == at_var_kind::even || *k == at_var_kind::odd) {
+      /** {{^loop.is_even}} / {{^loop.is_odd}}: emit_if_not（eval_var_truthy 経由）への脱糖。
+       *  do_inverted は special キーを解決できないため emit_at_inverted を使わない。 */
+      auto idx = bc_.add_var_ref(key);
+      resolve_ref_indices(idx, key);
+      bc_.add_instruction(bc_opcode::emit_if_not, 0, idx);
+      auto if_idx = static_cast<std::uint32_t>(bc_.current_offset() - 1);
+
+      bool found_close = compile_body();
+      if (bc_.error.ec == error_code::none && !found_close) {
+        bc_.error = error_ctx{if_idx, error_code::unexpected_end, key};
+        return;
+      }
+      if (trim_blocks_ && pos_ < tmpl_.size() && tmpl_[pos_] == '\n') ++pos_;
+
+      auto endif_addr = static_cast<std::uint32_t>(bc_.current_offset());
+      bc_.add_instruction(bc_opcode::emit_endif);
+      bc_.patch_jump(if_idx, endif_addr + 1);
+      return;
+    }
     /** @brief ループ状態の種類を数値でエンコード（0=index, 1=first, 2=last） */
     std::uint32_t kind;
     switch (*k) {
@@ -987,6 +1030,12 @@ class bc_compiler {
   void compile_at_section(std::string_view key) {
     auto k = parse_loop_kind(key);
     if (!k) return;
+    if (*k == at_var_kind::even || *k == at_var_kind::odd) {
+      /** {{#loop.is_even}} / {{#loop.is_odd}}: {{#if loop.is_even}} と同一の既存命令列へ脱糖
+       *  （eval_var_truthy が special_var_kind を判定するため emit_if がそのまま使える） */
+      compile_if(key);
+      return;
+    }
     std::uint32_t kind;
     switch (*k) {
       case at_var_kind::index: kind = 0; break;

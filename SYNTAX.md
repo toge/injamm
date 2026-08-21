@@ -359,6 +359,8 @@ auto r = injamm::render<injamm::fixed_string(
 | `{{loop.size}}`     | ループの総要素数             | `3`              |
 | `{{loop.is_first}}` | 最初の要素なら `true`        | `true` / `false` |
 | `{{loop.is_last}}`  | 最後の要素なら `true`        | `true` / `false` |
+| `{{loop.is_even}}`  | 偶数インデックスなら `true`  | `true` / `false` |
+| `{{loop.is_odd}}`   | 奇数インデックスなら `true`  | `true` / `false` |
 | `{{loop.key}}`      | 現在のキー名（マップ反復時） | `"alice"`        |
 | `{{loop.parent.*}}` | 親ループの loop 変数         | `{{loop.parent.index}}` |
 
@@ -545,6 +547,7 @@ auto bc2 = injamm::engine<User>("a\n  {{#active}}y{{/active}}", false, true);  /
 | `substr(n)`   | n 文字目から末尾まで  | `"hello"`       | `"llo"`         |
 | `substr(n,m)` | n 文字目から m 文字   | `"hello"`       | `"el"`          |
 | `replace`     | 改行を空白に置換      | `"a\nb"`        | `"a b"`         |
+| `urlencode`   | RFC 3986 percent エンコード（unreserved 以外を `%XX` へ） | `"a b&c~"` | `"a%20b%26c~"` |
 
 ```cpp
 auto r = injamm::render<injamm::fixed_string("{{name | upper}}")>(User{"hello", 0});

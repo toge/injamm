@@ -674,6 +674,46 @@ TEST_CASE("ct_at_last", "[injamm][ct]") {
   REQUIRE(*r == "falsetrue");
 }
 
+TEST_CASE("ct_at_even_odd_var", "[injamm][ct]") {
+  auto constexpr tmpl = injamm::fixed_string("{{#users}}{{loop.is_even}}{{loop.is_odd}};{{/users}}");
+  CtUsersData data;
+  data.users.push_back(CtUser{"a", 1});
+  data.users.push_back(CtUser{"b", 2});
+  auto r = injamm::render<tmpl>(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "truefalse;falsetrue;");
+}
+
+TEST_CASE("ct_at_even_section", "[injamm][ct]") {
+  auto constexpr tmpl = injamm::fixed_string("{{#users}}{{#loop.is_even}}<{{name}}>{{/loop.is_even}}{{/users}}");
+  CtUsersData data;
+  data.users.push_back(CtUser{"a", 1});
+  data.users.push_back(CtUser{"b", 2});
+  data.users.push_back(CtUser{"c", 3});
+  auto r = injamm::render<tmpl>(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "<a><c>");
+}
+
+TEST_CASE("ct_if_is_even", "[injamm][ct]") {
+  auto constexpr tmpl = injamm::fixed_string("{{#users}}{{#if loop.is_even}}<{{name}}>{{/if}}{{/users}}");
+  CtUsersData data;
+  data.users.push_back(CtUser{"a", 1});
+  data.users.push_back(CtUser{"b", 2});
+  data.users.push_back(CtUser{"c", 3});
+  auto r = injamm::render<tmpl>(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "<a><c>");
+}
+
+TEST_CASE("ct_filter_urlencode", "[injamm][ct]") {
+  auto constexpr tmpl = injamm::fixed_string("{{name | urlencode}}");
+  CtUser data{"a b&c~"};
+  auto   r = injamm::render<tmpl>(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "a%20b%26c~");
+}
+
 TEST_CASE("ct_at_key_array", "[injamm][ct]") {
   auto constexpr tmpl = injamm::fixed_string("{{#users}}{{loop.key}}:{{name}},{{/users}}");
   CtUsersData data;

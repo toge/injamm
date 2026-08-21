@@ -218,6 +218,12 @@ constexpr std::size_t constexpr_find_tag(std::string_view haystack, std::string_
   if (key == "loop.is_last") {
     return at_var_kind::last;
   }
+  if (key == "loop.is_even") {
+    return at_var_kind::even;
+  }
+  if (key == "loop.is_odd") {
+    return at_var_kind::odd;
+  }
   if (key == "loop.key") {
     return at_var_kind::key;
   }
@@ -365,6 +371,8 @@ constexpr std::size_t constexpr_find_tag(std::string_view haystack, std::string_
     return string_filter_entry{string_filter::to_json, 0, 0};
   if (name == "safe")
     return string_filter_entry{string_filter::safe, 0, 0};
+  if (name == "urlencode")
+    return string_filter_entry{string_filter::urlencode, 0, 0};
   return std::nullopt;
 }
 

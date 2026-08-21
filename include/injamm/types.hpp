@@ -18,8 +18,8 @@
 
 namespace injamm {
 
-/** @brief loop 変数の種別（loop.index / loop.index1 / loop.size / loop.is_first / loop.is_last / loop.key） */
-enum class at_var_kind : std::uint8_t { index, index1, size, first, last, key };
+/** @brief loop 変数の種別（loop.index / loop.index1 / loop.size / loop.is_first / loop.is_last / loop.key / loop.is_even / loop.is_odd） */
+enum class at_var_kind : std::uint8_t { index, index1, size, first, last, key, even, odd };
 
 
 /** @brief エラーコード

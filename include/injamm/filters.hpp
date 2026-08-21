@@ -220,6 +220,25 @@ constexpr void apply_string_filter(std::string& str, string_filter_entry entry) 
   case string_filter::format:
     // resolve_filtered で特殊処理済み。no-op。
     break;
+  case string_filter::urlencode: {
+    /** urlencode: RFC 3986 の unreserved（ALPHA / DIGIT / "-" / "_" / "." / "~"）以外を %XX 大文字16進へ */
+    std::string result;
+    result.reserve(str.size() + str.size() / 4);
+    constexpr char hex[] = "0123456789ABCDEF";
+    for (char c : str) {
+      auto const uc = static_cast<unsigned char>(c);
+      if ((uc >= 'A' && uc <= 'Z') || (uc >= 'a' && uc <= 'z') || (uc >= '0' && uc <= '9') ||
+          uc == '-' || uc == '_' || uc == '.' || uc == '~') {
+        result.push_back(c);
+      } else {
+        result.push_back('%');
+        result.push_back(hex[uc >> 4]);
+        result.push_back(hex[uc & 0x0F]);
+      }
+    }
+    str = std::move(result);
+    break;
+  }
   case string_filter::repeat: {
     auto n = entry.arg1;
     if (n < 1) {

@@ -55,6 +55,10 @@ enum class special_var_kind : std::uint8_t {
   lp_is_last,
   lp_key,
   lp_unknown,
+  loop_is_even,
+  loop_is_odd,
+  lp_is_even,
+  lp_is_odd,
 };
 
 /** @brief 変数キーを special_var_kind に分類する */
@@ -73,6 +77,8 @@ inline special_var_kind classify_special_var(std::string_view key) {
     if (p == "size") return special_var_kind::lp_size;
     if (p == "is_first") return special_var_kind::lp_is_first;
     if (p == "is_last") return special_var_kind::lp_is_last;
+    if (p == "is_even") return special_var_kind::lp_is_even;
+    if (p == "is_odd") return special_var_kind::lp_is_odd;
     if (p == "key") return special_var_kind::lp_key;
     return special_var_kind::lp_unknown;
   }
@@ -81,6 +87,8 @@ inline special_var_kind classify_special_var(std::string_view key) {
   if (prop == "size") return special_var_kind::loop_size;
   if (prop == "is_first") return special_var_kind::loop_is_first;
   if (prop == "is_last") return special_var_kind::loop_is_last;
+  if (prop == "is_even") return special_var_kind::loop_is_even;
+  if (prop == "is_odd") return special_var_kind::loop_is_odd;
   if (prop == "key") return special_var_kind::loop_key;
   return special_var_kind::loop_unknown;
 }

@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-08-22
+
+- `urlencode` フィルタを追加（RFC 3986 percent エンコード、engine<T> / NTTP 両対応）
+- `loop.is_even` / `loop.is_odd` を追加（zebra ストライプ用、`{{loop.is_even}}` 変数出力・`{{#loop.is_even}}` セクション・`{{^loop.is_even}}` 逆セクション・`{{#if loop.is_even}}` 条件式のすべてに対応、`loop.parent.*` 版も含む）
+
 ## 2026-08-18
 
 - `strip` / `lstrip` / `rstrip` フィルタを追加（`trim` / `ltrim` / `rtrim` の別名）

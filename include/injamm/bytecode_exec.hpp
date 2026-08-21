@@ -499,6 +499,12 @@ public:
     case special_var_kind::lp_is_last:
       ex.out_.append((parent->index + 1 == parent->count) ? "true" : "false");
       return true;
+    case special_var_kind::lp_is_even:
+      ex.out_.append((parent->index % 2 == 0) ? "true" : "false");
+      return true;
+    case special_var_kind::lp_is_odd:
+      ex.out_.append((parent->index % 2 == 1) ? "true" : "false");
+      return true;
     case special_var_kind::lp_key:
       if (!parent->key.empty()) {
         if (raw) { ex.out_.append(parent->key); } else { html_escape_into(ex.out_, parent->key); }
@@ -524,6 +530,8 @@ public:
     case special_var_kind::loop_size:     return lp0 && lp0->count != 0;
     case special_var_kind::loop_is_first: return lp0 && lp0->index == 0;
     case special_var_kind::loop_is_last:  return lp0 && lp0->index + 1 == lp0->count;
+    case special_var_kind::loop_is_even:  return lp0 && lp0->index % 2 == 0;
+    case special_var_kind::loop_is_odd:   return lp0 && lp0->index % 2 == 1;
     case special_var_kind::loop_key:      return lp0 && !lp0->key.empty();
     case special_var_kind::loop_unknown:  return false;
     case special_var_kind::lp_index:      return lp0 && lp0->parent && lp0->parent->index != 0;
@@ -531,6 +539,8 @@ public:
     case special_var_kind::lp_size:       return lp0 && lp0->parent && lp0->parent->count != 0;
     case special_var_kind::lp_is_first:   return lp0 && lp0->parent && lp0->parent->index == 0;
     case special_var_kind::lp_is_last:    return lp0 && lp0->parent && lp0->parent->index + 1 == lp0->parent->count;
+    case special_var_kind::lp_is_even:    return lp0 && lp0->parent && lp0->parent->index % 2 == 0;
+    case special_var_kind::lp_is_odd:     return lp0 && lp0->parent && lp0->parent->index % 2 == 1;
     case special_var_kind::lp_key:        return lp0 && lp0->parent && !lp0->parent->key.empty();
     case special_var_kind::lp_unknown:    return false;
     case special_var_kind::none:

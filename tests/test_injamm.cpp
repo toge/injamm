@@ -615,6 +615,84 @@ TEST_CASE("bc_at_last_inverted_section", "[injamm]") {
 }
 
 /**
+ * @brief {{loop.is_even}} / {{loop.is_odd}} 変数出力のテスト
+ * @details 偶数インデックスで is_even が "true"、奇数インデックスで is_odd が "true" になることを確認する。
+ */
+TEST_CASE("bc_at_even_odd_var", "[injamm]") {
+  BcUsersData data;
+  data.users.push_back(BcUser{"a", 1});
+  data.users.push_back(BcUser{"b", 2});
+  auto bc1 = injamm::engine<BcUsersData>("{{#users}}{{loop.is_even}}{{/users}}");
+  auto r1  = bc1.render(data);
+  REQUIRE(r1.has_value());
+  REQUIRE(*r1 == "truefalse");
+  auto bc2 = injamm::engine<BcUsersData>("{{#users}}{{loop.is_odd}}{{/users}}");
+  auto r2  = bc2.render(data);
+  REQUIRE(r2.has_value());
+  REQUIRE(*r2 == "falsetrue");
+}
+
+/**
+ * @brief {{#loop.is_even}} セクション構文のテスト
+ * @details {{#loop.is_even}}...{{/loop.is_even}} で偶数インデックス要素のみ描画されることを確認する。
+ */
+TEST_CASE("bc_at_even_section", "[injamm]") {
+  BcUsersData data;
+  data.users.push_back(BcUser{"a", 1});
+  data.users.push_back(BcUser{"b", 2});
+  data.users.push_back(BcUser{"c", 3});
+  auto bc = injamm::engine<BcUsersData>("{{#users}}{{#loop.is_even}}<{{name}}>{{/loop.is_even}}{{/users}}");
+  auto r  = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "<a><c>");
+}
+
+/**
+ * @brief {{#loop.is_odd}} セクション構文のテスト
+ * @details {{#loop.is_odd}}...{{/loop.is_odd}} で奇数インデックス要素のみ描画されることを確認する。
+ */
+TEST_CASE("bc_at_odd_section", "[injamm]") {
+  BcUsersData data;
+  data.users.push_back(BcUser{"a", 1});
+  data.users.push_back(BcUser{"b", 2});
+  data.users.push_back(BcUser{"c", 3});
+  auto bc = injamm::engine<BcUsersData>("{{#users}}{{#loop.is_odd}}<{{name}}>{{/loop.is_odd}}{{/users}}");
+  auto r  = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "<b>");
+}
+
+/**
+ * @brief {{^loop.is_even}} 逆セクション構文のテスト
+ * @details {{^loop.is_even}}...{{/loop.is_even}} で奇数インデックス要素のみ描画されることを確認する。
+ */
+TEST_CASE("bc_at_even_inverted_section", "[injamm]") {
+  BcUsersData data;
+  data.users.push_back(BcUser{"a", 1});
+  data.users.push_back(BcUser{"b", 2});
+  data.users.push_back(BcUser{"c", 3});
+  auto bc = injamm::engine<BcUsersData>("{{#users}}{{^loop.is_even}}<{{name}}>{{/loop.is_even}}{{/users}}");
+  auto r  = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "<b>");
+}
+
+/**
+ * @brief {{#if loop.is_even}} 条件分岐のテスト
+ * @details if 条件式内で loop.is_even を真偽判定できることを確認する。
+ */
+TEST_CASE("bc_if_is_even", "[injamm]") {
+  BcUsersData data;
+  data.users.push_back(BcUser{"a", 1});
+  data.users.push_back(BcUser{"b", 2});
+  data.users.push_back(BcUser{"c", 3});
+  auto bc = injamm::engine<BcUsersData>("{{#users}}{{#if loop.is_even}}<{{name}}>{{/if}}{{/users}}");
+  auto r  = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "<a><c>");
+}
+
+/**
  * @brief {{^loop.index}} 逆セクション構文のテスト
  * @details {{^loop.index}} は index==0（先頭要素）のときに描画し、index>0 ではスキップすることを確認する。
  */
@@ -990,6 +1068,35 @@ TEST_CASE("filter: upper", "[filter]") {
   auto   result = bc.render(data);
   REQUIRE(result);
   REQUIRE(*result == "HELLO WORLD");
+}
+
+/**
+ * @brief urlencode フィルタのテスト
+ * @details RFC 3986 の unreserved 文字（ALPHA / DIGIT / "-" / "_" / "." / "~"）を残し、
+ *          それ以外を %XX 大文字16進でエンコードすることを確認する。
+ */
+TEST_CASE("filter: urlencode", "[filter]") {
+  BcUser data{"a b&c~d-e_f.g", 30};
+  auto   bc     = injamm::engine<BcUser>("{{name | urlencode}}");
+  auto   result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "a%20b%26c~d-e_f.g");
+}
+
+TEST_CASE("filter: urlencode utf8", "[filter]") {
+  BcUser data{"日", 30};
+  auto   bc     = injamm::engine<BcUser>("{{name | urlencode}}");
+  auto   result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "%E6%97%A5");
+}
+
+TEST_CASE("filter: urlencode chained", "[filter]") {
+  BcUser data{"a b", 30};
+  auto   bc     = injamm::engine<BcUser>("{{name | trim | urlencode}}");
+  auto   result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "a%20b");
 }
 
 TEST_CASE("filter: lower", "[filter]") {
@@ -3403,6 +3510,14 @@ TEST_CASE("loop_parent_is_last_in_nested_if", "[injamm][loop]") {
   auto             r  = bc.render(data);
   REQUIRE(r.has_value());
   CHECK(*r == "NL");
+}
+
+TEST_CASE("loop_parent_is_even_var", "[injamm][loop]") {
+  BcNestedLoopData data{.groups = {{.items = {1, 2}}, {.items = {3}}}};
+  auto             bc = injamm::engine<BcNestedLoopData>("{{#groups}}{{#items}}({{loop.parent.is_even}}/{{loop.is_odd}}){{/items}}{{/groups}}");
+  auto             r  = bc.render(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "(true/false)(true/true)(false/false)");
 }
 
 // ---- enum テスト ----

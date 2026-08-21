@@ -85,6 +85,7 @@ namespace injamm::detail {
   case string_filter::pluralize:  return "pluralize";
   case string_filter::format:     return "format";
   case string_filter::repeat:     return "repeat";
+  case string_filter::urlencode:  return "urlencode";
   }
   return "unknown";
 }

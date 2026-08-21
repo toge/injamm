@@ -357,6 +357,7 @@ injamm_bc -i page.html -o page.bc -D title="My Page" -D footer="© 2026"
 | `{{loop.size}}`                     | ループ総要素数（inja 互換）            |
 | `{{loop.is_first}}`                 | 最初の要素なら `true`（inja 互換）     |
 | `{{loop.is_last}}`                  | 最後の要素なら `true`（inja 互換）     |
+| `{{loop.is_even}}` / `{{loop.is_odd}}` | 偶数/奇数インデックスなら `true`（zebra ストライプ用） |
 | `{{foo.bar.baz}}`                   | ネストパス                            |
 | `{{field.size}}`                   | コンテナの要素数                      |
 | `{{! ... }}`                        | コメント（Mustache 標準構文）         |
@@ -434,6 +435,7 @@ auto r3 = injamm::render<"{{title}}: {{status}}">(Task{"fix bug", Status::Active
 | `substr(n)`   | n 文字目から末尾まで                                | `{{name \| substr(2)}}`   |
 | `substr(n,m)` | n 文字目から m 文字分                               | `{{name \| substr(1,3)}}` |
 | `replace`     | 文字列中の改行を空白に置換                          | `{{name \| replace}}`     |
+| `urlencode`   | RFC 3986 percent エンコード（unreserved 以外を `%XX` へ） | `{{name \| urlencode}}`   |
 
 ### 整数フィルター
 

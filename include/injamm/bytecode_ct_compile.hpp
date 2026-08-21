@@ -379,13 +379,16 @@ consteval void compile_chunk_range(ct_bytecode_builder<N>& b,
          (void)p_idx;
          break;
        }
-       case string_filter::format: {
-         auto fmt_idx = b.add_literal({sf.str_arg1.data(), sf.str_arg1.size()});
-         b.emit(bc_opcode::filter_string, 0, static_cast<std::uint32_t>(string_filter::format), fmt_idx);
-         break;
-       }
-       }
-     }
+        case string_filter::format: {
+          auto fmt_idx = b.add_literal({sf.str_arg1.data(), sf.str_arg1.size()});
+          b.emit(bc_opcode::filter_string, 0, static_cast<std::uint32_t>(string_filter::format), fmt_idx);
+          break;
+        }
+        case string_filter::urlencode:
+          b.emit(bc_opcode::filter_string, 0, static_cast<std::uint32_t>(string_filter::urlencode), UINT32_MAX);
+          break;
+        }
+      }
      for (std::uint8_t f = 0; f < chunks.int_filter_count[idx]; ++f) {
        auto const& intf = chunks.int_filters[idx][f];
        b.emit(bc_opcode::filter_int, static_cast<std::uint32_t>(intf.arg), static_cast<std::uint32_t>(intf.filter), 0);
@@ -564,16 +567,51 @@ consteval void compile_chunk_range(ct_bytecode_builder<N>& b,
       case at_var_kind::first: b.emit(bc_opcode::emit_at_first); break;
       case at_var_kind::last:  b.emit(bc_opcode::emit_at_last); break;
       case at_var_kind::key:   b.emit(bc_opcode::emit_at_key); break;
+      case at_var_kind::even:
+      case at_var_kind::odd: {
+        /** {{loop.is_even}} / {{loop.is_odd}} 変数出力: 既存 emit_if 系命令への脱糖
+         *  （execute_impl のホットパスに新オペコード・新ハンドラを追加しないため） */
+        auto kv = (ak == at_var_kind::even) ? std::string_view{"loop.is_even"} : std::string_view{"loop.is_odd"};
+        auto vridx = b.add_var_ref({kv.data(), kv.size()}, UINT32_MAX);
+        auto t_idx = b.add_literal({"true", 4});
+        auto f_idx = b.add_literal({"false", 5});
+        auto if_instr = b.current_offset();
+        b.emit(bc_opcode::emit_if, 0, vridx);
+        b.emit(bc_opcode::emit_literal, t_idx);
+        auto else_instr = b.current_offset();
+        b.emit(bc_opcode::emit_else, 0);
+        b.emit(bc_opcode::emit_literal, f_idx);
+        auto endif_addr = b.current_offset();
+        b.emit(bc_opcode::emit_endif);
+        b.patch_jump(if_instr, static_cast<std::uint32_t>(else_instr + 1));
+        b.patch_jump(else_instr, static_cast<std::uint32_t>(endif_addr + 1));
+        break;
+      }
       }
       break;
     }
     case ct_chunk_kind::at_section: {
       bool inverted = (chunks.else_starts[i] != 0);
+      auto ak = static_cast<at_var_kind>(chunks.flags[i]);
+      if (ak == at_var_kind::even || ak == at_var_kind::odd) {
+        /** {{#loop.is_even}} / {{^loop.is_even}} 等: eval_var_truthy 経由の既存命令列へ脱糖
+         *  （execute_impl のホットパスに新オペコード・新ハンドラを追加しないため） */
+        auto kv = (ak == at_var_kind::even) ? std::string_view{"loop.is_even"} : std::string_view{"loop.is_odd"};
+        auto vridx = b.add_var_ref({kv.data(), kv.size()}, UINT32_MAX);
+        auto if_instr = b.current_offset();
+        b.emit(inverted ? bc_opcode::emit_if_not : bc_opcode::emit_if, 0, vridx);
+        compile_chunk_range(b, chunks, chunks.body_starts[i], chunks.body_ends[i]);
+        auto endif_addr = b.current_offset();
+        b.emit(bc_opcode::emit_endif);
+        b.patch_jump(if_instr, static_cast<std::uint32_t>(endif_addr + 1));
+        i = chunks.body_ends[i] - 1;
+        break;
+      }
       auto body_op = inverted ? bc_opcode::emit_at_inverted : bc_opcode::emit_at_section;
       auto sec_instr = b.current_offset();
       // 実行時の種別エンコード: 0=index, 1=first, 2=last
       std::uint32_t kind;
-      switch (static_cast<at_var_kind>(chunks.flags[i])) {
+      switch (ak) {
         case at_var_kind::index: kind = 0; break;
         case at_var_kind::first: kind = 1; break;
         case at_var_kind::last:  kind = 2; break;

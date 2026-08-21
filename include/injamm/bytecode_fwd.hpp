@@ -78,7 +78,8 @@ enum class string_filter : std::uint8_t {
   pad,
   pluralize,
   format,
-  repeat
+  repeat,
+  urlencode
 };
 
 enum class int_filter : std::uint8_t {
