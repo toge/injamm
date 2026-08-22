@@ -3207,6 +3207,42 @@ TEST_CASE("if_eq_true", "[injamm][compare]") {
   CHECK(*r == "match");
 }
 
+/** @brief 文字列フィールドの数値比較テスト用データ型（値が数字の文字列） */
+struct BcNumericStrData {
+  std::string age; /**< 数値を含む文字列 */
+};
+
+template <>
+struct glz::meta<BcNumericStrData> {
+  static constexpr auto value = glz::object("age", &BcNumericStrData::age);
+};
+
+TEST_CASE("if_numeric_compare_on_string_field", "[injamm][compare]") {
+  /** 文字列値が整数として解釈できる場合は数値比較する（runtime フィールドと同一挙動） */
+  BcNumericStrData data{"20"};
+  auto bc = injamm::engine<BcNumericStrData>("{{#if age > 18}}GT{{else}}LE{{/if}}");
+  auto r  = bc.render(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "GT");
+
+  auto bc2 = injamm::engine<BcNumericStrData>("{{#if age < 18}}LT{{else}}GE{{/if}}");
+  auto r2  = bc2.render(data);
+  REQUIRE(r2.has_value());
+  CHECK(*r2 == "GE");
+
+  auto bc3 = injamm::engine<BcNumericStrData>("{{#if age == 20}}EQ{{/if}}");
+  auto r3  = bc3.render(data);
+  REQUIRE(r3.has_value());
+  CHECK(*r3 == "EQ");
+
+  /** 数字でない文字列は数値比較で常に偽（文字列リテラル比較とは異なる） */
+  BcNumericStrData non_num{"abc"};
+  auto bc4 = injamm::engine<BcNumericStrData>("{{#if age > 1}}GT{{else}}NO{{/if}}");
+  auto r4  = bc4.render(non_num);
+  REQUIRE(r4.has_value());
+  CHECK(*r4 == "NO");
+}
+
 TEST_CASE("if_eq_false", "[injamm][compare]") {
   BcUser data{"Alice", 30};
   auto   bc = injamm::engine<BcUser>("{{#if age == 31}}match{{/if}}");

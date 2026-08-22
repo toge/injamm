@@ -23,8 +23,31 @@ eng.render(sqlite3_row_view{stmt});
 ## 要件
 
 - C++23 コンパイラ (GCC 14+ 推奨)
-- injamm (同リポジトリ)
-- libsqlite3 (システム標準、`/usr/include/sqlite3.h`)
+- [injamm](https://github.com/toge/injamm) 本体 (`find_package(injamm CONFIG REQUIRED)` で解決。事前にビルド&インストールが必要)
+- unofficial-sqlite3 (vcpkg port、テスト実行時は加えてシステムの libsqlite3)
+
+テスト済み injamm リビジョン: `9a6d95c` (拡張は `injamm::detail::` の concept 2種と `bc_compile` / `bc_execute(_into)` に依存するため、本体更新時は要確認)
+
+## ビルド
+
+```sh
+# 1) 先に本体をビルド & インストール
+cmake -B /tmp/injamm-b -S ~/src/injamm \
+  -DCMAKE_TOOLCHAIN_FILE=~/vm/vcpkg/scripts/buildsystems/vcpkg.cmake \
+  -DCMAKE_INSTALL_PREFIX=$HOME/.local/injamm \
+  -DBUILD_TEST=OFF -DBUILD_EXAMPLE=OFF
+cmake --build /tmp/injamm-b --parallel
+cmake --install /tmp/injamm-b
+
+# 2) 本ライブラリ
+cmake -B build -S . \
+  -DCMAKE_TOOLCHAIN_FILE=~/vm/vcpkg/scripts/buildsystems/vcpkg.cmake \
+  -DCMAKE_PREFIX_PATH=$HOME/.local/injamm
+cmake --build build --parallel
+ctest --test-dir build
+```
+
+CMake オプション: `BUILD_TEST`(デフォルト ON)。
 
 ## 使い方
 
@@ -75,28 +98,31 @@ auto html = eng.render(rows);
 | `{{loop.is_first}}` | ✅ | `index == 0` |
 | `{{loop.is_last}}` | ❌ | 前方カーソルでは判定不可 |
 | `{{loop.size}}` | ❌ | 事前カウントなし |
-| `{{#if age > 18}}` | ❌ | 値は文字列、数値比較不可 |
-| 整数フィルタ (`hex`, `zerofill` 等) | ❌ | 文字列→整数変換なし |
+| `{{#if age > 18}}` | ✅ | 整数として解釈できる文字列は数値比較（本体側で対応） |
+| 整数フィルタ (`hex`, `zerofill` 等) | ✅ | 実行時に文字列→整数変換して適用 |
 | 入れ子パス `{{addr.city}}` | ❌ | 実行時型はリフレクション不可能 |
 
 ## 設計
 
-詳細は `docs/superpowers/specs/2026-06-19-resultset-template-design.md` 参照。
-
 ### アーキテクチャ
 
 ```
-injamm (上流、無修正)
-  └── bytecode_exec.hpp  (2010行)
+injamm (別リポジトリ)
+  └── bytecode_exec.hpp   runtime dispatch 分岐 (concept 2種) を内包、
+                          実行時文字列値の数値比較 ({{#if age > 18}}) に対応
 
 injamm-sqlite3
-  ├── concept.hpp        runtime_field_accessible, forward_iterable
-  ├── executor.hpp       bytecode_exec.hpp を fork + runtime dispatch 分岐
-  ├── engine.hpp         runtime_engine<T>
+  ├── concept.hpp        injamm::detail の concept 再エクスポート
+  ├── executor.hpp       bytecode_exec.hpp への名前空間エイリアスシム
+  ├── engine.hpp         runtime_engine<T> (bc_compile / bc_execute を利用)
   └── adapter.hpp        sqlite3_row_view, sqlite3_result
 ```
 
 ### 名前空間
 
 - 全て `injamm::sqlite3` 以下
-- Fork した executor は `injamm::sqlite3::detail` (ODR 衝突回避)
+- 内部実装は `injamm::sqlite3::detail` (`injamm::detail` のエイリアス)
+
+### ディスパッチ
+
+GCC では core と共通の computed-goto (threaded) dispatch が自動有効になります(`INJAMM_NO_THREADED_DISPATCH` を自分で定義すれば無効化可能)。`tests/bench_dispatch.cpp` に計測用ベンチマークがあります。

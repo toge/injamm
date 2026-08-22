@@ -1450,12 +1450,20 @@ public:
         /** enum LHS: underlying 整数に変換して算術比較と同じロジックで評価 */
         cond = compare_vals<long long>(instr.op, static_cast<long long>(static_cast<std::underlying_type_t<FT>>(field)), static_cast<long long>(rhs));
       } else if constexpr (std::same_as<FT, std::string> || std::same_as<FT, std::string_view> || char_pointer_v<FT>) {
+        auto sv = to_sv(field);
         if (ref.compare_rhs_kind == compare_operand_kind::string_literal) {
-          auto sv = to_sv(field);
           switch (instr.op) {
           case bc_opcode::emit_if_eq: cond = (sv == ref.compare_rhs_text); break;
           case bc_opcode::emit_if_ne: cond = (sv != ref.compare_rhs_text); break;
           default: break;
+          }
+        } else if (ref.compare_rhs_kind == compare_operand_kind::int_literal) {
+          /** 実行時文字列値（sqlite3_row_view 等の runtime フィールド）:
+              整数として解釈できれば数値比較する（{{#if age > 18}} を文字列値で成立させる） */
+          long long lv{};
+          auto [p, ec] = std::from_chars(sv.data(), sv.data() + sv.size(), lv);
+          if (ec == std::errc{} && p == sv.data() + sv.size()) {
+            cond = compare_vals<long long>(instr.op, lv, static_cast<long long>(rhs));
           }
         }
       }
