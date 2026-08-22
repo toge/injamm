@@ -15,7 +15,7 @@ ctest --test-dir build -V
 ./build/injamm_tests           # 直接実行 (Catch2)
 ```
 
-CMake オプション: `ENABLE_THREADED_DISPATCH`（デフォルト ON、GCC のみ）、`BUILD_TEST`、`BUILD_EXAMPLE`、`BUILD_FUZZ`、`BUILD_UTIL`、`ENABLE_ENUM`、`ENABLE_SQLITE3`。
+CMake オプション: `ENABLE_THREADED_DISPATCH`（デフォルト ON、GCC のみ）、`BUILD_TEST`、`BUILD_EXAMPLE`、`BUILD_FUZZ`、`BUILD_UTIL`、`ENABLE_ENUM`。
 
 ## 重要な規約
 
@@ -42,4 +42,5 @@ CMake オプション: `ENABLE_THREADED_DISPATCH`（デフォルト ON、GCC の
 - `catch2`（テストのみ、vcpkg）
 - `frozenchars`（GCC NTTP テストのみ、vcpkg）
 - `enchantum`（`ENABLE_ENUM`=ON 時、vcpkg）
-- `sqlite3`（`ENABLE_SQLITE3`=ON 時、ext/injamm-sqlite3）
+
+※ sqlite3 拡張は別リポジトリ（`~/src/injamm-sqlite3`）に分離済み。本体への依存は `find_package(injamm)` 経由。

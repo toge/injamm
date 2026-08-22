@@ -8,7 +8,6 @@
     },
     "catch2",
     "frozenchars",
-    "sqlite3",
     "enchantum"
   ],
   "overrides": [

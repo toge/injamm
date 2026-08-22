@@ -13,7 +13,6 @@ option(BUILD_TEST "Build tests" ON)
 option(BUILD_EXAMPLE "Build examples" ON)
 option(BUILD_FUZZ "Build fuzz targets (requires -fsanitize=fuzzer)" OFF)
 option(ENABLE_ENUM "Enable enchantum-based enum string conversion" ON)
-option(ENABLE_SQLITE3 "Build injamm-sqlite3 extension" ON)
 option(BUILD_UTIL "Build CLI utilities" OFF)
 if(WIN32)
   set(_BENCH_FMT_DEFAULT OFF)
@@ -311,8 +310,4 @@ if(BUILD_UTIL)
     TARGETS injamm_bc injamm_codegen
     RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR}
   )
-endif()
-
-if(ENABLE_SQLITE3)
-  add_subdirectory(ext/injamm-sqlite3)
 endif()
