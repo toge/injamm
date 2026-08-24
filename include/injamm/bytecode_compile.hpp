@@ -1502,9 +1502,11 @@ class bc_compiler {
     for (auto const& lit : bc_.literals)
       bc_.literal_total_size += lit.size();
     // 単純テンプレ検出をコンパイル時に実施（実行時のオペコード走査を排除）
+    // ponytail: emit_var/raw も単純とみなし fast path で処理（litvar 同等だがリテラル無し）
     bc_.is_simple = true;
     for (auto const& ins : bc_.instructions) {
       if (ins.op != bc_opcode::emit_litvar && ins.op != bc_opcode::emit_litvar_raw
+          && ins.op != bc_opcode::emit_var && ins.op != bc_opcode::emit_var_raw
           && ins.op != bc_opcode::emit_literal && ins.op != bc_opcode::halt) {
         bc_.is_simple = false;
         break;

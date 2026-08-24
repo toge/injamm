@@ -330,38 +330,33 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
       return visitor(val);
     }
   } else if constexpr (ct_glz_reflectable<V>) {
-    constexpr auto sz   = static_cast<std::size_t>(glz::reflect<V>::size);
-    auto           tied = glz::to_tie(v);
-    using visitor_t     = decltype(visitor(glz::get<0>(tied)));
-
-    /**
-     * O(1) アクセス: field_index が有効な場合
-     * if constexpr チェーンで実行時の field_index 値をコンパイル時定数に変換し、
-     * 該当フィールドに直接アクセスする。コンパイラが二分探索的ジャンプテーブルを生成。
-     * フィールド数が多い構造で線形探索より高速（計測で sz>=5 相当が分岐点）。
-     */
+    constexpr auto sz = static_cast<std::size_t>(glz::reflect<V>::size);
+    // ponytail: hint hit では tied 構築を hit 分岐内で行い miss 時の無駄を削減
     if constexpr (sz >= 5) {
       if (field_index != UINT32_MAX && field_index < sz && std::string_view{glz::reflect<V>::keys[field_index]} == key) {
-        auto visit_by_index = [&]<std::size_t... I>(std::index_sequence<I...>) -> std::expected<void, error_ctx> {
+        auto tied_hit = glz::to_tie(v);
+        using visitor_t_hit = decltype(visitor(glz::get<0>(tied_hit)));
+        auto visit_hit = [&]<std::size_t... I>(std::index_sequence<I...>) -> std::expected<void, error_ctx> {
           std::expected<void, error_ctx> visitor_result{};
           auto try_index = [&]<std::size_t Idx>() -> bool {
             if (field_index == Idx) {
-              if constexpr (std::same_as<visitor_t, void>) {
-                visitor(glz::get<Idx>(tied));
+              if constexpr (std::same_as<visitor_t_hit, void>) {
+                visitor(glz::get<Idx>(tied_hit));
               } else {
-                visitor_result = visitor(glz::get<Idx>(tied));
+                visitor_result = visitor(glz::get<Idx>(tied_hit));
               }
               return true;
             }
             return false;
           };
-          bool found = (try_index.template operator()<I>() || ...);
-          (void)found;
+          (void)(try_index.template operator()<I>() || ...);
           return visitor_result;
         };
-        return visit_by_index(std::make_index_sequence<sz>{});
+        return visit_hit(std::make_index_sequence<sz>{});
       }
     }
+    auto       tied = glz::to_tie(v);
+    using visitor_t = decltype(visitor(glz::get<0>(tied)));
 
     /**
      * フォールバック: フィールド数の少ない構造は線形探索が速い。
@@ -1703,6 +1698,26 @@ public:
                   auto r = for_each_field_ref(value_, ref,
                     [&](auto const& field) { emit_var_value(field, raw); });
                   if (!r) return r;
+                }
+                break;
+              }
+              case bc_opcode::emit_var:
+              case bc_opcode::emit_var_raw: {
+                auto const& ref = bc_.var_refs[instr.operand];
+                bool raw = (instr.op == bc_opcode::emit_var_raw);
+                if (!ref.is_loop_parent || !resolve_loop_parent_var(*this, ref.special, raw)) {
+                  bool        found = false;
+                  // ponytail: binding_first の高速解決を fast path でも再現
+                  if (ref.binding_first && ref.special == special_var_kind::none && try_resolve_loop_binding(*this, ref, raw)) {
+                    found = true;
+                  } else {
+                    auto r = for_each_field_ref(value_, ref,
+                      [&](auto const& field) { found = true; emit_var_value(field, raw); });
+                    if (!r && r.error().ec != error_code::unknown_key) return std::unexpected(r.error());
+                    if (!found && try_resolve_loop_binding(*this, ref, raw)) found = true;
+                    else if (!r) return std::unexpected(r.error());
+                  }
+                  (void)found;
                 }
                 break;
               }
