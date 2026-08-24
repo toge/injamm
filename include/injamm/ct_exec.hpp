@@ -181,15 +181,17 @@ template <typename Data, typename T>
 struct ct_executor {
   static expected<std::string> run(T const& value) {
     std::string out;
-    out.reserve(estimate());
+    auto        est = estimate();
+    // ponytail: 小見積もりは SSO に任せ heap を避ける（256 固定は小テンプレートで無駄）
+    if (est > 32) out.reserve(est);
     run_into(value, out);
     return out;
   }
 
   static void run_into(T const& value, std::string& out) {
     out.clear();
-    if (out.capacity() < estimate())
-      out.reserve(estimate());
+    auto est = estimate();
+    if (est > 32 && out.capacity() < est) out.reserve(est);
     exec_seq(value, out, std::make_index_sequence<Data::ct_bc.instr_count>{});
   }
 
@@ -198,7 +200,7 @@ struct ct_executor {
     for (std::size_t i = 0; i < Data::ct_bc.literal_count; ++i)
       lit_total += Data::ct_bc.lit_entries[i].size;
     std::size_t est = lit_total * 4 + Data::ct_bc.var_ref_count * 32;
-    return est < 256 ? 256 : est;
+    return est;
   }
 
 private:

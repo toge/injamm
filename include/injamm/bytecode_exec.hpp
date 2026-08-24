@@ -132,27 +132,33 @@ class bc_executor {
       auto           tied = glz::to_tie(v);
       using visitor_r     = decltype(visitor(glz::get<0>(tied)));
       if constexpr (std::same_as<visitor_r, void>) {
-        /** visitor が void を返す場合: fold 式で全フィールドを走査 */
+        // ponytail: 早期終了 — 見つかった時点で残りの比較をスキップ
         [&]<std::size_t... I>(std::index_sequence<I...>) {
-          (([&] {
-             if (std::string_view{glz::reflect<V>::keys[I]} == path) {
-               visitor(glz::get<I>(tied));
-             }
-           }()),
-           ...);
+          auto try_one = [&]<std::size_t Idx>() -> bool {
+            if (std::string_view{glz::reflect<V>::keys[Idx]} == path) {
+              visitor(glz::get<Idx>(tied));
+              return true;
+            }
+            return false;
+          };
+          (void)(try_one.template operator()<I>() || ...);
         }(std::make_index_sequence<sz>{});
       } else {
-        /** visitor が std::expected を返す場合: エラーを伝搬する */
+        // ponytail: 早期終了 — 成功時も残り比較をスキップ、エラー時は伝搬
         std::expected<void, error_ctx> result{};
+        bool found = false;
         [&]<std::size_t... I>(std::index_sequence<I...>) {
-          (([&] {
-             if (!result)
-               return;
-             if (std::string_view{glz::reflect<V>::keys[I]} == path) {
-               result = visitor(glz::get<I>(tied));
-             }
-           }()),
-           ...);
+          auto try_one = [&]<std::size_t Idx>() -> bool {
+            if (!result) return true;
+            if (found) return true;
+            if (std::string_view{glz::reflect<V>::keys[Idx]} == path) {
+              result = visitor(glz::get<Idx>(tied));
+              found = true;
+              return true;
+            }
+            return false;
+          };
+          (void)(try_one.template operator()<I>() || ...);
         }(std::make_index_sequence<sz>{});
         return result;
       }
@@ -219,27 +225,33 @@ class bc_executor {
       using visitor_r     = decltype(visitor(glz::get<0>(tied)));
 
       if constexpr (std::same_as<visitor_r, void>) {
-        /** visitor が void の場合: フィールドを発見次第再帰 */
+        // ponytail: 早期終了
         [&]<std::size_t... I>(std::index_sequence<I...>) {
-          (([&] {
-             if (std::string_view{glz::reflect<V>::keys[I]} == first_key) {
-               (void)descend(glz::get<I>(tied));
-             }
-           }()),
-           ...);
+          auto try_one = [&]<std::size_t Idx>() -> bool {
+            if (std::string_view{glz::reflect<V>::keys[Idx]} == first_key) {
+              (void)descend(glz::get<Idx>(tied));
+              return true;
+            }
+            return false;
+          };
+          (void)(try_one.template operator()<I>() || ...);
         }(std::make_index_sequence<sz>{});
       } else {
-        /** visitor が expected を返す場合: エラーを伝搬しながら再帰 */
+        // ponytail: 早期終了
         std::expected<void, error_ctx> result{};
+        bool found = false;
         [&]<std::size_t... I>(std::index_sequence<I...>) {
-          (([&] {
-             if (!result)
-               return;
-             if (std::string_view{glz::reflect<V>::keys[I]} == first_key) {
-               result = descend(glz::get<I>(tied));
-             }
-           }()),
-           ...);
+          auto try_one = [&]<std::size_t Idx>() -> bool {
+            if (!result) return true;
+            if (found) return true;
+            if (std::string_view{glz::reflect<V>::keys[Idx]} == first_key) {
+              result = descend(glz::get<Idx>(tied));
+              found = true;
+              return true;
+            }
+            return false;
+          };
+          (void)(try_one.template operator()<I>() || ...);
         }(std::make_index_sequence<sz>{});
         return result;
       }
@@ -353,32 +365,39 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
 
     /**
      * フォールバック: フィールド数の少ない構造は線形探索が速い。
+     * ponytail: 早期終了で残り比較をスキップ
      */
     if constexpr (std::same_as<visitor_t, void>) {
       bool found = false;
       [&]<std::size_t... I>(std::index_sequence<I...>) {
-        (([&] {
-           if (std::string_view{glz::reflect<V>::keys[I]} == key) {
-             visitor(glz::get<I>(tied));
-             found = true;
-           }
-         }()),
-         ...);
+        auto try_one = [&]<std::size_t Idx>() -> bool {
+          if (std::string_view{glz::reflect<V>::keys[Idx]} == key) {
+            visitor(glz::get<Idx>(tied));
+            found = true;
+            return true;
+          }
+          return false;
+        };
+        (void)(try_one.template operator()<I>() || ...);
       }(std::make_index_sequence<sz>{});
       if (!found && !key.empty() && !key.starts_with('@'))
         return std::unexpected(error_ctx{.ec = error_code::unknown_key});
       return {};
     } else {
       std::expected<void, error_ctx> result{};
+      bool found = false;
       [&]<std::size_t... I>(std::index_sequence<I...>) {
-        (([&] {
-           if (!result)
-             return;
-           if (std::string_view{glz::reflect<V>::keys[I]} == key) {
-             result = visitor(glz::get<I>(tied));
-           }
-         }()),
-         ...);
+        auto try_one = [&]<std::size_t Idx>() -> bool {
+          if (!result) return true;
+          if (found) return true;
+          if (std::string_view{glz::reflect<V>::keys[Idx]} == key) {
+            result = visitor(glz::get<Idx>(tied));
+            found = true;
+            return true;
+          }
+          return false;
+        };
+        (void)(try_one.template operator()<I>() || ...);
       }(std::make_index_sequence<sz>{});
       return result;
     }
@@ -449,20 +468,30 @@ public:
         emit_value_static(out, *field, raw);
       }
     } else if constexpr (serializable_v<FT>) {
-      std::string scratch;
-      serialize_value(scratch, field);
       if (raw) {
-        out.append(scratch);
+        serialize_value(out, field);
       } else {
+        std::string scratch;
+        serialize_value(scratch, field);
         html_escape_into(out, scratch);
       }
     } else if constexpr (ct_glz_reflectable<FT> && glz::write_supported<FT, glz::JSON>) {
-      std::string scratch;
-      (void)glz::write_json(field, scratch);
-      if (raw) {
-        out.append(scratch);
+      if constexpr (std::same_as<Buffer, std::string>) {
+        if (raw) {
+          (void)glz::write_json(field, out);
+        } else {
+          std::string scratch;
+          (void)glz::write_json(field, scratch);
+          html_escape_into(out, scratch);
+        }
       } else {
-        html_escape_into(out, scratch);
+        std::string scratch;
+        (void)glz::write_json(field, scratch);
+        if (raw) {
+          out.append(scratch);
+        } else {
+          html_escape_into(out, scratch);
+        }
       }
     }
   }
@@ -795,12 +824,30 @@ public:
         };
         std::expected<void, error_ctx> map_res{};
         if (w.bwd) {
-          using pair_t = std::remove_cvref_t<decltype(*field.begin())>;
-          std::vector<pair_t> temp(field.begin(), field.end());
-          for (std::uint32_t pos = w.hi; pos > w.lo && !map_res && !ls.break_flag && emitted < count;) {
-            --pos;
-            if (w.has_stride && !kept(w, pos)) continue;
-            map_res = visit(temp[pos].first, temp[pos].second);
+          // ponytail: ordered map は rbegin で逆順走査し一時 vector を避ける
+          if constexpr (requires { field.rbegin(); field.rend(); }) {
+            auto r_it = field.rbegin();
+            std::uint32_t skip = (sz > w.hi) ? sz - w.hi : 0;
+            for (std::uint32_t i = 0; i < skip && r_it != field.rend(); ++i, ++r_it) {}
+            std::uint32_t pos = w.hi;
+            while (r_it != field.rend() && pos > w.lo && map_res && !ls.break_flag && emitted < count) {
+              --pos;
+              if (w.has_stride && !kept(w, pos)) {
+                ++r_it;
+                continue;
+              }
+              map_res = visit(r_it->first, r_it->second);
+              if (!map_res || ls.break_flag) break;
+              ++r_it;
+            }
+          } else {
+            using pair_t = std::remove_cvref_t<decltype(*field.begin())>;
+            std::vector<pair_t> temp(field.begin(), field.end());
+            for (std::uint32_t pos = w.hi; pos > w.lo && map_res && !ls.break_flag && emitted < count;) {
+              --pos;
+              if (w.has_stride && !kept(w, pos)) continue;
+              map_res = visit(temp[pos].first, temp[pos].second);
+            }
           }
         } else {
           std::uint32_t pos = 0;
@@ -825,23 +872,57 @@ public:
         ls.count = count;
         std::uint32_t emitted = 0;
         if (w.bwd) {
-          std::vector<elem_t> temp(field.begin(), field.end());
-          for (std::uint32_t pos = w.hi; pos > w.lo && emitted < count;) {
-            --pos;
-            if (w.has_stride && !kept(w, pos)) continue;
-            auto const& elem = temp[pos];
-            ls.index = emitted;
-            ls.continue_flag = false;
-            ls.binding_name = ref.key;
-            ls.binding_elem = &elem;
-            ls.binding_resolve = &resolve_binding_var<elem_t>;
-            ls.binding_truthy = &eval_binding_truthy<elem_t>;
-            bc_executor<elem_t, RootT, Sink> child_exec(ex.bc_, elem, ex.root_value_, &ls, ex.out_);
-            auto r2 = child_exec.execute_impl(pc + 1, body_end - 1);
-            if (!r2) return r2;
-            if (ls.continue_flag) { ls.continue_flag = false; --emitted; continue; }
-            if (ls.break_flag) break;
-            ++emitted;
+          // ponytail: ordered set は rbegin で一時 vector を避ける
+          if constexpr (requires { field.rbegin(); field.rend(); }) {
+            auto r_it = field.rbegin();
+            std::uint32_t skip = (sz > w.hi) ? sz - w.hi : 0;
+            for (std::uint32_t i = 0; i < skip && r_it != field.rend(); ++i, ++r_it) {}
+            std::uint32_t pos = w.hi;
+            while (r_it != field.rend() && pos > w.lo && emitted < count) {
+              --pos;
+              if (w.has_stride && !kept(w, pos)) {
+                ++r_it;
+                continue;
+              }
+              auto const& elem = *r_it;
+              ls.index = emitted;
+              ls.continue_flag = false;
+              ls.binding_name = ref.key;
+              ls.binding_elem = &elem;
+              ls.binding_resolve = &resolve_binding_var<elem_t>;
+              ls.binding_truthy = &eval_binding_truthy<elem_t>;
+              bc_executor<elem_t, RootT, Sink> child_exec(ex.bc_, elem, ex.root_value_, &ls, ex.out_);
+              auto r2 = child_exec.execute_impl(pc + 1, body_end - 1);
+              if (!r2) return r2;
+              if (ls.continue_flag) {
+                ls.continue_flag = false;
+                --emitted;
+                ++r_it;
+                continue;
+              }
+              if (ls.break_flag) break;
+              ++emitted;
+              ++r_it;
+            }
+          } else {
+            std::vector<elem_t> temp(field.begin(), field.end());
+            for (std::uint32_t pos = w.hi; pos > w.lo && emitted < count;) {
+              --pos;
+              if (w.has_stride && !kept(w, pos)) continue;
+              auto const& elem = temp[pos];
+              ls.index = emitted;
+              ls.continue_flag = false;
+              ls.binding_name = ref.key;
+              ls.binding_elem = &elem;
+              ls.binding_resolve = &resolve_binding_var<elem_t>;
+              ls.binding_truthy = &eval_binding_truthy<elem_t>;
+              bc_executor<elem_t, RootT, Sink> child_exec(ex.bc_, elem, ex.root_value_, &ls, ex.out_);
+              auto r2 = child_exec.execute_impl(pc + 1, body_end - 1);
+              if (!r2) return r2;
+              if (ls.continue_flag) { ls.continue_flag = false; --emitted; continue; }
+              if (ls.break_flag) break;
+              ++emitted;
+            }
           }
         } else {
           std::uint32_t pos = 0;
@@ -1884,8 +1965,8 @@ std::expected<std::string, error_ctx> bc_execute(bytecode const& bc, T const& va
   auto        estimated = estimate_output_size(bc, value);
   /** 前回レンダリングの実測サイズ（engine が渡す）を優先して再確保を防ぐ */
   if (size_hint > estimated) estimated = size_hint;
-  if (estimated < 256) estimated = 256;
-  out.reserve(estimated);
+  // ponytail: 256 は小テンプレートで SSO を潰し毎回 heap を強制するため、32 以下は SSO に任せる
+  if (estimated > 32) out.reserve(estimated);
   bc_executor<T> exec(bc, value, value, nullptr, out);
   auto           r = exec.execute();
   if (!r) {
@@ -1906,9 +1987,8 @@ template <class T>
 std::expected<void, error_ctx> bc_execute_into(bytecode const& bc, T const& value, std::string& out) {
   out.clear();
   auto estimated = estimate_output_size(bc, value);
-  if (estimated < 256) estimated = 256;
-  if (out.capacity() < estimated)
-    out.reserve(estimated);
+  // ponytail: 小見積もりは reserve せず SSO / 既存 capacity に任せる
+  if (estimated > 32 && out.capacity() < estimated) out.reserve(estimated);
   bc_executor<T> exec(bc, value, value, nullptr, out);
   return exec.execute();
 }
