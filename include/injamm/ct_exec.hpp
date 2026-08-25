@@ -116,17 +116,19 @@ constexpr bool ct_is_unrollable(ct_bytecode<N> const& bc) {
     auto const& instr = bc.instructions[i];
     if (!ct_is_straight_op(instr.op))
       return false;
-    // 変数参照の解析（直線命令のみ）
     if (instr.op != bc_opcode::emit_literal && instr.op != bc_opcode::halt) {
       auto var_ref_idx = (instr.op == bc_opcode::emit_var || instr.op == bc_opcode::emit_var_raw) ? instr.operand : instr.operand2;
       auto const& ref = bc.var_refs[var_ref_idx];
-      if (ref.field_index == UINT32_MAX || ref.key.size == 0)
-        return false;
-      for (std::size_t k = 0; k < ref.key.size; ++k)
-        if (ref.key.data[k] == '.')
-          return false;
-      if (ref.section_op_count != 0)
-        return false;
+      if (ref.key.size == 0) return false;
+      bool has_dot = false;
+      for (std::size_t k = 0; k < ref.key.size; ++k) if (ref.key.data[k] == '.') { has_dot = true; break; }
+      if (has_dot) {
+        std::string_view sv{ref.key.data, ref.key.size};
+        if (sv.starts_with("loop.") || sv == "root" || sv.starts_with("root.")) return false;
+      } else {
+        if (ref.field_index == UINT32_MAX) return false;
+      }
+      if (ref.section_op_count != 0) return false;
     }
   }
   return true;
@@ -142,10 +144,22 @@ constexpr std::string_view ct_literal() {
 /** @brief 変数値を出力する（フィールドインデックスはコンパイル時定数） */
 template <typename Data, typename T, std::uint32_t VarRefIdx>
 void ct_emit_var(T const& value, std::string& out, bool raw) {
-  constexpr std::size_t field_index = static_cast<std::size_t>(Data::ct_bc.var_refs[VarRefIdx].field_index);
-  auto                  tied        = glz::to_tie(value);
-  auto const&           field       = glz::get<field_index>(tied);
-  bc_executor<T>::emit_value_static(out, field, raw);
+  constexpr auto& ref = Data::ct_bc.var_refs[VarRefIdx];
+  constexpr bool has_dot = [] {
+    for (std::size_t k = 0; k < ref.key.size; ++k)
+      if (ref.key.data[k] == '.') return true;
+    return false;
+  }();
+  if constexpr (has_dot) {
+    std::string_view key{ref.key.data, ref.key.size};
+    (void)bc_executor<T>::ct_for_each_field(value, key,
+      [&](auto const& field) { bc_executor<T>::emit_value_static(out, field, raw); });
+  } else {
+    constexpr std::size_t field_index = static_cast<std::size_t>(ref.field_index);
+    auto                  tied        = glz::to_tie(value);
+    auto const&           field       = glz::get<field_index>(tied);
+    bc_executor<T>::emit_value_static(out, field, raw);
+  }
 }
 
 /** @brief 単一の直線命令をコンパイル時に展開する。戻り true = halt に到達 */
@@ -176,31 +190,33 @@ struct ct_exec_one {
   static void run(T const& value, std::string& out) { (void)ct_emit_straight<Data, T, I>(value, out); }
 };
 
+template <std::size_t N>
+consteval std::size_t ct_estimate_for(ct_bytecode<N> const& bc) {
+  std::size_t lit_total = 0;
+  for (std::size_t i = 0; i < bc.literal_count; ++i)
+    lit_total += bc.lit_entries[i].size;
+  return lit_total * 4 + bc.var_ref_count * 32;
+}
+
 /** @brief コンパイル時アンロール実行器（単純テンプレート専用） */
 template <typename Data, typename T>
 struct ct_executor {
+  static constexpr std::size_t kEstimate = ct_estimate_for(Data::ct_bc);
+  static constexpr std::size_t estimate() { return kEstimate; }
+
   static expected<std::string> run(T const& value) {
     std::string out;
-    auto        est = estimate();
-    // ponytail: 小見積もりは SSO に任せ heap を避ける（256 固定は小テンプレートで無駄）
-    if (est > 32) out.reserve(est);
-    run_into(value, out);
+    if constexpr (kEstimate > 32) out.reserve(kEstimate);
+    exec_seq(value, out, std::make_index_sequence<Data::ct_bc.instr_count>{});
     return out;
   }
 
   static void run_into(T const& value, std::string& out) {
     out.clear();
-    auto est = estimate();
-    if (est > 32 && out.capacity() < est) out.reserve(est);
+    if constexpr (kEstimate > 32) {
+      if (out.capacity() < kEstimate) out.reserve(kEstimate);
+    }
     exec_seq(value, out, std::make_index_sequence<Data::ct_bc.instr_count>{});
-  }
-
-  static constexpr std::size_t estimate() {
-    std::size_t lit_total = 0;
-    for (std::size_t i = 0; i < Data::ct_bc.literal_count; ++i)
-      lit_total += Data::ct_bc.lit_entries[i].size;
-    std::size_t est = lit_total * 4 + Data::ct_bc.var_ref_count * 32;
-    return est;
   }
 
 private:
@@ -229,18 +245,20 @@ constexpr bool ct_is_hybrid_eligible(ct_bytecode<N> const& bc) {
       if (op != bc_opcode::emit_literal && op != bc_opcode::halt) {
         auto var_ref_idx = (op == bc_opcode::emit_var || op == bc_opcode::emit_var_raw) ? bc.instructions[i].operand : bc.instructions[i].operand2;
         auto const& ref  = bc.var_refs[var_ref_idx];
-        if (ref.field_index == UINT32_MAX || ref.key.size == 0)
-          return false;
-        for (std::size_t k = 0; k < ref.key.size; ++k)
-          if (ref.key.data[k] == '.')
-            return false;
-        if (ref.section_op_count != 0)
-          return false;
+        if (ref.key.size == 0) return false;
+        bool has_dot = false;
+        for (std::size_t k = 0; k < ref.key.size; ++k) if (ref.key.data[k] == '.') { has_dot = true; break; }
+        if (has_dot) {
+          std::string_view sv{ref.key.data, ref.key.size};
+          if (sv.starts_with("loop.") || sv == "root" || sv.starts_with("root.")) return false;
+        } else {
+          if (ref.field_index == UINT32_MAX) return false;
+        }
+        if (ref.section_op_count != 0) return false;
       }
     } else if (ct_is_block_start_op(op)) {
       auto E = ct_span_end(bc, i);
-      if (E <= i + 1 || E > bc.instr_count)
-        return false;
+      if (E <= i + 1 || E > bc.instr_count) return false;
     } else {
       return false;
     }
@@ -291,11 +309,13 @@ struct ct_hybrid_step {
  */
 template <typename Data, typename T>
 struct ct_hybrid_executor {
+  static constexpr std::size_t kEstimate = ct_executor<Data, T>::kEstimate;
   /** @brief out は内容がクリアされる。exec.out_ は out に束縛されていること。 */
   static expected<void> run_into(T const& value, std::string& out, bc_executor<T>& exec) {
     out.clear();
-    if (out.capacity() < ct_executor<Data, T>::estimate())
-      out.reserve(ct_executor<Data, T>::estimate());
+    if constexpr (kEstimate > 32) {
+      if (out.capacity() < kEstimate) out.reserve(kEstimate);
+    }
     auto r = ct_hybrid_step<Data, T, 0, Data::ct_bc.instr_count>::run(value, out, exec);
     if (!r)
       return r;

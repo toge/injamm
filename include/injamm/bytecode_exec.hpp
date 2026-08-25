@@ -100,20 +100,58 @@ class bc_executor {
     auto           tied = glz::to_tie(v);
     using visitor_t     = decltype(visitor(glz::get<0>(tied)));
     std::expected<void, error_ctx> result{};
-    [&]<std::size_t... I>(std::index_sequence<I...>) {
-      auto try_index = [&]<std::size_t Idx>() -> bool {
-        if (field_index == Idx) {
-          if constexpr (std::same_as<visitor_t, void>) {
-            visitor(glz::get<Idx>(tied));
-          } else {
-            result = visitor(glz::get<Idx>(tied));
+    // ponytail: switch jump table O(1) — fold OR 20比較を分岐予測依存から解放。32未満は即時分岐、以上は線形フォールバック
+    switch (field_index) {
+    case 0: if constexpr (0 < sz) { if constexpr (std::same_as<visitor_t, void>) visitor(glz::get<0>(tied)); else result = visitor(glz::get<0>(tied)); break; } [[fallthrough]];
+    case 1: if constexpr (1 < sz) { if constexpr (std::same_as<visitor_t, void>) visitor(glz::get<1>(tied)); else result = visitor(glz::get<1>(tied)); break; } [[fallthrough]];
+    case 2: if constexpr (2 < sz) { if constexpr (std::same_as<visitor_t, void>) visitor(glz::get<2>(tied)); else result = visitor(glz::get<2>(tied)); break; } [[fallthrough]];
+    case 3: if constexpr (3 < sz) { if constexpr (std::same_as<visitor_t, void>) visitor(glz::get<3>(tied)); else result = visitor(glz::get<3>(tied)); break; } [[fallthrough]];
+    case 4: if constexpr (4 < sz) { if constexpr (std::same_as<visitor_t, void>) visitor(glz::get<4>(tied)); else result = visitor(glz::get<4>(tied)); break; } [[fallthrough]];
+    case 5: if constexpr (5 < sz) { if constexpr (std::same_as<visitor_t, void>) visitor(glz::get<5>(tied)); else result = visitor(glz::get<5>(tied)); break; } [[fallthrough]];
+    case 6: if constexpr (6 < sz) { if constexpr (std::same_as<visitor_t, void>) visitor(glz::get<6>(tied)); else result = visitor(glz::get<6>(tied)); break; } [[fallthrough]];
+    case 7: if constexpr (7 < sz) { if constexpr (std::same_as<visitor_t, void>) visitor(glz::get<7>(tied)); else result = visitor(glz::get<7>(tied)); break; } [[fallthrough]];
+    case 8: if constexpr (8 < sz) { if constexpr (std::same_as<visitor_t, void>) visitor(glz::get<8>(tied)); else result = visitor(glz::get<8>(tied)); break; } [[fallthrough]];
+    case 9: if constexpr (9 < sz) { if constexpr (std::same_as<visitor_t, void>) visitor(glz::get<9>(tied)); else result = visitor(glz::get<9>(tied)); break; } [[fallthrough]];
+    case 10: if constexpr (10 < sz) { if constexpr (std::same_as<visitor_t, void>) visitor(glz::get<10>(tied)); else result = visitor(glz::get<10>(tied)); break; } [[fallthrough]];
+    case 11: if constexpr (11 < sz) { if constexpr (std::same_as<visitor_t, void>) visitor(glz::get<11>(tied)); else result = visitor(glz::get<11>(tied)); break; } [[fallthrough]];
+    case 12: if constexpr (12 < sz) { if constexpr (std::same_as<visitor_t, void>) visitor(glz::get<12>(tied)); else result = visitor(glz::get<12>(tied)); break; } [[fallthrough]];
+    case 13: if constexpr (13 < sz) { if constexpr (std::same_as<visitor_t, void>) visitor(glz::get<13>(tied)); else result = visitor(glz::get<13>(tied)); break; } [[fallthrough]];
+    case 14: if constexpr (14 < sz) { if constexpr (std::same_as<visitor_t, void>) visitor(glz::get<14>(tied)); else result = visitor(glz::get<14>(tied)); break; } [[fallthrough]];
+    case 15: if constexpr (15 < sz) { if constexpr (std::same_as<visitor_t, void>) visitor(glz::get<15>(tied)); else result = visitor(glz::get<15>(tied)); break; } [[fallthrough]];
+    case 16: if constexpr (16 < sz) { if constexpr (std::same_as<visitor_t, void>) visitor(glz::get<16>(tied)); else result = visitor(glz::get<16>(tied)); break; } [[fallthrough]];
+    case 17: if constexpr (17 < sz) { if constexpr (std::same_as<visitor_t, void>) visitor(glz::get<17>(tied)); else result = visitor(glz::get<17>(tied)); break; } [[fallthrough]];
+    case 18: if constexpr (18 < sz) { if constexpr (std::same_as<visitor_t, void>) visitor(glz::get<18>(tied)); else result = visitor(glz::get<18>(tied)); break; } [[fallthrough]];
+    case 19: if constexpr (19 < sz) { if constexpr (std::same_as<visitor_t, void>) visitor(glz::get<19>(tied)); else result = visitor(glz::get<19>(tied)); break; } [[fallthrough]];
+    case 20: if constexpr (20 < sz) { if constexpr (std::same_as<visitor_t, void>) visitor(glz::get<20>(tied)); else result = visitor(glz::get<20>(tied)); break; } [[fallthrough]];
+    case 21: if constexpr (21 < sz) { if constexpr (std::same_as<visitor_t, void>) visitor(glz::get<21>(tied)); else result = visitor(glz::get<21>(tied)); break; } [[fallthrough]];
+    case 22: if constexpr (22 < sz) { if constexpr (std::same_as<visitor_t, void>) visitor(glz::get<22>(tied)); else result = visitor(glz::get<22>(tied)); break; } [[fallthrough]];
+    case 23: if constexpr (23 < sz) { if constexpr (std::same_as<visitor_t, void>) visitor(glz::get<23>(tied)); else result = visitor(glz::get<23>(tied)); break; } [[fallthrough]];
+    case 24: if constexpr (24 < sz) { if constexpr (std::same_as<visitor_t, void>) visitor(glz::get<24>(tied)); else result = visitor(glz::get<24>(tied)); break; } [[fallthrough]];
+    case 25: if constexpr (25 < sz) { if constexpr (std::same_as<visitor_t, void>) visitor(glz::get<25>(tied)); else result = visitor(glz::get<25>(tied)); break; } [[fallthrough]];
+    case 26: if constexpr (26 < sz) { if constexpr (std::same_as<visitor_t, void>) visitor(glz::get<26>(tied)); else result = visitor(glz::get<26>(tied)); break; } [[fallthrough]];
+    case 27: if constexpr (27 < sz) { if constexpr (std::same_as<visitor_t, void>) visitor(glz::get<27>(tied)); else result = visitor(glz::get<27>(tied)); break; } [[fallthrough]];
+    case 28: if constexpr (28 < sz) { if constexpr (std::same_as<visitor_t, void>) visitor(glz::get<28>(tied)); else result = visitor(glz::get<28>(tied)); break; } [[fallthrough]];
+    case 29: if constexpr (29 < sz) { if constexpr (std::same_as<visitor_t, void>) visitor(glz::get<29>(tied)); else result = visitor(glz::get<29>(tied)); break; } [[fallthrough]];
+    case 30: if constexpr (30 < sz) { if constexpr (std::same_as<visitor_t, void>) visitor(glz::get<30>(tied)); else result = visitor(glz::get<30>(tied)); break; } [[fallthrough]];
+    case 31: if constexpr (31 < sz) { if constexpr (std::same_as<visitor_t, void>) visitor(glz::get<31>(tied)); else result = visitor(glz::get<31>(tied)); break; } [[fallthrough]];
+      default: break;
+    }
+    if (field_index >= 32) {
+      [&]<std::size_t... I>(std::index_sequence<I...>) {
+        auto try_index = [&]<std::size_t Idx>() -> bool {
+          if (field_index == Idx) {
+            if constexpr (std::same_as<visitor_t, void>) {
+              visitor(glz::get<Idx>(tied));
+            } else {
+              result = visitor(glz::get<Idx>(tied));
+            }
+            return true;
           }
-          return true;
-        }
-        return false;
-      };
-      (void)(try_index.template operator()<I>() || ...);
-    }(std::make_index_sequence<sz>{});
+          return false;
+        };
+        (void)(try_index.template operator()<I>() || ...);
+      }(std::make_index_sequence<sz>{});
+    }
     return result;
   }
 
@@ -331,29 +369,8 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
     }
   } else if constexpr (ct_glz_reflectable<V>) {
     constexpr auto sz = static_cast<std::size_t>(glz::reflect<V>::size);
-    // ponytail: hint hit では tied 構築を hit 分岐内で行い miss 時の無駄を削減
-    if constexpr (sz >= 5) {
-      if (field_index != UINT32_MAX && field_index < sz && std::string_view{glz::reflect<V>::keys[field_index]} == key) {
-        auto tied_hit = glz::to_tie(v);
-        using visitor_t_hit = decltype(visitor(glz::get<0>(tied_hit)));
-        auto visit_hit = [&]<std::size_t... I>(std::index_sequence<I...>) -> std::expected<void, error_ctx> {
-          std::expected<void, error_ctx> visitor_result{};
-          auto try_index = [&]<std::size_t Idx>() -> bool {
-            if (field_index == Idx) {
-              if constexpr (std::same_as<visitor_t_hit, void>) {
-                visitor(glz::get<Idx>(tied_hit));
-              } else {
-                visitor_result = visitor(glz::get<Idx>(tied_hit));
-              }
-              return true;
-            }
-            return false;
-          };
-          (void)(try_index.template operator()<I>() || ...);
-          return visitor_result;
-        };
-        return visit_hit(std::make_index_sequence<sz>{});
-      }
+    if (field_index != UINT32_MAX && field_index < sz && std::string_view{glz::reflect<V>::keys[field_index]} == key) {
+      return visit_field_by_index(v, field_index, std::forward<F>(visitor));
     }
     auto       tied = glz::to_tie(v);
     using visitor_t = decltype(visitor(glz::get<0>(tied)));
@@ -424,9 +441,15 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
    *
    *  @note ct_exec.hpp のコンパイル時アンロール実行器からも再利用するため public。
    */
-public:
-  template <class Buffer>
-  static void emit_value_static(Buffer& out, auto const& field, bool raw) {
+ public:
+   /** @brief NTTP dot パス用の公開ラッパ（ct_exec.hpp から利用） */
+   template <class V, class F>
+   static auto ct_for_each_field(V const& v, std::string_view key, F&& visitor) -> std::expected<void, error_ctx> {
+     return for_each_field(v, key, UINT32_MAX, true, std::forward<F>(visitor), {});
+   }
+
+   template <class Buffer>
+   static void emit_value_static(Buffer& out, auto const& field, bool raw) {
     using FT = std::remove_cvref_t<decltype(field)>;
     if constexpr (std::same_as<FT, bool>) {
       if (field) {

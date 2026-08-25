@@ -228,7 +228,17 @@ template <auto Tmpl, std::same_as<bool> auto TrimBlocks = false, std::same_as<bo
   using D = detail::nttp_render_data<Tmpl, TrimBlocks != 0, LstripBlocks != 0, T>;
   if constexpr (D::ct_bc.error.ec != error_code::none)
     return std::unexpected(D::ct_bc.error);
-  return detail::bc_execute(detail::nttp_partial_bytecode_holder<D, T>(), value);
+  if constexpr (detail::ct_is_unrollable(D::ct_bc))
+    return detail::ct_executor<D, T>::run(value);
+  else if constexpr (detail::ct_is_hybrid_eligible(D::ct_bc)) {
+    auto const&            rbc = detail::nttp_partial_bytecode_holder<D, T>();
+    std::string            out;
+    detail::bc_executor<T> exec(rbc, value, value, nullptr, out);
+    auto r = detail::ct_hybrid_executor<D, T>::run_into(value, out, exec);
+    if (!r) return std::unexpected(r.error());
+    return out;
+  } else
+    return detail::bc_execute(detail::nttp_partial_bytecode_holder<D, T>(), value);
 }
 
 template <auto Tmpl, typename Reg, std::same_as<bool> auto TrimBlocks = false, std::same_as<bool> auto LstripBlocks = false, typename T>
@@ -237,7 +247,17 @@ template <auto Tmpl, typename Reg, std::same_as<bool> auto TrimBlocks = false, s
   using D = detail::nttp_render_data<Tmpl, TrimBlocks != 0, LstripBlocks != 0, T, Reg>;
   if constexpr (D::ct_bc.error.ec != error_code::none)
     return std::unexpected(D::ct_bc.error);
-  return detail::bc_execute(detail::nttp_partial_bytecode_holder<D, T>(), value);
+  if constexpr (detail::ct_is_unrollable(D::ct_bc))
+    return detail::ct_executor<D, T>::run(value);
+  else if constexpr (detail::ct_is_hybrid_eligible(D::ct_bc)) {
+    auto const&            rbc = detail::nttp_partial_bytecode_holder<D, T>();
+    std::string            out;
+    detail::bc_executor<T> exec(rbc, value, value, nullptr, out);
+    auto r = detail::ct_hybrid_executor<D, T>::run_into(value, out, exec);
+    if (!r) return std::unexpected(r.error());
+    return out;
+  } else
+    return detail::bc_execute(detail::nttp_partial_bytecode_holder<D, T>(), value);
 }
 
 template <auto Tmpl, std::same_as<bool> auto TrimBlocks = false, std::same_as<bool> auto LstripBlocks = false, typename T>
@@ -246,7 +266,15 @@ template <auto Tmpl, std::same_as<bool> auto TrimBlocks = false, std::same_as<bo
   using D = detail::nttp_render_data<Tmpl, TrimBlocks != 0, LstripBlocks != 0, T>;
   if constexpr (D::ct_bc.error.ec != error_code::none)
     return std::unexpected(D::ct_bc.error);
-  return detail::bc_execute_into(detail::nttp_partial_bytecode_holder<D, T>(), value, out);
+  if constexpr (detail::ct_is_unrollable(D::ct_bc)) {
+    detail::ct_executor<D, T>::run_into(value, out);
+    return {};
+  } else if constexpr (detail::ct_is_hybrid_eligible(D::ct_bc)) {
+    auto const&            rbc = detail::nttp_partial_bytecode_holder<D, T>();
+    detail::bc_executor<T> exec(rbc, value, value, nullptr, out);
+    return detail::ct_hybrid_executor<D, T>::run_into(value, out, exec);
+  } else
+    return detail::bc_execute_into(detail::nttp_partial_bytecode_holder<D, T>(), value, out);
 }
 
 template <auto Tmpl, std::same_as<bool> auto TrimBlocks = false, std::same_as<bool> auto LstripBlocks = false, typename T, typename Sink>
@@ -268,7 +296,17 @@ template <auto Tmpl, auto... Entries, typename T>
   using D = detail::nttp_atvar_data<Tmpl, T, Entries...>;
   if constexpr (D::ct_bc.error.ec != error_code::none)
     return std::unexpected(D::ct_bc.error);
-  return detail::bc_execute(detail::nttp_bytecode_holder<D>(), value);
+  if constexpr (detail::ct_is_unrollable(D::ct_bc))
+    return detail::ct_executor<D, T>::run(value);
+  else if constexpr (detail::ct_is_hybrid_eligible(D::ct_bc)) {
+    auto const&            rbc = detail::nttp_bytecode_holder<D>();
+    std::string            out;
+    detail::bc_executor<T> exec(rbc, value, value, nullptr, out);
+    auto r = detail::ct_hybrid_executor<D, T>::run_into(value, out, exec);
+    if (!r) return std::unexpected(r.error());
+    return out;
+  } else
+    return detail::bc_execute(detail::nttp_bytecode_holder<D>(), value);
 }
 
 template <auto Tmpl, auto... Entries, typename T>
@@ -280,7 +318,15 @@ template <auto Tmpl, auto... Entries, typename T>
   using D = detail::nttp_atvar_data<Tmpl, T, Entries...>;
   if constexpr (D::ct_bc.error.ec != error_code::none)
     return std::unexpected(D::ct_bc.error);
-  return detail::bc_execute_into(detail::nttp_bytecode_holder<D>(), value, out);
+  if constexpr (detail::ct_is_unrollable(D::ct_bc)) {
+    detail::ct_executor<D, T>::run_into(value, out);
+    return {};
+  } else if constexpr (detail::ct_is_hybrid_eligible(D::ct_bc)) {
+    auto const&            rbc = detail::nttp_bytecode_holder<D>();
+    detail::bc_executor<T> exec(rbc, value, value, nullptr, out);
+    return detail::ct_hybrid_executor<D, T>::run_into(value, out, exec);
+  } else
+    return detail::bc_execute_into(detail::nttp_bytecode_holder<D>(), value, out);
 }
 
 template <auto Tmpl, auto... Entries, typename T, typename Sink>
