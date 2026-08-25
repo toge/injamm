@@ -1038,7 +1038,9 @@ class code_generator {
         --indent_;
         emit("} else {");
         ++indent_;
-        emit("_filtered.assign(" + access + ");");
+        // ponytail: assign(const string&) は内部で size() を 2回呼ぶので
+        // (data, size) 版で 1 回に減らす。
+        emit("_filtered.assign((" + access + ").data(), (" + access + ").size());");
         --indent_;
         emit("}");
       } else {
@@ -1068,7 +1070,9 @@ class code_generator {
         --indent_;
         emit("} else {");
         ++indent_;
-        emit("_filtered.assign(" + access + ");");
+        // ponytail: assign(const string&) は内部で size() を 2回呼ぶので
+        // (data, size) 版で 1 回に減らす。
+        emit("_filtered.assign((" + access + ").data(), (" + access + ").size());");
         --indent_;
         emit("}");
       }

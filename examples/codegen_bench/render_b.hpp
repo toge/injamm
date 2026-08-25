@@ -47,7 +47,7 @@ render_b(const T& data, Sink& out) {
     } else if constexpr (::injamm::detail::ct_glz_reflectable<decltype(_item1.name)>) {
       (void)::glz::write_json(_item1.name, _filtered);
     } else {
-      _filtered.assign(_item1.name);
+      _filtered.assign((_item1.name).data(), (_item1.name).size());
     }
     filter_to_upper(_filtered);
     html_escape_append(out, _filtered);
