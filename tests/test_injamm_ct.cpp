@@ -3028,3 +3028,88 @@ TEST_CASE("ct section stride pipeline", "[ct][section][filter]") {
   REQUIRE(out);
   CHECK(*out == "1 2 3 ");
 }
+
+// ---- セクションフィルタ skip / take_last / skip_last (CT) ----
+
+TEST_CASE("ct section skip", "[ct][section][filter]") {
+  CtSectionFilterData data{};
+  data.items = {1, 2, 3, 4};
+  auto constexpr tmpl = injamm::fixed_string("{{#items | skip(2)}}{{this}} {{/items}}");
+  auto out = injamm::render<tmpl>(data);
+  REQUIRE(out);
+  CHECK(*out == "3 4 ");
+}
+
+TEST_CASE("ct section take_last", "[ct][section][filter]") {
+  CtSectionFilterData data{};
+  data.items = {1, 2, 3, 4};
+  auto constexpr tmpl = injamm::fixed_string("{{#items | take_last(2)}}{{this}} {{/items}}");
+  auto out = injamm::render<tmpl>(data);
+  REQUIRE(out);
+  CHECK(*out == "3 4 ");
+}
+
+TEST_CASE("ct section skip_last", "[ct][section][filter]") {
+  CtSectionFilterData data{};
+  data.items = {1, 2, 3, 4};
+  auto constexpr tmpl = injamm::fixed_string("{{#items | skip_last(2)}}{{this}} {{/items}}");
+  auto out = injamm::render<tmpl>(data);
+  REQUIRE(out);
+  CHECK(*out == "1 2 ");
+}
+
+TEST_CASE("ct section skip take pipeline", "[ct][section][filter]") {
+  CtSectionFilterData5 data{};
+  data.items = {1, 2, 3, 4, 5};
+  auto constexpr tmpl = injamm::fixed_string("{{#items | skip(1) | take(2)}}{{this}} {{/items}}");
+  auto out = injamm::render<tmpl>(data);
+  REQUIRE(out);
+  CHECK(*out == "2 3 ");
+}
+
+TEST_CASE("ct section reverse skip take pipeline", "[ct][section][filter]") {
+  CtSectionFilterData5 data{};
+  data.items = {1, 2, 3, 4, 5};
+  auto constexpr tmpl = injamm::fixed_string("{{#items | reverse | skip(1) | take(2)}}[{{loop.index}}:{{this}}]{{/items}}");
+  auto out = injamm::render<tmpl>(data);
+  REQUIRE(out);
+  CHECK(*out == "[0:4][1:3]");
+}
+
+// ---- 実行時文字列値の数値比較 (CT) ----
+
+/** @brief 数値文字列フィールドの比較テスト用データ型 */
+struct CtNumericStrData {
+  std::string age; /**< 数値を含む文字列 */
+};
+
+template <>
+struct glz::meta<CtNumericStrData> {
+  static constexpr auto value = glz::object("age", &CtNumericStrData::age);
+};
+
+TEST_CASE("ct if_numeric_compare_on_string_field", "[injamm][ct][compare]") {
+  CtNumericStrData data{"20"};
+  auto constexpr tmpl_gt = injamm::fixed_string("{{#if age > 18}}GT{{else}}LE{{/if}}");
+  auto r = injamm::render<tmpl_gt>(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "GT");
+
+  auto constexpr tmpl_lt = injamm::fixed_string("{{#if age < 18}}LT{{else}}GE{{/if}}");
+  auto r2 = injamm::render<tmpl_lt>(data);
+  REQUIRE(r2.has_value());
+  CHECK(*r2 == "GE");
+
+  auto constexpr tmpl_eq = injamm::fixed_string("{{#if age == 20}}EQ{{/if}}");
+  auto r3 = injamm::render<tmpl_eq>(data);
+  REQUIRE(r3.has_value());
+  CHECK(*r3 == "EQ");
+
+  CtNumericStrData non_num{"abc"};
+  auto constexpr tmpl_non = injamm::fixed_string("{{#if age > 1}}GT{{else}}NO{{/if}}");
+  auto r4 = injamm::render<tmpl_non>(non_num);
+  REQUIRE(r4.has_value());
+  CHECK(*r4 == "NO");
+}
+
+

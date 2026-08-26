@@ -127,6 +127,7 @@ bytecode to_bytecode(ct_bytecode<N> const& ct) {
     ref.special = classify_special_var(ref.key);
     /** 比較演算子の RHS 整数値が設定されている場合は int_filters に追加（emit_if_cmp 用） */
     if (ct.var_refs[i].has_compare_rhs) {
+      ref.compare_rhs_kind = compare_operand_kind::int_literal;
       ref.int_filters.push_back({int_filter::eq, ct.var_refs[i].compare_rhs});
     }
     /** 文字列比較 RHS（string_literal） */
