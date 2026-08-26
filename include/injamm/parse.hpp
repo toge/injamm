@@ -676,6 +676,8 @@ template <class ConstMap>
 }
 
 [[nodiscard]] inline std::string strip_standalone_whitespace_tildes(std::string_view tmpl) {
+  // A1: {{ を含まない場合は早期 return (コピー1回のみ)
+  if (tmpl.find("{{") == std::string_view::npos) return std::string(tmpl);
   std::string result;
   result.reserve(tmpl.size());
   std::size_t pos = 0;
@@ -713,6 +715,8 @@ template <class ConstMap>
 }
 
 [[nodiscard]] inline std::string transform_exists_sections(std::string_view tmpl) {
+  // A2: {{ を含まない場合、または exists 構文が無い場合は早期 return
+  if (tmpl.find("{{") == std::string_view::npos) return std::string(tmpl);
   if (tmpl.find("#exists") == std::string_view::npos && tmpl.find("^exists") == std::string_view::npos)
     return std::string(tmpl);
   std::string result;

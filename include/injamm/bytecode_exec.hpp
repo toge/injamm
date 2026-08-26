@@ -1486,7 +1486,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
 
   INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_emit_filtered(bc_executor& ex, std::size_t& pc, std::string& filtered) {
     bool raw = ex.bc_.instructions[pc].op == bc_opcode::emit_filtered_raw;
-    if (raw) { ex.out_.append(filtered); } else { html_escape_into(ex.out_, std::string_view{filtered}); }
+    if (raw) { ex.out_.append(filtered); } else { html_escape_into(ex.out_, filtered); }
     ++pc;
     return {};
   }

@@ -410,6 +410,12 @@ class bc_compiler {
    */
   void emit_literal(std::string_view lit) {
     if (lit.empty()) return;
+    // 直前の命令が emit_literal なら同じリテラルに append して命令を纏める (D3 literal coalesce)
+    if (!bc_.instructions.empty() && bc_.instructions.back().op == bc_opcode::emit_literal) {
+      auto prev_idx = bc_.instructions.back().operand;
+      bc_.literals[prev_idx].append(lit.data(), lit.size());
+      return;
+    }
     auto idx = bc_.add_literal(lit);
     bc_.add_instruction(bc_opcode::emit_literal, idx);
   }

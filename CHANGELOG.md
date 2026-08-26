@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-08-27
+
+- `perf: 4施策適用(literal coalesce + strip/exists 早期 return + html_escape_into の冗長 string_view 構築削除)` — 11行追加/1行変更で VM 経路を -3〜-12% 改善。`multi_filter -11.96%`, `BC nested_2level -6.85%`, `NTTP nested_3level -6.61%`, `NTTP wide partial -9.28%`, `engine render reuse buffer -8.61%` 他。詳細: `docs/perf_proposal_2026-08-27.md`
+
 ## 2026-08-22
 
 - `urlencode` フィルタを追加（RFC 3986 percent エンコード、engine<T> / NTTP 両対応）
