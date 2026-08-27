@@ -223,7 +223,6 @@ inline std::int32_t read_i32_le(std::istream& is, read_state& state) {
 inline std::string read_string(std::istream& is, read_state& state) {
   auto len = read_u64_le(is, state);
   if (!state.ok) return {};
-  // ponytail: 細工ファイルの巨大 len による OOM / length_error 例外を防ぐ
   constexpr std::uint64_t max_string_len = 16 * 1024 * 1024; // 16 MiB
   if (len > max_string_len) { state.ok = false; state.ec = error_code::syntax_error; return {}; }
   std::string s;
@@ -547,7 +546,6 @@ bytecode read_bytecode_body(std::istream& is, read_state& state, int depth) {
   if (!state.ok) return bc;
 
   if (state.ok) {
-    // ponytail: 細工ファイルの OOB operand による VM 側 OOB 読みを防ぐ全命令検証
     auto const n_lit = bc.literals.size();
     auto const n_var = bc.var_refs.size();
     auto const n_ins = bc.instructions.size();

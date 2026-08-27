@@ -640,7 +640,7 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
         continue;
       }
 
-      // -- {{#exists var}} → {{#var}} --
+      // -- {{#exists var}} → {{#var}} への変換 --
       /** @brief close tag 探索用に exists 前置詞を保持したキー */
       auto close_key = key;
       bool exists_transformed = false;
@@ -781,7 +781,7 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
         continue;
       }
 
-      // -- {{^exists var}} → {{^var}} --
+      // -- {{^exists var}} → {{^var}} への変換 --
       auto close_key = key;
       if (key.starts_with("exists ") || key.starts_with("exists\t")) {
         if (key.size() == 7) continue;

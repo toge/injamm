@@ -112,7 +112,7 @@ static void bench(char const* label, int iters, F&& f) {
 int main() {
   std::printf("=== benchmark: VM vs direct string building (delegate ideal) ===\n\n");
 
-  // ---- 1 variable ----
+  // ---- 1 変数 ----
   std::printf("--- 1 var (string) ---\n");
   Data1 const d1{"hello world"};
   auto constexpr kTmpl1 = injamm::fixed_string("{{val}}");
@@ -127,7 +127,7 @@ int main() {
     bench("std::format",                  ITERS, [&] { return std::format("{}", d1.val); });
   }
 
-  // ---- 3 variables: string, int, double ----
+  // ---- 3 変数: string, int, double ----
   std::printf("\n--- 3 vars (string, int, double) ---\n");
   Data3 const d3{"5", 503, 35.3};
   auto constexpr kTmpl3 = injamm::fixed_string("test example, {{aaa}} = {{bbb}} on {{ccc}}");
@@ -142,7 +142,7 @@ int main() {
     bench("std::format (typed)",          ITERS, [&] { return std::format("test example, {} = {} on {}", d3.aaa, d3.bbb, d3.ccc); });
   }
 
-  // ---- 10 variables (mixed types) ----
+  // ---- 10 変数 (mixed types) ----
   std::printf("\n--- 10 vars (5 string + 3 int + 2 double) ---\n");
   Data10 d10;
   d10.a0 = "xyz"; d10.a1 = "abc"; d10.a2 = "def"; d10.a3 = "ghi"; d10.a4 = "jkl";
@@ -162,7 +162,7 @@ int main() {
       d10.b0, d10.b1, d10.b2, d10.c0, d10.c1); });
   }
 
-  // ---- buffer reuse comparison (3 vars) ----
+  // ---- バッファ再利用の比較 (3 変数) ----
   std::printf("\n--- buffer reuse comparison (3 vars) ---\n");
   injamm::engine<Data3> eng3("test example, {{aaa}} = {{bbb}} on {{ccc}}");
   auto constexpr kTmpl3_nttp = injamm::fixed_string("test example, {{aaa}} = {{bbb}} on {{ccc}}");
@@ -183,7 +183,7 @@ int main() {
     bench("manual string building",           ITERS, [&] { return manual3(d3); });
   }
 
-  // ---- buffer reuse with user pre-reserve ----
+  // ---- ユーザ側で事前 reserve したバッファの再利用 ----
   std::printf("\n--- buffer reuse with large reserve (3 vars) ---\n");
   std::string big_buf;
   big_buf.reserve(4096);
@@ -198,7 +198,7 @@ int main() {
     bench("manual + reserve(64)",             ITERS, [&] { return manual3(d3); });
   }
 
-  // ---- large output: many vars with buffer reuse ----
+  // ---- 大出力: 多数の変数をバッファ再利用 ----
   std::printf("\n--- large output (10 vars) buffer reuse ---\n");
   std::string big_reused;
   big_reused.reserve(1024);

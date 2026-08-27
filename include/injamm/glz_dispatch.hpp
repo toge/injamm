@@ -10,7 +10,7 @@
 
 namespace injamm::detail {
 
-// -- Moved from ct_render.hpp --
+// -- ct_render.hpp から移動 --
 
 template <class T>
 concept ct_is_vector_like =

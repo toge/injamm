@@ -454,7 +454,6 @@ template <fixed_string Tmpl, fixed_string PartialName, std::same_as<bool> auto T
   auto& bc = detail::nttp_selected_partial_holder<D, PartialName, T>();
   if (bc.error.ec != error_code::none)
     return std::unexpected(bc.error);
-  // ponytail: 対象 partial は post-order DFS で末尾に push されるため必ず back()
   return detail::bc_execute(*bc.partial_entries.back().bc, value);
 }
 
@@ -470,7 +469,6 @@ template <fixed_string Tmpl, fixed_string PartialName, std::same_as<bool> auto T
   auto& bc = detail::nttp_selected_partial_holder<D, PartialName, T>();
   if (bc.error.ec != error_code::none)
     return std::unexpected(bc.error);
-  // ponytail: 対象 partial は post-order DFS で末尾に push されるため必ず back()
   return detail::bc_execute_into_sink(*bc.partial_entries.back().bc, value, sink);
 }
 
@@ -554,7 +552,6 @@ template <auto Tmpl, fixed_string PartialName, std::same_as<bool> auto TrimBlock
     auto& bc = detail::nttp_selected_partial_holder<D, PartialName, T>();
     if (bc.error.ec != error_code::none)
       return std::unexpected(bc.error);
-    // ponytail: 対象 partial は post-order DFS で末尾に push されるため必ず back()
     return detail::bc_execute(*bc.partial_entries.back().bc, value);
   }
 }
@@ -572,7 +569,6 @@ template <auto Tmpl, fixed_string PartialName, std::same_as<bool> auto TrimBlock
   auto& bc = detail::nttp_selected_partial_holder<D, PartialName, T>();
   if (bc.error.ec != error_code::none)
     return std::unexpected(bc.error);
-  // ponytail: 対象 partial は post-order DFS で末尾に push されるため必ず back()
   return detail::bc_execute_into_sink(*bc.partial_entries.back().bc, value, sink);
 }
 
@@ -598,7 +594,6 @@ template <auto Tmpl, auto PartialName, std::same_as<bool> auto TrimBlocks = fals
     auto& bc = detail::nttp_selected_partial_holder<D, PartialName, T>();
     if (bc.error.ec != error_code::none)
       return std::unexpected(bc.error);
-    // ponytail: 対象 partial は post-order DFS で末尾に push されるため必ず back()
     return detail::bc_execute(*bc.partial_entries.back().bc, value);
   }
 }
@@ -616,7 +611,6 @@ template <auto Tmpl, auto PartialName, std::same_as<bool> auto TrimBlocks = fals
   auto& bc = detail::nttp_selected_partial_holder<D, PartialName, T>();
   if (bc.error.ec != error_code::none)
     return std::unexpected(bc.error);
-  // ponytail: 対象 partial は post-order DFS で末尾に push されるため必ず back()
   return detail::bc_execute_into_sink(*bc.partial_entries.back().bc, value, sink);
 }
 

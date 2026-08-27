@@ -8,7 +8,7 @@
 #include "filters.hpp"
 #include "glz_dispatch.hpp"
 #include "parse.hpp"
-// enum_io.hpp provides enum_name_to_int and serialize_enum
+// enum_io.hpp が enum_name_to_int と serialize_enum を提供する
 
 namespace injamm::detail {
 
@@ -398,6 +398,9 @@ class bc_compiler {
         if (!f.str_arg1.empty()) ++count;
         if (!f.str_arg2.empty()) ++count;
       }
+    for (auto const& ref : bc_.var_refs)
+      for (std::uint8_t i = 0; i < ref.section_op_count; ++i)
+        if (!ref.section_ops[i].str_arg1.empty()) ++count;
     if (count == 0) return;
     bc_.literals.reserve(bc_.literals.size() + count);
     for (auto& ref : bc_.var_refs)
@@ -405,6 +408,10 @@ class bc_compiler {
         if (!f.str_arg1.empty()) f.str_arg1 = bc_.literals[bc_.add_literal(f.str_arg1)];
         if (!f.str_arg2.empty()) f.str_arg2 = bc_.literals[bc_.add_literal(f.str_arg2)];
       }
+    for (auto& ref : bc_.var_refs)
+      for (std::uint8_t i = 0; i < ref.section_op_count; ++i)
+        if (!ref.section_ops[i].str_arg1.empty())
+          ref.section_ops[i].str_arg1 = bc_.literals[bc_.add_literal(ref.section_ops[i].str_arg1)];
   }
 
   /**
@@ -438,13 +445,10 @@ class bc_compiler {
     if (bc_.var_refs[idx].field_index == UINT32_MAX) {
       mark_binding_first(idx, key);
     }
-    // ponytail: dead-key optimisation disabled for partials — see failing tests (partial_in_partial etc.)
-    // was: mark is_dead for known missing top-level keys, but partials may be called with different value types (loop element)
-    // so the hint would be wrong and fallback is required.
     bc_.var_refs[idx].filters = filters;
     bc_.var_refs[idx].int_filters = int_filters;
     bc_.var_refs[idx].float_filters = float_filters;
-    // safe/json/format filter detection
+    // safe / json / format フィルタの検出
     bool has_safe = false;
     bool has_json = false;
     bool has_chrono_format = false;
@@ -588,9 +592,10 @@ class bc_compiler {
     auto& ref = bc_.var_refs[idx];
     ref.section_op_count = static_cast<std::uint8_t>(std::min(pipeline.size(), static_cast<std::size_t>(bc_var_ref::max_section_ops)));
     for (std::uint8_t i = 0; i < ref.section_op_count; ++i) {
-      ref.section_ops[i].kind = pipeline[i].kind;
-      ref.section_ops[i].arg  = pipeline[i].arg;
-      ref.section_ops[i].arg2 = pipeline[i].arg2;
+      ref.section_ops[i].kind    = pipeline[i].kind;
+      ref.section_ops[i].arg     = pipeline[i].arg;
+      ref.section_ops[i].arg2    = pipeline[i].arg2;
+      ref.section_ops[i].str_arg1 = pipeline[i].str_arg1;
     }
     resolve_ref_indices(idx, key);
     bc_.add_instruction(bc_opcode::emit_section, 0, idx);
@@ -609,15 +614,15 @@ class bc_compiler {
     --nesting_depth_;
 
     if (result == body_result::else_) {
-      // Section has {{else}}. Emit trampoline jump past else body.
+      // section が {{else}} を持つ場合は else 本体の先を飛び越えるトランポリンジャンプを発行する
       auto jump_instr = static_cast<std::uint32_t>(bc_.current_offset());
       bc_.add_instruction(bc_opcode::emit_else, 0, 0);
 
-      // Patch operand3 = first else body instruction
+      // operand3 を else 本体の先頭命令のアドレスにパッチする
       bc_.instructions[section_instr_idx].operand3 =
           static_cast<std::uint32_t>(bc_.current_offset());
 
-      // Compile else body (until close tag)
+      // else 本体（閉じタグまで）をコンパイルする
       bool else_reached_end = false;
       auto else_result = compile_body_impl(else_reached_end);
       if (else_result == body_result::eof) {
@@ -631,7 +636,7 @@ class bc_compiler {
       bc_.patch_jump(jump_instr, body_end);
 
     } else if (result == body_result::close) {
-      // No else — existing path
+      // else なし — 既存のパス
       bc_.add_instruction(bc_opcode::emit_end);
       bc_.patch_jump(section_instr_idx, static_cast<std::uint32_t>(bc_.current_offset()));
     } else {
@@ -661,15 +666,15 @@ class bc_compiler {
     auto result = compile_body_impl(reached_end);
 
     if (result == body_result::else_) {
-      // Section has {{else}}. Emit trampoline jump past else body.
+      // section が {{else}} を持つ場合は else 本体の先を飛び越えるトランポリンジャンプを発行する
       auto jump_instr = static_cast<std::uint32_t>(bc_.current_offset());
       bc_.add_instruction(bc_opcode::emit_else, 0, 0);
 
-      // Patch operand3 = first else body instruction
+      // operand3 を else 本体の先頭命令のアドレスにパッチする
       bc_.instructions[section_instr_idx].operand3 =
           static_cast<std::uint32_t>(bc_.current_offset());
 
-      // Compile else body (until close tag)
+      // else 本体（閉じタグまで）をコンパイルする
       bool else_reached_end = false;
       auto else_result = compile_body_impl(else_reached_end);
       if (else_result == body_result::eof) {
@@ -683,7 +688,7 @@ class bc_compiler {
       bc_.patch_jump(jump_instr, body_end);
 
     } else if (result == body_result::close) {
-      // No else — existing path
+      // else なし — 既存のパス
       bc_.add_instruction(bc_opcode::emit_end);
       bc_.patch_jump(section_instr_idx, static_cast<std::uint32_t>(bc_.current_offset()));
     } else {
@@ -964,7 +969,7 @@ class bc_compiler {
 
           if (cmp_ref.compare_rhs_kind != compare_operand_kind::none) {
             bc_.add_instruction(compare_token_it->op, 0, cmp_idx);
-            compare_op = bc_opcode::halt; /* dummy: do not emit emit_if below */
+            compare_op = bc_opcode::halt; /* dummy: 後続の emit_if 発行を抑止する */
           }
         }
       }
@@ -1132,7 +1137,7 @@ class bc_compiler {
           bc_.error = error_ctx{tag_start, error_code::unknown_filter, parts[fi]};
           return body_result::eof;
         }
-        // {{{field.size}}} → emit_var_size (raw)
+        // {{{field.size}}} → emit_var_size（raw）
         if (actual_key.ends_with(".size") && filters.empty() && int_filters.empty() && float_filters.empty()) {
           emit_var_size(actual_key.substr(0, actual_key.size() - 5), true);
         } else if (actual_key.starts_with("root.")) {
@@ -1413,7 +1418,7 @@ class bc_compiler {
     {
       order.reserve(pending.size());
       std::vector<bool> visited(pending.size(), false);
-      std::vector<bool> in_stack(pending.size(), false);  // ponytail: 循環検出用
+      std::vector<bool> in_stack(pending.size(), false);
       auto dfs = [&](auto& self, std::size_t node) -> void {
         if (visited[node]) return;
         visited[node]   = true;
@@ -1456,8 +1461,6 @@ class bc_compiler {
       it->bc = std::make_shared<bytecode>(std::move(partial_bc));
     }
 
-    // ponytail: ネストした partial 定義を bc_.partial_entries に昇格させる。
-    // engine<T>::render_partial(value, "inner") がアクセス可能になる。
     for (std::size_t ei = 0; ei < bc_.partial_entries.size(); ++ei) {
       auto const& entry = bc_.partial_entries[ei];
       if (!entry.bc) continue;
@@ -1507,7 +1510,7 @@ class bc_compiler {
     tmpl_ = bc_.template_storage;
     pos_ = 0;
 
-    // Extract partials before main compilation
+    // メインコンパイルの前に partial を抽出する
     auto main_tmpl = extract_partials(bc_.template_storage);
     if (bc_.error.ec != error_code::none) {
       return std::move(bc_);
@@ -1526,7 +1529,6 @@ class bc_compiler {
     for (auto const& lit : bc_.literals)
       bc_.literal_total_size += lit.size();
     // 単純テンプレ検出をコンパイル時に実施（実行時のオペコード走査を排除）
-    // ponytail: emit_var/raw も単純とみなし fast path で処理（litvar 同等だがリテラル無し）
     bc_.is_simple = true;
     for (auto const& ins : bc_.instructions) {
       if (ins.op != bc_opcode::emit_litvar && ins.op != bc_opcode::emit_litvar_raw

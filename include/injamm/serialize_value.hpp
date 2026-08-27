@@ -267,7 +267,6 @@ inline void serialize_formatted(Buffer& out, T value, std::string_view fmt) {
     std::vformat_to(std::back_inserter(out), fmt_str, std::make_format_args(value));
 #endif
   } catch (...) {
-    // ponytail: 不正フォーマットは expected API では例外を出さず無出力で継続（既知の軽微な互換性維持）
   }
 }
 

@@ -102,7 +102,6 @@ class bc_executor {
     auto           tied = glz::to_tie(v);
     using visitor_t     = decltype(visitor(glz::get<0>(tied)));
     std::expected<void, error_ctx> result{};
-    // ponytail: switch jump table O(1) — fold OR 20比較を分岐予測依存から解放。32未満は即時分岐、以上は線形フォールバック
     switch (field_index) {
     case 0: if constexpr (0 < sz) { if constexpr (std::same_as<visitor_t, void>) visitor(glz::get<0>(tied)); else result = visitor(glz::get<0>(tied)); break; } [[fallthrough]];
     case 1: if constexpr (1 < sz) { if constexpr (std::same_as<visitor_t, void>) visitor(glz::get<1>(tied)); else result = visitor(glz::get<1>(tied)); break; } [[fallthrough]];
@@ -172,7 +171,6 @@ class bc_executor {
       auto           tied = glz::to_tie(v);
       using visitor_r     = decltype(visitor(glz::get<0>(tied)));
       if constexpr (std::same_as<visitor_r, void>) {
-        // ponytail: 早期終了 — 見つかった時点で残りの比較をスキップ
         [&]<std::size_t... I>(std::index_sequence<I...>) {
           auto try_one = [&]<std::size_t Idx>() -> bool {
             if (std::string_view{glz::reflect<V>::keys[Idx]} == path) {
@@ -184,7 +182,6 @@ class bc_executor {
           (void)(try_one.template operator()<I>() || ...);
         }(std::make_index_sequence<sz>{});
       } else {
-        // ponytail: 早期終了 — 成功時も残り比較をスキップ、エラー時は伝搬
         std::expected<void, error_ctx> result{};
         bool found = false;
         [&]<std::size_t... I>(std::index_sequence<I...>) {
@@ -265,7 +262,6 @@ class bc_executor {
       using visitor_r     = decltype(visitor(glz::get<0>(tied)));
 
       if constexpr (std::same_as<visitor_r, void>) {
-        // ponytail: 早期終了
         [&]<std::size_t... I>(std::index_sequence<I...>) {
           auto try_one = [&]<std::size_t Idx>() -> bool {
             if (std::string_view{glz::reflect<V>::keys[Idx]} == first_key) {
@@ -277,7 +273,6 @@ class bc_executor {
           (void)(try_one.template operator()<I>() || ...);
         }(std::make_index_sequence<sz>{});
       } else {
-        // ponytail: 早期終了
         std::expected<void, error_ctx> result{};
         bool found = false;
         [&]<std::size_t... I>(std::index_sequence<I...>) {
@@ -379,7 +374,6 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
 
     /**
      * フォールバック: フィールド数の少ない構造は線形探索が速い。
-     * ponytail: 早期終了で残り比較をスキップ
      */
     if constexpr (std::same_as<visitor_t, void>) {
       bool found = false;
@@ -704,7 +698,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
     return false;
   }
 
-  // -- shared section/inverted/filter implementations (both dispatch paths delegate here) --
+  // -- section / inverted / filter 共通実装（双方のディスパッチパスから委譲される） --
 
   /** @brief セクションフィルタパイプラインからイテレーションウィンドウを畳み込む
    *  @details ops を順に適用し、[lo, hi) + 方向 (bwd) を計算する。 */
@@ -715,6 +709,8 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
     bool has_stride = false;   /**< stride オペコードが含まれるか */
     std::uint32_t stride_take = 0; /**< stride の取得数 */
     std::uint32_t stride_skip = 0; /**< stride のスキップ数 */
+    int sort_arg = -1;             /**< sort オペコードの引数 (-1=なし) */
+    std::string_view join_sep;     /**< join の区切り文字 (空なら join なし) */
   };
 
   static section_window fold_section_ops(bc_var_ref const& ref, std::uint32_t sz) {
@@ -746,6 +742,16 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
           w.has_stride = true;
           w.stride_take = static_cast<std::uint32_t>(std::max(op.arg, 0));
           w.stride_skip = static_cast<std::uint32_t>(std::max(op.arg2, 0));
+          break;
+        }
+        case section_filter_op_kind::sort: {
+          // 最後の sort 指定が有効（複数指定された場合は後勝ち）
+          w.sort_arg = op.arg;
+          break;
+        }
+        case section_filter_op_kind::join: {
+          // 最後の join 指定が有効
+          w.join_sep = op.str_arg1;
           break;
         }
       }
@@ -794,12 +800,26 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
         bc_loop_state ls;
         ls.parent = ex.loop_;
         ls.count = count;
+        // sort 指定がある場合のみ要素をコピーして安定ソート。sort_arg=-1 ならコピー不要
+        // 要素が operator< を持つ場合のみ対応（std::string / 数値型等）
+        std::vector<std::remove_cvref_t<elem_t>> sorted_buf;
+        if constexpr (std::totally_ordered<elem_t>) {
+          if (w.sort_arg >= 0 && sz > 1) {
+            sorted_buf.assign(field.begin(), field.end());
+            if (w.sort_arg == 0) {
+              std::stable_sort(sorted_buf.begin(), sorted_buf.end(), std::less<elem_t>{});
+            } else {
+              std::stable_sort(sorted_buf.begin(), sorted_buf.end(), std::greater<elem_t>{});
+            }
+          }
+        }
+        auto const& src_field = sorted_buf.empty() ? field : sorted_buf;
         auto src = w.bwd ? (w.hi - 1u) : w.lo;
         for (ls.index = 0; ls.index < count; ++ls.index) {
           ls.continue_flag = false;
           if (w.has_stride)
             while (!kept(w, src)) { if (w.bwd) --src; else ++src; }
-          auto const& elem = field[src];
+          auto const& elem = src_field[src];
           ls.binding_name = ref.key;
           ls.binding_elem = &elem;
           ls.binding_resolve = &resolve_binding_var<elem_t>;
@@ -807,6 +827,10 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
           bc_executor<elem_t, RootT, Sink> child_exec(ex.bc_, elem, ex.root_value_, &ls, ex.out_, ex.filtered_shared_ ? ex.filtered_shared_ : &ex.filtered_scratch_);
           auto r2 = child_exec.execute_impl(pc + 1, body_end - 1);
           if (!r2) return r2;
+          // join: 最初のイテレーション以外で区切り文字を出力
+          if (!w.join_sep.empty() && ls.index + 1 < count && !ls.continue_flag) {
+            ex.out_.append(w.join_sep);
+          }
           if (w.bwd) --src; else ++src;
           if (ls.continue_flag) { ls.continue_flag = false; continue; }
           if (ls.break_flag) break;
@@ -846,7 +870,6 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
         };
         std::expected<void, error_ctx> map_res{};
         if (w.bwd) {
-          // ponytail: ordered map は rbegin で逆順走査し一時 vector を避ける
           if constexpr (requires { field.rbegin(); field.rend(); }) {
             auto r_it = field.rbegin();
             std::uint32_t skip = (sz > w.hi) ? sz - w.hi : 0;
@@ -894,7 +917,6 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
         ls.count = count;
         std::uint32_t emitted = 0;
         if (w.bwd) {
-          // ponytail: ordered set は rbegin で一時 vector を避ける
           if constexpr (requires { field.rbegin(); field.rend(); }) {
             auto r_it = field.rbegin();
             std::uint32_t skip = (sz > w.hi) ? sz - w.hi : 0;
@@ -1260,7 +1282,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
     return {};
   }
 
-  // -- handler functions (shared by both dispatch paths) --
+  // -- ハンドラ関数群（双方のディスパッチパスで共有） --
 
   INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_emit_literal(bc_executor& ex, std::size_t& pc, std::string&) {
     ex.out_.append(ex.bc_.literals[ex.bc_.instructions[pc].operand]);
@@ -1707,8 +1729,8 @@ public:
     std::string& filtered_value_ = filtered_shared_ ? *filtered_shared_ : filtered_scratch_;
     filtered_value_.clear();
 
-    // Fast path: simple emit_litvar + emit_literal + halt only
-    // Skips computed-goto dispatch overhead for common trivial templates.
+    // 高速パス: emit_litvar + emit_literal + halt のみの単純テンプレート
+    // ありふれた自明なテンプレートでは computed-goto のディスパッチオーバーヘッドをスキップする
     // is_simple はコンパイル時に決定済み（実行時走査なし）。
     if constexpr (INJAMM_FAST_PATH) {
       if (bc_.is_simple) {
@@ -1738,7 +1760,6 @@ public:
                 bool raw = (instr.op == bc_opcode::emit_var_raw);
                 if (!ref.is_loop_parent || !resolve_loop_parent_var(*this, ref.special, raw)) {
                   bool        found = false;
-                  // ponytail: binding_first の高速解決を fast path でも再現
                   if (ref.binding_first && ref.special == special_var_kind::none && try_resolve_loop_binding(*this, ref, raw)) {
                     found = true;
                   } else {
@@ -1829,9 +1850,6 @@ public:
     goto* dispatch_table[_op];                                             \
   } while (0)
 
-// ponytail: 各ラベルの本体を handle_* 関数（switch フォールバックと共用）に委譲する。
-// 間接分岐の goto* は DISPATCH に残るため computed goto の恩恵は保持され、本体は
-// インライン展開（同一 TU の static メンバ）により直書きラベルと同等のコードになる。
 #define HANDLE(fn)                                                         \
   do {                                                                     \
     if (auto _r = fn(*this, pc, filtered_value_); !_r)                     \
@@ -2011,7 +2029,6 @@ std::expected<std::string, error_ctx> bc_execute(bytecode const& bc, T const& va
   auto        estimated = estimate_output_size(bc, value);
   /** 前回レンダリングの実測サイズ（engine が渡す）を優先して再確保を防ぐ */
   if (size_hint > estimated) estimated = size_hint;
-  // ponytail: 256 は小テンプレートで SSO を潰し毎回 heap を強制するため、32 以下は SSO に任せる
   if (estimated > 32) out.reserve(estimated);
   bc_executor<T> exec(bc, value, value, nullptr, out);
   auto           r = exec.execute();
@@ -2033,7 +2050,6 @@ template <class T>
 std::expected<void, error_ctx> bc_execute_into(bytecode const& bc, T const& value, std::string& out) {
   out.clear();
   auto estimated = estimate_output_size(bc, value);
-  // ponytail: 小見積もりは reserve せず SSO / 既存 capacity に任せる
   if (estimated > 32 && out.capacity() < estimated) out.reserve(estimated);
   bc_executor<T> exec(bc, value, value, nullptr, out);
   return exec.execute();

@@ -13,12 +13,11 @@
 #include <optional>
 #include <string>
 
-// Workaround for glaze bug: on Emscripten, GLZ_FASTFLOAT_32BIT is defined
-// (because __EMSCRIPTEN__ is treated as 32-bit), which makes
-// glz::full_multiplication (atoi.hpp) call _umul128. But _umul128 is defined
-// in glz::fast_float, which is not visible from glz (and is not defined at
-// all when __MINGW64__ is set). Defining glz::_umul128 (and
-// glz::fast_float::_umul128 when __MINGW64__ is set) makes the calls resolve.
+// Workaround: Emscripten では __EMSCRIPTEN__ が 32bit 扱いとなり GLZ_FASTFLOAT_32BIT が定義され、
+// glz::full_multiplication (atoi.hpp) が _umul128 を呼び出す。しかし _umul128 は
+// glz::fast_float 側で定義されており、glz 名前空間からは可視でない（__MINGW64__ が
+// 定義されている場合はそもそも未定義）。そこで glz::_umul128（および __MINGW64__
+// 定義時は glz::fast_float::_umul128）を定義することで呼び出しを解決する。
 #if defined(__EMSCRIPTEN__)
 namespace glz {
 inline constexpr std::uint64_t _umul128(std::uint64_t ab, std::uint64_t cd, std::uint64_t* hi) {
@@ -76,8 +75,6 @@ constexpr void apply_string_filter(std::string& str, string_filter_entry entry) 
   }
   case string_filter::trim: {
     // Python 準拠: 引数省略時は空白文字集合（space/tab/LF/CR/VT/FF）、引数指定時はその文字集合を除去
-    // ponytail: Python の strip("") は no-op（空集合）だが、判別フラグの配線は過剰のため空白セット扱いとする
-    // ponytail: 分岐を二重化して no-arg パスを高速化。string_view 経由は find_first_not_of の最適化が効かず ~2x 遅い
     if (entry.str_arg1.empty()) {
       auto start = str.find_first_not_of(" \t\n\r\v\f");
       if (start == std::string::npos) {
@@ -740,6 +737,26 @@ constexpr void apply_float_filter(std::string& str, float_filter_entry entry) {
       if (ec2 == std::errc()) {
         str.assign(buf.data(), ptr - buf.data());
       }
+    }
+    break;
+  }
+  case float_filter::round: {
+    double val{};
+    if (auto [p, ec] = glz::fast_float::from_chars(str.data(), str.data() + str.size(), val); ec != std::errc()) break;
+    int prec = entry.arg;
+    if (prec < 0) prec = 0;
+    if (prec == 0) {
+      val = std::round(val);
+      std::array<char, 32> buf;
+      auto [ptr, ec2] = std::to_chars(buf.data(), buf.data() + buf.size(), static_cast<long long>(val));
+      if (ec2 == std::errc()) str.assign(buf.data(), ptr - buf.data());
+    } else {
+      double pow10 = 1.0;
+      for (int i = 0; i < prec; ++i) pow10 *= 10.0;
+      val = std::round(val * pow10) / pow10;
+      std::array<char, 64> buf;
+      auto [ptr, ec2] = std::to_chars(buf.data(), buf.data() + buf.size(), val, std::chars_format::fixed, prec);
+      if (ec2 == std::errc()) str.assign(buf.data(), ptr - buf.data());
     }
     break;
   }

@@ -157,7 +157,7 @@ int main() {
   std::printf("=== benchmark: injamm (simple, no loops) vs std::format ===\n");
   std::printf("note: {{var}} HTML-escapes; std::format does not. raw compare uses {{{var}}}.\n\n");
 
-  // ---- 1 variable (string) ----
+  // ---- 1 変数 (string) ----
   std::printf("--- 1 var (string) ---\n");
   Data1 const d1{"hello world"};
   auto constexpr kTmpl1 = injamm::fixed_string("{{val}}");
@@ -169,7 +169,7 @@ int main() {
   double        nt1    = bench("injamm NTTP render<kTmpl1>", ITERS1, [&] { return injamm::render<kTmpl1>(d1); });
   double        fmt1   = bench("std::format", ITERS1, [&] { return std::format("{}", d1.val); });
 
-  // ---- 1 variable (int) ----
+  // ---- 1 変数 (int) ----
   std::printf("\n--- 1 var (int) ---\n");
   Data1i const di{503};
   auto constexpr kTmpl1i = injamm::fixed_string("{{val}}");
@@ -181,7 +181,7 @@ int main() {
   double        nt1i    = bench("injamm NTTP render<kTmpl1i>", ITERS1I, [&] { return injamm::render<kTmpl1i>(di); });
   double        fmt1i   = bench("std::format", ITERS1I, [&] { return std::format("{}", di.val); });
 
-  // ---- 1 variable (double) ----
+  // ---- 1 変数 (double) ----
   std::printf("\n--- 1 var (double) ---\n");
   Data1d const dd{35.3};
   auto constexpr kTmpl1d = injamm::fixed_string("{{val}}");
@@ -193,7 +193,7 @@ int main() {
   double        nt1d    = bench("injamm NTTP render<kTmpl1d>", ITERS1D, [&] { return injamm::render<kTmpl1d>(dd); });
   double        fmt1d   = bench("std::format", ITERS1D, [&] { return std::format("{}", dd.val); });
 
-  // ---- 2 variables (string, int) ----
+  // ---- 2 変数 (string, int) ----
   std::printf("\n--- 2 vars (string, int) ---\n");
   Data2si const d2si{"5", 503};
   auto constexpr kTmpl2si = injamm::fixed_string("test example, {{aaa}} = {{bbb}}");
@@ -205,7 +205,7 @@ int main() {
   double        nt2si  = bench("injamm NTTP render<kTmpl2si>", ITERS2, [&] { return injamm::render<kTmpl2si>(d2si); });
   double        fmt2si = bench("std::format", ITERS2, [&] { return std::format("test example, {} = {}", d2si.aaa, d2si.bbb); });
 
-  // ---- 2 variables (string, double) ----
+  // ---- 2 変数 (string, double) ----
   std::printf("\n--- 2 vars (string, double) ---\n");
   Data2sd const d2sd{"5", 35.3};
   auto constexpr kTmpl2sd = injamm::fixed_string("test example, {{aaa}} on {{ccc}}");
@@ -216,7 +216,7 @@ int main() {
   double nt2sd  = bench("injamm NTTP render<kTmpl2sd>", ITERS2, [&] { return injamm::render<kTmpl2sd>(d2sd); });
   double fmt2sd = bench("std::format", ITERS2, [&] { return std::format("test example, {} on {}", d2sd.aaa, d2sd.ccc); });
 
-  // ---- 2 variables (int, double) ----
+  // ---- 2 変数 (int, double) ----
   std::printf("\n--- 2 vars (int, double) ---\n");
   Data2id const d2id{503, 35.3};
   auto constexpr kTmpl2id = injamm::fixed_string("test example, {{bbb}} on {{ccc}}");
@@ -227,7 +227,7 @@ int main() {
   double nt2id  = bench("injamm NTTP render<kTmpl2id>", ITERS2, [&] { return injamm::render<kTmpl2id>(d2id); });
   double fmt2id = bench("std::format", ITERS2, [&] { return std::format("test example, {} on {}", d2id.bbb, d2id.ccc); });
 
-  // ---- 3 variables (string, int, double) ----
+  // ---- 3 変数 (string, int, double) ----
   std::printf("\n--- 3 vars (string, int, double) ---\n");
   Data3 const d3{"5", 503, 35.3};
   auto constexpr kTmpl3 = injamm::fixed_string("test example, {{aaa}} = {{bbb}} on {{ccc}}");
@@ -239,7 +239,7 @@ int main() {
   double        nt3    = bench("injamm NTTP render<kTmpl3>", ITERS3, [&] { return injamm::render<kTmpl3>(d3); });
   double        fmt3   = bench("std::format", ITERS3, [&] { return std::format("test example, {} = {} on {}", d3.aaa, d3.bbb, d3.ccc); });
 
-  // ---- 10 variables (5 string + 3 int + 2 double) ----
+  // ---- 10 変数 (5 string + 3 int + 2 double) ----
   std::printf("\n--- 10 vars (5 string + 3 int + 2 double) ---\n");
   Data10 d10;
   d10.a0                 = "xyz";
@@ -262,7 +262,7 @@ int main() {
   double        fmt10   = bench("std::format", ITERS10, [&] { return std::format("{}={}={}={}={}  {}+{}+{}  {}x{}", d10.a0, d10.a1, d10.a2, d10.a3, d10.a4, d10.b0, d10.b1, d10.b2, d10.c0, d10.c1); });
 
 #ifdef INJAMM_BENCH_FMT
-  // ---- fmt::format with FMT_COMPILE (compile-time parsed format string) ----
+  // ---- fmt::format with FMT_COMPILE (コンパイル時パースするフォーマット文字列) ----
   std::printf("\n--- fmt::format (FMT_COMPILE: compile-time parse) ---\n");
   constexpr int ITERSF = 200000;
   double        f1     = bench("fmt FMT_COMPILE 1 var", ITERSF, [&] { return fmt::format(FMT_COMPILE("{}"), d1.val); });
@@ -272,7 +272,7 @@ int main() {
                                [&] { return fmt::format(FMT_COMPILE("{}={}={}={}={}  {}+{}+{}  {}x{}"), d10.a0, d10.a1, d10.a2, d10.a3, d10.a4, d10.b0, d10.b1, d10.b2, d10.c0, d10.c1); });
 #endif
 
-  // ---- escaped vs raw (3 vars, string contains HTML special chars) ----
+  // ---- エスケープ版と生出力の比較 (3 変数, 文字列に HTML 特殊文字を含む) ----
   std::printf("\n--- escaped vs raw (3 vars, HTML chars) ---\n");
   Data3 const dhtml{"a<b>&\"c\"'d'", 42, 9.9};
   auto constexpr kTmplEsc  = injamm::fixed_string("{{aaa}} = {{bbb}} on {{ccc}}");
@@ -290,7 +290,7 @@ int main() {
   double        raw3   = bench("injamm NTTP {{{...}}} 3 vars (raw)", ITERSE, [&] { return injamm::render<kTmpl3raw>(dhtml); });
   double        fmt3e  = bench("std::format (no escape)", ITERSE, [&] { return std::format("test example, {} = {} on {}", dhtml.aaa, dhtml.bbb, dhtml.ccc); });
 
-  // ---- runtime engine (constructed once, fresh string) ----
+  // ---- ランタイムエンジン (1 回構築して毎回新しい文字列を生成) ----
   std::printf("\n--- runtime engine (engine<T>, constructed once, fresh string) ---\n");
   injamm::engine<Data3> eng3("test example, {{aaa}} = {{bbb}} on {{ccc}}");
   for (int i = 0; i < 1000; ++i) {
@@ -301,7 +301,7 @@ int main() {
   double        eng     = bench("injamm engine render (fresh)", ITERSE3, [&] { return eng3.render(d3); });
   double        fmt3r   = bench("std::format", ITERSE3, [&] { return std::format("test example, {} = {} on {}", d3.aaa, d3.bbb, d3.ccc); });
 
-  // ---- buffer reuse (3 vars) ----
+  // ---- バッファ再利用 (3 変数) ----
   std::printf("\n--- buffer reuse (3 vars) ---\n");
   auto constexpr kTmpl3nt = injamm::fixed_string("test example, {{aaa}} = {{bbb}} on {{ccc}}");
   std::string reused;
@@ -328,8 +328,8 @@ int main() {
     return std::format_to(std::back_inserter(fbuf), "test example, {} = {} on {}", d3.aaa, d3.bbb, d3.ccc);
   });
 
-  // ---- mixed template: straight-line prefix/suffix + a section (hybrid path) ----
-  //  ハイブリッドは直線区間（"catalog: " / " end."）をコンパイル時アンロールし、
+  // ---- 混合テンプレート: 直線 prefix/suffix + section (ハイブリッド経路) ----
+  //  ハイブリッドは直線区間（"catalog: " / " end."）をコンパイル時アンロールし、
   //  {{#items}}...{{/items}} 本体はランタイム VM に委譲する。
   std::printf("\n--- mixed template: prefix/suffix (unrolled) + section (VM-delegated) ---\n");
   auto constexpr kTmplMixed =
@@ -382,7 +382,7 @@ int main() {
   double        ntWide     = bench("injamm NTTP wide partial (unroll)", ITERSWIDE, [&] { return injamm::render_partial<kTmplWide, injamm::fixed_string{"wide"}>(wrow); });
   double        engWideV   = bench("injamm engine wide partial (VM)", ITERSWIDE, [&] { return engWide.render(wrow, "wide"); });
 
-  // ---- summary ratio table (ratio = std::format ns / injamm ns) ----
+  // ---- サマリ比率表 (ratio = std::format ns / injamm ns) ----
   std::printf("\n=== summary: ratio = std::format ns / injamm ns (1.0 = same, <1 format faster, >1 injamm faster) ===\n");
   ratio_row("1 var (string)", fmt1, nt1);
   ratio_row("1 var (int)", fmt1i, nt1i);

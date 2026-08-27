@@ -126,7 +126,6 @@ inline void filter_indent(std::string& s, int n) {
 }
 
 inline void filter_pad(std::string& s, int n, std::string_view pad_str) {
-  // ponytail: VM と同一 — pad_str 空なら " " をデフォルトに
   if (n <= 0) return;
   if (static_cast<int>(s.size()) < n) {
     std::string_view use_pad = pad_str.empty() ? std::string_view{" "} : pad_str;
@@ -176,7 +175,6 @@ inline void filter_int_abs(std::string& s) {
 }
 
 inline void filter_int_hex(std::string& s) {
-  // ponytail: long long は filters.hpp と同一 (VM は long long)
   long long val = 0;
   if (auto [ptr, ec] = std::from_chars(s.data(), s.data() + s.size(), val); ec == std::errc{}) {
     char buf[32];
@@ -195,7 +193,6 @@ inline void filter_int_oct(std::string& s) {
 }
 
 inline void filter_int_bin(std::string& s) {
-  // ponytail: to_chars(base2) で負数も正しく処理 (VM と同一)
   long long val = 0;
   if (auto [ptr, ec] = std::from_chars(s.data(), s.data() + s.size(), val); ec == std::errc{}) {
     char buf[64];
@@ -236,7 +233,6 @@ inline void filter_int_neg(std::string& s) {
 }
 
 inline void filter_int_mod(std::string& s, int n) {
-  // ponytail: division_by_zero は静かに無視 (codegen は void 戻り値のためエラー返却不可)
   if (n == 0) return;
   long long val = 0;
   if (auto [ptr, ec] = std::from_chars(s.data(), s.data() + s.size(), val); ec == std::errc{}) {
@@ -264,7 +260,7 @@ inline void filter_int_is_neg(std::string& s) {
 
 /** @brief 小数文字列を含む場合の比較ヘルパ (VM の ne/gt/gte/lt/lte と同一ロジック) */
 inline bool filter_int_cmp_float(std::string_view s, int op, int target) {
-  // op: 0=ne, 1=gt, 2=gte, 3=lt, 4=lte
+  // op: 0=ne, 1=gt, 2=gte, 3=lt, 4=lte（比較オペコード）
   double val = 0.0;
   if (auto [p, ec] = std::from_chars(s.data(), s.data() + s.size(), val); ec == std::errc{}) {
     double ftarget = static_cast<double>(target);
@@ -419,7 +415,6 @@ inline void filter_int_mul(std::string& s, int n) {
 }
 
 inline void filter_int_div(std::string& s, int n) {
-  // ponytail: division_by_zero は静かに無視 (codegen は void 戻り値のためエラー返却不可)
   if (n == 0) return;
   if (s.find('.') != std::string::npos || s.find('e') != std::string::npos || s.find('E') != std::string::npos) {
     double val = 0.0;

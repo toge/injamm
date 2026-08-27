@@ -137,7 +137,7 @@ static int bench_filter_chain() {
 
   injamm::engine<Person> eng(tmpl);
 
-  // warmup
+  // ウォームアップ
   for (int i = 0; i < 1000; ++i)
     (void)eng.render(alice);
 
@@ -162,7 +162,7 @@ static int bench_buffer_prealloc() {
   for (int i = 0; i < 100; ++i)
     (void)eng.render(bob);
 
-  // Measure total allocation size by comparing string capacity
+  // 文字列のキャパシティを比較して合計アロケーション量を計測
   auto r = eng.render(bob);
   (void)r;
 
@@ -189,7 +189,7 @@ static int bench_buffer_reuse() {
   constexpr int ITERS = 50000;
   std::string out;
 
-  // new string each time
+  // 毎回新しい文字列を生成
   {
     auto start = std::chrono::high_resolution_clock::now();
     for (int i = 0; i < ITERS; ++i) {
@@ -201,7 +201,7 @@ static int bench_buffer_reuse() {
     std::printf("  buffer_reuse new_string x %d: %.0f us  (%.1f ns/call)\n", ITERS, us, us * 1000.0 / ITERS);
   }
 
-  // reuse buffer
+  // バッファを再利用
   {
     std::string reused;
     auto start = std::chrono::high_resolution_clock::now();
@@ -288,7 +288,7 @@ static int bench_ct_partial_selected() {
     "{{#partialdef transitive_child}}CHILD:{{#partial leaf}}{{/partialdef}}"
     "{{#partialdef unused}}NEVER{{/partialdef}}");
 
-  // warmup
+  // ウォームアップ
   for (int i = 0; i < 1000; ++i)
     (void)injamm::render_partial<kTmpl, "leaf">(dave);
 
@@ -479,7 +479,7 @@ static int bench_filter_dispatch() {
 
   constexpr int ITERS = 100000;
 
-  // no filter
+  // フィルタなし
   {
     auto start = std::chrono::high_resolution_clock::now();
     for (int i = 0; i < ITERS; ++i)
@@ -489,7 +489,7 @@ static int bench_filter_dispatch() {
     std::printf("  no_filter x %d: %.0f us  (%.1f ns/call)\n", ITERS, us, us * 1000.0 / ITERS);
   }
 
-  // with filter
+  // フィルタあり
   {
     auto start = std::chrono::high_resolution_clock::now();
     for (int i = 0; i < ITERS; ++i)
@@ -499,7 +499,7 @@ static int bench_filter_dispatch() {
     std::printf("  with_filter x %d: %.0f us  (%.1f ns/call)\n", ITERS, us, us * 1000.0 / ITERS);
   }
 
-  // multi-filter chain
+  // 複数フィルタのチェーン
   injamm::engine<Person> eng_multi("Hello {{name|trim|upper|truncate:10}}");
   for (int i = 0; i < 1000; ++i)
     (void)eng_multi.render(alice);
@@ -660,7 +660,7 @@ static int bench_enum_resolve() {
   injamm::engine<EnumItem> eng_str("{{name}}");
   // enum フィールドのみ
   injamm::engine<EnumItem> eng_enum("{{color}}");
-  // string + enum
+  // string と enum
   injamm::engine<EnumItem> eng_both("{{name}} {{color}}");
 
   for (int i = 0; i < 1000; ++i) {
@@ -783,9 +783,9 @@ static int bench_many_vars() {
 /**
  * @brief ネストパス解決のマイクロベンチマーク
  *
- * 2-level: "{{name}} by {{founder.name}} in {{founder.address.city}}"
- * 3-level: "{{founder.address.country}}"
- * compile: runtime compile + render (parse コスト込み)
+ * 2 階層: "{{name}} by {{founder.name}} in {{founder.address.city}}"
+ * 3 階層: "{{founder.address.country}}"
+ * compile: 実行時コンパイル + レンダリング (parse コスト込み)
  */
 static int bench_nested_path() {
   BCompany company{"Acme", BFounder{"Alice", BAddress{"Tokyo", "Japan"}}};
@@ -820,7 +820,7 @@ static int bench_nested_path() {
     std::printf("  BC  nested_3level x %d: %.0f us  (%.1f ns/call)\n", ITERS, us, us * 1000.0 / ITERS);
   }
 
-  // NTTP: 2-level
+  // NTTP: 2 階層
   auto constexpr kNTTP2 = injamm::fixed_string("{{name}} by {{founder.name}} in {{founder.address.city}}");
   for (int i = 0; i < 1000; ++i)
     (void)injamm::render<kNTTP2>(company);
@@ -833,7 +833,7 @@ static int bench_nested_path() {
     std::printf("  NTTP nested_2level x %d: %.0f us  (%.1f ns/call)\n", ITERS, us, us * 1000.0 / ITERS);
   }
 
-  // NTTP: 3-level
+  // NTTP: 3 階層
   auto constexpr kNTTP3 = injamm::fixed_string("{{founder.address.country}}");
   for (int i = 0; i < 1000; ++i)
     (void)injamm::render<kNTTP3>(company);

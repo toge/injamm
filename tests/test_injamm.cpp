@@ -14,7 +14,7 @@
 #include <vector>
 
 // ---- テスト用データ型 ----
-// (existing types: BcUser, BcUsersData, BcBoolData, BcNested, BcOuter, BcAddress, BcFounder, BcCompany, BcIfData)
+// （既存の型: BcUser, BcUsersData, BcBoolData, BcNested, BcOuter, BcAddress, BcFounder, BcCompany, BcIfData）
 
 struct BcRootData {
   std::string app_name{"injamm"};
@@ -83,7 +83,7 @@ struct glz::meta<BcLlData> {
   static constexpr auto value = glz::object("val", &BcLlData::val);
 };
 
-// (Rest of existing types...)
+// （以降の構造体定義が続く）
 
 /**
  * @brief セクションテスト用のユーザーデータ型
@@ -854,7 +854,7 @@ TEST_CASE("bc_nested_path_deep", "[injamm]") {
   REQUIRE(*r == "NYC");
 }
 
-// ---- struct field rendering via {{xxx}} (non-builtin types) ----
+// ---- 構造体フィールドの {{xxx}} レンダリング（非組み込み型） ----
 
 namespace test_custom {
 struct CustomPoint {
@@ -2305,6 +2305,70 @@ TEST_CASE("float_filter: precision four", "[float_filter]") {
   REQUIRE(*result == "3.1416");
 }
 
+TEST_CASE("float_filter: round no arg", "[float_filter]") {
+  BcFloatData data{10.6};
+  auto        bc     = injamm::engine<BcFloatData>("{{value | round}}");
+  auto        result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "11");
+}
+
+TEST_CASE("float_filter: round half up positive", "[float_filter]") {
+  BcFloatData data{10.5};
+  auto        bc     = injamm::engine<BcFloatData>("{{value | round}}");
+  auto        result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "11");
+}
+
+TEST_CASE("float_filter: round half up negative", "[float_filter]") {
+  BcFloatData data{-10.5};
+  auto        bc     = injamm::engine<BcFloatData>("{{value | round}}");
+  auto        result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "-11");
+}
+
+TEST_CASE("float_filter: round down", "[float_filter]") {
+  BcFloatData data{10.4};
+  auto        bc     = injamm::engine<BcFloatData>("{{value | round}}");
+  auto        result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "10");
+}
+
+TEST_CASE("float_filter: round precision 1", "[float_filter]") {
+  BcFloatData data{10.44};
+  auto        bc     = injamm::engine<BcFloatData>("{{value | round(1)}}");
+  auto        result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "10.4");
+}
+
+TEST_CASE("float_filter: round precision 1 carry", "[float_filter]") {
+  BcFloatData data{10.46};
+  auto        bc     = injamm::engine<BcFloatData>("{{value | round(1)}}");
+  auto        result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "10.5");
+}
+
+TEST_CASE("float_filter: round integer passthrough", "[float_filter]") {
+  BcFloatData data{10.0};
+  auto        bc     = injamm::engine<BcFloatData>("{{value | round}}");
+  auto        result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "10");
+}
+
+TEST_CASE("float_filter: round negative precision 1", "[float_filter]") {
+  BcFloatData data{-10.46};
+  auto        bc     = injamm::engine<BcFloatData>("{{value | round(1)}}");
+  auto        result = bc.render(data);
+  REQUIRE(result);
+  REQUIRE(*result == "-10.5");
+}
+
 TEST_CASE("float_filter: numify integer", "[float_filter]") {
   BcFloatData data{1234567.0};
   auto        bc     = injamm::engine<BcFloatData>("{{value | numify}}");
@@ -3030,7 +3094,7 @@ TEST_CASE("legacy @root.X is rejected (engine path)", "[injamm][loop][legacy]") 
   CHECK(*r == "");
 }
 
-// ---- trim_blocks / lstrip_blocks tests ----
+// ---- trim_blocks / lstrip_blocks テスト ----
 
 TEST_CASE("trim_blocks removes newline after }}", "[injamm][whitespace]") {
   BcUser data{"Alice", 30};
@@ -3054,7 +3118,7 @@ TEST_CASE("trim_blocks with section open/close", "[injamm][whitespace]") {
   auto       r   = eng.render(data);
   REQUIRE(r.has_value());
   CHECK(*r == "xy\nz");
-  // After {{#flag}}: \n removed. Body: "y\n". After {{/flag}}: no \n (next char is z).
+  // {{#flag}} の直後の \n は除去され、本体は "y\n" のまま。{{/flag}} 直後は \n がなく、z が直後の文字。
 }
 
 TEST_CASE("trim_blocks with if/else", "[injamm][whitespace]") {
@@ -3631,7 +3695,7 @@ TEST_CASE("enum_raw_output", "[injamm][enum]") {
 }
 
 TEST_CASE("enum_pending_output", "[injamm][enum]") {
-  /** {{status}} → "Pending" */
+  /** {{status}} → "Pending" を返す */
   BcEnumData data{.status = BcStatus::Pending};
   auto       bc = injamm::engine<BcEnumData>("Status: {{status}}");
   auto       r  = bc.render(data);
@@ -3960,7 +4024,7 @@ TEST_CASE("simple_partial_literal_only", "[injamm][partial]") {
 }
 
 TEST_CASE("simple_partial_with_vars", "[injamm][partial]") {
-  // Use BcPartialUser directly as context ({{#user}} on struct iterates fields, not element)
+  // BcPartialUser をそのままコンテキストに使う（{{#user}} は構造体のフィールドを反復し、要素としては扱わない）
   BcPartialUser user{"Alice", 30};
   auto          eng = injamm::engine<BcPartialUser>{"{{#partialdef greeting}}{{name}}-{{age}}{{/partialdef}}{{#partial greeting}}|"};
   auto          r   = eng.render(user);
@@ -4300,10 +4364,10 @@ TEST_CASE("disassemble_if_filtered", "[disassemble]") {
 // {#...#} 形式のコメントを除去する constexpr ユーティリティ。
 // 先頭が {{# のように '{' が前にある場合はエスケープされコメントとみなさない。
 
-// ---- chrono format filter ----
+// ---- chrono format フィルタ ----
 
 TEST_CASE("chrono: format filter basic", "[filter][chrono]") {
-  // 2024-01-15 10:30:00 UTC = 1705312200
+  // 2024-01-15 10:30:00 UTC は Unix 時刻 1705312200 に対応する
   auto       tp = std::chrono::system_clock::from_time_t(1705312200);
   ChronoData d{tp};
   auto       bc     = injamm::engine<ChronoData>("{{ ts | format(\"%Y-%m-%d\") }}");
@@ -4546,7 +4610,7 @@ TEST_CASE("binding: unknown_key error preempts binding resolution (C2-b)", "[inj
   CHECK(*r == "ab");
 }
 
-// ---- E2/E3: {{& var}} raw output / {{.}} alias for {{this}} ----
+// ---- E2/E3: {{& var}} 生出力 / {{this}} の別名としての {{.}} ----
 
 struct BcEscRoot {
   std::string name;
@@ -4578,7 +4642,7 @@ TEST_CASE("bc_struct_field_json_escaped_via_var", "[injamm][struct_var]") {
   auto      bc = injamm::engine<BcEscRoot>("{{name}}|{{this}}");
   auto      r  = bc.render(d);
   REQUIRE(r.has_value());
-  // {{name}} escapes HTML; {{this}} produces JSON and escapes the whole string
+  // {{name}} は HTML エスケープ、{{this}} は JSON へシリアライズした上で文字列全体をエスケープする
   REQUIRE(*r == "hello &amp; &lt;world&gt;|{&quot;name&quot;:&quot;hello &amp; &lt;world&gt;&quot;}");
 }
 
@@ -4808,6 +4872,46 @@ struct glz::meta<SectionFilterData5> {
   static constexpr auto value = glz::object("items", &SectionFilterData5::items);
 };
 
+// ---- section sort テスト用構造体 ----
+struct SortIntData1 { std::vector<int> items{3, 1, 2}; };
+template <> struct glz::meta<SortIntData1> {
+  static constexpr auto value = glz::object("items", &SortIntData1::items);
+};
+struct SortIntData2 { std::vector<int> items{1, 3, 2}; };
+template <> struct glz::meta<SortIntData2> {
+  static constexpr auto value = glz::object("items", &SortIntData2::items);
+};
+struct SortStrData { std::vector<std::string> items{"banana", "apple", "cherry"}; };
+template <> struct glz::meta<SortStrData> {
+  static constexpr auto value = glz::object("items", &SortStrData::items);
+};
+struct SortIntData3 { std::vector<int> items{2, 1, 2, 1, 3}; };
+template <> struct glz::meta<SortIntData3> {
+  static constexpr auto value = glz::object("items", &SortIntData3::items);
+};
+struct SortIntData4 { std::vector<int> items{5, 3, 1, 4, 2}; };
+template <> struct glz::meta<SortIntData4> {
+  static constexpr auto value = glz::object("items", &SortIntData4::items);
+};
+struct SortIntData5 { std::vector<int> items{}; };
+template <> struct glz::meta<SortIntData5> {
+  static constexpr auto value = glz::object("items", &SortIntData5::items);
+};
+
+// ---- section join テスト用構造体 ----
+struct JoinStrData { std::vector<std::string> items{"apple", "banana", "cherry"}; };
+template <> struct glz::meta<JoinStrData> {
+  static constexpr auto value = glz::object("items", &JoinStrData::items);
+};
+struct JoinSingleData { std::vector<std::string> items{"only"}; };
+template <> struct glz::meta<JoinSingleData> {
+  static constexpr auto value = glz::object("items", &JoinSingleData::items);
+};
+struct JoinEmptyData { std::vector<std::string> items{}; };
+template <> struct glz::meta<JoinEmptyData> {
+  static constexpr auto value = glz::object("items", &JoinEmptyData::items);
+};
+
 TEST_CASE("section reverse", "[section][filter]") {
   auto out = injamm::engine<SectionFilterData>("{{#items | reverse}}{{this}} {{/items}}").render(SectionFilterData{});
   REQUIRE(out);
@@ -4832,6 +4936,88 @@ TEST_CASE("section reverse take chain", "[section][filter]") {
   auto out = injamm::engine<SectionFilterData5>("{{#items | reverse | take(2)}}[{{loop.index}}:{{loop.is_first}}:{{loop.is_last}}={{this}}]{{/items}}").render(SectionFilterData5{});
   REQUIRE(out);
   CHECK(*out == "[0:true:false=5][1:false:true=4]");
+}
+
+TEST_CASE("section sort ascending int", "[section][filter]") {
+  // items = {3, 1, 2} → ソート後 {1, 2, 3}
+  SortIntData1 d;
+  auto out = injamm::engine<SortIntData1>("{{#items | sort}}{{this}} {{/items}}").render(d);
+  REQUIRE(out);
+  CHECK(*out == "1 2 3 ");
+}
+
+TEST_CASE("section sort descending int", "[section][filter]") {
+  SortIntData2 d;
+  auto out = injamm::engine<SortIntData2>("{{#items | sort(reverse=true)}}{{this}} {{/items}}").render(d);
+  REQUIRE(out);
+  CHECK(*out == "3 2 1 ");
+}
+
+TEST_CASE("section sort ascending string", "[section][filter]") {
+  SortStrData d;
+  auto out = injamm::engine<SortStrData>("{{#items | sort}}{{this}} {{/items}}").render(d);
+  REQUIRE(out);
+  CHECK(*out == "apple banana cherry ");
+}
+
+TEST_CASE("section sort stable", "[section][filter]") {
+  // 安定ソート: 同一値でも元の順序を保つ
+  SortIntData3 d;
+  auto out = injamm::engine<SortIntData3>("{{#items | sort}}{{this}} {{/items}}").render(d);
+  REQUIRE(out);
+  CHECK(*out == "1 1 2 2 3 ");
+}
+
+TEST_CASE("section sort with take", "[section][filter]") {
+  SortIntData4 d;
+  // sort してから先頭2件
+  auto out = injamm::engine<SortIntData4>("{{#items | sort | take(2)}}{{this}} {{/items}}").render(d);
+  REQUIRE(out);
+  CHECK(*out == "1 2 ");
+}
+
+TEST_CASE("section sort on empty", "[section][filter]") {
+  SortIntData5 d;
+  auto out = injamm::engine<SortIntData5>("{{#items | sort}}{{this}} {{/items}}").render(d);
+  REQUIRE(out);
+  CHECK(*out == "");
+}
+
+// ---- section join テスト ----
+TEST_CASE("section join basic", "[section][filter]") {
+  JoinStrData d;
+  auto out = injamm::engine<JoinStrData>(R"({{#items | join(", ")}}{{this}}{{/items}})").render(d);
+  REQUIRE(out);
+  CHECK(*out == "apple, banana, cherry");
+}
+
+TEST_CASE("section join no separator", "[section][filter]") {
+  JoinStrData d;
+  auto out = injamm::engine<JoinStrData>(R"({{#items | join("")}}{{this}}{{/items}})").render(d);
+  REQUIRE(out);
+  CHECK(*out == "applebananacherry");
+}
+
+TEST_CASE("section join single element", "[section][filter]") {
+  JoinSingleData d;
+  auto out = injamm::engine<JoinSingleData>(R"({{#items | join(", ")}}{{this}}{{/items}})").render(d);
+  REQUIRE(out);
+  CHECK(*out == "only");
+}
+
+TEST_CASE("section join empty list", "[section][filter]") {
+  JoinEmptyData d;
+  auto out = injamm::engine<JoinEmptyData>(R"({{#items | join(", ")}}{{this}}{{/items}})").render(d);
+  REQUIRE(out);
+  CHECK(*out == "");
+}
+
+TEST_CASE("section join with sort", "[section][filter]") {
+  JoinStrData d;
+  // ソート後にカンマ区切りで結合
+  auto out = injamm::engine<JoinStrData>(R"({{#items | sort | join(", ")}}{{this}}{{/items}})").render(d);
+  REQUIRE(out);
+  CHECK(*out == "apple, banana, cherry");
 }
 
 TEST_CASE("section take loop.size", "[section][filter]") {

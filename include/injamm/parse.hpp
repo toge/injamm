@@ -436,12 +436,17 @@ struct section_filter_op {
   section_filter_op_kind kind;
   int arg = 0;  /**< take/skip/take_last/skip_last の引数、stride の取得数 */
   int arg2 = 0; /**< stride のスキップ数 */
+  std::string_view str_arg1; /**< join の separator 文字列 */
 };
 
 /** @brief セクションフィルタ名を解析する */
 [[nodiscard]] constexpr std::optional<section_filter_op> parse_section_filter(std::string_view name) noexcept {
   if (name == "reverse")
     return section_filter_op{section_filter_op_kind::reverse, 0};
+  if (name == "sort")
+    return section_filter_op{section_filter_op_kind::sort, 0};
+  if (name == "sort(reverse=true)")
+    return section_filter_op{section_filter_op_kind::sort, 1};
   auto paren = constexpr_find(name, '(');
   if (paren != std::string_view::npos && name.back() == ')') {
     auto fn = name.substr(0, paren);
@@ -453,6 +458,25 @@ struct section_filter_op {
         return section_filter_op{section_filter_op_kind::stride, parse_int_arg(arg_str), 0};
       return section_filter_op{section_filter_op_kind::stride, parse_int_arg(arg_str.substr(0, comma)),
                                parse_int_arg(arg_str.substr(comma + 1))};
+    }
+    if (fn == "sort") {
+      // sort(reverse=true|false) のみ受理。arg=1で降順、arg=0で昇順
+      auto kw_reverse = constexpr_find(arg_str, "reverse=true");
+      auto kw_false   = constexpr_find(arg_str, "reverse=false");
+      int arg = 0;
+      if (kw_reverse != std::string_view::npos &&
+          (kw_false == std::string_view::npos || kw_reverse < kw_false)) {
+        arg = 1;
+      }
+      return section_filter_op{section_filter_op_kind::sort, arg};
+    }
+    if (fn == "join") {
+      // join(separator): 区切り文字列を保持
+      auto sep = trim_sv(arg_str);
+      if (sep.size() >= 2 && sep.front() == '"' && sep.back() == '"') {
+        sep = sep.substr(1, sep.size() - 2);
+      }
+      return section_filter_op{section_filter_op_kind::join, 0, 0, sep};
     }
     auto arg = parse_int_arg(arg_str);
     if (fn == "take") return section_filter_op{section_filter_op_kind::take, arg};
@@ -476,7 +500,11 @@ struct section_filter_op {
     int  arg     = parse_int_arg(arg_str);
     if (fname == "precision")
       return float_filter_entry{float_filter::precision, arg};
+    if (fname == "round")
+      return float_filter_entry{float_filter::round, arg};
   }
+  if (name == "round")
+    return float_filter_entry{float_filter::round, 0};
   return std::nullopt;
 }
 
@@ -636,9 +664,6 @@ template <class ConstMap>
       if (!expanded) {
         return std::unexpected(expanded.error());
       }
-      // ponytail: @var 値が既に {{{...}}} / {{...}} タグならそのまま差し込み（二重ラップ回避）、
-      // さもなくば既存の裸名前規約に合わせて {{{...}}} で包む。値はトリムして
-      // 元タグの内部パディング空白を落とす。
       auto raw_trim = trim_sv(*expanded);
       if (raw_trim.starts_with("{{{") || raw_trim.starts_with("{{")) {
         result += raw_trim;
@@ -663,9 +688,6 @@ template <class ConstMap>
       return std::unexpected(expanded.error());
     }
 
-    // ponytail: @var 値が既に {{...}} タグならそのまま差し込み（二重ラップ回避）、
-    // さもなくば既存の裸名前規約に合わせて {{...}} で包む。値はトリムして
-    // 元タグの内部パディング空白を落とす。
     auto norm_trim = trim_sv(*expanded);
     if (norm_trim.starts_with("{{")) {
       result += norm_trim;

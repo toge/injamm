@@ -223,7 +223,7 @@ struct fixed_string {
 #endif
 };
 
-// ---- runtime field access concept (shared with sqlite3 ext) ----
+// ---- ランタイムフィールドアクセス concept（sqlite3 ext との共有） ----
 namespace detail {
 
   /** @brief 出力先 sink の制約。std::string も満たす（テンプレート sink 方式の中核）
@@ -277,7 +277,7 @@ namespace detail {
 
 }  // namespace detail
 
-// ponytail: クラステンプレート推定ガイド。injamm::fixed_string("...") で N を推定可能に。
+// クラステンプレートの推定ガイド。injamm::fixed_string("...") で N を推定可能にする。
 template <std::size_t N>
 fixed_string(char const (&str)[N]) -> fixed_string<N>;
 

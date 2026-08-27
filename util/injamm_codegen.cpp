@@ -381,7 +381,7 @@ class code_generator {
   std::unordered_set<int> stride_loops_;
   std::ostringstream out_;     /**< 出力ストリーム */
 
-  // ponytail: フィルタの文字列引数は VM 同様 var_ref.filters に格納され、filter_string
+  // フィルタの文字列引数は VM と同様 var_ref.filters に格納され、filter_string
   // オペコードの operand3 には入らない。resolve_filtered で現在の var_ref を記録し、
   // 後続の filter_string が対応エントリから文字列引数を読めるよう位置を追跡する。
   bc::var_ref const* cur_filter_ref_ = nullptr; /**< フィルタチェーン中の現在の var_ref */
@@ -770,7 +770,7 @@ class code_generator {
    * @return 補間値出力命令の総数
    */
   std::size_t count_interpolations(bc::bytecode const& bc) {
-    // ponytail: ループ内の補間も1回として数える。reserve はヒントであり、
+    // ループ内の補間も1回として数える。reserve はヒントであり、
     // 実出力超過時は string が自動拡張される。過小見積もり（再確保）の回避が主目的。
     std::size_t n = 0;
     for (auto const& inst : bc.instructions) {
@@ -1027,7 +1027,7 @@ class code_generator {
         }
       }
       if (use_json) {
-        // serializable → serialize_value, reflectable → glz::write_json
+        // serializable な型は serialize_value、reflectable な型は glz::write_json を使う
         emit("if constexpr (::injamm::detail::serializable_v<decltype(" + access + ")>) {");
         ++indent_;
         emit("_filtered.clear(); ::injamm::detail::serialize_value(_filtered, " + access + ");");
@@ -1038,7 +1038,7 @@ class code_generator {
         --indent_;
         emit("} else {");
         ++indent_;
-        // ponytail: assign(const string&) は内部で size() を 2回呼ぶので
+        // assign(const string&) は内部で size() を 2回呼ぶので
         // (data, size) 版で 1 回に減らす。
         emit("_filtered.assign((" + access + ").data(), (" + access + ").size());");
         --indent_;
@@ -1059,7 +1059,8 @@ class code_generator {
           --indent_;
           emit("} else ");
         }
-        // serializable → serialize_value, reflectable → glz::write_json, fallback → assign
+        // serializable な型は serialize_value、reflectable な型は glz::write_json、
+        // それ以外は assign にフォールバック
         emit("if constexpr (::injamm::detail::serializable_v<decltype(" + access + ")>) {");
         ++indent_;
         emit("_filtered.clear(); ::injamm::detail::serialize_value(_filtered, " + access + ");");
@@ -1070,7 +1071,7 @@ class code_generator {
         --indent_;
         emit("} else {");
         ++indent_;
-        // ponytail: assign(const string&) は内部で size() を 2回呼ぶので
+        // assign(const string&) は内部で size() を 2回呼ぶので
         // (data, size) 版で 1 回に減らす。
         emit("_filtered.assign((" + access + ").data(), (" + access + ").size());");
         --indent_;
@@ -1188,7 +1189,7 @@ class code_generator {
       emit("continue;");
     }
     else if (op == bc::opcode::halt) {
-      // no-op
+      // 何もしない
     }
     else {
       emit("// TODO: opcode " + std::to_string(static_cast<int>(op)));

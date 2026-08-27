@@ -247,13 +247,13 @@ TEST_CASE("ct_raw_output", "[injamm][ct]") {
   REQUIRE(*r == "<b>alice</b>");
 }
 
-// ---- {{this}} ----
+// ---- {{this}} ----（構造体を JSON 化してレンダリング）
 
 TEST_CASE("ct_this", "[injamm][ct]") {
   auto constexpr tmpl = injamm::fixed_string("{{this}}");
   auto r              = injamm::render<tmpl>(CtUser{"alice", 30});
   REQUIRE(r.has_value());
-  // Struct {{this}} serializes as JSON, HTML-escaped
+  // 構造体に対する {{this}} は JSON へシリアライズされ、HTML エスケープされた上で出力される
   REQUIRE(*r == "{&quot;name&quot;:&quot;alice&quot;,&quot;age&quot;:30}");
 }
 
@@ -276,7 +276,7 @@ TEST_CASE("ct_section", "[injamm][ct]") {
   CHECK(*r == "alice-30/bob-25/");
 }
 
-// ---- {{! comment}} ----
+// ---- {{! コメント}} ----
 
 TEST_CASE("ct_bang_comment_basic", "[injamm][ct][bang_comment]") {
   CtUser user{"Alice", 30};
@@ -306,7 +306,7 @@ TEST_CASE("ct_bang_comment_multiple", "[injamm][ct][bang_comment]") {
   CHECK(*r == "abc");
 }
 
-// ---- {{#exists var}} / {{^exists var}} ----
+// ---- {{#exists var}} / {{^exists var}} ----（存在チェックのセクション／逆セクション）
 
 TEST_CASE("ct_exists_section_truthy", "[injamm][ct][exists]") {
   CtIfData data{"hello", 42};
@@ -336,7 +336,7 @@ TEST_CASE("ct_exists_inverted_truthy", "[injamm][ct][exists]") {
   CHECK(*r == "");
 }
 
-// ---- {{root}} ----
+// ---- {{root}} ----（ルートコンテキストへのアクセス）
 
 TEST_CASE("ct_root_placeholder", "[injamm][ct][root]") {
   CtRootData data;
@@ -352,7 +352,7 @@ TEST_CASE("ct_root_field_works_as_before", "[injamm][ct][root]") {
   CHECK(*r == "injamm");
 }
 
-// ---- {{#if !X}} negation ----
+// ---- {{#if !X}} 否定 ----
 
 TEST_CASE("ct_if_not_var_truthy", "[injamm][ct][if_not]") {
   CtBoolData data{true};
@@ -396,7 +396,7 @@ TEST_CASE("ct_if_not_string_empty", "[injamm][ct][if_not]") {
   CHECK(*r == "EMPTY");
 }
 
-// ---- {{#if name == "hello"}} string comparison ----
+// ---- {{#if name == "hello"}} 文字列比較 ----
 
 TEST_CASE("ct_if_string_eq_true", "[injamm][ct][string_cmp]") {
   CtUser data{"hello", 0};
@@ -433,7 +433,7 @@ TEST_CASE("ct_if_string_eq_with_else", "[injamm][ct][string_cmp]") {
   CHECK(*r == "42");
 }
 
-// ---- {{~...~}} tilde whitespace control ----
+// ---- {{~...~}} チルダによる空白制御 ----
 
 TEST_CASE("ct_tilde_stripped_from_inner", "[injamm][ct][tilde]") {
   CtBoolData data{true};
@@ -824,7 +824,7 @@ TEST_CASE("ct_struct_field_json_via_var", "[injamm][ct][struct_var]") {
   REQUIRE(*r == "{&quot;name&quot;:&quot;John&quot;,&quot;address&quot;:{&quot;city&quot;:&quot;NYC&quot;,&quot;country&quot;:&quot;USA&quot;}}");
 }
 
-// ---- @root ----
+// ---- @root ----（ルートコンテキストへのアクセス）
 
 TEST_CASE("ct_at_root_field_simple", "[injamm][ct]") {
   auto constexpr tmpl = injamm::fixed_string("{{root.app_name}}");
@@ -842,7 +842,7 @@ TEST_CASE("ct_at_root_field_nested", "[injamm][ct]") {
   REQUIRE(*r == "1.0");
 }
 
-// ---- if/else ----
+// ---- if/else ----（条件分岐）
 
 TEST_CASE("ct_if_true", "[injamm][ct]") {
   auto constexpr tmpl = injamm::fixed_string("{{#if age}}adult{{/if}}");
@@ -886,7 +886,7 @@ TEST_CASE("ct_if_else_with_section", "[injamm][ct]") {
   REQUIRE(*r == "a,b,c.");
 }
 
-// ---- std::optional ----
+// ---- std::optional ----（nullopt 許容フィールド）
 
 TEST_CASE("ct_optional_present", "[injamm][ct]") {
   auto constexpr tmpl = injamm::fixed_string("{{#opt_str}}yes{{/opt_str}}");
@@ -1428,7 +1428,7 @@ TEST_CASE("ct_if_filter_chain_ne", "[injamm][ct]") {
   REQUIRE(*r == "not_divisible");
 }
 
-// ---- break / continue ----
+// ---- break / continue ----（ループ制御）
 
 TEST_CASE("ct_break", "[injamm][ct]") {
   auto constexpr tmpl = injamm::fixed_string("{{#users}}{{name}}{{#if loop.is_last}}.{{else}}{{#break}}{{/if}}{{/users}}");
@@ -1470,7 +1470,7 @@ TEST_CASE("ct_struct_iteration", "[injamm][ct]") {
   CtMapWrapper data;
   auto         r = injamm::render<tmpl>(data);
   REQUIRE(r.has_value());
-  // Iterates over config's field members
+  // config のフィールドメンバを反復して描画する
   REQUIRE(*r == "host=localhost;port=8080;");
 }
 
@@ -1639,7 +1639,7 @@ TEST_CASE("ct_set_if_empty", "[injamm][ct][set]") {
   REQUIRE(*r == "");
 }
 
-// ---- @var NTTP expansion ----
+// ---- @var NTTP expansion ----（NTTP での @var 展開）
 
 // ---- @var NTTP expansion 用データ型 ----
 
@@ -1661,7 +1661,7 @@ struct glz::meta<CtAtVarItemsCtx> {
   static constexpr auto value = glz::object("items", &CtAtVarItemsCtx::items);
 };
 
-// ---- @var NTTP expansion ----
+// ---- @var NTTP expansion ----（NTTP での @var 展開）
 
 TEST_CASE("@var basic expansion in render (NTTP)", "[injamm][ct][atvar]") {
   CtUser ctx{"Alice", 30};
@@ -1740,7 +1740,7 @@ TEST_CASE("ct_comment_multiple", "[injamm][ct][comment]") {
   CHECK(*r == "beforeAliceafter");
 }
 
-// ---- trim_blocks / lstrip_blocks tests (CT) ----
+// ---- trim_blocks / lstrip_blocks テスト（CT 版） ----
 
 TEST_CASE("ct_trim_blocks removes newline after }}", "[injamm][ct][whitespace]") {
   CtUser user{"Alice", 30};
@@ -2414,14 +2414,14 @@ TEST_CASE("ct_render_into_buffer_reuse", "[injamm][ct][buffer_reuse]") {
 }
 
 TEST_CASE("ct_render_into_atvar", "[injamm][ct][buffer_reuse][atvar]") {
-  // @var(field) expands to "name", then {{name}} resolves to struct field "name"
+  // @var(field) は "name" に展開され、続く {{name}} が構造体フィールド name に解決される
   auto constexpr tmpl = injamm::fixed_string("{{@var(field)}}:{{age}}");
   CtUser const user{"Alice", 30};
-  // non-buffer version
+  // バッファ非再利用版
   auto r0 = injamm::render<tmpl, "field", "name">(user);
   REQUIRE(r0.has_value());
   CHECK(*r0 == "Alice:30");
-  // buffer-reuse version
+  // バッファ再利用版
   std::string buf;
   auto        r = injamm::render<tmpl, "field", "name">(user, buf);
   REQUIRE(r.has_value());
@@ -2437,7 +2437,7 @@ TEST_CASE("ct_render_into_error_propagated", "[injamm][ct][buffer_reuse][error]"
   CHECK(r.error().ec == injamm::error_code::unknown_key);
 }
 
-// ---- chrono format filter (NTTP) ----
+// ---- chrono format フィルタ（NTTP） ----
 
 TEST_CASE("ct_chrono_format", "[injamm][ct][chrono]") {
   CtChronoData d{std::chrono::system_clock::from_time_t(1705312200)};
@@ -2488,7 +2488,7 @@ TEST_CASE("ct_zip: reflectable element field access", "[injamm][ct][zip]") {
   CHECK(*r == "AliceBob");
 }
 
-// ---- partials ----
+// ---- partials ----（テンプレートの部分定義）
 
 TEST_CASE("ct_partial_literal_only", "[injamm][ct][partial]") {
   CtUser user{"Alice", 30};
@@ -2925,7 +2925,7 @@ TEST_CASE("ct: section key with misaligned index between root and element type (
   CHECK(*r == "apple");
 }
 
-// ---- E2/E3: {{& var}} raw output / {{.}} alias for {{this}} (NTTP) ----
+// ---- E2/E3: {{& var}} 生出力 / {{this}} の別名としての {{.}} （NTTP） ----
 
 struct CtEscTest {
   std::string text;

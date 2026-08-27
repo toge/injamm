@@ -125,6 +125,7 @@ struct bc_var_ref {
     section_filter_op_kind kind = section_filter_op_kind::reverse;
     std::int32_t arg = 0;  /**< take/skip/take_last/skip_last の引数、stride の取得数 */
     std::int32_t arg2 = 0; /**< stride のスキップ数 */
+    std::string_view str_arg1; /**< join の separator 文字列 */
   };
   static constexpr std::uint8_t max_section_ops = 4;
   std::array<section_op, max_section_ops> section_ops{};

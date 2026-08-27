@@ -585,9 +585,6 @@ namespace detail {
     return result;
   }
 
-  // ponytail: 循環参照（A→B→A）は visited で無限ループを回避するがトポ順が付かず、
-  // 実行時コンパイルで unknown_key になる。前方参照不可という現行制約の範囲内。
-
   // 指定 partial とその推移的依存だけをコンパイルし、それ以外を byte コードから捨てる。
   // fixed_string / FrozenString 両対応: nttp_string_view が橋渡しするため単一 auto テンプレートで足りる。
   template <typename Data, auto PartialName, typename T>

@@ -105,7 +105,8 @@ enum class int_filter : std::uint8_t {
 };
 
 enum class float_filter : std::uint8_t {
-  precision
+  precision,
+  round
 };
 
 enum class compare_operand_kind : std::uint8_t {
@@ -122,7 +123,9 @@ enum class section_filter_op_kind : std::uint8_t {
   skip,        /**< 先頭 n 個を捨てる */
   take_last,   /**< 末尾 n 個を残す */
   skip_last,   /**< 末尾 n 個を捨てる */
-  stride       /**< 先頭 n 個を残し m 個飛ばすことを繰り返す */
+  stride,      /**< 先頭 n 個を残し m 個飛ばすことを繰り返す */
+  sort,        /**< 安定ソート (arg: 0=昇順, 1=降順) */
+  join         /**< 要素間に separator (str_arg1) を挿入。arg1=separator 文字列ID */
 };
 
 struct bytecode;

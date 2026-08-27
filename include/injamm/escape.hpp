@@ -12,7 +12,7 @@
 
 namespace injamm::detail {
 
-// Scalar HTML-escape fallback. constexpr-safe (only uses out.append + switch).
+// スカラー版 HTML エスケープのフォールバック実装。constexpr-safe（out.append と switch のみ使用）。
 template <class Buffer>
 constexpr void html_escape_scalar(Buffer& out, std::string_view s) {
   std::size_t safe = 0;
@@ -181,7 +181,6 @@ constexpr void html_escape_into(Buffer& out, std::string_view s) {
     html_escape_scalar(out, s);
   }
 }
-// ponytail: Apple Clang の NEON movemask が 0 を返すバグがあるためスカラーフォールバック
 #elif defined(__ARM_NEON) && !defined(__apple_build_version__)
 template <class Buffer>
 constexpr void html_escape_into(Buffer& out, std::string_view s) {

@@ -449,7 +449,6 @@ consteval void compile_chunk_range(ct_bytecode_builder<N>& b,
         }
 
         // {{field.size}} → emit_var_size
-        // ponytail: フィルタ非付随の .size のみ専用命令にする
         if (sv.ends_with(".size") && !has_filters) {
           auto base_key = sv.substr(0, sv.size() - 5);
           auto vridx = b.add_var_ref({base_key.data(), base_key.size()},
