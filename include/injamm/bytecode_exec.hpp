@@ -88,6 +88,8 @@ class bc_executor {
   bc_loop_state const* loop_ = nullptr;
   Sink&                out_;
   std::string          emit_this_scratch_;
+  std::string          filtered_scratch_;
+  std::string*         filtered_shared_ = nullptr;
 
   /**
    * @brief フィールドインデックス指定で visitor を適用する共通ヘルパ
@@ -496,7 +498,9 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
     } else if constexpr (ct_glz_reflectable<FT> && glz::write_supported<FT, glz::JSON>) {
       if constexpr (std::same_as<Buffer, std::string>) {
         if (raw) {
-          (void)glz::write_json(field, out);
+          std::string scratch;
+          (void)glz::write_json(field, scratch);
+          out.append(scratch);
         } else {
           std::string scratch;
           (void)glz::write_json(field, scratch);
@@ -800,7 +804,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
           ls.binding_elem = &elem;
           ls.binding_resolve = &resolve_binding_var<elem_t>;
           ls.binding_truthy = &eval_binding_truthy<elem_t>;
-          bc_executor<elem_t, RootT, Sink> child_exec(ex.bc_, elem, ex.root_value_, &ls, ex.out_);
+          bc_executor<elem_t, RootT, Sink> child_exec(ex.bc_, elem, ex.root_value_, &ls, ex.out_, ex.filtered_shared_ ? ex.filtered_shared_ : &ex.filtered_scratch_);
           auto r2 = child_exec.execute_impl(pc + 1, body_end - 1);
           if (!r2) return r2;
           if (w.bwd) --src; else ++src;
@@ -814,7 +818,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
         is_falsy = !field.has_value();
         if (field.has_value()) {
           using inner_t = typename FT::value_type;
-          bc_executor<inner_t, RootT, Sink> child_exec(ex.bc_, *field, ex.root_value_, nullptr, ex.out_);
+          bc_executor<inner_t, RootT, Sink> child_exec(ex.bc_, *field, ex.root_value_, ex.loop_, ex.out_, ex.filtered_shared_ ? ex.filtered_shared_ : &ex.filtered_scratch_);
           auto r2 = child_exec.execute_impl(pc + 1, body_end - 1);
           if (!r2) return r2;
         }
@@ -835,7 +839,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
           ls.binding_elem = &v;
           ls.binding_resolve = &resolve_binding_var<val_t>;
           ls.binding_truthy = &eval_binding_truthy<val_t>;
-          bc_executor<val_t, RootT, Sink> child_exec(ex.bc_, v, ex.root_value_, &ls, ex.out_);
+          bc_executor<val_t, RootT, Sink> child_exec(ex.bc_, v, ex.root_value_, &ls, ex.out_, ex.filtered_shared_ ? ex.filtered_shared_ : &ex.filtered_scratch_);
           auto r2 = child_exec.execute_impl(pc + 1, body_end - 1);
           if (r2) { ++emitted; ++ls.index; }
           return r2;
@@ -909,12 +913,11 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
               ls.binding_elem = &elem;
               ls.binding_resolve = &resolve_binding_var<elem_t>;
               ls.binding_truthy = &eval_binding_truthy<elem_t>;
-              bc_executor<elem_t, RootT, Sink> child_exec(ex.bc_, elem, ex.root_value_, &ls, ex.out_);
+              bc_executor<elem_t, RootT, Sink> child_exec(ex.bc_, elem, ex.root_value_, &ls, ex.out_, ex.filtered_shared_ ? ex.filtered_shared_ : &ex.filtered_scratch_);
               auto r2 = child_exec.execute_impl(pc + 1, body_end - 1);
               if (!r2) return r2;
               if (ls.continue_flag) {
                 ls.continue_flag = false;
-                --emitted;
                 ++r_it;
                 continue;
               }
@@ -934,10 +937,10 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
               ls.binding_elem = &elem;
               ls.binding_resolve = &resolve_binding_var<elem_t>;
               ls.binding_truthy = &eval_binding_truthy<elem_t>;
-              bc_executor<elem_t, RootT, Sink> child_exec(ex.bc_, elem, ex.root_value_, &ls, ex.out_);
+              bc_executor<elem_t, RootT, Sink> child_exec(ex.bc_, elem, ex.root_value_, &ls, ex.out_, ex.filtered_shared_ ? ex.filtered_shared_ : &ex.filtered_scratch_);
               auto r2 = child_exec.execute_impl(pc + 1, body_end - 1);
               if (!r2) return r2;
-              if (ls.continue_flag) { ls.continue_flag = false; --emitted; continue; }
+              if (ls.continue_flag) { ls.continue_flag = false; continue; }
               if (ls.break_flag) break;
               ++emitted;
             }
@@ -955,7 +958,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
             ls.binding_elem = &elem;
             ls.binding_resolve = &resolve_binding_var<elem_t>;
             ls.binding_truthy = &eval_binding_truthy<elem_t>;
-            bc_executor<elem_t, RootT, Sink> child_exec(ex.bc_, elem, ex.root_value_, &ls, ex.out_);
+            bc_executor<elem_t, RootT, Sink> child_exec(ex.bc_, elem, ex.root_value_, &ls, ex.out_, ex.filtered_shared_ ? ex.filtered_shared_ : &ex.filtered_scratch_);
             auto r2 = child_exec.execute_impl(pc + 1, body_end - 1);
             if (!r2) return r2;
             if (ls.continue_flag) { ls.continue_flag = false; continue; }
@@ -1007,7 +1010,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
               ls.binding_elem = &elem;
               ls.binding_resolve = &resolve_binding_var<elem_t>;
               ls.binding_truthy = &eval_binding_truthy<elem_t>;
-              bc_executor<elem_t, RootT, Sink> child_exec(ex.bc_, elem, ex.root_value_, &ls, ex.out_);
+              bc_executor<elem_t, RootT, Sink> child_exec(ex.bc_, elem, ex.root_value_, &ls, ex.out_, ex.filtered_shared_ ? ex.filtered_shared_ : &ex.filtered_scratch_);
               auto r2 = child_exec.execute_impl(pc + 1, body_end - 1);
               if (!r2) return r2;
               if (ls.continue_flag) { ls.continue_flag = false; continue; }
@@ -1032,7 +1035,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
               ls.binding_elem = &elem;
               ls.binding_resolve = &resolve_binding_var<elem_t>;
               ls.binding_truthy = &eval_binding_truthy<elem_t>;
-              bc_executor<elem_t, RootT, Sink> child_exec(ex.bc_, elem, ex.root_value_, &ls, ex.out_);
+              bc_executor<elem_t, RootT, Sink> child_exec(ex.bc_, elem, ex.root_value_, &ls, ex.out_, ex.filtered_shared_ ? ex.filtered_shared_ : &ex.filtered_scratch_);
               auto r2 = child_exec.execute_impl(pc + 1, body_end - 1);
               if (!r2) return r2;
               if (ls.continue_flag) { ls.continue_flag = false; continue; }
@@ -1070,7 +1073,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
             ls.binding_elem = &elem;
             ls.binding_resolve = &resolve_binding_var<elem_t>;
             ls.binding_truthy = &eval_binding_truthy<elem_t>;
-            bc_executor<elem_t, RootT, Sink> child_exec(ex.bc_, elem, ex.root_value_, &ls, ex.out_);
+            bc_executor<elem_t, RootT, Sink> child_exec(ex.bc_, elem, ex.root_value_, &ls, ex.out_, ex.filtered_shared_ ? ex.filtered_shared_ : &ex.filtered_scratch_);
             auto r2 = child_exec.execute_impl(pc + 1, body_end - 1);
             if (!r2) return r2;
             if (ls.continue_flag) { ls.continue_flag = false; continue; }
@@ -1102,7 +1105,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
                ls.binding_elem = &glz::get<src_idx>(tied);
                ls.binding_resolve = &resolve_binding_var<elem_t>;
                ls.binding_truthy = &eval_binding_truthy<elem_t>;
-               bc_executor<elem_t, RootT, Sink> child_exec(ex.bc_, glz::get<src_idx>(tied), ex.root_value_, &ls, ex.out_);
+               bc_executor<elem_t, RootT, Sink> child_exec(ex.bc_, glz::get<src_idx>(tied), ex.root_value_, &ls, ex.out_, ex.filtered_shared_ ? ex.filtered_shared_ : &ex.filtered_scratch_);
                res = child_exec.execute_impl(pc + 1, body_end - 1);
                ++emitted;
             }()), ...);
@@ -1123,7 +1126,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
                ls.binding_elem = &glz::get<src_idx>(tied);
                ls.binding_resolve = &resolve_binding_var<elem_t>;
                ls.binding_truthy = &eval_binding_truthy<elem_t>;
-               bc_executor<elem_t, RootT, Sink> child_exec(ex.bc_, glz::get<src_idx>(tied), ex.root_value_, &ls, ex.out_);
+               bc_executor<elem_t, RootT, Sink> child_exec(ex.bc_, glz::get<src_idx>(tied), ex.root_value_, &ls, ex.out_, ex.filtered_shared_ ? ex.filtered_shared_ : &ex.filtered_scratch_);
                res = child_exec.execute_impl(pc + 1, body_end - 1);
                ++emitted;
             }()), ...);
@@ -1268,6 +1271,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
   INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_emit_var(bc_executor& ex, std::size_t& pc, std::string&) {
     bool raw = ex.bc_.instructions[pc].op == bc_opcode::emit_var_raw;
     auto const& ref = ex.bc_.var_refs[ex.bc_.instructions[pc].operand];
+    if (ref.is_dead) { ++pc; return {}; }
     if (ref.is_loop_parent && resolve_loop_parent_var(ex, ref.special, raw)) { ++pc; return {}; }
     if (ref.binding_first && ref.special == special_var_kind::none && try_resolve_loop_binding(ex, ref, raw)) {
       ++pc;
@@ -1287,6 +1291,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
     bool raw = ex.bc_.instructions[pc].op == bc_opcode::emit_litvar_raw;
     ex.out_.append(ex.bc_.literals[ex.bc_.instructions[pc].operand]);
     auto const& ref = ex.bc_.var_refs[ex.bc_.instructions[pc].operand2];
+    if (ref.is_dead) { ++pc; return {}; }
     if (ref.is_loop_parent && resolve_loop_parent_var(ex, ref.special, raw)) { ++pc; return {}; }
     if (ref.binding_first && ref.special == special_var_kind::none && try_resolve_loop_binding(ex, ref, raw)) {
       ++pc;
@@ -1670,7 +1675,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
     if (!entry.bc) {
       return std::unexpected(error_ctx{.position = pc, .ec = error_code::syntax_error});
     }
-    bc_executor<T, RootT, Sink> child_exec(*entry.bc, ex.value_, ex.root_value_, ex.loop_, ex.out_);
+    bc_executor<T, RootT, Sink> child_exec(*entry.bc, ex.value_, ex.root_value_, ex.loop_, ex.out_, ex.filtered_shared_ ? ex.filtered_shared_ : &ex.filtered_scratch_);
     auto r = child_exec.execute();
     if (!r)
       return std::unexpected(r.error());
@@ -1679,7 +1684,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
   }
 
 public:
-  bc_executor(bytecode const& bc, T const& value, RootT const& root_value, bc_loop_state const* loop, Sink& out) : bc_(bc), value_(value), root_value_(root_value), loop_(loop), out_(out) {}
+  bc_executor(bytecode const& bc, T const& value, RootT const& root_value, bc_loop_state const* loop, Sink& out, std::string* shared_filtered = nullptr) : bc_(bc), value_(value), root_value_(root_value), loop_(loop), out_(out), filtered_shared_(shared_filtered) {}
 
   /**
    * @brief バイトコードの実行を開始する
@@ -1699,7 +1704,8 @@ public:
    */
   std::expected<void, error_ctx> execute_impl(std::size_t start, std::size_t end) {
     std::size_t pc = start;
-    std::string filtered_value_;
+    std::string& filtered_value_ = filtered_shared_ ? *filtered_shared_ : filtered_scratch_;
+    filtered_value_.clear();
 
     // Fast path: simple emit_litvar + emit_literal + halt only
     // Skips computed-goto dispatch overhead for common trivial templates.
@@ -1716,6 +1722,7 @@ public:
               case bc_opcode::emit_litvar_raw: {
                 out_.append(bc_.literals[instr.operand]);
                 auto const& ref = bc_.var_refs[instr.operand2];
+                if (ref.is_dead) break;
                 bool raw = (instr.op == bc_opcode::emit_litvar_raw);
                 if (!ref.is_loop_parent || !resolve_loop_parent_var(*this, ref.special, raw)) {
                   auto r = for_each_field_ref(value_, ref,
@@ -1727,6 +1734,7 @@ public:
               case bc_opcode::emit_var:
               case bc_opcode::emit_var_raw: {
                 auto const& ref = bc_.var_refs[instr.operand];
+                if (ref.is_dead) break;
                 bool raw = (instr.op == bc_opcode::emit_var_raw);
                 if (!ref.is_loop_parent || !resolve_loop_parent_var(*this, ref.special, raw)) {
                   bool        found = false;

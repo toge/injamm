@@ -237,26 +237,38 @@ inline void serialize_formatted(Buffer& out, T value, std::string_view fmt) {
   }
   if (zerofill_only) {
     int width = 0;
-    for (char c : fmt) width = width * 10 + (c - '0');
+    for (char c : fmt) {
+      if (width > 10000) break;
+      width = width * 10 + (c - '0');
+    }
+    if (width > 1024) width = 1024;
     std::string s = std::to_string(value);
     bool const  neg = !s.empty() && s[0] == '-';
-    std::string digits = neg ? s.substr(1) : s;
-    if (static_cast<int>(digits.size()) < width) {
-      s = std::string(static_cast<std::size_t>(width) - digits.size(), '0') + digits;
+    if (neg) {
+      std::string digits = s.substr(1);
+      if (static_cast<int>(digits.size()) < width - 1) {
+        s = "-" + std::string(static_cast<std::size_t>(width - 1) - digits.size(), '0') + digits;
+      }
+    } else {
+      if (static_cast<int>(s.size()) < width) {
+        s = std::string(static_cast<std::size_t>(width) - s.size(), '0') + s;
+      }
     }
-    if (neg) s = "-" + s;
     out.append(s);
     return;
   }
   std::string fmt_str = "{:";
   fmt_str.append(fmt);
   fmt_str.push_back('}');
+  try {
 #ifdef INJAMM_USE_FMT
-  auto result = fmt::vformat(fmt_str, fmt::make_format_args(value));
+    fmt::vformat_to(std::back_inserter(out), fmt_str, fmt::make_format_args(value));
 #else
-  auto result = std::vformat(fmt_str, std::make_format_args(value));
+    std::vformat_to(std::back_inserter(out), fmt_str, std::make_format_args(value));
 #endif
-  out.append(result);
+  } catch (...) {
+    // ponytail: 不正フォーマットは expected API では例外を出さず無出力で継続（既知の軽微な互換性維持）
+  }
 }
 
 /** @brief 文字列を std::format スタイルのフォーマット指定子でバッファに追記する
@@ -276,12 +288,14 @@ inline void serialize_formatted(Buffer& out, std::string_view value, std::string
   std::string fmt_str = "{:";
   fmt_str.append(fmt);
   fmt_str.push_back('}');
+  try {
 #ifdef INJAMM_USE_FMT
-  auto result = fmt::vformat(fmt_str, fmt::make_format_args(value));
+    fmt::vformat_to(std::back_inserter(out), fmt_str, fmt::make_format_args(value));
 #else
-  auto result = std::vformat(fmt_str, std::make_format_args(value));
+    std::vformat_to(std::back_inserter(out), fmt_str, std::make_format_args(value));
 #endif
-  out.append(result);
+  } catch (...) {
+  }
 }
 
 } // namespace injamm::detail

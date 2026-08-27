@@ -223,9 +223,21 @@ inline std::int32_t read_i32_le(std::istream& is, read_state& state) {
 inline std::string read_string(std::istream& is, read_state& state) {
   auto len = read_u64_le(is, state);
   if (!state.ok) return {};
-  std::string s(static_cast<std::size_t>(len), '\0');
-  is.read(s.data(), static_cast<std::streamsize>(len));
-  if (is.gcount() != static_cast<std::streamsize>(len)) { state.ok = false; state.ec = error_code::no_read_input; }
+  // ponytail: 細工ファイルの巨大 len による OOM / length_error 例外を防ぐ
+  constexpr std::uint64_t max_string_len = 16 * 1024 * 1024; // 16 MiB
+  if (len > max_string_len) { state.ok = false; state.ec = error_code::syntax_error; return {}; }
+  std::string s;
+  try {
+    s.assign(static_cast<std::size_t>(len), '\0');
+  } catch (...) {
+    state.ok = false;
+    state.ec = error_code::syntax_error;
+    return {};
+  }
+  if (len > 0) {
+    is.read(s.data(), static_cast<std::streamsize>(len));
+    if (is.gcount() != static_cast<std::streamsize>(len)) { state.ok = false; state.ec = error_code::no_read_input; }
+  }
   return s;
 }
 
@@ -330,7 +342,7 @@ void re_resolve_var_ref(bc_var_ref& ref) {
 
 // 前方宣言
 template <class T>
-bytecode read_bytecode_body(std::istream& is, read_state& state);
+bytecode read_bytecode_body(std::istream& is, read_state& state, int depth = 0);
 
 } // namespace detail
 
@@ -394,7 +406,8 @@ namespace detail {
 
 /** @brief バイトコード本体をストリームから読み込み（命令列・リテラル・変数参照・partial） */
 template <class T>
-bytecode read_bytecode_body(std::istream& is, read_state& state) {
+bytecode read_bytecode_body(std::istream& is, read_state& state, int depth) {
+  if (depth > 64) { state.ok = false; state.ec = error_code::syntax_error; return {}; }
   bytecode bc;
 
   bc.is_simple = read_u8(is, state) != 0;
@@ -404,22 +417,35 @@ bytecode read_bytecode_body(std::istream& is, read_state& state) {
   // 命令列
   auto ic = read_u64_le(is, state);
   if (!state.ok) return bc;
-  bc.instructions.reserve(static_cast<std::size_t>(ic));
-  for (std::uint64_t i = 0; i < ic; ++i)
+  constexpr std::uint64_t max_instructions = 1 << 20; // ~1M
+  if (ic > max_instructions) { state.ok = false; state.ec = error_code::syntax_error; return bc; }
+  try { bc.instructions.reserve(static_cast<std::size_t>(ic)); } catch (...) { state.ok = false; state.ec = error_code::syntax_error; return bc; }
+  for (std::uint64_t i = 0; i < ic; ++i) {
+    if (!state.ok) break;
     bc.instructions.push_back(read_instruction(is, state));
+  }
+  if (!state.ok) return bc;
 
   // リテラルテーブル
   auto lc = read_u64_le(is, state);
   if (!state.ok) return bc;
-  bc.literals.reserve(static_cast<std::size_t>(lc));
-  for (std::uint64_t i = 0; i < lc; ++i)
+  constexpr std::uint64_t max_literals = 1 << 20;
+  if (lc > max_literals) { state.ok = false; state.ec = error_code::syntax_error; return bc; }
+  try { bc.literals.reserve(static_cast<std::size_t>(lc)); } catch (...) { state.ok = false; state.ec = error_code::syntax_error; return bc; }
+  for (std::uint64_t i = 0; i < lc; ++i) {
+    if (!state.ok) break;
     bc.literals.push_back(read_string(is, state));
+  }
+  if (!state.ok) return bc;
 
   // 変数参照テーブル
   auto vc = read_u64_le(is, state);
   if (!state.ok) return bc;
-  bc.var_refs.reserve(static_cast<std::size_t>(vc));
+  constexpr std::uint64_t max_var_refs = 1 << 20;
+  if (vc > max_var_refs) { state.ok = false; state.ec = error_code::syntax_error; return bc; }
+  try { bc.var_refs.reserve(static_cast<std::size_t>(vc)); } catch (...) { state.ok = false; state.ec = error_code::syntax_error; return bc; }
   for (std::uint64_t i = 0; i < vc; ++i) {
+    if (!state.ok) break;
     auto key = read_string(is, state);
     auto has_dot = read_u8(is, state) != 0;
     auto is_loop_parent = read_u8(is, state) != 0;
@@ -439,6 +465,7 @@ bytecode read_bytecode_body(std::istream& is, read_state& state) {
     ref.filter_flags = filter_flags;
     if (state.version >= 3) {
       ref.section_op_count = read_u8(is, state);
+      if (state.ok && ref.section_op_count > bc_var_ref::max_section_ops) { state.ok = false; state.ec = error_code::syntax_error; return bc; }
       for (std::uint8_t si = 0; si < ref.section_op_count && si < bc_var_ref::max_section_ops; ++si) {
         ref.section_ops[si].kind = static_cast<section_filter_op_kind>(read_u8(is, state));
         ref.section_ops[si].arg  = static_cast<std::int32_t>(read_u32_le(is, state));
@@ -465,23 +492,35 @@ bytecode read_bytecode_body(std::istream& is, read_state& state) {
     // 文字列フィルター
     auto fc = read_u64_le(is, state);
     if (!state.ok) return bc;
-    ref.filters.reserve(static_cast<std::size_t>(fc));
-    for (std::uint64_t j = 0; j < fc; ++j)
+    if (fc > 64) { state.ok = false; state.ec = error_code::syntax_error; return bc; }
+    try { ref.filters.reserve(static_cast<std::size_t>(fc)); } catch (...) { state.ok = false; state.ec = error_code::syntax_error; return bc; }
+    for (std::uint64_t j = 0; j < fc; ++j) {
+      if (!state.ok) break;
       ref.filters.push_back(read_string_filter_entry(is, state, bc.literals));
+    }
+    if (!state.ok) return bc;
 
     // 整数フィルター
     auto ifc = read_u64_le(is, state);
     if (!state.ok) return bc;
-    ref.int_filters.reserve(static_cast<std::size_t>(ifc));
-    for (std::uint64_t j = 0; j < ifc; ++j)
+    if (ifc > 64) { state.ok = false; state.ec = error_code::syntax_error; return bc; }
+    try { ref.int_filters.reserve(static_cast<std::size_t>(ifc)); } catch (...) { state.ok = false; state.ec = error_code::syntax_error; return bc; }
+    for (std::uint64_t j = 0; j < ifc; ++j) {
+      if (!state.ok) break;
       ref.int_filters.push_back(read_int_filter_entry(is, state));
+    }
+    if (!state.ok) return bc;
 
     // 浮動小数点フィルター
     auto ffc = read_u64_le(is, state);
     if (!state.ok) return bc;
-    ref.float_filters.reserve(static_cast<std::size_t>(ffc));
-    for (std::uint64_t j = 0; j < ffc; ++j)
+    if (ffc > 64) { state.ok = false; state.ec = error_code::syntax_error; return bc; }
+    try { ref.float_filters.reserve(static_cast<std::size_t>(ffc)); } catch (...) { state.ok = false; state.ec = error_code::syntax_error; return bc; }
+    for (std::uint64_t j = 0; j < ffc; ++j) {
+      if (!state.ok) break;
       ref.float_filters.push_back(read_float_filter_entry(is, state));
+    }
+    if (!state.ok) return bc;
 
     // コンテキスト型 T で field_index を再解決
     re_resolve_var_ref<T>(ref);
@@ -492,21 +531,81 @@ bytecode read_bytecode_body(std::istream& is, read_state& state) {
   // partial エントリ（再帰的に読み込み）
   auto pc = read_u64_le(is, state);
   if (!state.ok) return bc;
-  bc.partial_entries.reserve(static_cast<std::size_t>(pc));
+  constexpr std::uint64_t max_partials = 1024;
+  if (pc > max_partials) { state.ok = false; state.ec = error_code::syntax_error; return bc; }
+  try { bc.partial_entries.reserve(static_cast<std::size_t>(pc)); } catch (...) { state.ok = false; state.ec = error_code::syntax_error; return bc; }
   for (std::uint64_t i = 0; i < pc; ++i) {
+    if (!state.ok) break;
     auto name = read_string(is, state);
+    if (!state.ok) break;
     auto local = read_u8(is, state) != 0;
-    auto partial_bc = std::make_shared<bytecode>(read_bytecode_body<T>(is, state));
+    if (!state.ok) break;
+    auto partial_bc = std::make_shared<bytecode>(read_bytecode_body<T>(is, state, depth + 1));
+    if (!state.ok) break;
     bc.partial_entries.push_back(partial_entry{std::move(name), std::move(partial_bc), local});
   }
+  if (!state.ok) return bc;
 
   if (state.ok) {
+    // ponytail: 細工ファイルの OOB operand による VM 側 OOB 読みを防ぐ全命令検証
+    auto const n_lit = bc.literals.size();
+    auto const n_var = bc.var_refs.size();
+    auto const n_ins = bc.instructions.size();
+    auto const n_par = bc.partial_entries.size();
     for (auto const& inst : bc.instructions) {
-      if (inst.op == bc_opcode::call_partial && inst.operand >= bc.partial_entries.size()) {
-        state.ok = false;
-        state.ec = error_code::syntax_error;
-        break;
+      bool bad = false;
+      switch (inst.op) {
+        case bc_opcode::emit_literal:
+          bad = inst.operand >= n_lit;
+          break;
+        case bc_opcode::emit_litvar:
+        case bc_opcode::emit_litvar_raw:
+          bad = inst.operand >= n_lit || inst.operand2 >= n_var;
+          break;
+        case bc_opcode::emit_var:
+        case bc_opcode::emit_var_raw:
+        case bc_opcode::emit_var_size:
+        case bc_opcode::emit_at_root_field:
+        case bc_opcode::emit_at_root_field_raw:
+          bad = inst.operand >= n_var;
+          break;
+        case bc_opcode::emit_section:
+        case bc_opcode::emit_inverted: {
+          if (inst.operand2 >= n_var) { bad = true; break; }
+          if (inst.operand == 0 || inst.operand > n_ins) bad = true;
+          else if (inst.operand3 != 0 && inst.operand3 > n_ins) bad = true;
+          break;
+        }
+        case bc_opcode::emit_if:
+        case bc_opcode::emit_if_eq:
+        case bc_opcode::emit_if_ne:
+        case bc_opcode::emit_if_gt:
+        case bc_opcode::emit_if_gte:
+        case bc_opcode::emit_if_lt:
+        case bc_opcode::emit_if_lte:
+        case bc_opcode::emit_if_or:
+        case bc_opcode::emit_if_and:
+        case bc_opcode::emit_if_not:
+        case bc_opcode::emit_if_filtered:
+          if (inst.operand2 >= n_var) { bad = true; break; }
+          if (inst.operand == 0 || inst.operand > n_ins) bad = true;
+          if ((inst.op == bc_opcode::emit_if_or || inst.op == bc_opcode::emit_if_and) && inst.operand3 >= n_var) bad = true;
+          break;
+        case bc_opcode::resolve_filtered:
+          if (inst.operand2 >= n_var) bad = true;
+          break;
+        case bc_opcode::call_partial:
+          bad = inst.operand >= n_par;
+          break;
+        case bc_opcode::emit_else:
+        case bc_opcode::emit_endif:
+        case bc_opcode::emit_end:
+          if (inst.operand != 0 && inst.operand > n_ins) bad = true;
+          break;
+        default:
+          break;
       }
+      if (bad) { state.ok = false; state.ec = error_code::syntax_error; break; }
     }
   }
 

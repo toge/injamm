@@ -236,6 +236,9 @@ class bc_compiler {
   std::vector<compile_ctx_ops> ctx_stack_{make_compile_ctx_ops<T>()};
   /** @brief 内包セクションのキー名スタック（ループ束縛の事前判定用） */
   std::vector<std::string> section_keys_;
+  /** @brief ネスト深さ（スタックオーバーフロー対策） */
+  int nesting_depth_ = 0;
+  static constexpr int max_nesting_depth = 256;
 
   /**
    * @brief ループ束縛参照の事前判定を行い binding_first フラグを設定する
@@ -435,6 +438,9 @@ class bc_compiler {
     if (bc_.var_refs[idx].field_index == UINT32_MAX) {
       mark_binding_first(idx, key);
     }
+    // ponytail: dead-key optimisation disabled for partials — see failing tests (partial_in_partial etc.)
+    // was: mark is_dead for known missing top-level keys, but partials may be called with different value types (loop element)
+    // so the hint would be wrong and fallback is required.
     bc_.var_refs[idx].filters = filters;
     bc_.var_refs[idx].int_filters = int_filters;
     bc_.var_refs[idx].float_filters = float_filters;
@@ -564,6 +570,7 @@ class bc_compiler {
    *          セクション命令には /section の次の命令位置がジャンプ先として書き込まれる。
    */
   void compile_section(std::string_view key) {
+    if (nesting_depth_ >= max_nesting_depth) { bc_.error = error_ctx{pos_, error_code::syntax_error, "nesting too deep"}; return; }
     /** セクションキーをパイプ分割しセクションフィルタを検出する（ベースキー = parts[0]） */
     auto parts     = split_by_pipe(key);
     key            = parts[0];
@@ -592,12 +599,14 @@ class bc_compiler {
     auto section_instr_idx = bc_.current_offset() - 1;
 
     /** セクション本体は要素型コンテキストでコンパイルする（else 本体は親コンテキスト） */
+    ++nesting_depth_;
     ctx_stack_.push_back(ctx_stack_.back().section_child(key));
     section_keys_.emplace_back(key);
     bool reached_end = false;
     auto result = compile_body_impl(reached_end);
     section_keys_.pop_back();
     ctx_stack_.pop_back();
+    --nesting_depth_;
 
     if (result == body_result::else_) {
       // Section has {{else}}. Emit trampoline jump past else body.
@@ -630,7 +639,7 @@ class bc_compiler {
       return;
     }
 
-    if (trim_blocks_ && pos_ < tmpl_.size() && tmpl_[pos_] == '\n') ++pos_;
+    if (trim_blocks_ && pos_ < tmpl_.size()) { if (tmpl_[pos_] == '\n') ++pos_; else if (tmpl_[pos_] == '\r') { if (pos_ + 1 < tmpl_.size() && tmpl_[pos_ + 1] == '\n') pos_ += 2; else ++pos_; } }
   }
 
   /**
@@ -639,6 +648,9 @@ class bc_compiler {
    * @details {{^section}}...{{/section}} は変数が偽/空の場合に本体が描画される。
    */
   void compile_inverted(std::string_view key) {
+    if (nesting_depth_ >= max_nesting_depth) { bc_.error = error_ctx{pos_, error_code::syntax_error, "nesting too deep"}; return; }
+    ++nesting_depth_;
+    struct _DepthGuard2 { int* p; ~_DepthGuard2() { --*p; } } _guard2{&nesting_depth_};
     auto idx = bc_.add_var_ref(key);
     resolve_ref_indices(idx, key);
     bc_.add_instruction(bc_opcode::emit_inverted, 0, idx);
@@ -679,7 +691,7 @@ class bc_compiler {
       return;
     }
 
-    if (trim_blocks_ && pos_ < tmpl_.size() && tmpl_[pos_] == '\n') ++pos_;
+    if (trim_blocks_ && pos_ < tmpl_.size()) { if (tmpl_[pos_] == '\n') ++pos_; else if (tmpl_[pos_] == '\r') { if (pos_ + 1 < tmpl_.size() && tmpl_[pos_ + 1] == '\n') pos_ += 2; else ++pos_; } }
   }
 
   enum class skip_result { end, else_, eof };
@@ -705,7 +717,7 @@ class bc_compiler {
           continue;
         }
         pos_ = end + 3;
-        if (trim_blocks_ && pos_ < tmpl_.size() && tmpl_[pos_] == '\n') ++pos_;
+        if (trim_blocks_ && pos_ < tmpl_.size()) { if (tmpl_[pos_] == '\n') ++pos_; else if (tmpl_[pos_] == '\r') { if (pos_ + 1 < tmpl_.size() && tmpl_[pos_ + 1] == '\n') pos_ += 2; else ++pos_; } }
         continue;
       }
       auto tag_end = tmpl_.find("}}", tag_start + 2);
@@ -715,7 +727,7 @@ class bc_compiler {
       }
       auto inner = trim_sv(tmpl_.substr(tag_start + 2, tag_end - tag_start - 2));
       pos_ = tag_end + 2;
-      if (trim_blocks_ && pos_ < tmpl_.size() && tmpl_[pos_] == '\n') ++pos_;
+      if (trim_blocks_ && pos_ < tmpl_.size()) { if (tmpl_[pos_] == '\n') ++pos_; else if (tmpl_[pos_] == '\r') { if (pos_ + 1 < tmpl_.size() && tmpl_[pos_ + 1] == '\n') pos_ += 2; else ++pos_; } }
       if (inner.empty()) continue;
       if (inner == "else" && depth == 0) {
         return skip_result::else_;
@@ -741,6 +753,9 @@ class bc_compiler {
    *          定数条件（if 0 / if 1）はコンパイル時に解決し、到達不可能な分岐のバイトコード生成を省略する。
    */
   void compile_if(std::string_view expr_full) {
+    if (nesting_depth_ >= max_nesting_depth) { bc_.error = error_ctx{pos_, error_code::syntax_error, "nesting too deep"}; return; }
+    ++nesting_depth_;
+    struct _DepthGuard { int* p; ~_DepthGuard() { --*p; } } _guard{&nesting_depth_};
     /** 定数条件の最適化: リテラル整数はコンパイル時に真偽判定し、到達不可能な分岐をスキップ */
     if (expr_full.find('|') == std::string_view::npos &&
         expr_full.find("||") == std::string_view::npos &&
@@ -777,7 +792,7 @@ class bc_compiler {
             skip_to_else_or_end();
           }
         }
-        if (trim_blocks_ && pos_ < tmpl_.size() && tmpl_[pos_] == '\n') ++pos_;
+        if (trim_blocks_ && pos_ < tmpl_.size()) { if (tmpl_[pos_] == '\n') ++pos_; else if (tmpl_[pos_] == '\r') { if (pos_ + 1 < tmpl_.size() && tmpl_[pos_ + 1] == '\n') pos_ += 2; else ++pos_; } }
         return;
       }
     }
@@ -972,7 +987,7 @@ class bc_compiler {
 
     auto if_instr_idx = bc_.current_offset() - 1;
     finish_if(if_instr_idx);
-    if (trim_blocks_ && pos_ < tmpl_.size() && tmpl_[pos_] == '\n') ++pos_;
+    if (trim_blocks_ && pos_ < tmpl_.size()) { if (tmpl_[pos_] == '\n') ++pos_; else if (tmpl_[pos_] == '\r') { if (pos_ + 1 < tmpl_.size() && tmpl_[pos_ + 1] == '\n') pos_ += 2; else ++pos_; } }
   }
 
   /**
@@ -982,6 +997,9 @@ class bc_compiler {
    *          kind フィールドに index=0 / is_first=1 / is_last=2 をエンコードする。
    */
   void compile_at_inverted(std::string_view key) {
+    if (nesting_depth_ >= max_nesting_depth) { bc_.error = error_ctx{pos_, error_code::syntax_error, "nesting too deep"}; return; }
+    ++nesting_depth_;
+    struct _DepthGuard2 { int* p; ~_DepthGuard2() { --*p; } } _guard2{&nesting_depth_};
     auto k = parse_loop_kind(key);
     if (!k) return;
     if (*k == at_var_kind::even || *k == at_var_kind::odd) {
@@ -997,7 +1015,7 @@ class bc_compiler {
         bc_.error = error_ctx{if_idx, error_code::unexpected_end, key};
         return;
       }
-      if (trim_blocks_ && pos_ < tmpl_.size() && tmpl_[pos_] == '\n') ++pos_;
+      if (trim_blocks_ && pos_ < tmpl_.size()) { if (tmpl_[pos_] == '\n') ++pos_; else if (tmpl_[pos_] == '\r') { if (pos_ + 1 < tmpl_.size() && tmpl_[pos_ + 1] == '\n') pos_ += 2; else ++pos_; } }
 
       auto endif_addr = static_cast<std::uint32_t>(bc_.current_offset());
       bc_.add_instruction(bc_opcode::emit_endif);
@@ -1021,7 +1039,7 @@ class bc_compiler {
       bc_.error = error_ctx{instr_idx, error_code::unexpected_end, key};
       return;
     }
-    if (trim_blocks_ && pos_ < tmpl_.size() && tmpl_[pos_] == '\n') ++pos_;
+    if (trim_blocks_ && pos_ < tmpl_.size()) { if (tmpl_[pos_] == '\n') ++pos_; else if (tmpl_[pos_] == '\r') { if (pos_ + 1 < tmpl_.size() && tmpl_[pos_ + 1] == '\n') pos_ += 2; else ++pos_; } }
 
     bc_.add_instruction(bc_opcode::emit_end);
     bc_.patch_jump(instr_idx, static_cast<std::uint32_t>(bc_.current_offset()));
@@ -1058,7 +1076,7 @@ class bc_compiler {
       bc_.error = error_ctx{instr_idx, error_code::unexpected_end, key};
       return;
     }
-    if (trim_blocks_ && pos_ < tmpl_.size() && tmpl_[pos_] == '\n') ++pos_;
+    if (trim_blocks_ && pos_ < tmpl_.size()) { if (tmpl_[pos_] == '\n') ++pos_; else if (tmpl_[pos_] == '\r') { if (pos_ + 1 < tmpl_.size() && tmpl_[pos_ + 1] == '\n') pos_ += 2; else ++pos_; } }
 
     bc_.add_instruction(bc_opcode::emit_end);
     bc_.patch_jump(instr_idx, static_cast<std::uint32_t>(bc_.current_offset()));
@@ -1125,7 +1143,7 @@ class bc_compiler {
           emit_var(actual_key, true, std::move(filters), std::move(int_filters), std::move(float_filters));
         }
         pos_ = end + 3;
-        if (trim_blocks_ && pos_ < tmpl_.size() && tmpl_[pos_] == '\n') ++pos_;
+        if (trim_blocks_ && pos_ < tmpl_.size()) { if (tmpl_[pos_] == '\n') ++pos_; else if (tmpl_[pos_] == '\r') { if (pos_ + 1 < tmpl_.size() && tmpl_[pos_ + 1] == '\n') pos_ += 2; else ++pos_; } }
         continue;
       }
 
@@ -1138,7 +1156,7 @@ class bc_compiler {
 
       auto inner = trim_sv(tmpl_.substr(tag_start + 2, tag_end - tag_start - 2));
       pos_ = tag_end + 2;
-      if (trim_blocks_ && pos_ < tmpl_.size() && tmpl_[pos_] == '\n') ++pos_;
+      if (trim_blocks_ && pos_ < tmpl_.size()) { if (tmpl_[pos_] == '\n') ++pos_; else if (tmpl_[pos_] == '\r') { if (pos_ + 1 < tmpl_.size() && tmpl_[pos_ + 1] == '\n') pos_ += 2; else ++pos_; } }
 
       if (inner.empty()) continue;
 

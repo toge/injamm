@@ -502,17 +502,23 @@ struct section_filter_op {
       break;
     }
     auto tag_inner = trim_sv(body.substr(tag_pos + 2, end - tag_pos - 2));
-    if (tag_inner.starts_with("#if")) {
+    if (tag_inner.starts_with("#if") && (tag_inner.size() == 3 || tag_inner[3] == ' ' || tag_inner[3] == '\t')) {
       ++if_depth;
     } else if (tag_inner.starts_with("#")) {
       ++section_depth;
-    } else if (tag_inner.starts_with("/if")) {
+    } else if (tag_inner.starts_with("^")) {
+      ++section_depth;
+    } else if (tag_inner.starts_with("/if") && (tag_inner.size() == 3 || tag_inner[3] == ' ' || tag_inner[3] == '\t')) {
       if (if_depth > 0) {
         --if_depth;
+      } else if (section_depth > 0) {
+        --section_depth;
       }
     } else if (tag_inner.starts_with("/")) {
       if (section_depth > 0) {
         --section_depth;
+      } else if (if_depth > 0) {
+        --if_depth;
       }
     } else if (tag_inner == "else" && if_depth == 0 && section_depth == 0) {
       return tag_pos;
@@ -827,12 +833,12 @@ template <class ConstMap>
   auto nl = constexpr_rfind(sv, '\n');
   if (nl == std::string_view::npos) {
     for (auto c : sv) {
-      if (c != ' ' && c != '\t') return sv;
+      if (c != ' ' && c != '\t' && c != '\r') return sv;
     }
     return {};
   }
   for (std::size_t i = nl + 1; i < sv.size(); ++i) {
-    if (sv[i] != ' ' && sv[i] != '\t') return sv;
+    if (sv[i] != ' ' && sv[i] != '\t' && sv[i] != '\r') return sv;
   }
   return sv.substr(0, nl + 1);
 }

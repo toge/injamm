@@ -215,7 +215,11 @@ struct ct_parse_context {
  */
 template <std::size_t MaxChunks>
 constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view tmpl,
-                              bool trim_blocks = false, bool lstrip_blocks = false) {
+                              bool trim_blocks = false, bool lstrip_blocks = false, int depth = 0) {
+  if (depth > 256) {
+    if (std::is_constant_evaluated()) throw "injamm: nesting too deep";
+    return;
+  }
   /** @brief 現在のパース位置（バイトオフセット） */
   std::size_t pos = 0;
 
@@ -298,7 +302,7 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
       }
       ctx.push_placeholder(actual_key, true, filter_list, int_filter_list, float_filter_list);
       pos = end + 3;
-      if (trim_blocks && pos < tmpl.size() && tmpl[pos] == '\n') ++pos;
+      if (trim_blocks && pos < tmpl.size()) { if (tmpl[pos] == '\n') ++pos; else if (tmpl[pos] == '\r') { if (pos + 1 < tmpl.size() && tmpl[pos + 1] == '\n') pos += 2; else ++pos; } }
       continue;
     }
 
@@ -316,7 +320,7 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
           comment_pos = inner_close + 2;
         } else {
           pos = next_dbl_close + 2;
-          if (trim_blocks && pos < tmpl.size() && tmpl[pos] == '\n') ++pos;
+          if (trim_blocks && pos < tmpl.size()) { if (tmpl[pos] == '\n') ++pos; else if (tmpl[pos] == '\r') { if (pos + 1 < tmpl.size() && tmpl[pos + 1] == '\n') pos += 2; else ++pos; } }
           comment_closed = true;
           break;
         }
@@ -348,7 +352,7 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
     if (trailing_tilde && inner.size() > 1 && inner.back() == '~')
       inner = trim_sv(inner.substr(0, inner.size() - 1));
     pos = tag_end + 2;
-    if (trim_blocks && pos < tmpl.size() && tmpl[pos] == '\n') ++pos;
+    if (trim_blocks && pos < tmpl.size()) { if (tmpl[pos] == '\n') ++pos; else if (tmpl[pos] == '\r') { if (pos + 1 < tmpl.size() && tmpl[pos + 1] == '\n') pos += 2; else ++pos; } }
 
     /** @brief 空タグはスキップ */
     if (inner.empty()) {
@@ -430,7 +434,7 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
         auto close_tag = constexpr_find_close_partialdef(tmpl, pos);
         if (close_tag != std::string_view::npos) {
           pos = close_tag + 15;
-          if (trim_blocks && pos < tmpl.size() && tmpl[pos] == '\n') ++pos;
+          if (trim_blocks && pos < tmpl.size()) { if (tmpl[pos] == '\n') ++pos; else if (tmpl[pos] == '\r') { if (pos + 1 < tmpl.size() && tmpl[pos + 1] == '\n') pos += 2; else ++pos; } }
         }
         if (immediate) {
           // 定義済みエントリ（local 含む）から名前解決して直接インデックスを参照
@@ -507,7 +511,17 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
          *          開きタグに出会うたびに depth を増やし、閉じタグに出会うたびに減らす。
          */
         while (search_pos < tmpl.size()) {
-          auto next_open = constexpr_find(tmpl, "{{#if", search_pos);
+          auto next_open_raw = constexpr_find(tmpl, "{{#if", search_pos);
+          std::size_t next_open = std::string_view::npos;
+          if (next_open_raw != std::string_view::npos) {
+            auto after = next_open_raw + 5;
+            if (after >= tmpl.size() || tmpl[after] == ' ' || tmpl[after] == '\t' || tmpl[after] == '\n' || tmpl[after] == '\r' || tmpl[after] == '}') {
+              next_open = next_open_raw;
+            } else {
+              search_pos = next_open_raw + 5;
+              continue;
+            }
+          }
           auto next_close = constexpr_find(tmpl, "{{/if}}", search_pos);
           if (next_close == std::string_view::npos) {
             break;
@@ -531,7 +545,7 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
           body = tmpl.substr(pos, close_pos - pos);
           if (lstrip_blocks) body = trim_tail_whitespace_for_lstrip(body);
           pos = close_pos + 7;
-          if (trim_blocks && pos < tmpl.size() && tmpl[pos] == '\n') ++pos;
+          if (trim_blocks && pos < tmpl.size()) { if (tmpl[pos] == '\n') ++pos; else if (tmpl[pos] == '\r') { if (pos + 1 < tmpl.size() && tmpl[pos + 1] == '\n') pos += 2; else ++pos; } }
         } else {
           body = tmpl.substr(pos);
           pos = tmpl.size();
@@ -566,12 +580,12 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
             bool cond = negate_if ? (*int_val == 0) : (*int_val != 0);
             if (cond) {
               auto then_start = ctx.tmpl.size;
-              ct_parse_into(ctx, then_body, trim_blocks, lstrip_blocks);
+              ct_parse_into(ctx, then_body, trim_blocks, lstrip_blocks, depth + 1);
               auto then_end = ctx.tmpl.size;
               ctx.update_if(chunk_idx, then_start, then_end, then_end, then_end);
             } else {
               auto else_start = ctx.tmpl.size;
-              ct_parse_into(ctx, else_body, trim_blocks, lstrip_blocks);
+              ct_parse_into(ctx, else_body, trim_blocks, lstrip_blocks, depth + 1);
               auto else_end = ctx.tmpl.size;
               ctx.update_if(chunk_idx, else_start, else_start, else_start, else_end);
             }
@@ -581,12 +595,12 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
         if (!constant_folded) {
           /** @brief then 節を再帰パース */
           auto then_start = ctx.tmpl.size;
-          ct_parse_into(ctx, then_body, trim_blocks, lstrip_blocks);
+          ct_parse_into(ctx, then_body, trim_blocks, lstrip_blocks, depth + 1);
           auto then_end = ctx.tmpl.size;
 
           /** @brief else 節を再帰パース */
           auto else_start = ctx.tmpl.size;
-          ct_parse_into(ctx, else_body, trim_blocks, lstrip_blocks);
+          ct_parse_into(ctx, else_body, trim_blocks, lstrip_blocks, depth + 1);
           auto else_end = ctx.tmpl.size;
 
           /** @brief 仮追加したチャンクの範囲を更新（check_expr で ! を除去） */
@@ -613,12 +627,12 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
           auto body = tmpl.substr(body_start, close_pos - body_start);
           if (lstrip_blocks) body = trim_tail_whitespace_for_lstrip(body);
           pos = close_pos + 5 + key.size();
-          if (trim_blocks && pos < tmpl.size() && tmpl[pos] == '\n') ++pos;
+          if (trim_blocks && pos < tmpl.size()) { if (tmpl[pos] == '\n') ++pos; else if (tmpl[pos] == '\r') { if (pos + 1 < tmpl.size() && tmpl[pos + 1] == '\n') pos += 2; else ++pos; } }
 
           /** @brief loop.* セクションチャンクを追加し、本体を再帰パース */
           auto chunk_idx = ctx.push_at_section(var_kind, 0, 0, false);
           auto body_start_idx = ctx.tmpl.size;
-          ct_parse_into(ctx, body, trim_blocks, lstrip_blocks);
+          ct_parse_into(ctx, body, trim_blocks, lstrip_blocks, depth + 1);
           auto body_end_idx = ctx.tmpl.size;
 
           ctx.update_at_section(chunk_idx, body_start_idx, body_end_idx);
@@ -701,7 +715,7 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
           body = tmpl.substr(body_start_pos, close_pos - body_start_pos);
           if (lstrip_blocks) body = trim_tail_whitespace_for_lstrip(body);
           pos = close_pos + tag_size;
-          if (trim_blocks && pos < tmpl.size() && tmpl[pos] == '\n') ++pos;
+          if (trim_blocks && pos < tmpl.size()) { if (tmpl[pos] == '\n') ++pos; else if (tmpl[pos] == '\r') { if (pos + 1 < tmpl.size() && tmpl[pos + 1] == '\n') pos += 2; else ++pos; } }
         } else {
           body = tmpl.substr(body_start_pos);
           pos = tmpl.size();
@@ -726,12 +740,12 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
           key = close_key;  // チャンクにはベースキーを格納（exists 変換時は変換済みキーを使用）
         auto chunk_idx = ctx.push_section(key, 0, 0, 0, 0, sec_ops);
         auto body_start_idx = ctx.tmpl.size;
-        ct_parse_into(ctx, main_body, trim_blocks, lstrip_blocks);
+        ct_parse_into(ctx, main_body, trim_blocks, lstrip_blocks, depth + 1);
         auto body_end_idx = ctx.tmpl.size;
 
         if (else_pos != std::string_view::npos) {
           auto else_start_idx = ctx.tmpl.size;
-          ct_parse_into(ctx, else_body, trim_blocks, lstrip_blocks);
+          ct_parse_into(ctx, else_body, trim_blocks, lstrip_blocks, depth + 1);
           auto else_end_idx = ctx.tmpl.size;
           ctx.update_section(chunk_idx, body_start_idx, body_end_idx, else_start_idx, else_end_idx);
         } else {
@@ -755,11 +769,11 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
           auto body = tmpl.substr(body_start_pos, close_pos - body_start_pos);
           if (lstrip_blocks) body = trim_tail_whitespace_for_lstrip(body);
           pos = close_pos + 5 + key.size();
-          if (trim_blocks && pos < tmpl.size() && tmpl[pos] == '\n') ++pos;
+          if (trim_blocks && pos < tmpl.size()) { if (tmpl[pos] == '\n') ++pos; else if (tmpl[pos] == '\r') { if (pos + 1 < tmpl.size() && tmpl[pos + 1] == '\n') pos += 2; else ++pos; } }
 
           auto chunk_idx = ctx.push_at_section(var_kind, 0, 0, true);
           auto body_start_idx = ctx.tmpl.size;
-          ct_parse_into(ctx, body, trim_blocks, lstrip_blocks);
+          ct_parse_into(ctx, body, trim_blocks, lstrip_blocks, depth + 1);
           auto body_end_idx = ctx.tmpl.size;
 
           ctx.update_at_section(chunk_idx, body_start_idx, body_end_idx);
@@ -809,7 +823,7 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
           body = tmpl.substr(body_start_pos, close_pos - body_start_pos);
           if (lstrip_blocks) body = trim_tail_whitespace_for_lstrip(body);
           pos = close_pos + tag_size;
-          if (trim_blocks && pos < tmpl.size() && tmpl[pos] == '\n') ++pos;
+          if (trim_blocks && pos < tmpl.size()) { if (tmpl[pos] == '\n') ++pos; else if (tmpl[pos] == '\r') { if (pos + 1 < tmpl.size() && tmpl[pos + 1] == '\n') pos += 2; else ++pos; } }
         } else {
           body = tmpl.substr(body_start_pos);
           pos = tmpl.size();
@@ -830,12 +844,12 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
 
         auto chunk_idx = ctx.push_inverted(key, 0, 0);
         auto body_start_idx = ctx.tmpl.size;
-        ct_parse_into(ctx, main_body, trim_blocks, lstrip_blocks);
+        ct_parse_into(ctx, main_body, trim_blocks, lstrip_blocks, depth + 1);
         auto body_end_idx = ctx.tmpl.size;
 
         if (else_pos != std::string_view::npos) {
           auto else_start_idx = ctx.tmpl.size;
-          ct_parse_into(ctx, else_body, trim_blocks, lstrip_blocks);
+          ct_parse_into(ctx, else_body, trim_blocks, lstrip_blocks, depth + 1);
           auto else_end_idx = ctx.tmpl.size;
           ctx.update_section(chunk_idx, body_start_idx, body_end_idx, else_start_idx, else_end_idx);
         } else {

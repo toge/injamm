@@ -105,6 +105,7 @@ struct bc_var_ref {
   bool is_loop_parent = false;             /**< コンパイル時解決: key が "loop.parent." 始まりか（ホットパスの文字列比較排除用） */
   special_var_kind special = special_var_kind::none; /**< コンパイル時解決: this / loop.* / loop.parent.* の分類 */
   bool binding_first = false;              /**< コンパイル時解決: キーが内包セクションの束縛参照であることが確定しているか（サブパスの field_index 事前解決の根拠） */
+  bool is_dead = false;                    /**< コンパイル時解決: known コンテキストで解決不能な欠損キー → 実行時走査をスキップ */
   std::uint8_t path_hint_len = 0;          /**< path_indices の有効長 */
   /** @brief コンパイル時解決: ドット区切りパスの階層別フィールドインデックス
    *  @details ヒープを避けるためインライン固定長（4階層まで）。実行時は名前検証付きで使用するため
