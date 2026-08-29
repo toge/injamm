@@ -832,11 +832,7 @@ class code_generator {
         emit("std::size_t _lo" + idx + " = 0, _hi" + idx + " = _size" + idx + ";");
         emit("bool _bwd" + idx + " = false;");
         bool has_stride = false;
-        int sort_arg = -1;          /**< sort 引数（-1=なし, 0=昇順, 1=降順） */
         std::string join_sep;       /**< join 区切り文字（空なら join なし） */
-        // sort 指定があればパイプライン全範囲のスナップショットを使う。
-        // 1パス目で reverse / sort 以外の op（take, skip, take_last, skip_last, stride）を適用して
-        // _lo/_hi を確定し、sort は確定後範囲に対して適用する。
         for (std::uint8_t si = 0; si < ref.section_op_count; ++si) {
           auto const& sop = ref.section_ops[si];
           auto n_str = std::to_string(sop.arg);
@@ -866,30 +862,10 @@ class code_generator {
               emit("std::size_t _st_skip" + idx + " = " + std::to_string(std::max(sop.arg2, 0)) + "u;");
               has_stride = true;
               break;
-            case injamm::detail::section_filter_op_kind::sort:
-              sort_arg = sop.arg;
-              break;
             case injamm::detail::section_filter_op_kind::join:
               join_sep.assign(sop.str_arg1.data(), sop.str_arg1.size());
               break;
           }
-        }
-        // sort: VM の do_section は [0, sz) 全体を sort_buf にコピーしてから fold_section_ops を
-        // 適用した _lo/_hi を使う。「全範囲 sort → take/skip」と等価な結果を得るため、
-        // パイプラインで確定した _lo/_hi ではなく、_lo=0 / _hi=_size で全要素を sort する。
-        if (sort_arg >= 0 && !has_stride) {
-          emit("using _elem_t" + idx + " = std::remove_cvref_t<decltype((" + access + ")[0])>;");
-          emit("std::vector<_elem_t" + idx + "> _sorted" + idx + ";");
-          emit("if (_size" + idx + " > 0) {");
-          ++indent_;
-          emit("_sorted" + idx + ".assign((" + access + ").begin(), (" + access + ").end());");
-          if (sort_arg == 0) {
-            emit("std::stable_sort(_sorted" + idx + ".begin(), _sorted" + idx + ".end(), std::less<_elem_t" + idx + ">{});");
-          } else {
-            emit("std::stable_sort(_sorted" + idx + ".begin(), _sorted" + idx + ".end(), std::greater<_elem_t" + idx + ">{});");
-          }
-          --indent_;
-          emit("}");
         }
         if (has_stride) {
           stride_loops_.insert(loop_depth_);
@@ -900,15 +876,6 @@ class code_generator {
           ++indent_;
           emit("while (!(_src" + idx + " >= _lo" + idx + " && _src" + idx + " < _hi" + idx + " && ((_bwd" + idx + " ? (_hi" + idx + " - 1 - _src" + idx + ") : (_src" + idx + " - _lo" + idx + ")) % _block" + idx + ") < _st_take" + idx + ")) { if (_bwd" + idx + ") --_src" + idx + "; else ++_src" + idx + "; }");
           emit("const auto& _item" + idx + " = " + access + "[_src" + idx + "];");
-        } else if (sort_arg >= 0) {
-          emit("auto _count" + idx + " = _hi" + idx + " - _lo" + idx + ";");
-          emit("for (std::size_t _i" + idx + " = 0; _i" + idx + " < _count" + idx + "; ++_i" + idx + ") {");
-          ++indent_;
-          // sort のみ → 昇順イテレート、sort(reverse=true) → 降順イテレート
-          // _sorted は sort_arg==1 のとき降順、sort_arg==0 のとき昇順になっているため、
-          // 順方向イテレートで期待順序になる
-          emit("auto _idx" + idx + " = _i" + idx + ";");
-          emit("const auto& _item" + idx + " = _sorted" + idx + "[_idx" + idx + "];");
         } else {
           emit("auto _count" + idx + " = _hi" + idx + " - _lo" + idx + ";");
           emit("for (std::size_t _i" + idx + " = 0; _i" + idx + " < _count" + idx + "; ++_i" + idx + ") {");

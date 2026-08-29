@@ -118,14 +118,13 @@ enum class compare_operand_kind : std::uint8_t {
 
 /** @brief セクションフィルタオペコード種別 */
 enum class section_filter_op_kind : std::uint8_t {
-  reverse,     /**< 反転反復 */
-  take,        /**< 先頭 n 個を残す */
-  skip,        /**< 先頭 n 個を捨てる */
-  take_last,   /**< 末尾 n 個を残す */
-  skip_last,   /**< 末尾 n 個を捨てる */
-  stride,      /**< 先頭 n 個を残し m 個飛ばすことを繰り返す */
-  sort,        /**< 安定ソート (arg: 0=昇順, 1=降順) */
-  join         /**< 要素間に separator (str_arg1) を挿入。arg1=separator 文字列ID */
+  reverse = 0,     /**< 反転反復 */
+  take = 1,        /**< 先頭 n 個を残す */
+  skip = 2,        /**< 先頭 n 個を捨てる */
+  take_last = 3,   /**< 末尾 n 個を残す */
+  skip_last = 4,   /**< 末尾 n 個を捨てる */
+  stride = 5,      /**< 先頭 n 個を残し m 個飛ばすことを繰り返す */
+  join = 7         /**< 要素間に separator (str_arg1) を挿入。arg1=separator 文字列ID */
 };
 
 struct bytecode;

@@ -709,7 +709,6 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
     bool has_stride = false;   /**< stride オペコードが含まれるか */
     std::uint32_t stride_take = 0; /**< stride の取得数 */
     std::uint32_t stride_skip = 0; /**< stride のスキップ数 */
-    int sort_arg = -1;             /**< sort オペコードの引数 (-1=なし) */
     std::string_view join_sep;     /**< join の区切り文字 (空なら join なし) */
   };
 
@@ -742,11 +741,6 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
           w.has_stride = true;
           w.stride_take = static_cast<std::uint32_t>(std::max(op.arg, 0));
           w.stride_skip = static_cast<std::uint32_t>(std::max(op.arg2, 0));
-          break;
-        }
-        case section_filter_op_kind::sort: {
-          // 最後の sort 指定が有効（複数指定された場合は後勝ち）
-          w.sort_arg = op.arg;
           break;
         }
         case section_filter_op_kind::join: {
@@ -800,26 +794,12 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
         bc_loop_state ls;
         ls.parent = ex.loop_;
         ls.count = count;
-        // sort 指定がある場合のみ要素をコピーして安定ソート。sort_arg=-1 ならコピー不要
-        // 要素が operator< を持つ場合のみ対応（std::string / 数値型等）
-        std::vector<std::remove_cvref_t<elem_t>> sorted_buf;
-        if constexpr (std::totally_ordered<elem_t>) {
-          if (w.sort_arg >= 0 && sz > 1) {
-            sorted_buf.assign(field.begin(), field.end());
-            if (w.sort_arg == 0) {
-              std::stable_sort(sorted_buf.begin(), sorted_buf.end(), std::less<elem_t>{});
-            } else {
-              std::stable_sort(sorted_buf.begin(), sorted_buf.end(), std::greater<elem_t>{});
-            }
-          }
-        }
-        auto const& src_field = sorted_buf.empty() ? field : sorted_buf;
         auto src = w.bwd ? (w.hi - 1u) : w.lo;
         for (ls.index = 0; ls.index < count; ++ls.index) {
           ls.continue_flag = false;
           if (w.has_stride)
             while (!kept(w, src)) { if (w.bwd) --src; else ++src; }
-          auto const& elem = src_field[src];
+          auto const& elem = field[src];
           ls.binding_name = ref.key;
           ls.binding_elem = &elem;
           ls.binding_resolve = &resolve_binding_var<elem_t>;

@@ -443,10 +443,6 @@ struct section_filter_op {
 [[nodiscard]] constexpr std::optional<section_filter_op> parse_section_filter(std::string_view name) noexcept {
   if (name == "reverse")
     return section_filter_op{section_filter_op_kind::reverse, 0};
-  if (name == "sort")
-    return section_filter_op{section_filter_op_kind::sort, 0};
-  if (name == "sort(reverse=true)")
-    return section_filter_op{section_filter_op_kind::sort, 1};
   auto paren = constexpr_find(name, '(');
   if (paren != std::string_view::npos && name.back() == ')') {
     auto fn = name.substr(0, paren);
@@ -458,17 +454,6 @@ struct section_filter_op {
         return section_filter_op{section_filter_op_kind::stride, parse_int_arg(arg_str), 0};
       return section_filter_op{section_filter_op_kind::stride, parse_int_arg(arg_str.substr(0, comma)),
                                parse_int_arg(arg_str.substr(comma + 1))};
-    }
-    if (fn == "sort") {
-      // sort(reverse=true|false) のみ受理。arg=1で降順、arg=0で昇順
-      auto kw_reverse = constexpr_find(arg_str, "reverse=true");
-      auto kw_false   = constexpr_find(arg_str, "reverse=false");
-      int arg = 0;
-      if (kw_reverse != std::string_view::npos &&
-          (kw_false == std::string_view::npos || kw_reverse < kw_false)) {
-        arg = 1;
-      }
-      return section_filter_op{section_filter_op_kind::sort, arg};
     }
     if (fn == "join") {
       // join(separator): 区切り文字列を保持

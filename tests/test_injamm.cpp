@@ -4872,32 +4872,6 @@ struct glz::meta<SectionFilterData5> {
   static constexpr auto value = glz::object("items", &SectionFilterData5::items);
 };
 
-// ---- section sort テスト用構造体 ----
-struct SortIntData1 { std::vector<int> items{3, 1, 2}; };
-template <> struct glz::meta<SortIntData1> {
-  static constexpr auto value = glz::object("items", &SortIntData1::items);
-};
-struct SortIntData2 { std::vector<int> items{1, 3, 2}; };
-template <> struct glz::meta<SortIntData2> {
-  static constexpr auto value = glz::object("items", &SortIntData2::items);
-};
-struct SortStrData { std::vector<std::string> items{"banana", "apple", "cherry"}; };
-template <> struct glz::meta<SortStrData> {
-  static constexpr auto value = glz::object("items", &SortStrData::items);
-};
-struct SortIntData3 { std::vector<int> items{2, 1, 2, 1, 3}; };
-template <> struct glz::meta<SortIntData3> {
-  static constexpr auto value = glz::object("items", &SortIntData3::items);
-};
-struct SortIntData4 { std::vector<int> items{5, 3, 1, 4, 2}; };
-template <> struct glz::meta<SortIntData4> {
-  static constexpr auto value = glz::object("items", &SortIntData4::items);
-};
-struct SortIntData5 { std::vector<int> items{}; };
-template <> struct glz::meta<SortIntData5> {
-  static constexpr auto value = glz::object("items", &SortIntData5::items);
-};
-
 // ---- section join テスト用構造体 ----
 struct JoinStrData { std::vector<std::string> items{"apple", "banana", "cherry"}; };
 template <> struct glz::meta<JoinStrData> {
@@ -4938,51 +4912,6 @@ TEST_CASE("section reverse take chain", "[section][filter]") {
   CHECK(*out == "[0:true:false=5][1:false:true=4]");
 }
 
-TEST_CASE("section sort ascending int", "[section][filter]") {
-  // items = {3, 1, 2} → ソート後 {1, 2, 3}
-  SortIntData1 d;
-  auto out = injamm::engine<SortIntData1>("{{#items | sort}}{{this}} {{/items}}").render(d);
-  REQUIRE(out);
-  CHECK(*out == "1 2 3 ");
-}
-
-TEST_CASE("section sort descending int", "[section][filter]") {
-  SortIntData2 d;
-  auto out = injamm::engine<SortIntData2>("{{#items | sort(reverse=true)}}{{this}} {{/items}}").render(d);
-  REQUIRE(out);
-  CHECK(*out == "3 2 1 ");
-}
-
-TEST_CASE("section sort ascending string", "[section][filter]") {
-  SortStrData d;
-  auto out = injamm::engine<SortStrData>("{{#items | sort}}{{this}} {{/items}}").render(d);
-  REQUIRE(out);
-  CHECK(*out == "apple banana cherry ");
-}
-
-TEST_CASE("section sort stable", "[section][filter]") {
-  // 安定ソート: 同一値でも元の順序を保つ
-  SortIntData3 d;
-  auto out = injamm::engine<SortIntData3>("{{#items | sort}}{{this}} {{/items}}").render(d);
-  REQUIRE(out);
-  CHECK(*out == "1 1 2 2 3 ");
-}
-
-TEST_CASE("section sort with take", "[section][filter]") {
-  SortIntData4 d;
-  // sort してから先頭2件
-  auto out = injamm::engine<SortIntData4>("{{#items | sort | take(2)}}{{this}} {{/items}}").render(d);
-  REQUIRE(out);
-  CHECK(*out == "1 2 ");
-}
-
-TEST_CASE("section sort on empty", "[section][filter]") {
-  SortIntData5 d;
-  auto out = injamm::engine<SortIntData5>("{{#items | sort}}{{this}} {{/items}}").render(d);
-  REQUIRE(out);
-  CHECK(*out == "");
-}
-
 // ---- section join テスト ----
 TEST_CASE("section join basic", "[section][filter]") {
   JoinStrData d;
@@ -5010,14 +4939,6 @@ TEST_CASE("section join empty list", "[section][filter]") {
   auto out = injamm::engine<JoinEmptyData>(R"({{#items | join(", ")}}{{this}}{{/items}})").render(d);
   REQUIRE(out);
   CHECK(*out == "");
-}
-
-TEST_CASE("section join with sort", "[section][filter]") {
-  JoinStrData d;
-  // ソート後にカンマ区切りで結合
-  auto out = injamm::engine<JoinStrData>(R"({{#items | sort | join(", ")}}{{this}}{{/items}})").render(d);
-  REQUIRE(out);
-  CHECK(*out == "apple, banana, cherry");
 }
 
 TEST_CASE("section take loop.size", "[section][filter]") {
