@@ -446,6 +446,26 @@ inline void filter_float_precision(std::string& s, int n) {
   }
 }
 
+// round: VM (filters.hpp) と同一の half-away-from-zero 丸め
+inline void filter_float_round(std::string& s, int precision) {
+  double val = 0.0;
+  auto [ptr, ec] = std::from_chars(s.data(), s.data() + s.size(), val);
+  if (ec != std::errc{}) return;
+  if (precision < 0) {
+    val = std::round(val);
+    char buf[128];
+    auto [p, e] = std::to_chars(buf, buf + sizeof(buf), val);
+    if (e == std::errc{}) s.assign(buf, p);
+    return;
+  }
+  double pow10 = 1.0;
+  for (int i = 0; i < precision; ++i) pow10 *= 10.0;
+  val = std::round(val * pow10) / pow10;
+  char buf[128];
+  auto [p, e] = std::to_chars(buf, buf + sizeof(buf), val, std::chars_format::fixed, precision);
+  if (e == std::errc{}) s.assign(buf, p);
+}
+
 template <class Buffer, typename V>
 inline void append_value(Buffer& out, V const& v) {
   if constexpr (std::is_same_v<V, std::string> || std::is_same_v<V, std::string_view>) {

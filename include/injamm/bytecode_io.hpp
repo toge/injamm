@@ -119,6 +119,12 @@ inline void write_var_ref(std::ostream& os, std::vector<std::string> const& lite
     write_u8(os, static_cast<std::uint8_t>(ref.section_ops[i].kind));
     write_u32_le(os, static_cast<std::uint32_t>(ref.section_ops[i].arg));
     write_u32_le(os, static_cast<std::uint32_t>(ref.section_ops[i].arg2));
+    // str_arg1: リテラルインデックスとして保存（v5 で追加、join の separator 用）
+    auto it1 = std::find_if(literals.begin(), literals.end(),
+                            [&](auto const& s) { return s == ref.section_ops[i].str_arg1; });
+    write_u64_le(os, it1 != literals.end()
+                         ? static_cast<std::uint64_t>(std::distance(literals.begin(), it1))
+                         : UINT64_MAX);
   }
 
   write_u64_le(os, ref.filters.size());
@@ -349,7 +355,7 @@ bytecode read_bytecode_body(std::istream& is, read_state& state, int depth = 0);
 inline error_code save_bytecode(detail::bytecode const& bc, std::ostream& os) {
   constexpr char magic[] = {'I', 'J', 'B', 'C'};
   os.write(magic, 4);
-  detail::write_u32_le(os, 4); // バージョン 4（セクションフィルタ stride 対応）
+  detail::write_u32_le(os, 5); // バージョン 5（セクションフィルタの join separator 対応）
   if (!os) return error_code::no_read_input;
 
   detail::write_bytecode(os, bc);
@@ -389,6 +395,8 @@ expected<detail::bytecode> load_bytecode(std::istream& is) {
     state.version = 3;
   } else if (version == 4) {
     state.version = 4;
+  } else if (version == 5) {
+    state.version = 5;
   } else {
     return std::unexpected(error_ctx{0, error_code::type_mismatch, "Unsupported bytecode version"});
   }
@@ -470,6 +478,12 @@ bytecode read_bytecode_body(std::istream& is, read_state& state, int depth) {
         ref.section_ops[si].arg  = static_cast<std::int32_t>(read_u32_le(is, state));
         if (state.version >= 4)
           ref.section_ops[si].arg2 = static_cast<std::int32_t>(read_u32_le(is, state));
+        if (state.version >= 5) {
+          auto idx = read_u64_le(is, state);
+          if (state.ok && idx < bc.literals.size()) {
+            ref.section_ops[si].str_arg1 = bc.literals[static_cast<std::size_t>(idx)];
+          }
+        }
       }
     } else if (state.version >= 2) {
       auto sec_rev = read_u8(is, state) != 0;

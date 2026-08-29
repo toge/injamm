@@ -23,6 +23,16 @@ struct ItemData {
   double price = 0.0;
 };
 
+// sort テスト用: プリミティブ型（std::string / int）ベクターを持つ VM/codegen 共通型
+struct SortData {
+  std::vector<std::string> sitems;
+  std::vector<int> iitems;
+};
+template <>
+struct glz::meta<SortData> {
+  static constexpr auto value = glz::object("sitems", &SortData::sitems, "iitems", &SortData::iitems);
+};
+
 struct TestData {
   std::string name;
   int age = 0;
@@ -77,6 +87,13 @@ struct glz::meta<ItemData> {
 #include "render18.hpp"
 #include "render19.hpp"
 #include "render20.hpp"
+#include "render_sort.hpp"
+#include "render_sort_rev.hpp"
+#include "render_sort_take.hpp"
+#include "render_join.hpp"
+#include "render_sort_join.hpp"
+#include "render_round.hpp"
+#include "render_round_noarg.hpp"
 
 // ============================================================
 // テストヘルパ
@@ -89,7 +106,7 @@ void check(std::string_view name, std::string_view tmpl_str, auto const& data, a
   ++test_count;
 
   // injamm ランタイムでレンダリング
-  injamm::engine<TestData> eng{std::string(tmpl_str)};
+  injamm::engine<std::remove_cvref_t<decltype(data)>> eng{std::string(tmpl_str)};
   auto expected = eng.render(data);
   if (!expected) {
     std::cerr << "FAIL [" << name << "] injamm render failed: "
@@ -129,7 +146,7 @@ void check(std::string_view name, std::string_view tmpl_str, auto const& data, a
 void check_into(std::string_view name, std::string_view tmpl_str, auto const& data, auto gen_func) {
   ++test_count;
 
-  injamm::engine<TestData> eng{std::string(tmpl_str)};
+  injamm::engine<std::remove_cvref_t<decltype(data)>> eng{std::string(tmpl_str)};
   auto expected = eng.render(data);
   if (!expected) {
     std::cerr << "FAIL [" << name << "] injamm render failed: "
@@ -158,7 +175,7 @@ void check_into(std::string_view name, std::string_view tmpl_str, auto const& da
 void check_sink(std::string_view name, std::string_view tmpl_str, auto const& data, auto gen_func) {
   ++test_count;
 
-  injamm::engine<TestData> eng{std::string(tmpl_str)};
+  injamm::engine<std::remove_cvref_t<decltype(data)>> eng{std::string(tmpl_str)};
   auto expected = eng.render(data);
   if (!expected) {
     std::cerr << "FAIL [" << name << "] injamm render failed: "
@@ -260,6 +277,35 @@ int main() {
     [](auto const& data) { return generated::render19(data); });
   check("section reverse stride", "{{#items | reverse | stride(3,1)}}{{name}};{{/items}}", sdata,
     [](auto const& data) { return generated::render20(data); });
+
+  // テスト12: セクションフィルタ sort / sort(reverse=true) / sort | take
+  // VM の sort は std::totally_ordered な型のみ動作するため、プリミティブ型でテストする
+  SortData sortdata;
+  sortdata.sitems = {"Charlie", "Alpha", "Bravo"};
+  sortdata.iitems = {3, 1, 2, 1};
+  check("section sort asc string", "{{#sitems | sort}}{{this}};{{/sitems}}", sortdata,
+    [](auto const& data) { return generated::render_sort(data); });
+  check("section sort desc string", "{{#sitems | sort(reverse=true)}}{{this}};{{/sitems}}", sortdata,
+    [](auto const& data) { return generated::render_sort_rev(data); });
+  check("section sort + take", "{{#iitems | sort | take(2)}}{{this}};{{/iitems}}", sortdata,
+    [](auto const& data) { return generated::render_sort_take(data); });
+
+  // テスト13: セクションフィルタ join / sort | join
+  SortData joindata;
+  joindata.sitems = {"x", "y", "z"};
+  check("section join", R"({{#sitems | join(", ")}}{{this}}{{/sitems}})", joindata,
+    [](auto const& data) { return generated::render_join(data); });
+  check("section sort + join", R"({{#sitems | sort | join(", ")}}{{this}}{{/sitems}})", joindata,
+    [](auto const& data) { return generated::render_sort_join(data); });
+
+  // テスト14: float_filter round
+  TestData rounddata;
+  rounddata.total = 3.14159;
+  check("float round precision 2", "{{ total | round(2) }}", rounddata,
+    [](auto const& data) { return generated::render_round(data); });
+  rounddata.total = 10.6;
+  check("float round no arg", "{{ total | round }}", rounddata,
+    [](auto const& data) { return generated::render_round_noarg(data); });
 
   // バッファ再利用版のテスト
   check_into("into simple", "Hello {{name}}, age={{age}}", d,
