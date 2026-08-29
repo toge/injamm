@@ -66,9 +66,6 @@ target_compile_features(injamm INTERFACE cxx_std_23)
 if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
   if(NOT ENABLE_THREADED_DISPATCH)
     target_compile_definitions(injamm INTERFACE INJAMM_NO_THREADED_DISPATCH)
-  else()
-    # ヘッダ側の自動検出を補完: gnu++23 拡張を明示的に有効化する
-    target_compile_options(injamm INTERFACE -std=gnu++23)
   endif()
 else()
   # Clang/MSVC: computed goto 非対応のため switch fallback を使用

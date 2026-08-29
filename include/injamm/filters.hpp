@@ -9,6 +9,7 @@
 #include <glaze/util/fast_float.hpp>
 #include <glaze/util/zmij.hpp>
 #include <cmath>
+#include <limits>
 #include <expected>
 #include <optional>
 #include <string>
@@ -134,24 +135,30 @@ constexpr void apply_string_filter(std::string& str, string_filter_entry entry) 
   }
   case string_filter::left: {
     auto width = entry.arg1;
+    if (width <= 0) break;
+    if (width > 100000) width = 100000;
     if (str.size() < static_cast<std::size_t>(width)) {
-      str.insert(0, width - str.size(), ' ');
+      str.insert(0, static_cast<std::size_t>(width) - str.size(), ' ');
     }
     break;
   }
   case string_filter::right: {
     auto width = entry.arg1;
+    if (width <= 0) break;
+    if (width > 100000) width = 100000;
     if (str.size() < static_cast<std::size_t>(width)) {
-      str.append(width - str.size(), ' ');
+      str.append(static_cast<std::size_t>(width) - str.size(), ' ');
     }
     break;
   }
   case string_filter::center: {
     auto width = entry.arg1;
+    if (width <= 0) break;
+    if (width > 100000) width = 100000;
     if (str.size() < static_cast<std::size_t>(width)) {
-      auto pad       = width - str.size();
+      auto pad       = static_cast<std::size_t>(width) - str.size();
       auto left_pad  = pad / 2;
-      str.reserve(width);
+      str.reserve(static_cast<std::size_t>(width));
       str.insert(0, left_pad, ' ');
       str.append(pad - left_pad, ' ');
     }
@@ -159,11 +166,12 @@ constexpr void apply_string_filter(std::string& str, string_filter_entry entry) 
   }
   case string_filter::truncate: {
     auto max_len = entry.arg1;
+    if (max_len < 0) { str.clear(); break; }
     if (str.size() > static_cast<std::size_t>(max_len) && max_len >= 3) {
-      str.erase(max_len - 3);
+      str.erase(static_cast<std::size_t>(max_len - 3));
       str.append("...");
     } else if (str.size() > static_cast<std::size_t>(max_len)) {
-      str.erase(max_len);
+      str.erase(static_cast<std::size_t>(max_len));
     }
     break;
   }
@@ -386,6 +394,10 @@ constexpr void apply_string_filter(std::string& str, string_filter_entry entry) 
       auto divisor = entry.arg;
       if (divisor == 0) {
         return std::unexpected(error_ctx{.ec = error_code::division_by_zero});
+      }
+      if (divisor == -1 && val == std::numeric_limits<long long>::min()) {
+        str.assign("0");
+        break;
       }
       std::array<char, 32> buf;
       auto [tp, tec] = std::to_chars(buf.data(), buf.data() + buf.size(), val % divisor);
@@ -689,9 +701,16 @@ constexpr void apply_string_filter(std::string& str, string_filter_entry entry) 
     } else {
       long long val{};
       if (auto [p, ec] = std::from_chars(data, data + size, val); ec == std::errc()) {
-        std::array<char, 32> buf;
-        if (auto [tp, tec] = std::to_chars(buf.data(), buf.data() + buf.size(), val / arg); tec == std::errc()) {
-          str.assign(buf.data(), tp - buf.data());
+        if (arg == -1 && val == std::numeric_limits<long long>::min()) {
+          unsigned long long u = 9223372036854775808ULL;
+          std::array<char, 32> buf;
+          auto [tp, tec] = std::to_chars(buf.data(), buf.data() + buf.size(), u);
+          if (tec == std::errc()) str.assign(buf.data(), tp - buf.data());
+        } else {
+          std::array<char, 32> buf;
+          if (auto [tp, tec] = std::to_chars(buf.data(), buf.data() + buf.size(), val / arg); tec == std::errc()) {
+            str.assign(buf.data(), tp - buf.data());
+          }
         }
       }
     }

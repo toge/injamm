@@ -5,6 +5,9 @@ find_dependency(glaze CONFIG REQUIRED)
 if(@ENABLE_ENUM@)
   find_dependency(enchantum CONFIG REQUIRED)
 endif()
+if(@USE_FMT@)
+  find_dependency(fmt CONFIG REQUIRED)
+endif()
 
 include("${CMAKE_CURRENT_LIST_DIR}/injammTargets.cmake")
 

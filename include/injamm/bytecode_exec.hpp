@@ -716,7 +716,8 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
     section_window w{0, sz, false};
     for (std::uint8_t i = 0; i < ref.section_op_count; ++i) {
       auto const& op = ref.section_ops[i];
-      auto n = static_cast<std::uint32_t>(op.arg);
+      // ponytail: clamp negative to 0 to avoid uint wrap (take(-1) -> 0)
+      auto n = op.arg < 0 ? 0u : static_cast<std::uint32_t>(op.arg);
       switch (op.kind) {
         case section_filter_op_kind::reverse:
           w.bwd = !w.bwd;
@@ -1310,7 +1311,9 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
   }
 
   INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_emit_at_root(bc_executor& ex, std::size_t& pc, std::string&) {
-    if constexpr (serializable_v<RootT>) {
+    if constexpr (std::same_as<RootT, std::string> || std::same_as<RootT, std::string_view> || char_pointer_v<RootT>) {
+      html_escape_into(ex.out_, to_sv(ex.root_value_));
+    } else if constexpr (serializable_v<RootT>) {
       serialize_value(ex.out_, ex.root_value_);
     }
     ++pc;
@@ -1428,7 +1431,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
   INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_emit_at_key(bc_executor& ex, std::size_t& pc, std::string&) {
     if (ex.loop_) {
       if (!ex.loop_->key.empty()) {
-        ex.out_.append(ex.loop_->key);
+        html_escape_into(ex.out_, ex.loop_->key);
       } else {
         std::array<char, 16> buf;
         auto [ptr, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), ex.loop_->index);

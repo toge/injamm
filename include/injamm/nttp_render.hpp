@@ -367,7 +367,7 @@ template <fixed_string Tmpl, std::same_as<bool> auto TrimBlocks = false, std::sa
     return std::unexpected(bc.error);
   auto it = std::find_if(bc.partial_entries.begin(), bc.partial_entries.end(), [&](auto const& e) { return !e.local && e.name == partial_name; });
   if (it == bc.partial_entries.end())
-    return std::unexpected(error_ctx{0, error_code::unknown_key, partial_name});
+      return std::unexpected(error_ctx{0, error_code::unknown_key, "unknown partial"});
   return detail::bc_execute(*it->bc, value);
 }
 
@@ -395,7 +395,7 @@ template <fixed_string Tmpl, std::same_as<bool> auto TrimBlocks = false, std::sa
     return std::unexpected(bc.error);
   auto it = std::find_if(bc.partial_entries.begin(), bc.partial_entries.end(), [&](auto const& e) { return !e.local && e.name == partial_name; });
   if (it == bc.partial_entries.end())
-    return std::unexpected(error_ctx{0, error_code::unknown_key, partial_name});
+      return std::unexpected(error_ctx{0, error_code::unknown_key, "unknown partial"});
   return detail::bc_execute_into_sink(*it->bc, value, sink);
 }
 
@@ -423,7 +423,7 @@ template <fixed_string Tmpl, typename Reg, bool TrimBlocks = false, bool LstripB
     return std::unexpected(bc.error);
   auto it = std::find_if(bc.partial_entries.begin(), bc.partial_entries.end(), [&](auto const& e) { return !e.local && e.name == partial_name; });
   if (it == bc.partial_entries.end())
-    return std::unexpected(error_ctx{0, error_code::unknown_key, partial_name});
+      return std::unexpected(error_ctx{0, error_code::unknown_key, "unknown partial"});
   return detail::bc_execute(*it->bc, value);
 }
 
@@ -492,7 +492,7 @@ template <auto Tmpl, bool TrimBlocks = false, bool LstripBlocks = false, typenam
     return std::unexpected(bc.error);
   auto it = std::find_if(bc.partial_entries.begin(), bc.partial_entries.end(), [&](auto const& e) { return !e.local && e.name == partial_name; });
   if (it == bc.partial_entries.end())
-    return std::unexpected(error_ctx{0, error_code::unknown_key, partial_name});
+      return std::unexpected(error_ctx{0, error_code::unknown_key, "unknown partial"});
   return detail::bc_execute(*it->bc, value);
 }
 
@@ -507,7 +507,7 @@ template <auto Tmpl, bool TrimBlocks = false, bool LstripBlocks = false, typenam
     return std::unexpected(bc.error);
   auto it = std::find_if(bc.partial_entries.begin(), bc.partial_entries.end(), [&](auto const& e) { return !e.local && e.name == partial_name; });
   if (it == bc.partial_entries.end())
-    return std::unexpected(error_ctx{0, error_code::unknown_key, partial_name});
+      return std::unexpected(error_ctx{0, error_code::unknown_key, "unknown partial"});
   return detail::bc_execute_into_sink(*it->bc, value, sink);
 }
 
@@ -522,7 +522,7 @@ template <auto Tmpl, typename Reg, bool TrimBlocks = false, bool LstripBlocks = 
     return std::unexpected(bc.error);
   auto it = std::find_if(bc.partial_entries.begin(), bc.partial_entries.end(), [&](auto const& e) { return !e.local && e.name == partial_name; });
   if (it == bc.partial_entries.end())
-    return std::unexpected(error_ctx{0, error_code::unknown_key, partial_name});
+      return std::unexpected(error_ctx{0, error_code::unknown_key, "unknown partial"});
   return detail::bc_execute(*it->bc, value);
 }
 

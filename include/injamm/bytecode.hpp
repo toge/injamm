@@ -176,6 +176,46 @@ struct bytecode {
   std::vector<partial_entry> partial_entries;/**< プリコンパイル済みpartialエントリ（call_partial 用） */
   bool is_simple = false;                   /**< コンパイル時解決: 単純テンプレ（litvar/literal/halt のみ）なら高速パスを使用 */
 
+  bytecode() = default;
+  bytecode(bytecode const& o)
+      : instructions(o.instructions), literals(o.literals), var_refs(o.var_refs),
+        literal_total_size(o.literal_total_size), error(o.error),
+        template_storage(o.template_storage), partial_entries(o.partial_entries),
+        is_simple(o.is_simple) { rebind_views(); }
+  bytecode(bytecode&& o) noexcept
+      : instructions(std::move(o.instructions)), literals(std::move(o.literals)),
+        var_refs(std::move(o.var_refs)), literal_total_size(o.literal_total_size),
+        error(std::move(o.error)), template_storage(std::move(o.template_storage)),
+        partial_entries(std::move(o.partial_entries)), is_simple(o.is_simple) { rebind_views(); }
+  bytecode& operator=(bytecode const& o) {
+    if (this != &o) {
+      instructions = o.instructions;
+      literals = o.literals;
+      var_refs = o.var_refs;
+      literal_total_size = o.literal_total_size;
+      error = o.error;
+      template_storage = o.template_storage;
+      partial_entries = o.partial_entries;
+      is_simple = o.is_simple;
+      rebind_views();
+    }
+    return *this;
+  }
+  bytecode& operator=(bytecode&& o) noexcept {
+    if (this != &o) {
+      instructions = std::move(o.instructions);
+      literals = std::move(o.literals);
+      var_refs = std::move(o.var_refs);
+      literal_total_size = o.literal_total_size;
+      error = std::move(o.error);
+      template_storage = std::move(o.template_storage);
+      partial_entries = std::move(o.partial_entries);
+      is_simple = o.is_simple;
+      rebind_views();
+    }
+    return *this;
+  }
+
   /**
    * @brief 命令を追加する
    * @param op オペコード
@@ -247,6 +287,40 @@ struct bytecode {
    */
   void patch_jump(std::size_t instr_idx, std::uint32_t target) {
     instructions[instr_idx].operand = target;
+  }
+
+  /**
+   * @brief フィルタ文字列ビューを literals の実体に再紐付けする
+   * @details コピー/ムーブ後に string_view が旧ストレージを指したままになる SSO 対策。
+   *          各 view の内容と一致する literal を線形探索して再設定する。
+   */
+  void rebind_views() {
+    // error_ctx の custom_error_message が template_storage 内を指している場合の再束縛
+    if (!error.custom_error_message.empty() && !template_storage.empty()) {
+      std::string_view msg = error.custom_error_message;
+      // template_storage 内に同一内容が存在すればそこへ再束縛（部分一致ではなく完全一致の位置を探索）
+      // 見つからなければ静的リテラル（"nesting too deep" 等）とみなしてそのままにする
+      auto pos = template_storage.find(msg);
+      if (pos != std::string::npos) {
+        error.custom_error_message = std::string_view(template_storage.data() + pos, msg.size());
+      }
+    }
+    for (auto& ref : var_refs) {
+      for (auto& f : ref.filters) {
+        if (!f.str_arg1.empty()) {
+          for (auto& lit : literals) if (std::string_view(lit) == f.str_arg1) { f.str_arg1 = lit; break; }
+        }
+        if (!f.str_arg2.empty()) {
+          for (auto& lit : literals) if (std::string_view(lit) == f.str_arg2) { f.str_arg2 = lit; break; }
+        }
+      }
+      for (std::uint8_t i = 0; i < ref.section_op_count; ++i) {
+        if (!ref.section_ops[i].str_arg1.empty()) {
+          for (auto& lit : literals) if (std::string_view(lit) == ref.section_ops[i].str_arg1) { ref.section_ops[i].str_arg1 = lit; break; }
+        }
+      }
+    }
+    for (auto& pe : partial_entries) if (pe.bc) pe.bc->rebind_views();
   }
 
   /**

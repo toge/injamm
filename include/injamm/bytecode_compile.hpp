@@ -1057,6 +1057,9 @@ class bc_compiler {
    *          kind フィールドに index=0 / is_first=1 / is_last=2 をエンコードする。
    */
   void compile_at_section(std::string_view key) {
+    if (nesting_depth_ >= max_nesting_depth) { bc_.error = error_ctx{pos_, error_code::syntax_error, "nesting too deep"}; return; }
+    ++nesting_depth_;
+    struct _DepthGuard { int* p; ~_DepthGuard() { --*p; } } _guard{&nesting_depth_};
     auto k = parse_loop_kind(key);
     if (!k) return;
     if (*k == at_var_kind::even || *k == at_var_kind::odd) {

@@ -180,7 +180,7 @@ class engine {
     }
     auto it = std::find_if(bc_.partial_entries.begin(), bc_.partial_entries.end(), [&](auto const& e) { return !e.local && e.name == partial_name; });
     if (it == bc_.partial_entries.end()) {
-      return std::unexpected(error_ctx{0, error_code::unknown_key, partial_name});
+      return std::unexpected(error_ctx{0, error_code::unknown_key, "unknown partial"});
     }
     return detail::bc_execute(*it->bc, value);
   }
@@ -236,7 +236,7 @@ class engine {
     }
     auto it = std::find_if(bc_.partial_entries.begin(), bc_.partial_entries.end(), [&](auto const& e) { return !e.local && e.name == partial_name; });
     if (it == bc_.partial_entries.end()) {
-      return std::unexpected(error_ctx{0, error_code::unknown_key, partial_name});
+      return std::unexpected(error_ctx{0, error_code::unknown_key, "unknown partial"});
     }
     return detail::bc_execute_into_sink(*it->bc, value, sink);
   }

@@ -614,6 +614,19 @@ bytecode read_bytecode_body(std::istream& is, read_state& state, int depth) {
         case bc_opcode::emit_end:
           if (inst.operand != 0 && inst.operand > n_ins) bad = true;
           break;
+        case bc_opcode::emit_at_section:
+        case bc_opcode::emit_at_inverted:
+          if (inst.operand == 0 || inst.operand > n_ins) bad = true;
+          else if (inst.operand2 > 2) bad = true;
+          break;
+        case bc_opcode::filter_string:
+        case bc_opcode::filter_int:
+        case bc_opcode::filter_float:
+          if (inst.operand2 > 64) bad = true;
+          break;
+        case bc_opcode::emit_filtered:
+        case bc_opcode::emit_filtered_raw:
+          break;
         default:
           break;
       }
