@@ -3,14 +3,15 @@
 Mustache/inja サブセットの高速テンプレートエンジン。
 Glaze でメタプログラミングされた C++ 構造体をコンテキストとして、テンプレートをレンダリングします。
 
-2つのレンダリング API を提供:
+3つのレンダリング API を提供:
 - **NTTP コンパイル時** (`render<fixed_string>`): テンプレート文字列がコンパイル時定数の場合に最適
 - **バイトコード VM** (`engine<T>`): テンプレート文字列が実行時まで決まらない場合に使用
+- **AOT コード生成** (`injamm_codegen`): バイトコード/テンプレートから glaze 非依存の C++ レンダリング関数を生成。VM より高速な直接フィールドアクセス
 
 ## 特徴
 
 - **ヘッダオンリー**: インクルードするだけで使用可能
-- **高速**: コンパイル時テンプレートパース、Computed goto ディスパッチ（GCC）、Glaze リフレクションによる O(1) フィールドアクセス
+- **高速**: コンパイル時テンプレートパース、Computed goto ディスパッチ（GCC）、Glaze リフレクションによる O(1) フィールドアクセス、AOT コード生成（`injamm_codegen`）による glaze 非依存の直接アクセス
 - **依存最小**: [Glaze](https://github.com/stephenberry/glaze) のみ必須。enum 名前解決は [enchantum](https://github.com/anomalyco/enchantum)（オプション、`ENABLE_ENUM` で切替）
 
 ## 注意: Mustache/inja との挙動の違い
@@ -52,7 +53,7 @@ cmake --build build
 | `ENABLE_THREADED_DISPATCH` | ON     | 高速化のためのGCC computed gotoディスパッチ（GCC のみ） |
 | `BUILD_TEST`               | ON     | テストをビルドする                                       |
 | `BUILD_EXAMPLE`            | ON     | サンプルをビルドする                                     |
-| `BUILD_UTIL`               | OFF    | CLI ユーティリティ（`injamm_bc`）をビルドする            |
+| `BUILD_UTIL`               | OFF    | CLI ユーティリティ（`injamm_bc` / `injamm_codegen`）をビルドする            |
 | `ENABLE_ENUM`              | ON     | enchantum による enum 文字列出力を有効化（OFF で `INJAMM_NO_ENUM_REGISTRY` が定義され依存が外れる） |
 
 ### find_package
@@ -94,7 +95,12 @@ struct glz::meta<User> {
 - テンプレート文字列が実行時まで決まらない（ファイル読み込み、ユーザー入力など）
 - 1回だけのレンダリングでも compile 済み engine を保持すれば NTTP と同等の性能
 
-要するに: **テンプレートが固定なら NTTP、動的なら engine。**
+**AOT コード生成（`injamm_codegen`）を選ぶ場合:**
+- テンプレートがデプロイ前に確定しており、最大スループットが欲しい
+- glaze 依存を外した生成ヘッダを配布・埋め込みたい
+- `injamm_bc` で `.bc` 化 → `injamm_codegen -i tmpl.bc -t MyData -o render.hpp` でヘッダ生成
+
+要するに: **テンプレートが固定なら NTTP、動的なら engine、確定済みで最速を求めるなら codegen。**
 
 ### 3. テンプレート機能の使い分けガイドライン
 
@@ -307,9 +313,13 @@ auto r = eng.render(User{"Alice", 30});
 
 **フォーマット**: カスタムバイナリ形式。マジックバイト `IJBC` + バージョン 1（リトルエンディアン）。
 
-### 10. injamm_bc CLI ツール
+### 10. CLI ツール（`injamm_bc` / `injamm_codegen`）
 
-`BUILD_UTIL=ON` でビルドされるコマンドラインツール。テンプレートファイルをコンパイルしてバイトコードファイルを出力します。
+`BUILD_UTIL=ON` でビルドされるコマンドラインツール。
+
+#### injamm_bc — テンプレート → バイトコード
+
+テンプレートファイルをコンパイルしてバイトコードファイル（`.bc`）を出力します。
 
 ```bash
 # テンプレートファイルからバイトコード生成
@@ -332,6 +342,35 @@ injamm_bc -i page.html -o page.bc -D title="My Page" -D footer="© 2026"
 | `-o, --output <path>` | 出力バイトコードファイル（必須） |
 | `-D, --define <k>=<v>` | `@var` 定数を定義（複数指定可） |
 | `-h, --help` | ヘルプ表示 |
+
+#### injamm_codegen — バイトコード/テンプレート → C++ ヘッダ（AOT）
+
+`injamm_bc` の出力（`.bc`）またはテンプレート文字列から、glaze 非依存の C++ レンダリング関数を生成します。生成された関数は VM を介さず直接フィールドアクセスするため高速です。
+
+```bash
+# .bc から生成
+injamm_codegen -i template.bc -t MyData -o render.hpp
+
+# テンプレート文字列から直接生成
+injamm_codegen -e "Hello {{name}}! {{#items}}{{this}} {{/items}}" -t MyData -o render.hpp
+```
+
+```cpp
+#include "render.hpp"
+// 生成された関数を利用（シグネチャはテンプレートにより異なる）
+std::string out;
+render_MyData(data, out);
+```
+
+| オプション | 説明 |
+|-----------|------|
+| `-i, --input <path>` | 入力バイトコードファイル（`.bc`） |
+| `-e, --expr <string>` | インラインテンプレート文字列（`-i` の代替） |
+| `-t, --type <Type>` | コンテキスト型名（必須） |
+| `-o, --output <path>` | 出力ヘッダファイル（必須） |
+| `-h, --help` | ヘルプ表示 |
+
+対応機能: 変数展開（`{{var}}` / `{{{var}}}`）、HTML エスケープ、セクション、条件分岐（`{{#if}}`）、比較演算、フィルタ、ループ変数（`loop.*`）。詳細とパリティは `util/injamm_codegen.cpp` および `test_codegen/` を参照。
 
 ## テンプレート構文
 
