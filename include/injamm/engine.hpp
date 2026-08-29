@@ -20,6 +20,7 @@
 #include "bytecode_compile.hpp"
 #include "bytecode_exec.hpp"
 #include "bytecode_debug.hpp"
+#include "detail/nttp_data.hpp"
 
 namespace injamm {
 

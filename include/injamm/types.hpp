@@ -239,7 +239,7 @@ namespace detail {
 
   template <class T>
   concept runtime_field_accessible = requires(T const& t, std::string_view key) {
-    { t.find(key) } -> std::same_as<std::string>;
+    { t.find(key) } -> std::convertible_to<std::string_view>;
   };
 
   template <class T>
