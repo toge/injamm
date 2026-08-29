@@ -44,3 +44,12 @@ CMake オプション: `ENABLE_THREADED_DISPATCH`（デフォルト ON、GCC の
 - `enchantum`（`ENABLE_ENUM`=ON 時、vcpkg）
 
 ※ sqlite3 拡張は別リポジトリ（`~/src/injamm-sqlite3`）に分離済み。本体への依存は `find_package(injamm)` 経由。
+
+## ドキュメント更新ポリシー（必須）
+
+- ソースコード（`include/injamm/**`, `src/**`, テンプレート構文・フィルタ・API の追加/変更/削除）を修正した際は、必ず以下3ファイルの更新要否を検討し、必要なら同一コミットで更新すること:
+  - `README.md` — 機能一覧・構文一覧・フィルタ表・API 概説
+  - `SYNTAX.md` — 全テンプレート構文の詳細リファレンス（サンプル・出力付き）
+  - `CHANGELOG.md` — 変更履歴（日付降順、新しい順）
+- 判断基準: 公開 API / テンプレート構文 / フィルタ / エラーコード / ビルドオプション / 挙動の変更は **必ず** 3ファイルを確認。内部リファクタのみなら `CHANGELOG` は任意だが `README`/`SYNTAX` に影響がないかは依然として確認する。
+- レビュー時は `SYNTAX.md` と `README.md` の構文一覧・フィルタ表が `include/injamm/parse.hpp` / `bytecode_fwd.hpp` / `filters.hpp` / `bytecode_compile.hpp` の実装と一致していることを照合する。

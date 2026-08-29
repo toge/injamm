@@ -109,6 +109,10 @@ template <> struct glz::meta<Person> {
 auto bc = injamm::engine<Person>("{{addr.city}}, {{addr.country}}");
 auto r = bc.render(Person{"Alice", {"NYC", "USA"}});
 // r == "NYC, USA"
+
+// 配列インデックスアクセス（ベクタ等）: 数値セグメントで要素を参照
+// {{items.0}} → 先頭要素、{{items.0.name}} → 先頭要素の name フィールド
+// 範囲外インデックスは空出力（エラーなし）
 ```
 
 ---
@@ -141,11 +145,22 @@ struct RootData {
 
 > **注意:** `{{@root.field}}`（`@` 付き）は旧構文です。新しいコードでは `{{root.field}}`（`@` なし）を使用してください。
 
+`{{root}}` 単体でルートオブジェクト全体を出力することも可能です（構造体なら JSON、プリミティブならそのまま）。
+
+```cpp
+auto r = injamm::render<injamm::fixed_string("root={{root}}")>(Data{{{"Alice",30}}, "Members"});
+// r は root の JSON 表現を含む
+```
+
 ---
 
-## 4. 現在コンテキストの出力 (`{{this}}`)
+## 4. 現在コンテキストの出力 (`{{this}}` / `{{.}}` / `{{&var}}`)
 
 現在のコンテキスト値をそのままシリアライズして出力します。主に `std::map` や構造体の全フィールド反復で値を取得するために使用します。
+
+- `{{this}}` : 現在のコンテキスト値
+- `{{.}}` : `{{this}}` の別名（Mustache 互換）
+- `{{&var}}` : `{{{var}}}` と同じ生出力（HTML エスケープなし、Mustache 互換）
 
 ```cpp
 struct MapData {
@@ -153,6 +168,17 @@ struct MapData {
 };
 // {{#scores}}{{loop.key}}={{this}} {{/scores}}
 // → "alice=95 bob=87 "
+
+// {{.}} は {{this}} と同等
+// {{#users}}{{this.name}} == {{#users}}{{name}} の要素を this 経由で参照する例もあるが
+// より直接的には {{.}} / {{this}} は map/set 反復やプリミティブ配列で有用
+
+// {{&var}} は {{{var}}} の別名
+auto bc = injamm::engine<User>("{{&name}}");
+bc.render(User{"<b>Alice</b>", 30}); // → "<b>Alice</b>"（エスケープなし）
+
+// フィルタ付きでも使用可
+auto bc2 = injamm::engine<User>("{{&name | upper}}"); // → "<B>ALICE</B>" 相当をエスケープなし
 ```
 
 ---
@@ -212,6 +238,54 @@ struct Company {
   std::vector<Person> employees;
 };
 // {{#employees}}{{name}}@{{company_name}}{{/employees}}
+```
+
+### 5.5 セクション with else / 逆セクション with else
+
+セクション / 逆セクションは `{{else}}` 節を持てます。空/偽の場合に else 節を描画します。
+
+```cpp
+auto bc = injamm::engine<Data>("{{#users}}{{name}}{{else}}no users{{/users}}");
+bc.render(Data{}); // r == "no users"
+bc.render(Data{{{"Alice",30}}, ""}); // r == "Alice"
+
+auto bc2 = injamm::engine<BoolData>("{{^flag}}inverted{{else}}truthy{{/flag}}");
+bc2.render(BoolData{true});  // r == "truthy"
+bc2.render(BoolData{false}); // r == "inverted"
+
+// else はセクション本体の後続コンテンツとも共存
+auto bc3 = injamm::engine<Data>("before{{#users}}{{name}}{{else}}empty{{/users}}after");
+```
+
+### 5.6 セクションフィルタ（パイプライン）
+
+セクションキーに `|` でフィルタを連結し、反復する要素集合を加工できます。複数連結時は左から右に順に適用されます。1 セクションあたり最大 4 フィルタです。
+
+| フィルタ | 説明 | 例 |
+| -------- | ---- | -- |
+| `reverse` | 要素順を反転 | `{{#items \\| reverse}}` |
+| `take(n)` | 先頭 n 個のみを残す | `{{#items \\| take(3)}}` |
+| `skip(n)` | 先頭 n 個を捨てる | `{{#items \\| skip(2)}}` |
+| `take_last(n)` | 末尾 n 個のみを残す | `{{#items \\| take_last(2)}}` |
+| `skip_last(n)` | 末尾 n 個を捨てる | `{{#items \\| skip_last(1)}}` |
+| `stride(n,m)` | n 個取得して m 個飛ばすことを繰り返す | `{{#items \\| stride(2,1)}}` |
+| `join("sep")` | 要素間に区切り文字列を挿入（出力時に結合） | `{{#items \\| join(", ")}}` |
+
+```cpp
+// reverse + take + loop 変数はフィルタ後の集合に対して計算される
+auto r = injamm::render<injamm::fixed_string(
+  "{{#items | reverse | take(2)}}[{{loop.index}}:{{this}}]{{/items}}")>(
+  std::vector<int>{1,2,3,4,5});
+// r == "[0:5][1:4]"
+
+// join はセクション内の {{this}} 出力を区切り文字で結合
+auto r2 = injamm::render<injamm::fixed_string(
+  "{{#items | join(\", \")}}{{this}}{{/items}}")>(std::vector<std::string>{"a","b","c"});
+// r2 == "a, b, c"
+
+// stride
+auto r3 = injamm::engine<std::vector<int>>("{{#this | stride(2,1)}}{{this}} {{/this}}");
+r3.render(std::vector<int>{1,2,3,4,5}); // → "1 2 4 5 " 等（2取得1スキップの繰り返し）
 ```
 
 ---
@@ -372,9 +446,8 @@ auto r = injamm::render<injamm::fixed_string(
 // r == "0:Alice, 1:Bob, 2:Charlie."
 ```
 
-ループ変数をセクションキーとしても使用できます:
-
-親ループにも `parent` を連結してアクセスできます。
+ループ変数は `{{#loop.is_first}}...{{/loop.is_first}}` のようにセクションキーとしても使用できます（§8.1-8.4 参照）。
+またネストしたループでは `parent` を連結して親ループの変数にアクセスできます。
 
 ```cpp
 struct Group {
@@ -518,7 +591,7 @@ auto bc = injamm::engine<User>("a{{name}}\nb", true);  // trim_blocks=true
 auto r = bc.render(User{"Alice", 30});
 // r == "aAliceb"
 
-// lstrip_blocks: ブロックタグ({{#}}/{{^}}/{{/}})の直前の空白を除去
+// lstrip_blocks: ブロックタグ({{#}}/{{^}}/{{/}}/{{else}})の直前の空白を除去
 auto bc2 = injamm::engine<User>("a\n  {{#active}}y{{/active}}", false, true);  // lstrip_blocks=true
 // r == "a\ny"
 ```
@@ -546,8 +619,17 @@ auto bc2 = injamm::engine<User>("a\n  {{#active}}y{{/active}}", false, true);  /
 | `truncate(n)` | n 字超を n-3 字+`...` | `"hello world"` | `"hello wo..."` |
 | `substr(n)`   | n 文字目から末尾まで  | `"hello"`       | `"llo"`         |
 | `substr(n,m)` | n 文字目から m 文字   | `"hello"`       | `"el"`          |
-| `replace`     | 改行を空白に置換      | `"a\nb"`        | `"a b"`         |
+| `replace`     | 引数なし: 改行を空白に置換 | `"a\nb"`        | `"a b"`         |
+| `replace(old,new)` | 文字列置換（全一致を置換） | `"a-b"` | `"a_b"` (`replace("-", "_")`) |
 | `urlencode`   | RFC 3986 percent エンコード（unreserved 以外を `%XX` へ） | `"a b&c~"` | `"a%20b%26c~"` |
+| `default("fb")` | 空文字列の場合に代替値を出力 | `""` | `"fb"` |
+| `safe`        | HTML エスケープを無効化（`{{{var}}}` と同等） | `"<b>"` | `"<b>"` |
+| `json`        | JSON エンコード（`to_json` の別名） | `"a\"b"` | `"\"a\\\"b\""` |
+| `indent(n)`   | 改行後に n 個の空白を挿入 | `"a\nb"` | `"a\n    b"` (`indent(4)`) |
+| `pad(n)` / `pad(n,"s")` | n 文字幅までパディング（文字列指定可） | `"hi"` | `"hi___"` (`pad(5,"_")`) |
+| `pluralize("one","many")` | 数値が 1 なら第1引数、以外は第2引数 | `1` / `2` | `"item"` / `"items"` |
+| `repeat(n)`   | 文字列を n 回繰り返し | `"ab"` | `"ababab"` (`repeat(3)`) |
+| `format("fmt")` | `std::format` / chrono `format` による書式化 | `42` / chrono | `"00042"` (`format("05")`) |
 
 ```cpp
 auto r = injamm::render<injamm::fixed_string("{{name | upper}}")>(User{"hello", 0});
@@ -622,6 +704,7 @@ auto r8 = injamm::render<injamm::fixed_string("{{age | add(5) | mul(2)}}")>(User
 | フィルター     | 説明                  | 入力      | 出力   |
 | -------------- | --------------------- | --------- | ------ |
 | `precision(n)` | 小数点以下 n 桁に丸め | `3.14159` | `3.14` |
+| `round` / `round(n)` | 最近接丸め（n 桁、省略時 0 桁で整数） | `3.14159` | `3` / `3.14` (`round(2)`) |
 
 ```cpp
 struct FloatData { double value; };
@@ -659,7 +742,7 @@ auto r = injamm::render<injamm::fixed_string(
 // r == "not_divisible_by_4"
 ```
 
-1つのプレースホルダに適用できるフィルターは最大 **4 つ**です。
+1つのプレースホルダに適用できるフィルターは最大 **4 つ**、1つのセクションに適用できるセクションフィルタも最大 **4 つ**です。
 
 ---
 
@@ -736,10 +819,10 @@ auto r = injamm::render<injamm::fixed_string("Got {{_}}")>(injamm::bind(42));
 
 ---
 
-## 19. Template Partials（`engine<T>` 専用）
+## 19. Template Partials（`engine<T>` / NTTP `render` 両対応）
 
 同一テンプレート内で名前付きの再利用可能な断片（partial）を定義できます。
-`render(data, "partial_name")` で特定の partial だけを選択的にレンダリングすることも可能です（HTMX 等の部分更新に有用）。
+`render(data, "partial_name")` / `render_partial<tmpl>(data, "name")` で特定の partial だけを選択的にレンダリングすることも可能です（HTMX 等の部分更新に有用）。`engine<T>` と NTTP `render` の両方で `{{#partialdef}}` / `{{#partial}}` が使用できます。
 
 partial の本体は **プリコンパイル方式**で保持されるため、呼び出しのたびに再コンパイルは発生しません。
 
@@ -867,9 +950,20 @@ auto eng = injamm::engine<Data>{
 - 同一テンプレート内の `{{#partialdef}}` と併用できます。両者とも `partial_entries` に格納されます。
 - テンプレート内の `{{> }}` は構築時に解決されるため、partial は engine 構築**前**に登録済みでなければなりません。
 
-### 19.8 制限
+### 19.8 修飾子 `now` / `local`
 
-- `{{#partialdef}}` のネストはできません
+`{{#partialdef name now}}` は定義と同時にその場で展開し、後で `{{#partial name}}` で再利用も可能です。
+`{{#partialdef name local}}` はその場でのみ展開し、名前検索では参照不可（外部から `{{#partial name}}` や `render(data,"name")` で呼べない）です。両者は併用可（`now local` 順不同）。
+
+```cpp
+auto eng = injamm::engine<User>("|{{#partialdef greeting now}}Hi {{name}}{{/partialdef}}|");
+eng.render(User{"Alice",30}); // → "|Hi Alice|"
+auto eng2 = injamm::engine<User>("|{{#partialdef greeting local}}Hi {{name}}{{/partialdef}}|");
+eng2.render(User{"Alice",30}); // → "|Hi Alice|" だが {{#partial greeting}} は unknown_key
+```
+
+### 19.9 制限
+
 - ファイルインクルード（`{% include %}`）には対応していません
 
 ---

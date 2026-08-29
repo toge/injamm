@@ -105,9 +105,11 @@ injamm は多くの機能を提供していますが、適切な使い分けが�
 | 構文 | 使用場面 | 例 |
 |------|----------|-----|
 | `{{var}}` | 基本的な変数出力（HTMLエスケープあり） | `{{name}}` |
-| `{{{var}}}` | 生の出力が必要な場合（HTMLエスケープなし） | `{{{html_content}}}` |
+| `{{{var}}}` / `{{&var}}` | 生の出力が必要な場合（HTMLエスケープなし） | `{{{html_content}}}` / `{{&html_content}}` |
+| `{{this}}` / `{{.}}` | 現在コンテキストの値（マップ反復等） | `{{this}}` / `{{.}}` |
 | `{{field.subfield}}` | ネストしたフィールドアクセス | `{{user.address.city}}` |
 | `{{array.0}}` | 配列のインデックスアクセス | `{{items.0}}` |
+| `{{root}}` / `{{root.field}}` | ルートコンテキストアクセス（ループ内から外側を参照） | `{{root.title}}` |
 
 #### 3.2 セクションと条件分岐
 
@@ -142,8 +144,9 @@ injamm は多くの機能を提供していますが、適切な使い分けが�
 | 文字列変換 | 大文字化、トリミング等 | `{{name \| upper}}` |
 | 数値変換 | 進数変換、フォーマット | `{{age \| hex}}` |
 | フォーマット | パディング、切り詰め | `{{name \| left(10)}}` |
+| セクション加工 | 反復要素の絞り込み・並べ替え | `{{#items \| reverse \| take(3)}}` |
 
-**推奨**: フィルターチェーンは3つ程度に留めてください。複雑な変換が必要な場合は、C++ 側で前処理することを検討してください。
+**推奨**: フィルターチェーンは最大 4 つまで。複雑な変換が必要な場合は、C++ 側で前処理することを検討してください。詳細は [SYNTAX.md](SYNTAX.md) および下記「フィルター」章を参照。
 
 #### 3.5 Partial の使用
 
@@ -157,6 +160,7 @@ injamm は多くの機能を提供していますが、適切な使い分けが�
 - 両方の API で `#partialdef` / `#partial` が使えます。`#partialdef` は同一テンプレート内で定義します。
 - `{{> name}}` はテンプレート文字列の**外**から本文を持ってきます。engine<T> はコンストラクタのレジストリ経由（`make_partial<T>`）、NTTP render は entry pair 経由です（内部は同じ partial メカニズム）。
 - 部分描画 API（`render(data, "name")` / `render_partial<tmpl>(data, "name")`）は engine<T> と NTTP の両方で利用でき、HTMX 等の部分更新に使用できます。
+- 修飾子 `now`（定義と同時展開）/ `local`（その場のみ展開、名前検索不可）を `{{#partialdef name now}}` / `{{#partialdef name local}}` で指定できます（併用可）。詳細は [SYNTAX.md §19.8](SYNTAX.md) 参照。
 
 #### 3.6 ループ変数
 
@@ -358,12 +362,19 @@ injamm_bc -i page.html -o page.bc -D title="My Page" -D footer="© 2026"
 | `{{loop.is_first}}`                 | 最初の要素なら `true`（inja 互換）     |
 | `{{loop.is_last}}`                  | 最後の要素なら `true`（inja 互換）     |
 | `{{loop.is_even}}` / `{{loop.is_odd}}` | 偶数/奇数インデックスなら `true`（zebra ストライプ用） |
+| `{{loop.key}}`                      | マップ反復時のキー名 |
 | `{{foo.bar.baz}}`                   | ネストパス                            |
+| `{{items.0}}` / `{{items.0.name}}`  | 配列インデックスアクセス |
 | `{{field.size}}`                   | コンテナの要素数                      |
+| `{{this}}` / `{{.}}`                | 現在コンテキストの値（`{{.}}` は `{{this}}` の別名） |
+| `{{&var}}`                          | 生出力（`{{{var}}}` と同等、Mustache 互換） |
+| `{{root}}` / `{{root.field}}`       | ルートコンテキスト / フィールドへのアクセス |
 | `{{! ... }}`                        | コメント（Mustache 標準構文）         |
+| `{# ... #}`                         | コメント（injamm 拡張） |
 | `{{~ var ~}}`                       | タグ前後の空白をトリム                |
 | `{{@var(name)}}`                   | 定数置換（engine 構築時に渡した定数テーブルで展開、NTTP ではテンプレート引数で指定） |
-| `{{> partial}}`                    | partial 展開（NTTP render の entry pair で外部断片を注入） |
+| `{{> partial}}`                    | partial 展開（engine は `make_partial` / `{{> name}}`、NTTP は `ct_partials` / `{{> name}}`） |
+| `{{#items \| reverse}}` / `take(n)` / `skip(n)` / `stride(n,m)` / `join("sep")` | セクションフィルタ（パイプライン） |
 
 ### @var 定数置換
 
@@ -434,8 +445,17 @@ auto r3 = injamm::render<"{{title}}: {{status}}">(Task{"fix bug", Status::Active
 | `truncate(n)` | n 文字以下ならそのまま、超えたら先頭 n-3 文字+"..." | `{{name \| truncate(8)}}` |
 | `substr(n)`   | n 文字目から末尾まで                                | `{{name \| substr(2)}}`   |
 | `substr(n,m)` | n 文字目から m 文字分                               | `{{name \| substr(1,3)}}` |
-| `replace`     | 文字列中の改行を空白に置換                          | `{{name \| replace}}`     |
+| `replace`     | 引数なし: 改行を空白に置換                          | `{{name \| replace}}`     |
+| `replace(old,new)` | 文字列置換（全一致）                          | `{{name \| replace("-", "_")}}` |
 | `urlencode`   | RFC 3986 percent エンコード（unreserved 以外を `%XX` へ） | `{{name \| urlencode}}`   |
+| `default("fb")` | 空文字列なら代替値                               | `{{name \| default("fallback")}}` |
+| `safe`        | HTML エスケープ無効化（`{{{var}}}` と同等）      | `{{name \| safe}}`        |
+| `json`        | JSON エンコード（`to_json` の別名）              | `{{name \| json}}`        |
+| `indent(n)`   | 改行後に n 個の空白を挿入                           | `{{name \| indent(4)}}`   |
+| `pad(n)` / `pad(n,"s")` | n 文字幅までパディング                     | `{{name \| pad(8)}}`      |
+| `pluralize("one","many")` | 数値が 1 なら第1引数、以外は第2引数      | `{{n \| pluralize("item","items")}}` |
+| `repeat(n)`   | 文字列を n 回繰り返し                               | `{{name \| repeat(3)}}`   |
+| `format("fmt")` | `std::format` / chrono `format` による書式化      | `{{age \| format("05")}}` |
 
 ### 整数フィルター
 
@@ -448,10 +468,39 @@ auto r3 = injamm::render<"{{title}}: {{status}}">(Task{"fix bug", Status::Active
 | `bin`    | 2 進数表記             | `{{age \| bin}}`    |
 | `mod(n)` | n で割った余り         | `{{age \| mod(5)}}` |
 | `numify` | 3 桁ごとにカンマ区切り | `{{age \| numify}}` |
+| `zerofill(n)` | n 桁ゼロ埋め        | `{{age \| zerofill(5)}}` |
+| `is_neg` | 負数なら `true`        | `{{age \| is_neg}}` |
+| `eq(n)`  | n と等しいか           | `{{age \| eq(3)}}`  |
+| `ne(n)`  | n と異なるか           | `{{age \| ne(3)}}`  |
+| `gt(n)`  | n より大きいか         | `{{age \| gt(3)}}`  |
+| `gte(n)` | n 以上か               | `{{age \| gte(3)}}` |
+| `lt(n)`  | n 未満か               | `{{age \| lt(3)}}`  |
+| `lte(n)` | n 以下か               | `{{age \| lte(3)}}` |
 | `add(n)` | n を加算               | `{{age \| add(3)}}` |
 | `sub(n)` | n を減算               | `{{age \| sub(2)}}` |
 | `mul(n)` | n を乗算               | `{{age \| mul(10)}}` |
 | `div(n)` | n で除算（切捨）       | `{{age \| div(3)}}` |
+
+### 浮動小数点フィルター
+
+| フィルタ | 説明 | 構文例 |
+| -------- | ---- | ------ |
+| `precision(n)` | 小数点以下 n 桁に丸め | `{{value \| precision(2)}}` |
+| `round` / `round(n)` | 最近接丸め（n 桁、省略時 0 桁） | `{{value \| round(1)}}` |
+
+### セクションフィルター（パイプライン）
+
+セクションキーに `|` で連結し、反復する要素集合を加工します。最大 4 つまで連結可。
+
+| フィルタ | 説明 | 構文例 |
+| -------- | ---- | ------ |
+| `reverse` | 要素順を反転 | `{{#items \| reverse}}` |
+| `take(n)` | 先頭 n 個のみ | `{{#items \| take(3)}}` |
+| `skip(n)` | 先頭 n 個を捨てる | `{{#items \| skip(2)}}` |
+| `take_last(n)` | 末尾 n 個のみ | `{{#items \| take_last(2)}}` |
+| `skip_last(n)` | 末尾 n 個を捨てる | `{{#items \| skip_last(2)}}` |
+| `stride(n,m)` | n 個取得して m 個飛ばす繰り返し | `{{#items \| stride(2,1)}}` |
+| `join("sep")` | 要素間に区切り文字列を挿入 | `{{#items \| join(", ")}}` |
 
 ### フィルターのチェーン
 
