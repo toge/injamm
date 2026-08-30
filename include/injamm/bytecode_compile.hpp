@@ -29,6 +29,10 @@ struct compile_ctx_ops {
   std::optional<long long> (*enum_lookup)(std::uint32_t, std::string_view);
   /** @brief コンテキスト型がコンパイル時に既知か（false なら resolve 失敗を根拠にした最適化は不可） */
   bool known = false;
+  /** @brief このコンテキストのセクションが実行時にループ束縛（binding_resolve）を生成するか（vector/map/set 等のコンテナ系） */
+  bool binding = false;
+  /** @brief セクション本体のコンテキストが親と同一型か（bool/string セクション＝親スタック探索で透過的にスキップ可能） */
+  bool passthrough = false;
 };
 
 /** @brief 何も解決できないコンテキスト（型不明時のフォールバック） */
@@ -38,6 +42,8 @@ inline compile_ctx_ops null_compile_ctx_ops() {
       [](std::string_view) { return null_compile_ctx_ops(); },
       [](std::string_view, std::vector<std::uint32_t>&) {},
       [](std::uint32_t, std::string_view) { return std::optional<long long>{}; },
+      false,
+      false,
       false,
   };
 }
@@ -94,17 +100,22 @@ compile_ctx_ops compile_ctx_section_child(std::string_view key) {
     compile_ctx_with_field_type<V>(fidx, [&]<class FT>() {
       if constexpr (ct_is_vector_like<FT>) {
         result = make_compile_ctx_ops<typename FT::value_type>();
+        result.binding = true;
       } else if constexpr (std::same_as<FT, bool> || std::same_as<FT, std::string> ||
                            std::same_as<FT, std::string_view> || char_pointer_v<FT>) {
         result = make_compile_ctx_ops<V>();
+        result.passthrough = true;
       } else if constexpr (is_std_optional_v<FT>) {
         result = make_compile_ctx_ops<typename FT::value_type>();
       } else if constexpr (ct_is_map_like<FT>) {
         result = make_compile_ctx_ops<typename FT::mapped_type>();
+        result.binding = true;
       } else if constexpr (ct_is_set_like<FT>) {
         result = make_compile_ctx_ops<typename FT::value_type>();
+        result.binding = true;
       } else if constexpr (forward_iterable<FT>) {
         result = make_compile_ctx_ops<typename FT::value_type>();
+        result.binding = true;
       }
     });
   }
@@ -155,7 +166,7 @@ std::optional<long long> compile_ctx_enum_lookup(std::uint32_t field_idx, std::s
 template <class V>
 compile_ctx_ops make_compile_ctx_ops() {
   return {&compile_ctx_resolve_field<V>, &compile_ctx_section_child<V>, &compile_ctx_resolve_path<V>,
-          &compile_ctx_enum_lookup<V>, !runtime_field_accessible<V>};
+          &compile_ctx_enum_lookup<V>, !runtime_field_accessible<V>, false, false};
 }
 
 template <class Emitter>
@@ -296,17 +307,85 @@ class bc_compiler {
   }
 
   /**
+   * @brief 現在コンテキストで解決不能なキーを内包セクションの束縛参照にリライトする
+   * @details Mustache 互換の親スタック探索。ctx_stack_ を内側から外側へ辿り、
+   *          最初に一致した束縛可能セクション（コンテナ系）の要素型で先頭セグメントが
+   *          解決できたら、キーを "<セクション名>.<キー>" に書き換えて binding_first を設定する。
+   *          実行時は既存の try_resolve_loop_binding（binding_name 一致）がそのまま機能する。
+   *          型不明（known=false）のコンテキストや optional 等の非束縛セクションでは
+   *          内側優先の保証ができないため、そこで探索を打ち切る（従来動作を維持）。
+   * @return リライトを行った場合は true
+   */
+  bool try_rewrite_ancestor_binding(std::uint32_t idx, std::string_view key) {
+    auto const n = ctx_stack_.size();
+    if (n < 2 || !ctx_stack_.back().known) {
+      return false;
+    }
+    auto first_seg = key.substr(0, key.find('.'));
+    /** 内側（n-2）から外側（1）へ。ctx_stack_[0] はルートなので対象外。 */
+    for (std::size_t i = n - 1; i-- > 1;) {
+      auto const& ctx = ctx_stack_[i];
+      if (!ctx.known) {
+        return false;
+      }
+      if (!ctx.binding) {
+        if (ctx.passthrough) {
+          continue;
+        }
+        return false;
+      }
+      if (ctx.resolve(first_seg) == UINT32_MAX) {
+        continue;
+      }
+      auto& ref        = bc_.var_refs[idx];
+      ref.key          = section_keys_[i - 1] + '.' + std::string(key);
+      ref.has_dot      = true;
+      ref.binding_first = true;
+      auto sub         = std::string_view{ref.key}.substr(section_keys_[i - 1].size() + 1);
+      if (sub.find('.') == std::string_view::npos) {
+        ref.field_index = ctx.resolve(sub);
+      } else {
+        std::vector<std::uint32_t> out;
+        ctx.resolve_path(sub, out);
+        auto m = std::min<std::size_t>(out.size(), ref.path_indices.size());
+        for (std::size_t k = 0; k < m; ++k) {
+          ref.path_indices[k] = out[k];
+        }
+        ref.path_hint_len = static_cast<std::uint8_t>(m);
+      }
+      return true;
+    }
+    return false;
+  }
+
+  /**
    * @brief 変数参照の field_index / path_indices を現在コンテキストで事前解決する
    * @details 単一キーは field_index、ドット区切りパスは階層別 path_indices を設定する。
    *          いずれも実行時に名前検証付きで使用されるため誤解決しても安全。
+   *          現在コンテキスト（既知型）で解決できない場合は Mustache 互換の親スタック
+   *          探索を行い、内包セクションの束縛参照へのリライトまたはルート型
+   *          フォールバック（root_fallback）を設定する。
    */
   void resolve_ref_indices(std::uint32_t idx, std::string_view key) {
-    auto field_idx = ctx_resolve(key);
-    if (field_idx != UINT32_MAX) {
-      bc_.set_field_index(idx, field_idx);
+    auto local_idx = ctx_stack_.back().resolve(key);
+    if (local_idx != UINT32_MAX) {
+      bc_.set_field_index(idx, local_idx);
       return;
     }
     if (key.find('.') == std::string_view::npos) {
+      /** 単一セグメント: 親セクション束縛リライト→ルート型フォールバックの順で解決 */
+      if (classify_special_var(key) == special_var_kind::none) {
+        if (try_rewrite_ancestor_binding(idx, key)) {
+          return;
+        }
+        if (ctx_stack_.size() > 1 && ctx_stack_.back().known) {
+          auto root_idx = resolve_field_index<T>(key);
+          if (root_idx != UINT32_MAX) {
+            bc_.set_field_index(idx, root_idx);
+            bc_.var_refs[idx].root_fallback = root_fb_proven;
+          }
+        }
+      }
       return;
     }
     if (classify_special_var(key) != special_var_kind::none) {
@@ -314,12 +393,17 @@ class bc_compiler {
     }
     std::vector<std::uint32_t> out;
     ctx_stack_.back().resolve_path(key, out);
-    if (out.empty() || out[0] == UINT32_MAX) {
-      /** 現在コンテキストで解決できない場合はルート型チェーンを試す（セクションの root 探索に一致） */
+    bool local_resolved = !out.empty() && out[0] != UINT32_MAX;
+    if (!local_resolved) {
       out.clear();
-      compile_ctx_resolve_path<T>(key, out);
-      if (!out.empty() && out[0] == UINT32_MAX) {
-        out.clear();
+      if (!try_rewrite_ancestor_binding(idx, key)) {
+        /** 現在コンテキストで解決できない場合はルート型チェーンを試す（セクションの root 探索に一致） */
+        compile_ctx_resolve_path<T>(key, out);
+        if (!out.empty() && out[0] == UINT32_MAX) {
+          out.clear();
+        } else if (!out.empty() && ctx_stack_.size() > 1 && ctx_stack_.back().known) {
+          bc_.var_refs[idx].root_fallback = root_fb_proven;
+        }
       }
     }
     /** インライン固定長配列（4階層まで）にコピーする */

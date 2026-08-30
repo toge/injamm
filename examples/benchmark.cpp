@@ -38,6 +38,18 @@ struct glz::meta<TeamLarge> {
   static constexpr auto value = object(&T::name, &T::members);
 };
 
+/// 親スタック解決ベンチマーク用: ループ内からルートフィールドを参照する
+struct RootLoopTeam {
+  std::string title{"Members"};
+  std::vector<Person> members;
+};
+
+template <>
+struct glz::meta<RootLoopTeam> {
+  using T = RootLoopTeam;
+  static constexpr auto value = object(&T::title, &T::members);
+};
+
 /// P3 確認用: 20フィールド構造体
 struct WideStruct {
   std::string f0, f1, f2, f3, f4, f5, f6, f7, f8, f9;
@@ -118,6 +130,7 @@ static int bench_filter_dispatch();
 static int bench_wide_struct();
 static int bench_bind_context();
 static int bench_section_loop_large();
+static int bench_implicit_root();
 static int bench_enum_resolve();
 static int bench_many_vars();
 static int bench_nested_path();
@@ -257,6 +270,48 @@ static int bench_section_loop_large() {
 
   auto us = elapsed_us(start, end);
   std::printf("  section_loop_large(1000elem) x %d: %.0f us  (%.1f ns/elem)\n", ITERS, us, us * 1000.0 / ITERS / 1000);
+  return 0;
+}
+
+static int bench_implicit_root() {
+  std::vector<Person> people;
+  people.reserve(1000);
+  for (int i = 0; i < 1000; ++i)
+    people.push_back({"User" + std::to_string(i), i % 100});
+  RootLoopTeam team{"Members", std::move(people)};
+
+  constexpr int ITERS = 1000;
+  int64_t dummy = 0;
+
+  // 明示 root 参照（従来から可能な構文）
+  {
+    injamm::engine<RootLoopTeam> eng("{{#members}}{{name}} ({{root.title}})\n{{/members}}");
+    for (int i = 0; i < 100; ++i) (void)eng.render(team);
+    auto start = std::chrono::high_resolution_clock::now();
+    for (int i = 0; i < ITERS; ++i) {
+      auto r = eng.render(team);
+      dummy += r->size();
+    }
+    auto end = std::chrono::high_resolution_clock::now();
+    auto us = elapsed_us(start, end);
+    std::printf("  root_loop explicit {{root.title}}  x %d: %.0f us  (%.1f ns/elem)\n", ITERS, us, us * 1000.0 / ITERS / 1000);
+  }
+
+  // 暗黙 root 参照（親スタック解決。コンパイル時にルート参照へ解決される）
+  {
+    injamm::engine<RootLoopTeam> eng("{{#members}}{{name}} ({{title}})\n{{/members}}");
+    for (int i = 0; i < 100; ++i) (void)eng.render(team);
+    auto start = std::chrono::high_resolution_clock::now();
+    for (int i = 0; i < ITERS; ++i) {
+      auto r = eng.render(team);
+      dummy += r->size();
+    }
+    auto end = std::chrono::high_resolution_clock::now();
+    auto us = elapsed_us(start, end);
+    std::printf("  root_loop implicit {{title}}      x %d: %.0f us  (%.1f ns/elem)\n", ITERS, us, us * 1000.0 / ITERS / 1000);
+  }
+
+  (void)dummy;
   return 0;
 }
 
@@ -440,6 +495,7 @@ int main() {
   std::printf("\n--- section loop ---\n");
   bench_section_loop();
   bench_section_loop_large();
+  bench_implicit_root();
 
   std::printf("\n--- filter dispatch micro-benchmark ---\n");
   bench_filter_dispatch();

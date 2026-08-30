@@ -422,6 +422,23 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
                           std::span<std::uint32_t const>{ref.path_indices.data(), ref.path_hint_len});
   }
 
+  /** @brief root_fallback 参照をルート型から解決する（現在コンテキストで解決不能なキーのフォールバック）
+   *  @details コンパイル時に現在コンテキスト（既知型）に存在しないことが保証されているため、
+   *           呼び出し側は要素型の走査をスキップしてこの関数を先に試せる。
+   *           root_fallback が未設定なら何もせず false を返す（ホットパスに影響なし）。 */
+  template <class F>
+  static bool for_each_root_field_ref(bc_executor const& ex, bc_var_ref const& ref, F&& visitor) {
+    if (ref.root_fallback == root_fb_none) {
+      return false;
+    }
+    bool found = false;
+    (void)for_each_field_ref(ex.root_value_, ref, [&](auto const& field) {
+      found = true;
+      visitor(field);
+    });
+    return found;
+  }
+
   /**
    * @brief フィールドの値を出力バッファに追記する
    * @param field 出力対象のフィールド
@@ -594,7 +611,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
     }
     bool result = false;
     bool found  = false;
-    (void)for_each_field_ref(ex.value_, ref,[&](auto const& field) {
+    auto eval_field = [&](auto const& field) {
       using FT = std::remove_cvref_t<decltype(field)>;
       if constexpr (std::same_as<FT, bool>) { result = field; }
       else if constexpr (ct_is_vector_like<FT>) { result = !field.empty(); }
@@ -605,7 +622,8 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
       else if constexpr (ct_is_map_like<FT>) { result = !field.empty(); }
       else if constexpr (ct_is_set_like<FT>) { result = !field.empty(); }
       found = true;
-    });
+    };
+    (void)for_each_field_ref(ex.value_, ref, eval_field);
     if (found) return result;
     for (auto* lp = ex.loop_; lp; lp = lp->parent) {
       if (lp->binding_truthy && (ref.key == lp->binding_name ||
@@ -616,6 +634,9 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
                                                       ref.key.size() - lp->binding_name.size() - 1};
         return lp->binding_truthy(lp->binding_elem, sub);
       }
+    }
+    if (for_each_root_field_ref(ex, ref, eval_field)) {
+      return result;
     }
     return false;
   }
@@ -1200,7 +1221,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
         if (f.filter == string_filter::format) { chrono_fmt = f.str_arg1; break; }
       }
     }
-    auto r = for_each_field_ref(ex.value_, var_ref,[&](auto const& field) {
+    auto serialize_field = [&](auto const& field) {
       using FT = std::remove_cvref_t<decltype(field)>;
       if (use_json) {
         json_serialize_value(filtered, field);
@@ -1251,8 +1272,24 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
       } else if constexpr (serializable_v<FT>) {
         serialize_value(filtered, field);
       }
-    });
-    if (!r) return std::unexpected(r.error());
+    };
+    std::expected<void, error_ctx> r = std::unexpected(error_ctx{.ec = error_code::unknown_key});
+    bool resolved = false;
+    if (var_ref.root_fallback == root_fb_none) {
+      r = for_each_field_ref(ex.value_, var_ref, serialize_field);
+      resolved = static_cast<bool>(r);
+      if (!resolved) return std::unexpected(r.error());
+    } else {
+      if (var_ref.root_fallback == root_fb_unproven) {
+        r = for_each_field_ref(ex.value_, var_ref, serialize_field);
+        if (!r && r.error().ec != error_code::unknown_key) return std::unexpected(r.error());
+        resolved = static_cast<bool>(r);
+      }
+      if (!resolved) {
+        resolved = for_each_root_field_ref(ex, var_ref, serialize_field);
+      }
+      if (!resolved) return std::unexpected(r.error());
+    }
     for (auto const& f : var_ref.filters) apply_string_filter(filtered, f);
     for (auto const& f : var_ref.int_filters) {
       if (auto err = apply_int_filter(filtered, f); !err) return std::unexpected(err.error());
@@ -1280,11 +1317,22 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
       ++pc;
       return {};
     }
+    if (ref.root_fallback == root_fb_proven &&
+        for_each_root_field_ref(ex, ref, [&](auto const& field) { ex.emit_var_value(field, raw); })) {
+      /** 実証済みルート参照: 要素型の走査をスキップしてルート型を直接走査 */
+      ++pc;
+      return {};
+    }
     bool        found = false;
     auto        r = for_each_field_ref(ex.value_, ref,[&](auto const& field) { found = true; ex.emit_var_value(field, raw); });
     if (!r && r.error().ec != error_code::unknown_key) return std::unexpected(r.error());
     if (found) { ++pc; return {}; }
     if (try_resolve_loop_binding(ex, ref, raw)) { ++pc; return {}; }
+    if (ref.root_fallback != root_fb_none &&
+        for_each_root_field_ref(ex, ref, [&](auto const& field) { ex.emit_var_value(field, raw); })) {
+      ++pc;
+      return {};
+    }
     if (!r) return std::unexpected(r.error());
     ++pc;
     return {};
@@ -1300,11 +1348,22 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
       ++pc;
       return {};
     }
+    if (ref.root_fallback == root_fb_proven &&
+        for_each_root_field_ref(ex, ref, [&](auto const& field) { ex.emit_var_value(field, raw); })) {
+      /** 実証済みルート参照: 要素型の走査をスキップしてルート型を直接走査 */
+      ++pc;
+      return {};
+    }
     bool        found = false;
     auto        r = for_each_field_ref(ex.value_, ref,[&](auto const& field) { found = true; ex.emit_var_value(field, raw); });
     if (!r && r.error().ec != error_code::unknown_key) return std::unexpected(r.error());
     if (found) { ++pc; return {}; }
     if (try_resolve_loop_binding(ex, ref, raw)) { ++pc; return {}; }
+    if (ref.root_fallback != root_fb_none &&
+        for_each_root_field_ref(ex, ref, [&](auto const& field) { ex.emit_var_value(field, raw); })) {
+      ++pc;
+      return {};
+    }
     if (!r) return std::unexpected(r.error());
     ++pc;
     return {};
@@ -1349,7 +1408,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
 
   INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_emit_var_size(bc_executor& ex, std::size_t& pc, std::string&) {
     auto const& ref = ex.bc_.var_refs[ex.bc_.instructions[pc].operand];
-    auto r = for_each_field_ref(ex.value_, ref,[&](auto const& field) {
+    auto emit_size = [&](auto const& field) {
       using FT = std::remove_cvref_t<decltype(field)>;
       std::size_t sz = 0;
       if constexpr (ct_is_vector_like<FT>) {
@@ -1368,7 +1427,15 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
       if (ec == std::errc{}) {
         ex.out_.append(buf.data(), static_cast<std::size_t>(ptr - buf.data()));
       }
-    });
+    };
+    if (for_each_root_field_ref(ex, ref, emit_size)) { ++pc; return {}; }
+    auto r = for_each_field_ref(ex.value_, ref, emit_size);
+    if (!r && r.error().ec != error_code::unknown_key) return std::unexpected(r.error());
+    if (!r && ref.root_fallback != root_fb_none &&
+        for_each_root_field_ref(ex, ref, emit_size)) {
+      ++pc;
+      return {};
+    }
     if (!r) return std::unexpected(r.error());
     ++pc;
     return {};
@@ -1592,7 +1659,17 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
       }
       if (ok) { cond = compare_vals<long long>(instr.op, lv, static_cast<long long>(rhs)); }
     } else {
-      (void)for_each_field_ref(ex.value_, ref,do_cmp);
+      bool lhs_found = false;
+      if (ref.root_fallback == root_fb_proven) {
+        lhs_found = for_each_root_field_ref(ex, ref, do_cmp);
+      }
+      if (!lhs_found) {
+        auto do_cmp_found = [&](auto const& field) { lhs_found = true; do_cmp(field); };
+        (void)for_each_field_ref(ex.value_, ref, do_cmp_found);
+      }
+      if (!lhs_found && ref.root_fallback != root_fb_none) {
+        (void)for_each_root_field_ref(ex, ref, do_cmp);
+      }
     }
     if (!cond) { pc = instr.operand; } else { ++pc; }
     return {};

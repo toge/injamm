@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-08-30
+
+- `feat: 親スタック解決（Mustache 互換の暗黙参照）を追加` — セクション本体内の変数参照を「現在要素 → 内側のセクション → ルート」の順で**コンパイル時**に解決。実行時コストはゼロ（明示 `{{root.field}}` と同一のホットパス、ベンチで同等〜同等以上を確認）。VM は実証済みルート参照で要素走査をスキップ、NTTP は未実証モードで要素走査後にルート走査、codegen はルート直接アクセスを生成。制限: 型不明コンテキスト（map 要素等）内では暗黙解決なし、ネストしたルートパス/外側セクション要素への暗黙参照は engine<T> のみ。バイトコード形式を v6 に更新（root_fallback フラグ追加）
+- `docs: README 冒頭を 2→3 API に修正し AOT コード生成（injamm_codegen）を追記、CLI 章を injamm_bc/injamm_codegen 統合に再構成、AGENTS.md も同期`
+
 ## 2026-08-27
 
 - `perf: 4施策適用(literal coalesce + strip/exists 早期 return + html_escape_into の冗長 string_view 構築削除)` — 11行追加/1行変更で VM 経路を -3〜-12% 改善。`multi_filter -11.96%`, `BC nested_2level -6.85%`, `NTTP nested_3level -6.61%`, `NTTP wide partial -9.28%`, `engine render reuse buffer -8.61%` 他。詳細: `docs/perf_proposal_2026-08-27.md`
