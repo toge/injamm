@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-08-31
+
+- `bench: bench_format に runtime (engine VM) 計測を全ケース追加` — 1 var string/int/double, 2 vars ×3, 10 vars で `engine<T>`（VM dispatch）も併計測。NTTP は `ct_exec.hpp` の専用アンロールで VM より 1.5–3.2 倍高速（10 vars 3.15x）なことを定量化。`USE_CASES.md §6` を NTTP vs format / engine vs format / NTTP vs engine の 3 表に再構成し、`docs/bench_format_2026-08-31.md` を追加（`2026-08-30` の 7回中央値は保持）
+
 ## 2026-08-30
 
 - `feat: 親スタック解決（Mustache 互換の暗黙参照）を追加` — セクション本体内の変数参照を「現在要素 → 内側のセクション → ルート」の順で**コンパイル時**に解決。実行時コストはゼロ（明示 `{{root.field}}` と同一のホットパス、ベンチで同等〜同等以上を確認）。VM は実証済みルート参照で要素走査をスキップ、NTTP は未実証モードで要素走査後にルート走査、codegen はルート直接アクセスを生成。制限: 型不明コンテキスト（map 要素等）内では暗黙解決なし、ネストしたルートパス/外側セクション要素への暗黙参照は engine<T> のみ。バイトコード形式を v6 に更新（root_fallback フラグ追加）
