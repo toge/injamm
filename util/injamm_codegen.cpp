@@ -95,6 +95,7 @@ struct var_ref {
   std::string key;                        /**< 変数名 */
   bool has_dot = false;                   /**< ドット区切りパス（ネスト）を持つか */
   bool is_loop_parent = false;            /**< loop.parent. 始まりか */
+  bool root_fallback = false;             /**< 現在コンテキストに存在しないルート型フィールド参照（v6） */
   std::uint8_t compare_rhs_kind = 0;      /**< 比較の右オペランド種別 */
   std::string compare_rhs_text;           /**< 右オペランド文字列 */
   bool compare_rhs_has_dot = false;       /**< 右オペランドがドット区切りパスか */
@@ -291,6 +292,10 @@ public:
     for (std::uint64_t i = 0; i < ffc; ++i)
       ref.float_filters.push_back(read_float_filter_entry());
 
+    if (version_ >= 6) {
+      ref.root_fallback = read_u8() != 0;
+    }
+
     return ref;
   }
 
@@ -356,6 +361,8 @@ public:
       version_ = 4;
     } else if (version == 5) {
       version_ = 5;
+    } else if (version == 6) {
+      version_ = 6;
     } else {
       return std::nullopt;
     }
@@ -440,6 +447,11 @@ class code_generator {
         return "data." + path;
       }
       return "data";
+    }
+
+    /** ルート型フォールバック参照: ルートデータのフィールドを直接アクセスする */
+    if (ref.root_fallback) {
+      return "data." + ref.key;
     }
 
     if (loop_depth_ > 0 && !ref.has_dot) {

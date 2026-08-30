@@ -62,7 +62,7 @@ enum class special_var_kind : std::uint8_t {
 };
 
 /** @brief 変数キーを special_var_kind に分類する */
-inline special_var_kind classify_special_var(std::string_view key) {
+constexpr special_var_kind classify_special_var(std::string_view key) {
   if (key == "this") {
     return special_var_kind::this_;
   }
@@ -93,6 +93,11 @@ inline special_var_kind classify_special_var(std::string_view key) {
   return special_var_kind::loop_unknown;
 }
 
+/** @brief root_fallback のモード */
+inline constexpr std::uint8_t root_fb_none     = 0; /**< フォールバックなし */
+inline constexpr std::uint8_t root_fb_proven   = 1; /**< コンパイル時に現在コンテキストに存在しないことが実証済み（実行時は要素走査をスキップしてルート型を直接走査） */
+inline constexpr std::uint8_t root_fb_unproven = 2; /**< 型未確認（実行時は要素走査が失敗した後にルート型を走査） */
+
 /**
  * @brief 変数参照情報
  * @details テンプレート内の変数参照を表す。コンパイル時に glaze リフレクションで
@@ -105,6 +110,7 @@ struct bc_var_ref {
   bool is_loop_parent = false;             /**< コンパイル時解決: key が "loop.parent." 始まりか（ホットパスの文字列比較排除用） */
   special_var_kind special = special_var_kind::none; /**< コンパイル時解決: this / loop.* / loop.parent.* の分類 */
   bool binding_first = false;              /**< コンパイル時解決: キーが内包セクションの束縛参照であることが確定しているか（サブパスの field_index 事前解決の根拠） */
+  std::uint8_t root_fallback = root_fb_none; /**< コンパイル時解決: ルート型フォールバックのモード（root_fb_*） */
   bool is_dead = false;                    /**< コンパイル時解決: known コンテキストで解決不能な欠損キー → 実行時走査をスキップ */
   std::uint8_t path_hint_len = 0;          /**< path_indices の有効長 */
   /** @brief コンパイル時解決: ドット区切りパスの階層別フィールドインデックス

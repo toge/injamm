@@ -41,6 +41,7 @@ struct ct_parsed_template {
   std::array<std::uint8_t, N>                                           int_filter_count{};    /**< @brief 整数フィルタの有効数 */
   std::array<std::uint8_t, N>                                           float_filter_count{};  /**< @brief 実数フィルタの有効数 */
   std::array<int, N>                                                    field_indices{};       /**< @brief 事前解決されたフィールドインデックス（-1 = 未解決、resolve_field_indices で fill(-1)） */
+  std::array<std::uint8_t, N>                                           root_fallbacks{};      /**< @brief ルート型フォールバックのモード（root_fb_*。セクション本体内で親スタック解決を試みる参照に設定） */
   std::array<std::string_view, N>                                       partial_names{};       /**< @brief 事前スキャンされた partial 定義の名前 */
   std::array<std::size_t, N>                                            partial_body_starts{}; /**< @brief partial 本体のテンプレート内開始位置 */
   std::array<std::size_t, N>                                            partial_body_ends{};   /**< @brief partial 本体のテンプレート内終了位置 */

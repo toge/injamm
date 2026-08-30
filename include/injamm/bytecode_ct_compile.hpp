@@ -38,6 +38,8 @@ struct ct_var_ref {
   /** @brief セクションフィルタパイプライン */
   bc_var_ref::section_op section_ops[bc_var_ref::max_section_ops]{};
   std::uint8_t section_op_count = 0;
+  /** @brief ルート型フォールバックのモード（root_fb_*） */
+  std::uint8_t root_fallback = root_fb_none;
 };
 
 struct ct_lit_entry {
@@ -75,25 +77,30 @@ struct ct_bytecode_builder {
     return idx;
   }
 
-  constexpr std::uint32_t add_var_ref(string_ref key, std::uint32_t field_index) {
+  constexpr std::uint32_t add_var_ref(string_ref key, std::uint32_t field_index, std::uint8_t root_fb = root_fb_none) {
     auto idx = static_cast<std::uint32_t>(bc.var_ref_count);
     bc.var_refs[bc.var_ref_count] = {key, field_index};
+    bc.var_refs[bc.var_ref_count].root_fallback = root_fb;
     ++bc.var_ref_count;
     return idx;
   }
 
   /** @brief 比較 RHS 整数値を保持する var_ref を追加する（emit_if_cmp 用） */
-  constexpr std::uint32_t add_var_ref_cmp(string_ref key, std::uint32_t field_index, int compare_rhs) {
+  constexpr std::uint32_t add_var_ref_cmp(string_ref key, std::uint32_t field_index, int compare_rhs,
+                                          std::uint8_t root_fb = root_fb_none) {
     auto idx = static_cast<std::uint32_t>(bc.var_ref_count);
     bc.var_refs[bc.var_ref_count] = {key, field_index, compare_rhs, /*has_compare_rhs=*/true};
+    bc.var_refs[bc.var_ref_count].root_fallback = root_fb;
     ++bc.var_ref_count;
     return idx;
   }
 
   /** @brief 文字列比較 RHS を保持する var_ref を追加する（emit_if_cmp 用） */
-  constexpr std::uint32_t add_var_ref_cmp_str(string_ref key, std::uint32_t field_index, string_ref compare_rhs_str) {
+  constexpr std::uint32_t add_var_ref_cmp_str(string_ref key, std::uint32_t field_index, string_ref compare_rhs_str,
+                                              std::uint8_t root_fb = root_fb_none) {
     auto idx = static_cast<std::uint32_t>(bc.var_ref_count);
     bc.var_refs[bc.var_ref_count] = {key, field_index, 0, false, compare_rhs_str};
+    bc.var_refs[bc.var_ref_count].root_fallback = root_fb;
     ++bc.var_ref_count;
     return idx;
   }
@@ -138,6 +145,7 @@ bytecode to_bytecode(ct_bytecode<N> const& ct) {
     ref.section_op_count = ct.var_refs[i].section_op_count;
     for (std::uint8_t j = 0; j < ref.section_op_count; ++j)
       ref.section_ops[j] = ct.var_refs[i].section_ops[j];
+    ref.root_fallback = ct.var_refs[i].root_fallback;
     bc.var_refs.push_back(std::move(ref));
   }
   // バッファ事前確保用に全リテラルの合計サイズを計算
@@ -295,11 +303,33 @@ constexpr ct_parsed_template<N> resolve_field_indices(ct_parsed_template<N> tmpl
       if (key.empty() || key.starts_with("loop.") || key == "root" || constexpr_find(key, '.') != std::string_view::npos) {
         continue;
       }
+      if (key.starts_with("@") || key.starts_with("&")) {
+        continue;
+      }
+      if (classify_special_var(key) != special_var_kind::none) {
+        continue;
+      }
       [&]<std::size_t... I>(std::index_sequence<I...>) {
         (([&] {
           if (std::string_view{glz::reflect<T>::keys[I]} == key) { idx = static_cast<int>(I); }
         }()), ...);
       }(std::make_index_sequence<count>{});
+      /** セクション本体の内側で root にのみ存在するキーはルート型フォールバック（未実証: 要素走査後にルート走査） */
+      if (idx >= 0) {
+        bool inside_section = false;
+        for (std::size_t j = 0; j < tmpl.size; ++j) {
+          if (tmpl.kinds[j] != ct_chunk_kind::section) {
+            continue;
+          }
+          if (tmpl.body_starts[j] <= i && i < tmpl.body_ends[j]) {
+            inside_section = true;
+            break;
+          }
+        }
+        if (inside_section) {
+          tmpl.root_fallbacks[i] = root_fb_unproven;
+        }
+      }
     }
   }
   return tmpl;
@@ -452,7 +482,8 @@ consteval void compile_chunk_range(ct_bytecode_builder<N>& b,
         if (sv.ends_with(".size") && !has_filters) {
           auto base_key = sv.substr(0, sv.size() - 5);
           auto vridx = b.add_var_ref({base_key.data(), base_key.size()},
-                                      static_cast<std::uint32_t>(chunks.field_indices[i]));
+                                      static_cast<std::uint32_t>(chunks.field_indices[i]),
+                                      chunks.root_fallbacks[i]);
           b.emit(bc_opcode::emit_var_size, vridx);
           break;
         }
@@ -488,7 +519,8 @@ consteval void compile_chunk_range(ct_bytecode_builder<N>& b,
         }
 
         auto vridx = b.add_var_ref({sv.data(), sv.size()},
-                                    static_cast<std::uint32_t>(chunks.field_indices[i]));
+                                    static_cast<std::uint32_t>(chunks.field_indices[i]),
+                                    chunks.root_fallbacks[i]);
 
         if (has_filters) {
           auto filter_count = static_cast<std::uint32_t>(chunks.filter_count[i] + chunks.int_filter_count[i] + chunks.float_filter_count[i]);
@@ -660,22 +692,24 @@ consteval void compile_chunk_range(ct_bytecode_builder<N>& b,
         /** 比較演算子が解決済み（enum 文字列→int 変換済み）: emit_if_cmp を発行 */
         auto cmp_op = static_cast<bc_opcode>(effective_flags);
         auto vridx  = b.add_var_ref_cmp({sv.data(), sv.size()}, field_idx,
-                                        chunks.int_filters[i][0].arg);
+                                        chunks.int_filters[i][0].arg,
+                                        chunks.root_fallbacks[i]);
         b.emit(cmp_op, 0, vridx);
       } else if (effective_flags != 0 && !chunks.compare_rhs_strs[i].empty()) {
         /** 文字列比較: emit_if_cmp（runtime で compare_rhs_kind == string_literal として解決） */
         auto cmp_op = static_cast<bc_opcode>(effective_flags);
         auto rhs_str = chunks.compare_rhs_strs[i];
         auto vridx = b.add_var_ref_cmp_str({sv.data(), sv.size()}, field_idx,
-                                           {rhs_str.data(), rhs_str.size()});
+                                           {rhs_str.data(), rhs_str.size()},
+                                           chunks.root_fallbacks[i]);
         b.emit(cmp_op, 0, vridx);
       } else if (negated) {
         /** 否定: emit_if_not */
-        auto vridx = b.add_var_ref({sv.data(), sv.size()}, field_idx);
+        auto vridx = b.add_var_ref({sv.data(), sv.size()}, field_idx, chunks.root_fallbacks[i]);
         b.emit(bc_opcode::emit_if_not, 0, vridx);
       } else {
         /** 通常の真偽判定 */
-        auto vridx = b.add_var_ref({sv.data(), sv.size()}, field_idx);
+        auto vridx = b.add_var_ref({sv.data(), sv.size()}, field_idx, chunks.root_fallbacks[i]);
         b.emit(bc_opcode::emit_if, 0, vridx);
       }
 

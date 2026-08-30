@@ -152,6 +152,39 @@ auto r = injamm::render<injamm::fixed_string("root={{root}}")>(Data{{{"Alice",30
 // r は root の JSON 表現を含む
 ```
 
+### 3.1 親スタック解決（Mustache 互換の暗黙参照）
+
+セクション本体内の変数参照は、Mustache と同様に次の順で解決されます（内側優先）。
+
+1. 現在のコンテキスト（ループ要素）のフィールド
+2. 内側のセクションから外側へ、各ループ要素のフィールド
+3. ルートコンテキストのフィールド
+4. どこにも存在しない場合は `unknown_key` エラー
+
+```cpp
+struct Data {
+  std::string title{"Members"};
+  std::vector<User> users;  // User{name, age}
+};
+// {{title}} は User に存在しないためルートの title に解決される
+auto r = injamm::render<injamm::fixed_string(
+  "{{#users}}{{name}} ({{title}}){{/users}}")>(data);
+// r == "Alice (Members)Bob (Members)"
+```
+
+- 解決は**コンパイル時**（バイトコード生成時）に行われるため、実行時のコストは
+  明示的な `{{root.field}}` と同等（ベンチマークで同等〜同等以上を確認）。
+- 現在の要素が外側と同名フィールドを持つ場合は**内側が優先**されます
+  （シャドウイング。Mustache と同じ）。
+- ルート参照の明示指定 `{{root.field}}` は従来どおり使用でき、暗黙解決より優先されます。
+- 制限:
+  - map 反復要素などコンパイル時に型が確定しないコンテキスト内では
+    暗黙解決は行われません（`{{root.field}}` の明示指定を使用してください）。
+  - ネストしたルートパス（`{{info.version}}`）の暗黙解決は engine<T> のみ対応
+    （NTTP では `{{root.info.version}}` の明示指定を使用）。
+  - 外側のセクション要素への暗黙参照（`{{#teams}}{{#members}}{{team_name}}...`）
+    は engine<T> のみ対応。
+
 ---
 
 ## 4. 現在コンテキストの出力 (`{{this}}` / `{{.}}` / `{{&var}}`)

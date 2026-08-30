@@ -5265,3 +5265,212 @@ TEST_CASE("formatError integration with actual engine error", "[error_diag][engi
   CHECK(formatted.find("User: {{name | unknown_filter_func}}") != std::string::npos);
   CHECK(formatted.find('^') != std::string::npos);
 }
+
+// ============================================================================
+// 親スタック解決（Mustache 互換フォールバック）のテスト
+// ============================================================================
+
+struct PsMember {
+  std::string name;
+  int         age{};
+};
+
+struct PsTeam {
+  std::string           team_name{"Devs"};
+  std::vector<PsMember> members;
+};
+
+struct PsInner {
+  std::string version{"1.2"};
+};
+
+struct PsRootData {
+  std::string           title{"Members"};
+  int                   active{1};
+  PsInner               info{};
+  std::vector<PsMember> users;
+  PsTeam                team{};
+};
+
+template <>
+struct glz::meta<PsMember> {
+  static constexpr auto value = glz::object("name", &PsMember::name, "age", &PsMember::age);
+};
+
+template <>
+struct glz::meta<PsTeam> {
+  static constexpr auto value = glz::object("team_name", &PsTeam::team_name, "members", &PsTeam::members);
+};
+
+template <>
+struct glz::meta<PsInner> {
+  static constexpr auto value = glz::object("version", &PsInner::version);
+};
+
+template <>
+struct glz::meta<PsRootData> {
+  static constexpr auto value = glz::object("title", &PsRootData::title, "active", &PsRootData::active, "info",
+                                            &PsRootData::info, "users", &PsRootData::users, "team", &PsRootData::team);
+};
+
+struct PsShadowMember {
+  std::string title{"elem"};
+  int         age{1};
+};
+
+struct PsShadowData {
+  std::string                 title{"root"};
+  std::vector<PsShadowMember> items;
+};
+
+template <>
+struct glz::meta<PsShadowMember> {
+  static constexpr auto value = glz::object("title", &PsShadowMember::title, "age", &PsShadowMember::age);
+};
+
+template <>
+struct glz::meta<PsShadowData> {
+  static constexpr auto value = glz::object("title", &PsShadowData::title, "items", &PsShadowData::items);
+};
+
+struct PsDeepInner {
+  int padding{0};
+};
+
+struct PsDeepMid {
+  std::string              mid_tag{"mid"};
+  std::vector<PsDeepInner> inners;
+};
+
+struct PsDeepRoot {
+  std::string            root_tag{"root"};
+  std::vector<PsDeepMid> mids;
+};
+
+template <>
+struct glz::meta<PsDeepInner> {
+  static constexpr auto value = glz::object("padding", &PsDeepInner::padding);
+};
+
+template <>
+struct glz::meta<PsDeepMid> {
+  static constexpr auto value = glz::object("mid_tag", &PsDeepMid::mid_tag, "inners", &PsDeepMid::inners);
+};
+
+template <>
+struct glz::meta<PsDeepRoot> {
+  static constexpr auto value = glz::object("root_tag", &PsDeepRoot::root_tag, "mids", &PsDeepRoot::mids);
+};
+
+struct PsGroupData {
+  std::string           group_name{"G1"};
+  std::vector<PsTeam>   teams;
+};
+
+template <>
+struct glz::meta<PsGroupData> {
+  static constexpr auto value = glz::object("group_name", &PsGroupData::group_name, "teams", &PsGroupData::teams);
+};
+
+TEST_CASE("implicit parent stack resolution", "[injamm][loop][root]") {
+  PsRootData data;
+  data.users.push_back({"Alice", 30});
+  data.users.push_back({"Bob", 25});
+  data.team.members.push_back({"Carol", 20});
+
+  SECTION("root variable in loop (VM)") {
+    auto eng = injamm::engine<PsRootData>("{{#users}}{{name}} ({{title}}){{/users}}");
+    auto r   = eng.render(data);
+    REQUIRE(r.has_value());
+    REQUIRE(*r == "Alice (Members)Bob (Members)");
+  }
+
+  SECTION("root variable in loop (NTTP)") {
+    auto r = injamm::render<"{{#users}}{{name}} ({{title}}){{/users}}">(data);
+    REQUIRE(r.has_value());
+    REQUIRE(*r == "Alice (Members)Bob (Members)");
+  }
+
+  SECTION("nested root path in loop") {
+    auto eng = injamm::engine<PsRootData>("{{#users}}{{name}} {{info.version}};{{/users}}");
+    auto r   = eng.render(data);
+    REQUIRE(r.has_value());
+    REQUIRE(*r == "Alice 1.2;Bob 1.2;");
+  }
+
+  SECTION("root variable with filter in loop") {
+    auto eng = injamm::engine<PsRootData>("{{#users}}{{title | upper}}{{/users}}");
+    auto r   = eng.render(data);
+    REQUIRE(r.has_value());
+    REQUIRE(*r == "MEMBERSMEMBERS");
+  }
+
+  SECTION("root variable size in loop") {
+    auto eng = injamm::engine<PsRootData>("{{#users}}{{title.size}}{{/users}}");
+    auto r   = eng.render(data);
+    REQUIRE(r.has_value());
+    REQUIRE(*r == "77");
+  }
+
+  SECTION("ancestor loop variable") {
+    PsGroupData gdata;
+    gdata.teams.push_back({.team_name = "Devs", .members = {{"Carol", 20}}});
+    auto eng = injamm::engine<PsGroupData>("{{#teams}}{{#members}}{{name}} ({{team_name}}){{/members}}{{/teams}}");
+    auto r   = eng.render(gdata);
+    REQUIRE(r.has_value());
+    REQUIRE(*r == "Carol (Devs)");
+  }
+
+  SECTION("element field shadows root") {
+    PsShadowData sdata;
+    sdata.items.push_back({});
+    sdata.items.push_back({});
+    auto eng = injamm::engine<PsShadowData>("{{#items}}{{title}}{{/items}}");
+    auto r   = eng.render(sdata);
+    REQUIRE(r.has_value());
+    REQUIRE(*r == "elemelem");
+  }
+
+  SECTION("explicit root takes precedence in shadowing") {
+    PsShadowData sdata;
+    sdata.items.push_back({});
+    auto eng = injamm::engine<PsShadowData>("{{#items}}{{root.title}}{{/items}}");
+    auto r   = eng.render(sdata);
+    REQUIRE(r.has_value());
+    REQUIRE(*r == "root");
+  }
+
+  SECTION("unknown key still errors") {
+    auto eng = injamm::engine<PsRootData>("{{#users}}{{nope}}{{/users}}");
+    auto r   = eng.render(data);
+    REQUIRE_FALSE(r.has_value());
+    REQUIRE(r.error().ec == injamm::error_code::unknown_key);
+  }
+
+  SECTION("condition on root variable") {
+    auto eng = injamm::engine<PsRootData>("{{#users}}{{#if active}}{{name}}{{/if}}{{/users}}");
+    auto r   = eng.render(data);
+    REQUIRE(r.has_value());
+    REQUIRE(*r == "AliceBob");
+    data.active = 0;
+    auto r2 = eng.render(data);
+    REQUIRE(r2.has_value());
+    REQUIRE(*r2 == "");
+  }
+
+  SECTION("comparison on root variable") {
+    auto eng = injamm::engine<PsRootData>("{{#users}}{{#if active == 1}}{{name}}{{/if}}{{/users}}");
+    auto r   = eng.render(data);
+    REQUIRE(r.has_value());
+    REQUIRE(*r == "AliceBob");
+  }
+
+  SECTION("precedence chain: element > ancestor section > root") {
+    PsDeepRoot ddata;
+    ddata.mids.push_back({.mid_tag = "m1", .inners = {{}, {}}});
+    auto eng = injamm::engine<PsDeepRoot>("{{#mids}}{{#inners}}{{padding}}|{{mid_tag}}|{{root_tag}};{{/inners}}{{/mids}}");
+    auto r   = eng.render(ddata);
+    REQUIRE(r.has_value());
+    REQUIRE(*r == "0|m1|root;0|m1|root;");
+  }
+}

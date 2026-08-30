@@ -135,6 +135,9 @@ inline void write_var_ref(std::ostream& os, std::vector<std::string> const& lite
 
   write_u64_le(os, ref.float_filters.size());
   for (auto const& f : ref.float_filters) write_float_filter_entry(os, f);
+
+  /** v6: ルート型フォールバックフラグ（root_fb_*） */
+  write_u8(os, ref.root_fallback);
 }
 
 /** @brief bc_instruction を書き込み（opcode + 3 オペランド） */
@@ -355,7 +358,7 @@ bytecode read_bytecode_body(std::istream& is, read_state& state, int depth = 0);
 inline error_code save_bytecode(detail::bytecode const& bc, std::ostream& os) {
   constexpr char magic[] = {'I', 'J', 'B', 'C'};
   os.write(magic, 4);
-  detail::write_u32_le(os, 5); // バージョン 5（セクションフィルタの join separator 対応）
+  detail::write_u32_le(os, 6); // バージョン 6（ルート型フォールバックフラグ対応）
   if (!os) return error_code::no_read_input;
 
   detail::write_bytecode(os, bc);
@@ -397,6 +400,8 @@ expected<detail::bytecode> load_bytecode(std::istream& is) {
     state.version = 4;
   } else if (version == 5) {
     state.version = 5;
+  } else if (version == 6) {
+    state.version = 6;
   } else {
     return std::unexpected(error_ctx{0, error_code::type_mismatch, "Unsupported bytecode version"});
   }
@@ -534,6 +539,12 @@ bytecode read_bytecode_body(std::istream& is, read_state& state, int depth) {
       ref.float_filters.push_back(read_float_filter_entry(is, state));
     }
     if (!state.ok) return bc;
+
+    /** v6: ルート型フォールバックフラグ（root_fb_*） */
+    if (state.version >= 6) {
+      ref.root_fallback = read_u8(is, state);
+      if (!state.ok) return bc;
+    }
 
     // コンテキスト型 T で field_index を再解決
     re_resolve_var_ref<T>(ref);
