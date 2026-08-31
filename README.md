@@ -26,6 +26,8 @@ injamm は Mustache/inja サブセットですが、以下の点で挙動が異�
   ルート参照の明示指定 `{{root.field}}` も引き続き使用できます
   （[SYNTAX.md](SYNTAX.md) 参照）。
 
+テンプレート構文がどう処理されるのかは[こちら](https://toge.github.io/injamm-web-helper/)で確認できます。
+
 ## 要件
 
 - C++23 対応コンパイラ（GCC 14+ 推奨）
@@ -164,7 +166,7 @@ injamm は多くの機能を提供していますが、適切な使い分けが�
 | `{{#partial name}}` | 定義済み partial を描画（両方で可） | サイドバーの描画 |
 | `{{> partial}}` | 外部から注入した断片を展開（engine<T> はレジストリ、NTTP render は entry pair） | ヘッダー/フッターの挿入 |
 
-**推奨**: 
+**推奨**:
 - 両方の API で `#partialdef` / `#partial` が使えます。`#partialdef` は同一テンプレート内で定義します。
 - `{{> name}}` はテンプレート文字列の**外**から本文を持ってきます。engine<T> はコンストラクタのレジストリ経由（`make_partial<T>`）、NTTP render は entry pair 経由です（内部は同じ partial メカニズム）。
 - 部分描画 API（`render(data, "name")` / `render_partial<tmpl>(data, "name")`）は engine<T> と NTTP の両方で利用でき、HTMX 等の部分更新に使用できます。

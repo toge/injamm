@@ -14,12 +14,6 @@ option(BUILD_EXAMPLE "Build examples" ON)
 option(BUILD_FUZZ "Build fuzz targets (requires -fsanitize=fuzzer)" OFF)
 option(ENABLE_ENUM "Enable enchantum-based enum string conversion" ON)
 option(BUILD_UTIL "Build CLI utilities" OFF)
-if(WIN32)
-  set(_BENCH_FMT_DEFAULT OFF)
-else()
-  set(_BENCH_FMT_DEFAULT ON)
-endif()
-option(BENCH_FMT "Benchmark fmt::format (FMT_COMPILE) in injamm_bench_format" ${_BENCH_FMT_DEFAULT})
 
 # Apple Clang の libc++ は std::vformat("{:05}", ...) 等の 0 flag を
 # 正しくパースできない既知の不具合がある。fmt を使うことで回避する。
@@ -203,31 +197,6 @@ if(BUILD_EXAMPLE)
   target_compile_features(injamm_benchmark PRIVATE cxx_std_23)
   if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
     target_compile_options(injamm_benchmark PRIVATE -march=native)
-  endif()
-
-  add_executable(injamm_bench_delegate
-    examples/bench_delegate.cpp
-  )
-  target_link_libraries(injamm_bench_delegate PRIVATE injamm)
-  target_include_directories(injamm_bench_delegate PRIVATE include)
-  target_compile_features(injamm_bench_delegate PRIVATE cxx_std_23)
-  if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-    target_compile_options(injamm_bench_delegate PRIVATE -march=native)
-  endif()
-
-  add_executable(injamm_bench_format
-    examples/bench_format.cpp
-  )
-  target_link_libraries(injamm_bench_format PRIVATE injamm)
-  target_include_directories(injamm_bench_format PRIVATE include)
-  target_compile_features(injamm_bench_format PRIVATE cxx_std_23)
-  if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-    target_compile_options(injamm_bench_format PRIVATE -march=native)
-  endif()
-  if(BENCH_FMT)
-    find_package(fmt CONFIG REQUIRED)
-    target_link_libraries(injamm_bench_format PRIVATE fmt::fmt)
-    target_compile_definitions(injamm_bench_format PRIVATE INJAMM_BENCH_FMT)
   endif()
 
   add_executable(injamm_codegen_bench
