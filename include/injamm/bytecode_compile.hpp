@@ -739,7 +739,7 @@ class bc_compiler {
   void compile_inverted(std::string_view key) {
     if (nesting_depth_ >= max_nesting_depth) { bc_.error = error_ctx{pos_, error_code::syntax_error, "nesting too deep"}; return; }
     ++nesting_depth_;
-    struct _DepthGuard2 { int* p; ~_DepthGuard2() { --*p; } } _guard2{&nesting_depth_};
+    struct depth_guard2 { int* p; ~depth_guard2() { --*p; } } guard2{&nesting_depth_};
     auto idx = bc_.add_var_ref(key);
     resolve_ref_indices(idx, key);
     bc_.add_instruction(bc_opcode::emit_inverted, 0, idx);
@@ -844,7 +844,7 @@ class bc_compiler {
   void compile_if(std::string_view expr_full) {
     if (nesting_depth_ >= max_nesting_depth) { bc_.error = error_ctx{pos_, error_code::syntax_error, "nesting too deep"}; return; }
     ++nesting_depth_;
-    struct _DepthGuard { int* p; ~_DepthGuard() { --*p; } } _guard{&nesting_depth_};
+    struct depth_guard { int* p; ~depth_guard() { --*p; } } guard{&nesting_depth_};
     /** 定数条件の最適化: リテラル整数はコンパイル時に真偽判定し、到達不可能な分岐をスキップ */
     if (expr_full.find('|') == std::string_view::npos &&
         expr_full.find("||") == std::string_view::npos &&
@@ -1088,7 +1088,7 @@ class bc_compiler {
   void compile_at_inverted(std::string_view key) {
     if (nesting_depth_ >= max_nesting_depth) { bc_.error = error_ctx{pos_, error_code::syntax_error, "nesting too deep"}; return; }
     ++nesting_depth_;
-    struct _DepthGuard2 { int* p; ~_DepthGuard2() { --*p; } } _guard2{&nesting_depth_};
+    struct depth_guard2 { int* p; ~depth_guard2() { --*p; } } guard2{&nesting_depth_};
     auto k = parse_loop_kind(key);
     if (!k) return;
     if (*k == at_var_kind::even || *k == at_var_kind::odd) {
@@ -1143,7 +1143,7 @@ class bc_compiler {
   void compile_at_section(std::string_view key) {
     if (nesting_depth_ >= max_nesting_depth) { bc_.error = error_ctx{pos_, error_code::syntax_error, "nesting too deep"}; return; }
     ++nesting_depth_;
-    struct _DepthGuard { int* p; ~_DepthGuard() { --*p; } } _guard{&nesting_depth_};
+    struct depth_guard { int* p; ~depth_guard() { --*p; } } guard{&nesting_depth_};
     auto k = parse_loop_kind(key);
     if (!k) return;
     if (*k == at_var_kind::even || *k == at_var_kind::odd) {

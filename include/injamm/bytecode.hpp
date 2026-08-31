@@ -304,7 +304,7 @@ struct bytecode {
     // error_ctx の custom_error_message が template_storage 内を指している場合の再束縛
     if (!error.custom_error_message.empty() && !template_storage.empty()) {
       std::string_view msg = error.custom_error_message;
-      // template_storage 内に同一内容が存在すればそこへ再束縛（部分一致ではなく完全一致の位置を探索）
+      // template_storage 内に同一内容の部分文字列が存在すればそこへ再束縛（msg.size() 長の範囲で一致）
       // 見つからなければ静的リテラル（"nesting too deep" 等）とみなしてそのままにする
       auto pos = template_storage.find(msg);
       if (pos != std::string::npos) {
