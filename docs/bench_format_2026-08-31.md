@@ -1,3 +1,5 @@
+> **Note (2026-08-31): 本ベンチマークは `~/src/template-benchmark/bench/bench_format.cpp` に移設されました（`std::format` / `fmt::format(FMT_COMPILE)` との比較はテンプレートエンジン横断ベンチの範疇）。今後の再計測・更新は `template-benchmark` 側で行います。本ファイルはアーカイブとして残置。**
+
 # bench_format 再計測 — 2026-08-31（runtime 追加・NTTP専用アンロール明示）
 
 計測: `examples/bench_format.cpp` の injamm **NTTP (ct unroll)** vs **engine (VM)** vs `std::format` vs `fmt::format(FMT_COMPILE)` を Release で実行。NTTP は `include/injamm/ct_exec.hpp` の専用アンロール（`ct_executor` / `ct_hybrid_executor`）、engine は `bytecode_exec` VM。同一テンプレート・同一データで NTTP と engine を並置し、アンロールの有無の差を定量化する。

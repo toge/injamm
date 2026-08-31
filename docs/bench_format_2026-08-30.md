@@ -1,3 +1,5 @@
+> **Note (2026-08-31): 本ベンチマークは `~/src/template-benchmark/bench/bench_format.cpp` に移設されました（`std::format` / `fmt::format(FMT_COMPILE)` との比較はテンプレートエンジン横断ベンチの範疇）。今後の再計測・更新は `template-benchmark` 側で行います。本ファイルはアーカイブとして残置。**
+
 # bench_format 再計測 — 2026-08-30
 
 計測: `examples/bench_format.cpp` の injamm NTTP vs `std::format` vs `fmt::format(FMT_COMPILE)` 比較を Release で 7 回実行・中央値集計。
