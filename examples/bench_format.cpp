@@ -153,9 +153,14 @@ static void ratio_row(char const* label, double format_ns, double injamm_ns) {
   std::printf("  %-38s  format %7.1f ns   injamm %7.1f ns   ratio %5.2fx  (%s)\n", label, format_ns, injamm_ns, format_ns / injamm_ns, format_ns < injamm_ns ? "format faster" : "injamm faster");
 }
 
+static void ratio_nttp_engine(char const* label, double engine_ns, double nttp_ns) {
+  std::printf("  %-38s  engine %7.1f ns   NTTP   %7.1f ns   ratio %5.2fx  (%s)\n", label, engine_ns, nttp_ns, engine_ns / nttp_ns, engine_ns < nttp_ns ? "engine faster" : "NTTP faster");
+}
+
 int main() {
-  std::printf("=== benchmark: injamm (simple, no loops) vs std::format ===\n");
-  std::printf("note: {{var}} HTML-escapes; std::format does not. raw compare uses {{{var}}}.\n\n");
+  std::printf("=== benchmark: injamm NTTP (ct unroll) vs engine (VM) vs std::format ===\n");
+  std::printf("note: {{var}} HTML-escapes; std::format does not. raw compare uses {{{var}}}.\n");
+  std::printf("note: NTTP render<fixed_string> は ct_exec.hpp の専用アンロール (dispatch 除去)、engine<T> は VM 実行。\n\n");
 
   // ---- 1 変数 (string) ----
   std::printf("--- 1 var (string) ---\n");
@@ -168,6 +173,10 @@ int main() {
   constexpr int ITERS1 = 200000;
   double        nt1    = bench("injamm NTTP render<kTmpl1>", ITERS1, [&] { return injamm::render<kTmpl1>(d1); });
   double        fmt1   = bench("std::format", ITERS1, [&] { return std::format("{}", d1.val); });
+  // runtime VM 比較用（NTTP専用アンロールが無い VM 経路）
+  injamm::engine<Data1> eng1("{{val}}");
+  for (int i = 0; i < 1000; ++i) (void)eng1.render(d1);
+  double eng1v = bench("injamm engine {{val}} (VM)", ITERS1, [&] { return eng1.render(d1); });
 
   // ---- 1 変数 (int) ----
   std::printf("\n--- 1 var (int) ---\n");
@@ -180,6 +189,9 @@ int main() {
   constexpr int ITERS1I = 200000;
   double        nt1i    = bench("injamm NTTP render<kTmpl1i>", ITERS1I, [&] { return injamm::render<kTmpl1i>(di); });
   double        fmt1i   = bench("std::format", ITERS1I, [&] { return std::format("{}", di.val); });
+  injamm::engine<Data1i> eng1i("{{val}}");
+  for (int i = 0; i < 1000; ++i) (void)eng1i.render(di);
+  double eng1iv = bench("injamm engine {{val}} (VM)", ITERS1I, [&] { return eng1i.render(di); });
 
   // ---- 1 変数 (double) ----
   std::printf("\n--- 1 var (double) ---\n");
@@ -192,6 +204,9 @@ int main() {
   constexpr int ITERS1D = 200000;
   double        nt1d    = bench("injamm NTTP render<kTmpl1d>", ITERS1D, [&] { return injamm::render<kTmpl1d>(dd); });
   double        fmt1d   = bench("std::format", ITERS1D, [&] { return std::format("{}", dd.val); });
+  injamm::engine<Data1d> eng1d("{{val}}");
+  for (int i = 0; i < 1000; ++i) (void)eng1d.render(dd);
+  double eng1dv = bench("injamm engine {{val}} (VM)", ITERS1D, [&] { return eng1d.render(dd); });
 
   // ---- 2 変数 (string, int) ----
   std::printf("\n--- 2 vars (string, int) ---\n");
@@ -204,6 +219,9 @@ int main() {
   constexpr int ITERS2 = 200000;
   double        nt2si  = bench("injamm NTTP render<kTmpl2si>", ITERS2, [&] { return injamm::render<kTmpl2si>(d2si); });
   double        fmt2si = bench("std::format", ITERS2, [&] { return std::format("test example, {} = {}", d2si.aaa, d2si.bbb); });
+  injamm::engine<Data2si> eng2si("test example, {{aaa}} = {{bbb}}");
+  for (int i = 0; i < 1000; ++i) (void)eng2si.render(d2si);
+  double eng2siv = bench("injamm engine 2 vars (VM)", ITERS2, [&] { return eng2si.render(d2si); });
 
   // ---- 2 変数 (string, double) ----
   std::printf("\n--- 2 vars (string, double) ---\n");
@@ -215,6 +233,9 @@ int main() {
   }
   double nt2sd  = bench("injamm NTTP render<kTmpl2sd>", ITERS2, [&] { return injamm::render<kTmpl2sd>(d2sd); });
   double fmt2sd = bench("std::format", ITERS2, [&] { return std::format("test example, {} on {}", d2sd.aaa, d2sd.ccc); });
+  injamm::engine<Data2sd> eng2sd("test example, {{aaa}} on {{ccc}}");
+  for (int i = 0; i < 1000; ++i) (void)eng2sd.render(d2sd);
+  double eng2sdv = bench("injamm engine 2 vars (VM)", ITERS2, [&] { return eng2sd.render(d2sd); });
 
   // ---- 2 変数 (int, double) ----
   std::printf("\n--- 2 vars (int, double) ---\n");
@@ -226,6 +247,9 @@ int main() {
   }
   double nt2id  = bench("injamm NTTP render<kTmpl2id>", ITERS2, [&] { return injamm::render<kTmpl2id>(d2id); });
   double fmt2id = bench("std::format", ITERS2, [&] { return std::format("test example, {} on {}", d2id.bbb, d2id.ccc); });
+  injamm::engine<Data2id> eng2id("test example, {{bbb}} on {{ccc}}");
+  for (int i = 0; i < 1000; ++i) (void)eng2id.render(d2id);
+  double eng2idv = bench("injamm engine 2 vars (VM)", ITERS2, [&] { return eng2id.render(d2id); });
 
   // ---- 3 変数 (string, int, double) ----
   std::printf("\n--- 3 vars (string, int, double) ---\n");
@@ -238,6 +262,7 @@ int main() {
   constexpr int ITERS3 = 200000;
   double        nt3    = bench("injamm NTTP render<kTmpl3>", ITERS3, [&] { return injamm::render<kTmpl3>(d3); });
   double        fmt3   = bench("std::format", ITERS3, [&] { return std::format("test example, {} = {} on {}", d3.aaa, d3.bbb, d3.ccc); });
+  // 3 vars 用 engine は後段の runtime/reuse セクションでまとめて計測（eng3）するためここでは NTTP のみ
 
   // ---- 10 変数 (5 string + 3 int + 2 double) ----
   std::printf("\n--- 10 vars (5 string + 3 int + 2 double) ---\n");
@@ -260,6 +285,9 @@ int main() {
   constexpr int ITERS10 = 200000;
   double        nt10    = bench("injamm NTTP render<kTmpl10>", ITERS10, [&] { return injamm::render<kTmpl10>(d10); });
   double        fmt10   = bench("std::format", ITERS10, [&] { return std::format("{}={}={}={}={}  {}+{}+{}  {}x{}", d10.a0, d10.a1, d10.a2, d10.a3, d10.a4, d10.b0, d10.b1, d10.b2, d10.c0, d10.c1); });
+  injamm::engine<Data10> eng10("{{a0}}={{a1}}={{a2}}={{a3}}={{a4}}  {{b0}}+{{b1}}+{{b2}}  {{c0}}x{{c1}}");
+  for (int i = 0; i < 1000; ++i) (void)eng10.render(d10);
+  double eng10v = bench("injamm engine 10 vars (VM)", ITERS10, [&] { return eng10.render(d10); });
 
 #ifdef INJAMM_BENCH_FMT
   // ---- fmt::format with FMT_COMPILE (コンパイル時パースするフォーマット文字列) ----
@@ -382,8 +410,9 @@ int main() {
   double        ntWide     = bench("injamm NTTP wide partial (unroll)", ITERSWIDE, [&] { return injamm::render_partial<kTmplWide, injamm::fixed_string{"wide"}>(wrow); });
   double        engWideV   = bench("injamm engine wide partial (VM)", ITERSWIDE, [&] { return engWide.render(wrow, "wide"); });
 
-  // ---- サマリ比率表 (ratio = std::format ns / injamm ns) ----
-  std::printf("\n=== summary: ratio = std::format ns / injamm ns (1.0 = same, <1 format faster, >1 injamm faster) ===\n");
+  // ---- サマリ比率表 ----
+  std::printf("\n=== summary: ratio = std::format ns / injamm NTTP ns (1.0 = same, <1 format faster, >1 NTTP faster) ===\n");
+  std::printf("--- NTTP (ct_exec.hpp: ct unroll, dispatch loop 除去) vs std::format ---\n");
   ratio_row("1 var (string)", fmt1, nt1);
   ratio_row("1 var (int)", fmt1i, nt1i);
   ratio_row("1 var (double)", fmt1d, nt1d);
@@ -394,15 +423,44 @@ int main() {
   ratio_row("10 vars (5str/3int/2dbl)", fmt10, nt10);
   ratio_row("3 vars escaped  {{...}}", fmt3e, esc);
   ratio_row("3 vars raw      {{{...}}}", fmt3e, raw3);
-  ratio_row("3 vars engine (fresh)", fmt3r, eng);
-  ratio_row("3 vars engine reuse buf", f2t, engr);
   ratio_row("3 vars NTTP reuse buf", f2t, nttr);
+
+  std::printf("\n--- runtime engine (VM dispatch) vs std::format ---\n");
+  std::printf("note: engine<T> はテンプレートを 1 回コンパイルし、以降は VM (bytecode_exec) で毎回 render。NTTP と異なり ct unroll なし。\n");
+  ratio_row("1 var (string) engine", fmt1, eng1v);
+  ratio_row("1 var (int) engine", fmt1i, eng1iv);
+  ratio_row("1 var (double) engine", fmt1d, eng1dv);
+  ratio_row("2 vars (str/int) engine", fmt2si, eng2siv);
+  ratio_row("2 vars (str/dbl) engine", fmt2sd, eng2sdv);
+  ratio_row("2 vars (int/dbl) engine", fmt2id, eng2idv);
+  ratio_row("3 vars engine (fresh)", fmt3r, eng);
+  ratio_row("10 vars engine", fmt10, eng10v);
+  ratio_row("3 vars engine reuse buf", f2t, engr);
+
+  std::printf("\n--- NTTP (ct unroll) vs engine (VM) : NTTP専用アンロール効果 ---\n");
+  std::printf("ratio = engine ns / NTTP ns  (>1 で NTTP が高速。直線テンプレートで dispatch 除去の効果を示す)\n");
+  ratio_nttp_engine("1 var (string)", eng1v, nt1);
+  ratio_nttp_engine("1 var (int)", eng1iv, nt1i);
+  ratio_nttp_engine("1 var (double)", eng1dv, nt1d);
+  ratio_nttp_engine("2 vars (str/int)", eng2siv, nt2si);
+  ratio_nttp_engine("2 vars (str/dbl)", eng2sdv, nt2sd);
+  ratio_nttp_engine("2 vars (int/dbl)", eng2idv, nt2id);
+  ratio_nttp_engine("3 vars (str/int/dbl)", eng, nt3);
+  ratio_nttp_engine("10 vars (5str/3int/2dbl)", eng10v, nt10);
+  ratio_nttp_engine("3 vars reuse buf", engr, nttr);
+
 #ifdef INJAMM_BENCH_FMT
-  std::printf("--- fmt::format (FMT_COMPILE) vs injamm ---\n");
-  ratio_row("1 var (string) fmt", f1, nt1);
-  ratio_row("2 vars (str/int) fmt", f2, nt2si);
-  ratio_row("3 vars (str/int/dbl) fmt", f3, nt3);
-  ratio_row("10 vars fmt", f10, nt10);
+  std::printf("\n--- fmt::format (FMT_COMPILE) vs injamm ---\n");
+  std::printf("fmt はコンパイル時パース、injamm NTTP は ct unroll、いずれも format 文字列の実行時パース無し。\n");
+  ratio_row("1 var (string) fmt vs NTTP", f1, nt1);
+  ratio_row("2 vars (str/int) fmt vs NTTP", f2, nt2si);
+  ratio_row("3 vars (str/int/dbl) fmt vs NTTP", f3, nt3);
+  ratio_row("10 vars fmt vs NTTP", f10, nt10);
+  std::printf("--- fmt::format (FMT_COMPILE) vs engine (VM) ---\n");
+  ratio_row("1 var (string) fmt vs engine", f1, eng1v);
+  ratio_row("2 vars (str/int) fmt vs engine", f2, eng2siv);
+  ratio_row("3 vars (str/int/dbl) fmt vs engine", f3, eng);
+  ratio_row("10 vars fmt vs engine", f10, eng10v);
 #endif
 
   std::printf("\n=== done ===\n");
