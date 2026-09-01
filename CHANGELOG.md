@@ -2,6 +2,7 @@
 
 ## 2026-09-01
 
+- `fix: emscripten で FREESTANDING モードが誤自動検出される問題を修正` — emscripten は `__wasm__` 定義かつ `__wasi__` 未定義のため `config.hpp` の自動検出が発火し、CI の emscripten ジョブで ostream 版バイトコード I/O と `error_code` の `operator<<` が除外されて `test_injamm.cpp` がコンパイルエラーになっていた。`__EMSCRIPTEN__` 定義時はホスト環境（完全な libc++）として自動検出対象外に変更。wasm32-unknown-unknown（`__wasm__` のみ）の自動検出と `ENABLE_FREESTANDING` / `INJAMM_FREESTANDING` 明示指定は従来どおり
 - `feat: wasm32-unknown-unknown 用の FREESTANDING モードを追加` — `config.hpp` を新設し、wasm32-unknown-unknown（`__wasm__` 定義かつ `__wasi__` 未定義）で `INJAMM_FREESTANDING` を自動有効化。CMake オプション `ENABLE_FREESTANDING` でも明示制御可能。有効時は `INJAMM_NO_BYTECODE_IO`（`<istream>`/`<ostream>` 版バイトコード I/O 除外、span 版は維持）/ `INJAMM_NO_CHRONO`（time_point シリアライズ除外、`is_chrono_time_point_v` 常に false で if-constexpr 分岐が消滅）/ `INJAMM_NO_FMT`（`<format>`/`fmt` 版 format フィルタ除外、no-op スタブで呼び出し箇所はコンパイル可能）/ `INJAMM_NO_ENUM_REGISTRY` が連動して ON。NTTP render / engine VM / 文字列フィルタ / セクション・if・loop / glaze フィールド解決は freestanding でも使用可能。README に「Freestanding 対応」章を追加
 
 ## 2026-08-31

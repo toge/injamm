@@ -564,8 +564,9 @@ auto r3 = injamm::render<"{{title}}: {{status}}">(Task{"fix bug", Status::Active
 
 Wasm など標準ライブラリの一部が利用できないフリースタンディング環境で使用できます。
 
-- **自動検出**: `wasm32-unknown-unknown` ターゲット（`__wasm__` 定義かつ `__wasi__` 未定義）では
-  `INJAMM_FREESTANDING` が自動的に有効になります。
+- **自動検出**: `wasm32-unknown-unknown` ターゲット（`__wasm__` 定義かつ `__wasi__` 未定義、かつ
+  `__EMSCRIPTEN__` 未定義）では `INJAMM_FREESTANDING` が自動的に有効になります。
+  emscripten（`__EMSCRIPTEN__` 定義）は完全な libc++ を持つホスト環境のため自動検出対象外です。
 - **明示的な制御**: CMake オプション `ENABLE_FREESTANDING=ON`、またはマクロ `INJAMM_FREESTANDING`
   を直接定義することでも有効化できます。
 

@@ -13,11 +13,12 @@
  *
  *  wasm32-unknown-unknown (freestanding, -nostdlib) では __wasm__ が定義され
  *  __wasi__ が未定義のため自動的に INJAMM_FREESTANDING が有効になる。
+ *  emscripten (__EMSCRIPTEN__ 定義) は完全な libc++ を持つホスト環境のため対象外。
  *  CMake の ENABLE_FREESTANDING オプションからも明示的に制御できる。
  */
 
-// wasm32-unknown-unknown を自動検出
-#if !defined(INJAMM_FREESTANDING) && defined(__wasm__) && !defined(__wasi__)
+// wasm32-unknown-unknown を自動検出 (emscripten はホスト環境として除外)
+#if !defined(INJAMM_FREESTANDING) && defined(__wasm__) && !defined(__wasi__) && !defined(__EMSCRIPTEN__)
 #define INJAMM_FREESTANDING 1
 #endif
 
