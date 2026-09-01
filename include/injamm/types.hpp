@@ -1,10 +1,13 @@
 #pragma once
 
+#include "config.hpp"
 #include <algorithm>
 #include <cstddef>
 #include <cstdint>
 #include <expected>
+#ifndef INJAMM_NO_BYTECODE_IO
 #include <ostream>
+#endif
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -65,9 +68,11 @@ inline std::string_view error_code_to_message(error_code ec) {
 }
 
 /** @brief error_code をストリームに出力するためのオーバーロード */
+#ifndef INJAMM_NO_BYTECODE_IO
 inline std::ostream& operator<<(std::ostream& os, error_code ec) {
   return os << error_code_to_message(ec);
 }
+#endif
 
 /** @brief ソースコード上の位置情報 */
 struct source_location {

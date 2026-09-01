@@ -1,16 +1,25 @@
 #pragma once
 
+#include "config.hpp"
 #include "enum_io.hpp"
 #include "types.hpp"
 #include <array>
 #include <charconv>
+#ifndef INJAMM_NO_CHRONO
 #include <chrono>
+#endif
 #include <concepts>
+#ifndef INJAMM_NO_CHRONO
 #include <ctime>
+#endif
 #ifdef INJAMM_USE_FMT
+#ifndef INJAMM_NO_FMT
 #include <fmt/format.h>
+#endif
 #else
+#ifndef INJAMM_NO_FMT
 #include <format>
+#endif
 #endif
 #include <glaze/util/zmij.hpp>
 #include <map>
@@ -50,6 +59,7 @@ inline constexpr bool is_std_map_like_v<std::map<K, V, Comp, Alloc>> = true;
 template <class K, class V, class Hash, class Eq, class Alloc>
 inline constexpr bool is_std_map_like_v<std::unordered_map<K, V, Hash, Eq, Alloc>> = true;
 
+#ifndef INJAMM_NO_CHRONO
 /** @brief std::chrono::time_point かどうかを判定する型特性 */
 template <class T>
 struct is_chrono_time_point : std::false_type {};
@@ -59,6 +69,10 @@ struct is_chrono_time_point<std::chrono::time_point<Clock, Duration>> : std::tru
 
 template <class T>
 inline constexpr bool is_chrono_time_point_v = is_chrono_time_point<T>::value;
+#else
+template <class T>
+inline constexpr bool is_chrono_time_point_v = false;
+#endif // !INJAMM_NO_CHRONO
 
 /** @brief 整数型（bool除く）をバッファに変換して追記する
  *
@@ -174,6 +188,7 @@ inline void serialize_value(Buffer& out, E value) {
   serialize_enum(out, value, /*raw=*/true);
 }
 
+#ifndef INJAMM_NO_CHRONO
 /** @brief chrono time_point を指定フォーマットでバッファに追記する
  *
  *  fmt には strftime スタイルの指定子を渡す（例: "%Y-%m-%d"）。
@@ -211,7 +226,9 @@ inline void serialize_chrono(Buffer& out, std::chrono::time_point<Clock, Duratio
   auto len = std::strftime(buf, sizeof(buf), fmt_null.c_str(), &tm);
   if (len > 0) out.append(std::string_view{buf, static_cast<std::size_t>(len)});
 }
+#endif // !INJAMM_NO_CHRONO
 
+#ifndef INJAMM_NO_FMT
 /** @brief 算術型を std::format スタイルのフォーマット指定子でバッファに追記する
  *
  *  fmt には std::format のフォーマットスペックを指定する（引数の部分のみ）。
@@ -296,5 +313,14 @@ inline void serialize_formatted(Buffer& out, std::string_view value, std::string
   } catch (...) {
   }
 }
+#endif // !INJAMM_NO_FMT
+
+#ifdef INJAMM_NO_FMT
+/** @brief format フィルタ無効時のスタブ（何も出力しない） */
+template <class Buffer, class T>
+inline void serialize_formatted(Buffer&, T const&, std::string_view) {}
+template <class Buffer>
+inline void serialize_formatted(Buffer&, std::string_view, std::string_view) {}
+#endif // INJAMM_NO_FMT
 
 } // namespace injamm::detail

@@ -14,6 +14,7 @@ option(BUILD_EXAMPLE "Build examples" ON)
 option(BUILD_FUZZ "Build fuzz targets (requires -fsanitize=fuzzer)" OFF)
 option(ENABLE_ENUM "Enable enchantum-based enum string conversion" ON)
 option(BUILD_UTIL "Build CLI utilities" OFF)
+option(ENABLE_FREESTANDING "Freestanding mode (wasm32-unknown-unknown / -nostdlib): disables istream/ostream, chrono, fmt" OFF)
 
 # Apple Clang の libc++ は std::vformat("{:05}", ...) 等の 0 flag を
 # 正しくパースできない既知の不具合がある。fmt を使うことで回避する。
@@ -53,6 +54,11 @@ if(USE_FMT)
   target_compile_definitions(injamm INTERFACE INJAMM_USE_FMT)
 endif()
 target_compile_features(injamm INTERFACE cxx_std_23)
+
+# FREESTANDING モード: wasm32-unknown-unknown など istream/chrono/fmt が利用不可な環境向け
+if(ENABLE_FREESTANDING)
+  target_compile_definitions(injamm INTERFACE INJAMM_FREESTANDING)
+endif()
 
 # GCC スレッデッドディスパッチ制御
 # ヘッダ側でも自動有効化されるが、CMake から明示的に制御できるよう残す。
