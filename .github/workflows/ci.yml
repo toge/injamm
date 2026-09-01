@@ -427,6 +427,56 @@ jobs:
           source /opt/emsdk/emsdk_env.sh
           ctest --test-dir build -V
 
+  linux-freestanding:
+    runs-on: ubuntu-latest
+    container: fedora:44
+
+    env:
+      CC: gcc
+      CXX: g++
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install build tools
+        run: dnf install -y gcc-c++ cmake ninja-build git curl zip unzip tar
+
+      - name: Check GCC version
+        run: |
+          g++ --version
+          g++ -dumpversion | grep -E "^(1[4-9]|[2-9][0-9])(\.|\$)" || { echo "ERROR: GCC 14+ required, found $(g++ -dumpversion)"; exit 1; }
+
+      - name: Restore vcpkg cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/vcpkg
+            build-freestanding/vcpkg_installed
+          key: ${{ runner.os }}-freestanding-vcpkg-${{ hashFiles('vcpkg.json') }}
+          restore-keys: |
+            ${{ runner.os }}-freestanding-vcpkg-
+
+      - name: Install vcpkg
+        run: |
+          if [ ! -d ~/vcpkg ]; then
+            git clone https://github.com/microsoft/vcpkg.git ~/vcpkg
+            ~/vcpkg/bootstrap-vcpkg.sh
+          fi
+
+      - name: Configure (ENABLE_FREESTANDING=ON)
+        run: |
+          cmake -B build-freestanding -S . -G Ninja \
+            -DCMAKE_TOOLCHAIN_FILE=$HOME/vcpkg/scripts/buildsystems/vcpkg.cmake \
+            -DENABLE_FREESTANDING=ON \
+            -DBUILD_TEST=OFF \
+            -DBUILD_EXAMPLE=OFF
+
+      - name: Build
+        run: cmake --build build-freestanding
+
+      - name: Test
+        run: ctest --test-dir build-freestanding -V
+
   macos:
     runs-on: macos-latest
 

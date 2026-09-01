@@ -105,6 +105,18 @@ install(
   DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/injamm
 )
 
+# ---- Freestanding スモークテスト ----
+# 全構成で常時ビルドする。INJAMM_FREESTANDING ガード下でもヘッダがコンパイルでき、
+# 維持機能（NTTP / engine / フィルタ / セクション / span ベースバイトコード I/O）が
+# 動作することを自己検証する。
+enable_testing()
+add_executable(test_freestanding tests/test_freestanding.cpp)
+target_link_libraries(test_freestanding PRIVATE injamm)
+target_include_directories(test_freestanding PRIVATE include)
+target_compile_features(test_freestanding PRIVATE cxx_std_23)
+target_compile_definitions(test_freestanding PRIVATE INJAMM_FREESTANDING)
+add_test(NAME freestanding_smoke COMMAND test_freestanding)
+
 # ---- Tests & Examples ----
 if(BUILD_TEST)
   enable_testing()
