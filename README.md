@@ -59,6 +59,7 @@ cmake --build build
 | `BUILD_EXAMPLE`            | ON     | サンプルをビルドする                                     |
 | `BUILD_UTIL`               | OFF    | CLI ユーティリティ（`injamm_bc` / `injamm_codegen`）をビルドする            |
 | `ENABLE_ENUM`              | ON     | enchantum による enum 文字列出力を有効化（OFF で `INJAMM_NO_ENUM_REGISTRY` が定義され依存が外れる） |
+| `ENABLE_FREESTANDING`      | OFF    | フリースタンディング環境向けに一部機能を無効化（wasm32-unknown-unknown ターゲットでは自動有効、[Freestanding 対応](#freestanding-対応)参照） |
 
 ### find_package
 
@@ -293,6 +294,10 @@ int main() {
 
 コンパイル済みのバイトコードをファイルに保存し、後で読み込んで再利用できます。
 `field_index` は保存されず、読み込み時に glaze リフレクションで再解決されます。
+
+Freestanding モード（[Freestanding 対応](#freestanding-対応)参照）ではストリーム版は利用できないため、
+span 版（`save_bytecode(bc, std::vector<uint8_t>&)` / `load_bytecode<T>(std::span<const uint8_t>)`）を
+使用してください。
 
 ```cpp
 #include "injamm.hpp"
@@ -554,6 +559,38 @@ auto r3 = injamm::render<"{{title}}: {{status}}">(Task{"fix bug", Status::Active
 {{name | left(10) | upper}}    // "hi" → "HI       "
 {{age | abs | numify}}         // -1234567 → "1,234,567"
 ```
+
+## Freestanding 対応
+
+Wasm など標準ライブラリの一部が利用できないフリースタンディング環境で使用できます。
+
+- **自動検出**: `wasm32-unknown-unknown` ターゲット（`__wasm__` 定義かつ `__wasi__` 未定義）では
+  `INJAMM_FREESTANDING` が自動的に有効になります。
+- **明示的な制御**: CMake オプション `ENABLE_FREESTANDING=ON`、またはマクロ `INJAMM_FREESTANDING`
+  を直接定義することでも有効化できます。
+
+### 制限（無効化される機能）
+
+`INJAMM_FREESTANDING` 定義時は以下の機能が除外されます。
+
+| 機能                                                       | 理由                                          |
+| ---------------------------------------------------------- | --------------------------------------------- |
+| `<istream>`/`<ostream>` ベースの `save_bytecode`/`load_bytecode` | ストリームが利用できない環境があるため     |
+| `<chrono>`/`<ctime>` ベースの time_point シリアライズ       | `<chrono>` に依存するため                     |
+| `<format>`/`fmt/format.h` ベースの `format` フィルタ        | `<format>` が利用できない環境があるため       |
+| enchantum による enum 名前解決                              | enum レジストリが freestanding 非対応のため   |
+
+該当機能は `INJAMM_NO_BYTECODE_IO` / `INJAMM_NO_CHRONO` / `INJAMM_NO_FMT` / `INJAMM_NO_ENUM_REGISTRY`
+の各サブガードで個別に制御されており、FREESTANDING 定義時はすべて自動的に有効になります。
+
+### 引き続き使用できる機能
+
+- NTTP コンパイル時レンダリング（`render<kTmpl>`）とバイトコード VM（`engine<T>` の compile / render）
+- 文字列フィルター（upper / lower / trim / capitalize / title / replace など）
+- セクション / 逆セクション / if / loop 構文
+- glaze 構造体のフィールド解決
+- span ベースのバイトコード I/O（`save_bytecode(bc, std::vector<uint8_t>&)` /
+  `load_bytecode<T>(std::span<const uint8_t>)`）
 
 ## API リファレンス
 
