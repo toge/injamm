@@ -39,7 +39,17 @@
 namespace injamm::detail {
 [[noreturn]] inline void injamm_trap() noexcept {
 #if defined(__wasm__) || defined(INJAMM_WASI_MINIMAL)
+#if defined(__has_builtin)
+#if __has_builtin(__builtin_trap)
   __builtin_trap();
+#else
+  std::abort();
+#endif
+#elif defined(__GNUC__) || defined(__clang__)
+  __builtin_trap();
+#else
+  std::abort();
+#endif
 #else
   std::abort();
 #endif
@@ -50,6 +60,7 @@ namespace injamm::detail {
 
 #define INJAMM_HAS_EXCEPTIONS 1
 
+#include <cstdlib>
 #include <stdexcept>
 #define INJAMM_THROW(...) throw __VA_ARGS__
 

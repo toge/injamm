@@ -13,7 +13,7 @@
     "frozenchars",
     {
       "name": "enchantum",
-      "platform": "!wasm32"
+      "platform": "emscripten | !wasm32"
     }
   ],
   "overrides": [
