@@ -560,10 +560,15 @@ auto r3 = injamm::render<"{{title}}: {{status}}">(Task{"fix bug", Status::Active
 
 ## WASI minimal 対応
 
-Wasm など例外が利用できない環境で使用できます。
+Wasm など例外が利用できない環境でも使用できます。
 
-- **対象**: `wasm32-wasip1` + `wasi-sdk` の hosted 環境（`<iostream>`/`<chrono>` が利用可能）。`wasm32-unknown-unknown` (freestanding, `-nostdlib`) は hosted stdlib (`glaze`, `<string>` 等) に依存するため非対応。
-- **明示的な制御**: CMake オプション `ENABLE_WASI_MINIMAL=ON`、またはマクロ `INJAMM_WASI_MINIMAL` を直接定義して有効化します。自動検出は行いません。
+`wasm32-wasip1` + `wasi-sdk` の hosted 環境（`<iostream>`/`<chrono>` が利用可能）に対応しています。
+CMake オプション `ENABLE_WASI_MINIMAL=ON`、またはマクロ `INJAMM_WASI_MINIMAL` を直接定義して有効化します。
+自動検出は行いません。
+
+`wasm32-unknown-unknown` (freestanding, `-nostdlib`) は hosted stdlib (`glaze`, `<string>` 等) に依存するため非対応です。
+
+wasm32-wasip2 環境の対応は現時点では未検証です。
 
 ### 制限（無効化される機能）
 
