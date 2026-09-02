@@ -277,14 +277,18 @@ inline void serialize_formatted(Buffer& out, T value, std::string_view fmt) {
   std::string fmt_str = "{:";
   fmt_str.append(fmt);
   fmt_str.push_back('}');
+#if INJAMM_HAS_EXCEPTIONS
   try {
-#ifdef INJAMM_USE_FMT
-    fmt::vformat_to(std::back_inserter(out), fmt_str, fmt::make_format_args(value));
-#else
-    std::vformat_to(std::back_inserter(out), fmt_str, std::make_format_args(value));
 #endif
+#ifdef INJAMM_USE_FMT
+  fmt::vformat_to(std::back_inserter(out), fmt_str, fmt::make_format_args(value));
+#else
+  std::vformat_to(std::back_inserter(out), fmt_str, std::make_format_args(value));
+#endif
+#if INJAMM_HAS_EXCEPTIONS
   } catch (...) {
   }
+#endif
 }
 
 /** @brief 文字列を std::format スタイルのフォーマット指定子でバッファに追記する
@@ -304,14 +308,18 @@ inline void serialize_formatted(Buffer& out, std::string_view value, std::string
   std::string fmt_str = "{:";
   fmt_str.append(fmt);
   fmt_str.push_back('}');
+#if INJAMM_HAS_EXCEPTIONS
   try {
-#ifdef INJAMM_USE_FMT
-    fmt::vformat_to(std::back_inserter(out), fmt_str, fmt::make_format_args(value));
-#else
-    std::vformat_to(std::back_inserter(out), fmt_str, std::make_format_args(value));
 #endif
+#ifdef INJAMM_USE_FMT
+  fmt::vformat_to(std::back_inserter(out), fmt_str, fmt::make_format_args(value));
+#else
+  std::vformat_to(std::back_inserter(out), fmt_str, std::make_format_args(value));
+#endif
+#if INJAMM_HAS_EXCEPTIONS
   } catch (...) {
   }
+#endif
 }
 #endif // !INJAMM_NO_FMT
 

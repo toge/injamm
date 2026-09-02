@@ -118,6 +118,7 @@ namespace injamm::detail {
 [[nodiscard]] inline std::string_view float_filter_name(float_filter f) noexcept {
   switch (f) {
   case float_filter::precision: return "precision";
+  case float_filter::round:     return "round";
   }
   return "unknown";
 }

@@ -427,34 +427,39 @@ jobs:
           source /opt/emsdk/emsdk_env.sh
           ctest --test-dir build -V
 
-  linux-freestanding:
+  linux-wasi-minimal:
     runs-on: ubuntu-latest
     container: fedora:44
-
-    env:
-      CC: gcc
-      CXX: g++
 
     steps:
       - uses: actions/checkout@v4
 
       - name: Install build tools
-        run: dnf install -y gcc-c++ cmake ninja-build git curl zip unzip tar
+        run: dnf install -y cmake ninja-build git curl zip unzip tar python3 gcc-c++ file
 
-      - name: Check GCC version
+      - name: Cache wasi-sdk
+        uses: actions/cache@v4
+        with:
+          path: /opt/wasi-sdk
+          key: wasi-sdk-34.0
+
+      - name: Install wasi-sdk
         run: |
-          g++ --version
-          g++ -dumpversion | grep -E "^(1[4-9]|[2-9][0-9])(\.|\$)" || { echo "ERROR: GCC 14+ required, found $(g++ -dumpversion)"; exit 1; }
+          if [ ! -d /opt/wasi-sdk/bin/clang ]; then
+            curl -L https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-34/wasi-sdk-34.0-x86_64-linux.tar.gz -o /tmp/wasi-sdk.tar.gz
+            mkdir -p /opt/wasi-sdk && tar -xzf /tmp/wasi-sdk.tar.gz -C /opt/wasi-sdk --strip-components=1
+          fi
+          /opt/wasi-sdk/bin/clang --version
 
       - name: Restore vcpkg cache
         uses: actions/cache@v4
         with:
           path: |
             ~/vcpkg
-            build-freestanding/vcpkg_installed
-          key: ${{ runner.os }}-freestanding-vcpkg-${{ hashFiles('vcpkg.json') }}
+            build/vcpkg_installed
+          key: ${{ runner.os }}-wasi-vcpkg-${{ hashFiles('vcpkg.json') }}
           restore-keys: |
-            ${{ runner.os }}-freestanding-vcpkg-
+            ${{ runner.os }}-wasi-vcpkg-
 
       - name: Install vcpkg
         run: |
@@ -463,19 +468,22 @@ jobs:
             ~/vcpkg/bootstrap-vcpkg.sh
           fi
 
-      - name: Configure (ENABLE_FREESTANDING=ON)
+      - name: Build WASM minimal with vcpkg + wasi-sdk
         run: |
-          cmake -B build-freestanding -S . -G Ninja \
+          cmake -B build -S . -G Ninja \
             -DCMAKE_TOOLCHAIN_FILE=$HOME/vcpkg/scripts/buildsystems/vcpkg.cmake \
-            -DENABLE_FREESTANDING=ON \
-            -DBUILD_TEST=OFF \
-            -DBUILD_EXAMPLE=OFF
+            -DVCPKG_TARGET_TRIPLET=wasm32-wasip1 \
+            -DVCPKG_OVERLAY_TRIPLETS=$PWD/triplets \
+            -DVCPKG_CHAINLOAD_TOOLCHAIN_FILE=/opt/wasi-sdk/share/cmake/wasi-sdk-p1.cmake \
+            -DENABLE_WASI_MINIMAL=ON
+          cmake --build build
+          file build/test_wasi_minimal | grep -q WebAssembly
 
-      - name: Build
-        run: cmake --build build-freestanding
-
-      - name: Test
-        run: ctest --test-dir build-freestanding -V
+      - name: Verify no direct throw/try/catch (except helpers)
+        run: |
+          echo "Checking that direct throw/try/catch are only via INJAMM macros/helpers..."
+          ! grep -rn "throw std::" include/injamm --include="*.hpp" | grep -v "INJAMM_THROW" || { echo "Found direct throw"; exit 1; }
+          echo "ok"
 
   macos:
     runs-on: macos-latest

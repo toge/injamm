@@ -203,6 +203,43 @@ struct read_state {
   int version = 1;
 };
 
+/** @brief vector::reserve を例外安全に試行 */
+template <class Vec>
+inline bool try_reserve(Vec& v, std::size_t n, read_state& st) noexcept(!INJAMM_HAS_EXCEPTIONS) {
+#if INJAMM_HAS_EXCEPTIONS
+  try {
+    v.reserve(n);
+    return true;
+  } catch (...) {
+    st.ok = false;
+    st.ec = error_code::syntax_error;
+    return false;
+  }
+#else
+  if (n > v.max_size()) { st.ok = false; st.ec = error_code::syntax_error; return false; }
+  v.reserve(n);
+  return true;
+#endif
+}
+
+/** @brief string::assign(len,'\0') を例外安全に試行 */
+inline bool try_assign(std::string& s, std::size_t len, read_state& st) noexcept(!INJAMM_HAS_EXCEPTIONS) {
+#if INJAMM_HAS_EXCEPTIONS
+  try {
+    s.assign(len, '\0');
+    return true;
+  } catch (...) {
+    st.ok = false;
+    st.ec = error_code::syntax_error;
+    return false;
+  }
+#else
+  if (len > s.max_size()) { st.ok = false; st.ec = error_code::syntax_error; return false; }
+  s.assign(len, '\0');
+  return true;
+#endif
+}
+
 /** @brief 1バイト読み込み */
 inline std::uint8_t read_u8(std::istream& is, read_state& state) {
   if (!state.ok) return 0;
@@ -247,13 +284,7 @@ inline std::string read_string(std::istream& is, read_state& state) {
   constexpr std::uint64_t max_string_len = 16 * 1024 * 1024; // 16 MiB
   if (len > max_string_len) { state.ok = false; state.ec = error_code::syntax_error; return {}; }
   std::string s;
-  try {
-    s.assign(static_cast<std::size_t>(len), '\0');
-  } catch (...) {
-    state.ok = false;
-    state.ec = error_code::syntax_error;
-    return {};
-  }
+  if (!try_assign(s, static_cast<std::size_t>(len), state)) return {};
   if (len > 0) {
     is.read(s.data(), static_cast<std::streamsize>(len));
     if (is.gcount() != static_cast<std::streamsize>(len)) { state.ok = false; state.ec = error_code::no_read_input; }
@@ -482,6 +513,25 @@ struct span_cursor {
   int version = 1;
 };
 
+/** @brief vector::reserve を例外安全に試行（span_cursor 版） */
+template <class Vec>
+inline bool try_reserve(Vec& v, std::size_t n, span_cursor& cur) noexcept(!INJAMM_HAS_EXCEPTIONS) {
+#if INJAMM_HAS_EXCEPTIONS
+  try {
+    v.reserve(n);
+    return true;
+  } catch (...) {
+    cur.ok = false;
+    cur.ec = error_code::syntax_error;
+    return false;
+  }
+#else
+  if (n > v.max_size()) { cur.ok = false; cur.ec = error_code::syntax_error; return false; }
+  v.reserve(n);
+  return true;
+#endif
+}
+
 inline std::uint8_t read_u8(span_cursor& cur) {
   if (!cur.ok || cur.pos >= cur.data.size()) { cur.ok = false; cur.ec = error_code::no_read_input; return 0; }
   return cur.data[cur.pos++];
@@ -622,7 +672,7 @@ expected<detail::bytecode> load_bytecode(std::istream& is) {
 /**
  * @brief バイトコードをバイト列（vector<uint8_t>）に保存する
  *
- * INJAMM_FREESTANDING でも使用可能。出力バッファに追記する。
+ * INJAMM_WASI_MINIMAL でも使用可能。出力バッファに追記する。
  * @param bc 保存するバイトコード
  * @param out 出力先バッファ（追記）
  * @return error_code エラーコード（現在は常に none）
@@ -638,7 +688,7 @@ expected<detail::bytecode> load_bytecode(std::istream& is) {
 /**
  * @brief バイト列（span<const uint8_t>）からバイトコードを読み込む
  *
- * INJAMM_FREESTANDING でも使用可能。ゼロコピーで読み込む。
+ * INJAMM_WASI_MINIMAL でも使用可能。ゼロコピーで読み込む。
  * @tparam T コンテキスト型（field_index 再解決に使用）
  * @param buf 入力バイト列
  * @return expected<detail::bytecode> 読み込まれたバイトコード、またはエラー
@@ -688,7 +738,7 @@ bytecode read_bytecode_body(std::istream& is, read_state& state, int depth) {
   if (!state.ok) return bc;
   constexpr std::uint64_t max_instructions = 1 << 20; // ~1M
   if (ic > max_instructions) { state.ok = false; state.ec = error_code::syntax_error; return bc; }
-  try { bc.instructions.reserve(static_cast<std::size_t>(ic)); } catch (...) { state.ok = false; state.ec = error_code::syntax_error; return bc; }
+  if (!try_reserve(bc.instructions, static_cast<std::size_t>(ic), state)) return bc;
   for (std::uint64_t i = 0; i < ic; ++i) {
     if (!state.ok) break;
     bc.instructions.push_back(read_instruction(is, state));
@@ -700,7 +750,7 @@ bytecode read_bytecode_body(std::istream& is, read_state& state, int depth) {
   if (!state.ok) return bc;
   constexpr std::uint64_t max_literals = 1 << 20;
   if (lc > max_literals) { state.ok = false; state.ec = error_code::syntax_error; return bc; }
-  try { bc.literals.reserve(static_cast<std::size_t>(lc)); } catch (...) { state.ok = false; state.ec = error_code::syntax_error; return bc; }
+  if (!try_reserve(bc.literals, static_cast<std::size_t>(lc), state)) return bc;
   for (std::uint64_t i = 0; i < lc; ++i) {
     if (!state.ok) break;
     bc.literals.push_back(read_string(is, state));
@@ -712,7 +762,7 @@ bytecode read_bytecode_body(std::istream& is, read_state& state, int depth) {
   if (!state.ok) return bc;
   constexpr std::uint64_t max_var_refs = 1 << 20;
   if (vc > max_var_refs) { state.ok = false; state.ec = error_code::syntax_error; return bc; }
-  try { bc.var_refs.reserve(static_cast<std::size_t>(vc)); } catch (...) { state.ok = false; state.ec = error_code::syntax_error; return bc; }
+  if (!try_reserve(bc.var_refs, static_cast<std::size_t>(vc), state)) return bc;
   for (std::uint64_t i = 0; i < vc; ++i) {
     if (!state.ok) break;
     auto key = read_string(is, state);
@@ -768,7 +818,7 @@ bytecode read_bytecode_body(std::istream& is, read_state& state, int depth) {
     auto fc = read_u64_le(is, state);
     if (!state.ok) return bc;
     if (fc > 64) { state.ok = false; state.ec = error_code::syntax_error; return bc; }
-    try { ref.filters.reserve(static_cast<std::size_t>(fc)); } catch (...) { state.ok = false; state.ec = error_code::syntax_error; return bc; }
+    if (!try_reserve(ref.filters, static_cast<std::size_t>(fc), state)) return bc;
     for (std::uint64_t j = 0; j < fc; ++j) {
       if (!state.ok) break;
       ref.filters.push_back(read_string_filter_entry(is, state, bc.literals));
@@ -779,7 +829,7 @@ bytecode read_bytecode_body(std::istream& is, read_state& state, int depth) {
     auto ifc = read_u64_le(is, state);
     if (!state.ok) return bc;
     if (ifc > 64) { state.ok = false; state.ec = error_code::syntax_error; return bc; }
-    try { ref.int_filters.reserve(static_cast<std::size_t>(ifc)); } catch (...) { state.ok = false; state.ec = error_code::syntax_error; return bc; }
+    if (!try_reserve(ref.int_filters, static_cast<std::size_t>(ifc), state)) return bc;
     for (std::uint64_t j = 0; j < ifc; ++j) {
       if (!state.ok) break;
       ref.int_filters.push_back(read_int_filter_entry(is, state));
@@ -790,7 +840,7 @@ bytecode read_bytecode_body(std::istream& is, read_state& state, int depth) {
     auto ffc = read_u64_le(is, state);
     if (!state.ok) return bc;
     if (ffc > 64) { state.ok = false; state.ec = error_code::syntax_error; return bc; }
-    try { ref.float_filters.reserve(static_cast<std::size_t>(ffc)); } catch (...) { state.ok = false; state.ec = error_code::syntax_error; return bc; }
+    if (!try_reserve(ref.float_filters, static_cast<std::size_t>(ffc), state)) return bc;
     for (std::uint64_t j = 0; j < ffc; ++j) {
       if (!state.ok) break;
       ref.float_filters.push_back(read_float_filter_entry(is, state));
@@ -814,7 +864,7 @@ bytecode read_bytecode_body(std::istream& is, read_state& state, int depth) {
   if (!state.ok) return bc;
   constexpr std::uint64_t max_partials = 1024;
   if (pc > max_partials) { state.ok = false; state.ec = error_code::syntax_error; return bc; }
-  try { bc.partial_entries.reserve(static_cast<std::size_t>(pc)); } catch (...) { state.ok = false; state.ec = error_code::syntax_error; return bc; }
+  if (!try_reserve(bc.partial_entries, static_cast<std::size_t>(pc), state)) return bc;
   for (std::uint64_t i = 0; i < pc; ++i) {
     if (!state.ok) break;
     auto name = read_string(is, state);
@@ -925,7 +975,7 @@ bytecode read_bytecode_body(span_cursor& cur, int depth) {
   if (!cur.ok) return bc;
   constexpr std::uint64_t max_instructions = 1 << 20;
   if (ic > max_instructions) { cur.ok = false; cur.ec = error_code::syntax_error; return bc; }
-  try { bc.instructions.reserve(static_cast<std::size_t>(ic)); } catch (...) { cur.ok = false; cur.ec = error_code::syntax_error; return bc; }
+  if (!try_reserve(bc.instructions, static_cast<std::size_t>(ic), cur)) return bc;
   for (std::uint64_t i = 0; i < ic; ++i) {
     if (!cur.ok) break;
     bc.instructions.push_back(read_instruction(cur));
@@ -937,7 +987,7 @@ bytecode read_bytecode_body(span_cursor& cur, int depth) {
   if (!cur.ok) return bc;
   constexpr std::uint64_t max_literals = 1 << 20;
   if (lc > max_literals) { cur.ok = false; cur.ec = error_code::syntax_error; return bc; }
-  try { bc.literals.reserve(static_cast<std::size_t>(lc)); } catch (...) { cur.ok = false; cur.ec = error_code::syntax_error; return bc; }
+  if (!try_reserve(bc.literals, static_cast<std::size_t>(lc), cur)) return bc;
   for (std::uint64_t i = 0; i < lc; ++i) {
     if (!cur.ok) break;
     bc.literals.push_back(read_string(cur));
@@ -949,7 +999,7 @@ bytecode read_bytecode_body(span_cursor& cur, int depth) {
   if (!cur.ok) return bc;
   constexpr std::uint64_t max_var_refs = 1 << 20;
   if (vc > max_var_refs) { cur.ok = false; cur.ec = error_code::syntax_error; return bc; }
-  try { bc.var_refs.reserve(static_cast<std::size_t>(vc)); } catch (...) { cur.ok = false; cur.ec = error_code::syntax_error; return bc; }
+  if (!try_reserve(bc.var_refs, static_cast<std::size_t>(vc), cur)) return bc;
   for (std::uint64_t i = 0; i < vc; ++i) {
     if (!cur.ok) break;
     auto key          = read_string(cur);
@@ -1001,7 +1051,7 @@ bytecode read_bytecode_body(span_cursor& cur, int depth) {
     auto fc = read_u64_le(cur);
     if (!cur.ok) return bc;
     if (fc > 64) { cur.ok = false; cur.ec = error_code::syntax_error; return bc; }
-    try { ref.filters.reserve(static_cast<std::size_t>(fc)); } catch (...) { cur.ok = false; cur.ec = error_code::syntax_error; return bc; }
+    if (!try_reserve(ref.filters, static_cast<std::size_t>(fc), cur)) return bc;
     for (std::uint64_t j = 0; j < fc; ++j) {
       if (!cur.ok) break;
       ref.filters.push_back(read_string_filter_entry(cur, bc.literals));
@@ -1012,7 +1062,7 @@ bytecode read_bytecode_body(span_cursor& cur, int depth) {
     auto ifc = read_u64_le(cur);
     if (!cur.ok) return bc;
     if (ifc > 64) { cur.ok = false; cur.ec = error_code::syntax_error; return bc; }
-    try { ref.int_filters.reserve(static_cast<std::size_t>(ifc)); } catch (...) { cur.ok = false; cur.ec = error_code::syntax_error; return bc; }
+    if (!try_reserve(ref.int_filters, static_cast<std::size_t>(ifc), cur)) return bc;
     for (std::uint64_t j = 0; j < ifc; ++j) {
       if (!cur.ok) break;
       ref.int_filters.push_back(read_int_filter_entry(cur));
@@ -1023,7 +1073,7 @@ bytecode read_bytecode_body(span_cursor& cur, int depth) {
     auto ffc = read_u64_le(cur);
     if (!cur.ok) return bc;
     if (ffc > 64) { cur.ok = false; cur.ec = error_code::syntax_error; return bc; }
-    try { ref.float_filters.reserve(static_cast<std::size_t>(ffc)); } catch (...) { cur.ok = false; cur.ec = error_code::syntax_error; return bc; }
+    if (!try_reserve(ref.float_filters, static_cast<std::size_t>(ffc), cur)) return bc;
     for (std::uint64_t j = 0; j < ffc; ++j) {
       if (!cur.ok) break;
       ref.float_filters.push_back(read_float_filter_entry(cur));
@@ -1044,7 +1094,7 @@ bytecode read_bytecode_body(span_cursor& cur, int depth) {
   if (!cur.ok) return bc;
   constexpr std::uint64_t max_partials = 1024;
   if (pc > max_partials) { cur.ok = false; cur.ec = error_code::syntax_error; return bc; }
-  try { bc.partial_entries.reserve(static_cast<std::size_t>(pc)); } catch (...) { cur.ok = false; cur.ec = error_code::syntax_error; return bc; }
+  if (!try_reserve(bc.partial_entries, static_cast<std::size_t>(pc), cur)) return bc;
   for (std::uint64_t i = 0; i < pc; ++i) {
     if (!cur.ok) break;
     auto name  = read_string(cur);

@@ -14,8 +14,7 @@ option(BUILD_EXAMPLE "Build examples" ON)
 option(BUILD_FUZZ "Build fuzz targets (requires -fsanitize=fuzzer)" OFF)
 option(ENABLE_ENUM "Enable enchantum-based enum string conversion" ON)
 option(BUILD_UTIL "Build CLI utilities" OFF)
-option(ENABLE_FREESTANDING "Freestanding mode (wasm32-unknown-unknown / -nostdlib): disables istream/ostream, chrono, fmt" OFF)
-
+option(ENABLE_WASI_MINIMAL "Enable WASI minimal (no exceptions) mode - wasi-sdk wasm32-wasip1 assumed" OFF)
 # Apple Clang の libc++ は std::vformat("{:05}", ...) 等の 0 flag を
 # 正しくパースできない既知の不具合がある。fmt を使うことで回避する。
 if(CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
@@ -24,6 +23,17 @@ else()
   set(_USE_FMT_DEFAULT OFF)
 endif()
 option(USE_FMT "Use fmt instead of std::vformat for format filter (workaround for libc++ bugs)" ${_USE_FMT_DEFAULT})
+
+if(ENABLE_WASI_MINIMAL)
+  if(USE_FMT)
+    message(STATUS "ENABLE_WASI_MINIMAL=ON: disabling USE_FMT (requires exceptions)")
+  endif()
+  set(USE_FMT OFF)
+  if(ENABLE_ENUM)
+    message(STATUS "ENABLE_WASI_MINIMAL=ON: disabling ENABLE_ENUM (requires exceptions)")
+  endif()
+  set(ENABLE_ENUM OFF)
+endif()
 
 # ---- 依存 ----
 find_package(glaze CONFIG REQUIRED)
@@ -55,9 +65,9 @@ if(USE_FMT)
 endif()
 target_compile_features(injamm INTERFACE cxx_std_23)
 
-# FREESTANDING モード: wasm32-unknown-unknown など istream/chrono/fmt が利用不可な環境向け
-if(ENABLE_FREESTANDING)
-  target_compile_definitions(injamm INTERFACE INJAMM_FREESTANDING)
+if(ENABLE_WASI_MINIMAL)
+  target_compile_definitions(injamm INTERFACE INJAMM_WASI_MINIMAL=1 INJAMM_NO_EXCEPTIONS)
+  target_compile_options(injamm INTERFACE $<$<COMPILE_LANGUAGE:CXX>:-fno-exceptions -fno-rtti>)
 endif()
 
 # GCC スレッデッドディスパッチ制御
@@ -105,19 +115,23 @@ install(
   DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/injamm
 )
 
-# ---- Freestanding スモークテスト ----
-# 全構成で常時ビルドする。INJAMM_FREESTANDING ガード下でもヘッダがコンパイルでき、
+# ---- WASI minimal スモークテスト ----
+# 全構成で常時ビルドする。INJAMM_WASI_MINIMAL ガード下でもヘッダがコンパイルでき、
 # 維持機能（NTTP / engine / フィルタ / セクション / span ベースバイトコード I/O）が
 # 動作することを自己検証する。
 enable_testing()
-add_executable(test_freestanding tests/test_freestanding.cpp)
-target_link_libraries(test_freestanding PRIVATE injamm)
-target_include_directories(test_freestanding PRIVATE include)
-target_compile_features(test_freestanding PRIVATE cxx_std_23)
-target_compile_definitions(test_freestanding PRIVATE INJAMM_FREESTANDING)
-add_test(NAME freestanding_smoke COMMAND test_freestanding)
+add_executable(test_wasi_minimal tests/test_wasi_minimal.cpp)
+target_link_libraries(test_wasi_minimal PRIVATE injamm)
+target_include_directories(test_wasi_minimal PRIVATE include)
+target_compile_features(test_wasi_minimal PRIVATE cxx_std_23)
+target_compile_definitions(test_wasi_minimal PRIVATE INJAMM_WASI_MINIMAL)
+add_test(NAME wasi_minimal_smoke COMMAND test_wasi_minimal)
 
 # ---- Tests & Examples ----
+if(BUILD_TEST AND ENABLE_WASI_MINIMAL)
+  message(STATUS "ENABLE_WASI_MINIMAL=ON: Catch2 tests require exceptions -- disabling BUILD_TEST (wasi_minimal_smoke remains)")
+  set(BUILD_TEST OFF)
+endif()
 if(BUILD_TEST)
   enable_testing()
 
@@ -213,7 +227,7 @@ if(BUILD_EXAMPLE)
   target_link_libraries(injamm_benchmark PRIVATE injamm)
   target_include_directories(injamm_benchmark PRIVATE include)
   target_compile_features(injamm_benchmark PRIVATE cxx_std_23)
-  if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  if((CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES "Clang") AND NOT CMAKE_SYSTEM_NAME MATCHES "WASI|Emscripten")
     target_compile_options(injamm_benchmark PRIVATE -march=native)
   endif()
 
@@ -223,7 +237,7 @@ if(BUILD_EXAMPLE)
   target_link_libraries(injamm_codegen_bench PRIVATE injamm)
   target_include_directories(injamm_codegen_bench PRIVATE include examples/codegen_bench)
   target_compile_features(injamm_codegen_bench PRIVATE cxx_std_23)
-  if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  if((CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES "Clang") AND NOT CMAKE_SYSTEM_NAME MATCHES "WASI|Emscripten")
     target_compile_options(injamm_codegen_bench PRIVATE -march=native)
   endif()
 endif()

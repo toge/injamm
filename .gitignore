@@ -12,6 +12,7 @@ Makefile
 Testing/
 *.cmake
 !cmake/*.cmake.in
+!triplets/*.cmake
 
 # Editor / IDE
 .cache/

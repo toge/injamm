@@ -6,9 +6,15 @@
       "name": "fmt",
       "platform": "osx | linux"
     },
-    "catch2",
+    {
+      "name": "catch2",
+      "platform": "emscripten | !wasm32"
+    },
     "frozenchars",
-    "enchantum"
+    {
+      "name": "enchantum",
+      "platform": "!wasm32"
+    }
   ],
   "overrides": [
     {

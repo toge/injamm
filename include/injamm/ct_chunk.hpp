@@ -1,11 +1,11 @@
 #pragma once
 
 #include "bytecode.hpp"
+#include "config.hpp"
 #include <array>
 #include <cstddef>
 #include <cstdint>
 #include <span>
-#include <stdexcept>
 #include <string_view>
 
 namespace injamm::detail {
@@ -60,7 +60,7 @@ struct ct_parsed_template {
    */
   constexpr void push_literal(std::string_view text) {
     if (size >= N) {
-      throw std::overflow_error("ct_parsed_template: chunk buffer overflow");
+      INJAMM_THROW(std::overflow_error("ct_parsed_template: chunk buffer overflow"));
     }
     kinds[size] = ct_chunk_kind::literal;
     texts[size] = text;
@@ -78,25 +78,25 @@ struct ct_parsed_template {
   constexpr void push_placeholder(std::string_view key, bool raw, std::span<string_filter_entry const> filter_list = {}, std::span<int_filter_entry const> int_filter_list = {},
                                   std::span<float_filter_entry const> float_filter_list = {}) {
     if (size >= N) {
-      throw std::overflow_error("ct_parsed_template: chunk buffer overflow");
+      INJAMM_THROW(std::overflow_error("ct_parsed_template: chunk buffer overflow"));
     }
     kinds[size] = ct_chunk_kind::placeholder;
     texts[size] = key;
     flags[size] = raw ? 1 : 0;
     if (filter_list.size() > max_filters_per_chunk) {
-      throw std::overflow_error("injamm: too many string filters per placeholder");
+      INJAMM_THROW(std::overflow_error("injamm: too many string filters per placeholder"));
     }
     for (std::size_t j = 0; j < filter_list.size(); ++j)
       filters[size][j] = filter_list[j];
     filter_count[size] = static_cast<std::uint8_t>(filter_list.size());
     if (int_filter_list.size() > max_filters_per_chunk) {
-      throw std::overflow_error("injamm: too many int filters per placeholder");
+      INJAMM_THROW(std::overflow_error("injamm: too many int filters per placeholder"));
     }
     for (std::size_t j = 0; j < int_filter_list.size(); ++j)
       int_filters[size][j] = int_filter_list[j];
     int_filter_count[size] = static_cast<std::uint8_t>(int_filter_list.size());
     if (float_filter_list.size() > max_filters_per_chunk) {
-      throw std::overflow_error("injamm: too many float filters per placeholder");
+      INJAMM_THROW(std::overflow_error("injamm: too many float filters per placeholder"));
     }
     for (std::size_t j = 0; j < float_filter_list.size(); ++j)
       float_filters[size][j] = float_filter_list[j];
@@ -116,7 +116,7 @@ struct ct_parsed_template {
   constexpr void push_section(std::string_view key, std::size_t body_start, std::size_t body_end, std::size_t else_start = 0, std::size_t else_end = 0,
                               std::span<bc_var_ref::section_op const> ops = {}) {
     if (size >= N) {
-      throw std::overflow_error("ct_parsed_template: chunk buffer overflow");
+      INJAMM_THROW(std::overflow_error("ct_parsed_template: chunk buffer overflow"));
     }
     kinds[size]       = ct_chunk_kind::section;
     texts[size]       = key;
@@ -142,7 +142,7 @@ struct ct_parsed_template {
    */
   constexpr void push_inverted(std::string_view key, std::size_t body_start, std::size_t body_end, std::size_t else_start = 0, std::size_t else_end = 0) {
     if (size >= N) {
-      throw std::overflow_error("ct_parsed_template: chunk buffer overflow");
+      INJAMM_THROW(std::overflow_error("ct_parsed_template: chunk buffer overflow"));
     }
     kinds[size]       = ct_chunk_kind::inverted;
     texts[size]       = key;
@@ -160,7 +160,7 @@ struct ct_parsed_template {
    */
   constexpr void push_at_var(at_var_kind var) {
     if (size >= N) {
-      throw std::overflow_error("ct_parsed_template: chunk buffer overflow");
+      INJAMM_THROW(std::overflow_error("ct_parsed_template: chunk buffer overflow"));
     }
     kinds[size] = ct_chunk_kind::at_var;
     flags[size] = static_cast<std::uint8_t>(var);
@@ -177,7 +177,7 @@ struct ct_parsed_template {
    */
   constexpr void push_at_section(at_var_kind var, std::size_t body_start, std::size_t body_end, bool inverted) {
     if (size >= N) {
-      throw std::overflow_error("ct_parsed_template: chunk buffer overflow");
+      INJAMM_THROW(std::overflow_error("ct_parsed_template: chunk buffer overflow"));
     }
     kinds[size]       = ct_chunk_kind::at_section;
     flags[size]       = static_cast<std::uint8_t>(var);
@@ -202,7 +202,7 @@ struct ct_parsed_template {
   constexpr void push_if(std::string_view expr, std::size_t then_start, std::size_t then_end, std::size_t else_start, std::size_t else_end, std::span<string_filter_entry const> filter_list = {},
                          std::span<int_filter_entry const> int_filter_list = {}, std::span<float_filter_entry const> float_filter_list = {}) {
     if (size >= N) {
-      throw std::overflow_error("ct_parsed_template: chunk buffer overflow");
+      INJAMM_THROW(std::overflow_error("ct_parsed_template: chunk buffer overflow"));
     }
     kinds[size]       = ct_chunk_kind::if_else;
     texts[size]       = expr;
@@ -211,19 +211,19 @@ struct ct_parsed_template {
     else_starts[size] = else_start;
     else_ends[size]   = else_end;
     if (filter_list.size() > max_filters_per_chunk) {
-      throw std::overflow_error("injamm: too many string filters per if/else");
+      INJAMM_THROW(std::overflow_error("injamm: too many string filters per if/else"));
     }
     for (std::size_t j = 0; j < filter_list.size(); ++j)
       filters[size][j] = filter_list[j];
     filter_count[size] = static_cast<std::uint8_t>(filter_list.size());
     if (int_filter_list.size() > max_filters_per_chunk) {
-      throw std::overflow_error("injamm: too many int filters per if/else");
+      INJAMM_THROW(std::overflow_error("injamm: too many int filters per if/else"));
     }
     for (std::size_t j = 0; j < int_filter_list.size(); ++j)
       int_filters[size][j] = int_filter_list[j];
     int_filter_count[size] = static_cast<std::uint8_t>(int_filter_list.size());
     if (float_filter_list.size() > max_filters_per_chunk) {
-      throw std::overflow_error("injamm: too many float filters per if/else");
+      INJAMM_THROW(std::overflow_error("injamm: too many float filters per if/else"));
     }
     for (std::size_t j = 0; j < float_filter_list.size(); ++j)
       float_filters[size][j] = float_filter_list[j];
@@ -236,7 +236,7 @@ struct ct_parsed_template {
    */
   constexpr void push_break() {
     if (size >= N) {
-      throw std::overflow_error("ct_parsed_template: chunk buffer overflow");
+      INJAMM_THROW(std::overflow_error("ct_parsed_template: chunk buffer overflow"));
     }
     kinds[size] = ct_chunk_kind::ct_break;
     ++size;
@@ -247,7 +247,7 @@ struct ct_parsed_template {
    */
   constexpr void push_continue() {
     if (size >= N) {
-      throw std::overflow_error("ct_parsed_template: chunk buffer overflow");
+      INJAMM_THROW(std::overflow_error("ct_parsed_template: chunk buffer overflow"));
     }
     kinds[size] = ct_chunk_kind::ct_continue;
     ++size;
@@ -261,7 +261,7 @@ struct ct_parsed_template {
    */
   constexpr void push_partial_ref(std::size_t partial_index, std::string_view name) {
     if (size >= N) {
-      throw std::overflow_error("ct_parsed_template: chunk buffer overflow");
+      INJAMM_THROW(std::overflow_error("ct_parsed_template: chunk buffer overflow"));
     }
     kinds[size]       = ct_chunk_kind::partial_ref;
     texts[size]       = name;

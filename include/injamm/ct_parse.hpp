@@ -215,9 +215,9 @@ struct ct_parse_context {
  */
 template <std::size_t MaxChunks>
 constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view tmpl,
-                              bool trim_blocks = false, bool lstrip_blocks = false, int depth = 0) {
+                             bool trim_blocks = false, bool lstrip_blocks = false, int depth = 0) {
   if (depth > 256) {
-    if (std::is_constant_evaluated()) throw "injamm: nesting too deep";
+    if (std::is_constant_evaluated()) INJAMM_THROW(std::overflow_error("injamm: nesting too deep"));
     return;
   }
   /** @brief 現在のパース位置（バイトオフセット） */

@@ -58,8 +58,8 @@ cmake --build build
 | `BUILD_TEST`               | ON     | テストをビルドする                                       |
 | `BUILD_EXAMPLE`            | ON     | サンプルをビルドする                                     |
 | `BUILD_UTIL`               | OFF    | CLI ユーティリティ（`injamm_bc` / `injamm_codegen`）をビルドする            |
-| `ENABLE_ENUM`              | ON     | enchantum による enum 文字列出力を有効化（OFF で `INJAMM_NO_ENUM_REGISTRY` が定義され依存が外れる） |
-| `ENABLE_FREESTANDING`      | OFF    | フリースタンディング環境向けに一部機能を無効化（wasm32-unknown-unknown ターゲットでは自動有効、[Freestanding 対応](#freestanding-対応)参照） |
+| `ENABLE_ENUM`              | ON     | enchantum による enum 文字列出力を有効化（`ENABLE_WASI_MINIMAL=ON` では例外依存のため自動で無効） |
+| `ENABLE_WASI_MINIMAL`      | OFF    | WASI minimal 環境向けに例外を無効化（自動検出なし、明示指定のみ。`wasm32-unknown-unknown` (freestanding) は非対応、[WASI minimal 対応](#wasi-minimal-対応)参照） |
 
 ### find_package
 
@@ -295,9 +295,7 @@ int main() {
 コンパイル済みのバイトコードをファイルに保存し、後で読み込んで再利用できます。
 `field_index` は保存されず、読み込み時に glaze リフレクションで再解決されます。
 
-Freestanding モード（[Freestanding 対応](#freestanding-対応)参照）ではストリーム版は利用できないため、
-span 版（`save_bytecode(bc, std::vector<uint8_t>&)` / `load_bytecode<T>(std::span<const uint8_t>)`）を
-使用してください。
+WASI minimal 環境でもバイトコードの保存・読み込みは利用できます（例外のみ無効、ストリーム版・span 版の両方が有効）。
 
 ```cpp
 #include "injamm.hpp"
@@ -560,29 +558,60 @@ auto r3 = injamm::render<"{{title}}: {{status}}">(Task{"fix bug", Status::Active
 {{age | abs | numify}}         // -1234567 → "1,234,567"
 ```
 
-## Freestanding 対応
+## WASI minimal 対応
 
-Wasm など標準ライブラリの一部が利用できないフリースタンディング環境で使用できます。
+Wasm など例外が利用できない環境で使用できます。
 
-- **自動検出**: `wasm32-unknown-unknown` ターゲット（`__wasm__` 定義かつ `__wasi__` 未定義、かつ
-  `__EMSCRIPTEN__` 未定義）では `INJAMM_FREESTANDING` が自動的に有効になります。
-  emscripten（`__EMSCRIPTEN__` 定義）は完全な libc++ を持つホスト環境のため自動検出対象外です。
-- **明示的な制御**: CMake オプション `ENABLE_FREESTANDING=ON`、またはマクロ `INJAMM_FREESTANDING`
-  を直接定義することでも有効化できます。
+- **対象**: `wasm32-wasip1` + `wasi-sdk` の hosted 環境（`<iostream>`/`<chrono>` が利用可能）。`wasm32-unknown-unknown` (freestanding, `-nostdlib`) は hosted stdlib (`glaze`, `<string>` 等) に依存するため非対応。
+- **明示的な制御**: CMake オプション `ENABLE_WASI_MINIMAL=ON`、またはマクロ `INJAMM_WASI_MINIMAL` を直接定義して有効化します。自動検出は行いません。
 
 ### 制限（無効化される機能）
 
-`INJAMM_FREESTANDING` 定義時は以下の機能が除外されます。
+`INJAMM_WASI_MINIMAL` は例外のみを無効化します。`wasm32-wasip1` は `wasi-sdk` の hosted 環境で `<iostream>`（`<istream>`/`<ostream>`）や `<chrono>` が利用可能なため、`INJAMM_NO_BYTECODE_IO` / `INJAMM_NO_CHRONO` は定義されません（`frozenchars` の `FROZENCHARS_WASI_MINIMAL` と同様）。
+
+`ENABLE_WASI_MINIMAL=ON` 時のみ以下が無効化されます:
 
 | 機能                                                       | 理由                                          |
 | ---------------------------------------------------------- | --------------------------------------------- |
-| `<istream>`/`<ostream>` ベースの `save_bytecode`/`load_bytecode` | ストリームが利用できない環境があるため     |
-| `<chrono>`/`<ctime>` ベースの time_point シリアライズ       | `<chrono>` に依存するため                     |
-| `<format>`/`fmt/format.h` ベースの `format` フィルタ        | `<format>` が利用できない環境があるため       |
-| enchantum による enum 名前解決                              | enum レジストリが freestanding 非対応のため   |
+| `<format>`/`fmt/format.h` ベースの `format` フィルタ        | 例外に依存するため無効（`INJAMM_NO_FMT`）       |
+| enchantum による enum 名前解決                              | 例外に依存するため無効（`INJAMM_NO_ENUM_REGISTRY`）   |
+| Catch2 テスト（`injamm_tests`）                             | 例外必須のため無効（`wasi_minimal_smoke` のみ） |
 
-該当機能は `INJAMM_NO_BYTECODE_IO` / `INJAMM_NO_CHRONO` / `INJAMM_NO_FMT` / `INJAMM_NO_ENUM_REGISTRY`
-の各サブガードで個別に制御されており、FREESTANDING 定義時はすべて自動的に有効になります。
+通常ビルド（`ENABLE_WASI_MINIMAL=OFF`）では `format` / `enum` / Catch2 は有効です。
+
+`INJAMM_NO_BYTECODE_IO` / `INJAMM_NO_CHRONO` / `INJAMM_NO_FMT` / `INJAMM_NO_ENUM_REGISTRY`
+の各サブガードは個別に手動定義可能ですが、`WASI_MINIMAL` 定義時に自動で `FMT`/`ENUM` のみが有効になります。
+
+### 例外なし（WASI minimal のみ）対応
+
+例外は `ENABLE_WASI_MINIMAL=ON` のときのみ無効化されます（`-fno-exceptions -fno-rtti` 付与）。通常ビルド（`OFF`）では例外有効で `throw` / `try/catch` が使用可能です。
+
+- **実装**: `config.hpp` で `INJAMM_WASI_MINIMAL` 定義時に `INJAMM_NO_EXCEPTIONS` を自動定義し、`INJAMM_HAS_EXCEPTIONS` は `0`、`INJAMM_THROW` は `__builtin_trap()`（wasm では `unreachable`）/ `std::abort()` に展開。`bytecode_io.hpp` の `try_reserve`/`try_assign` は `INJAMM_HAS_EXCEPTIONS` で分岐（有効時は `try/catch`、無効時は `max_size` チェック）。`serialize_value.hpp` の `vformat` も `HAS_EXCEPTIONS` で `try/catch` を分岐。通常ビルドでは通常の例外機構がそのまま動作します。
+- **WASI 時のみ無効な機能**: `format` フィルタ（`{{x | format("05")}}`）、`enchantum` による enum 文字列解決、`frozenchars` の `FrozenString` (`_fs`) — いずれも例外に依存するため `WASI_MINIMAL` 時のみ無効（`INJAMM_NO_FMT`/`INJAMM_NO_ENUM_REGISTRY`）。通常ビルドでは有効です。通常時は `format` / `enum` / `_fs` が通常通り使用可能です。
+- **制約（WASI 時のみ）**: NTTP のチャンク溢れ（`ct_parsed_template` 容量超過）やネスト深度超過の診断は `trap/abort` に劣化します（`MaxChunks = Tmpl.size()+1` で通常到達不能のため実害は軽微）。`vector::reserve` の OOM は `syntax_error` ではなく `trap/abort` になります（事前の `max_*` チェックで不正バイト列の多くは `syntax_error` で弾かれます）。
+
+```bash
+# 通常ビルド（例外有効）
+cmake -B build -S . -DCMAKE_TOOLCHAIN_FILE=~/vm/vcpkg/scripts/buildsystems/vcpkg.cmake
+cmake --build build && ctest --test-dir build -V  # injamm_tests + wasi_minimal_smoke
+
+# WASI minimal（例外なし、ホストコンパイラで検証）
+cmake -B build-wasm -S . -DENABLE_WASI_MINIMAL=ON \
+  -DCMAKE_TOOLCHAIN_FILE=~/vm/vcpkg/scripts/buildsystems/vcpkg.cmake
+cmake --build build-wasm && ctest --test-dir build-wasm -V  # wasi_minimal_smoke のみ
+
+# wasm32-wasip1（wasi-sdk + vcpkg triplet、CI の linux-wasi-minimal と同じ構成）
+# triplets/wasm32-wasip1.cmake が /opt/wasi-sdk または ~/vm/wasi-sdk を chainload する
+cmake -B build-wasi -S . -G Ninja \
+  -DCMAKE_TOOLCHAIN_FILE=~/vm/vcpkg/scripts/buildsystems/vcpkg.cmake \
+  -DVCPKG_TARGET_TRIPLET=wasm32-wasip1 \
+  -DVCPKG_OVERLAY_TRIPLETS=$PWD/triplets \
+  -DENABLE_WASI_MINIMAL=ON
+cmake --build build-wasi
+file build-wasi/test_wasi_minimal  # WebAssembly
+```
+
+wasm32 では glaze 7.8.3 の `atoi.hpp` が MSVC 組み込みの `_umul128` を未修飾で呼ぶため、`config.hpp` でグローバルな `_umul128` を補っています（glaze 上流修正後に削除予定）。
 
 ### 引き続き使用できる機能
 

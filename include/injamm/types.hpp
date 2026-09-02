@@ -12,7 +12,7 @@
 #include <string_view>
 #include <type_traits>
 
-#if __has_include(<frozenchars/mod/core.hpp>)
+#if INJAMM_HAS_EXCEPTIONS && __has_include(<frozenchars/mod/core.hpp>)
 #include <frozenchars/mod/core.hpp>
 #ifndef INJAMM_HAS_FROZENCHARS
 #define INJAMM_HAS_FROZENCHARS 1

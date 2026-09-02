@@ -1,5 +1,5 @@
-// freestanding スモークテスト: INJAMM_FREESTANDING 定義下で維持される機能を検証する
-// (CMake が INJAMM_FREESTANDING を定義してビルドする。Catch2 に依存しない)
+// WASI minimal スモークテスト: INJAMM_WASI_MINIMAL 定義下で維持される機能を検証する
+// (CMake が INJAMM_WASI_MINIMAL を定義してビルドする。Catch2 に依存しない)
 #include "injamm.hpp"
 #include <glaze/glaze.hpp>
 
@@ -115,9 +115,9 @@ int main() {
   }
 
   if (failures == 0) {
-    std::printf("freestanding smoke: all checks passed\n");
+    std::printf("wasi_minimal smoke: all checks passed\n");
     return 0;
   }
-  std::printf("freestanding smoke: %d checks failed\n", failures);
+  std::printf("wasi_minimal smoke: %d checks failed\n", failures);
   return 1;
 }
