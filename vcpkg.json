@@ -4,17 +4,14 @@
     "glaze",
     {
       "name": "fmt",
-      "platform": "osx | linux"
+      "platform": "osx"
     },
     {
       "name": "catch2",
       "platform": "emscripten | !wasm32"
     },
     "frozenchars",
-    {
-      "name": "enchantum",
-      "platform": "emscripten | !wasm32"
-    }
+    "enchantum"
   ],
   "overrides": [
     {

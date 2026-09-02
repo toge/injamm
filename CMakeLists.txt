@@ -24,16 +24,6 @@ else()
 endif()
 option(USE_FMT "Use fmt instead of std::vformat for format filter (workaround for libc++ bugs)" ${_USE_FMT_DEFAULT})
 
-if(ENABLE_WASI_MINIMAL)
-  if(USE_FMT)
-    message(STATUS "ENABLE_WASI_MINIMAL=ON: disabling USE_FMT (requires exceptions)")
-  endif()
-  set(USE_FMT OFF)
-  if(ENABLE_ENUM)
-    message(STATUS "ENABLE_WASI_MINIMAL=ON: disabling ENABLE_ENUM (requires exceptions)")
-  endif()
-  set(ENABLE_ENUM OFF)
-endif()
 
 # ---- 依存 ----
 find_package(glaze CONFIG REQUIRED)

@@ -58,7 +58,7 @@ cmake --build build
 | `BUILD_TEST`               | ON     | テストをビルドする                                       |
 | `BUILD_EXAMPLE`            | ON     | サンプルをビルドする                                     |
 | `BUILD_UTIL`               | OFF    | CLI ユーティリティ（`injamm_bc` / `injamm_codegen`）をビルドする            |
-| `ENABLE_ENUM`              | ON     | enchantum による enum 文字列出力を有効化（`ENABLE_WASI_MINIMAL=ON` では例外依存のため自動で無効） |
+| `ENABLE_ENUM`              | ON     | enchantum による enum 文字列出力を有効化（WASI minimal でも有効。`ENCHANTUM_THROW` を `trap` に差し替えて動作） |
 | `ENABLE_WASI_MINIMAL`      | OFF    | WASI minimal 環境向けに例外を無効化（自動検出なし、明示指定のみ。`wasm32-unknown-unknown` (freestanding) は非対応、[WASI minimal 対応](#wasi-minimal-対応)参照） |
 
 ### find_package
@@ -432,12 +432,12 @@ render_MyData(data, out);
 
 C++ の `enum` / `enum class` 型は、Glaze リフレクションで構造体フィールドとして登録すると、テンプレート内で以下のように扱えます。
 
-| 機能 | 例 | 説明 |
-| --- | --- | --- |
-| 値の出力 | `{{status}}` → `"Active"` | 列挙子名を文字列として出力（`{{}}` なら HTML エスケープ、`{{{}}}` なら生出力） |
-| 真偽判定 | `{{#if status}}` | 非0の列挙値は真、0は偽 |
-| 文字列比較 | `{{#if status == "Pending"}}` | 列挙子名との等値/不等値比較（`==` / `!=`）が可能。NTTP ではコンパイル時に解決 |
-| 未知値 | `{{unknown_enum}}` → `"42"` | enchantum が認識しない値は underlying 整数を10進数で出力 |
+| 機能       | 例                            | 説明                                                                           |
+| ---------- | ----------------------------- | ------------------------------------------------------------------------------ |
+| 値の出力   | `{{status}}` → `"Active"`     | 列挙子名を文字列として出力（`{{}}` なら HTML エスケープ、`{{{}}}` なら生出力） |
+| 真偽判定   | `{{#if status}}`              | 非0の列挙値は真、0は偽                                                         |
+| 文字列比較 | `{{#if status == "Pending"}}` | 列挙子名との等値/不等値比較（`==` / `!=`）が可能。NTTP ではコンパイル時に解決  |
+| 未知値     | `{{unknown_enum}}` → `"42"`   | enchantum が認識しない値は underlying 整数を10進数で出力                       |
 
 ```cpp
 enum class Status : int { Unknown = 0, Active = 1, Pending = 2 };
@@ -574,25 +574,24 @@ wasm32-wasip2 環境の対応は現時点では未検証です。
 
 `INJAMM_WASI_MINIMAL` は例外のみを無効化します。`wasm32-wasip1` は `wasi-sdk` の hosted 環境で `<iostream>`（`<istream>`/`<ostream>`）や `<chrono>` が利用可能なため、`INJAMM_NO_BYTECODE_IO` / `INJAMM_NO_CHRONO` は定義されません（`frozenchars` の `FROZENCHARS_WASI_MINIMAL` と同様）。
 
-`ENABLE_WASI_MINIMAL=ON` 時のみ以下が無効化されます:
+`wasm32-wasip2` 環境の対応は現時点では未検証です。wasi-sdk が正式対応したら検証予定です。
 
 | 機能                                                       | 理由                                          |
 | ---------------------------------------------------------- | --------------------------------------------- |
-| `<format>`/`fmt/format.h` ベースの `format` フィルタ        | 例外に依存するため無効（`INJAMM_NO_FMT`）       |
-| enchantum による enum 名前解決                              | 例外に依存するため無効（`INJAMM_NO_ENUM_REGISTRY`）   |
 | Catch2 テスト（`injamm_tests`）                             | 例外必須のため無効（`wasi_minimal_smoke` のみ） |
 
-通常ビルド（`ENABLE_WASI_MINIMAL=OFF`）では `format` / `enum` / Catch2 は有効です。
+通常ビルド（`ENABLE_WASI_MINIMAL=OFF`）では `format` / `enum` / Catch2 は有効です（WASI minimal でも `format` / `enum` は `trap/abort` フォールバックで有効。不正フォーマットは `trap`）。
 
 `INJAMM_NO_BYTECODE_IO` / `INJAMM_NO_CHRONO` / `INJAMM_NO_FMT` / `INJAMM_NO_ENUM_REGISTRY`
-の各サブガードは個別に手動定義可能ですが、`WASI_MINIMAL` 定義時に自動で `FMT`/`ENUM` のみが有効になります。
+の各サブガードは個別に手動定義可能です。`WASI_MINIMAL` 定義時に自動で無効になるサブガードはありません（`FMT`/`ENUM` とも `trap/abort` フォールバックで有効）。
 
 ### 例外なし（WASI minimal のみ）対応
 
-例外は `ENABLE_WASI_MINIMAL=ON` のときのみ無効化されます（`-fno-exceptions -fno-rtti` 付与）。通常ビルド（`OFF`）では例外有効で `throw` / `try/catch` が使用可能です。
+例外は `ENABLE_WASI_MINIMAL=ON` のときのみ無効化されます（`-fno-exceptions -fno-rtti` 付与）。
+通常ビルド（`OFF`）では例外有効で `throw` / `try/catch` が使用可能です。
 
 - **実装**: `config.hpp` で `INJAMM_WASI_MINIMAL` 定義時に `INJAMM_NO_EXCEPTIONS` を自動定義し、`INJAMM_HAS_EXCEPTIONS` は `0`、`INJAMM_THROW` は `__builtin_trap()`（wasm では `unreachable`）/ `std::abort()` に展開。`bytecode_io.hpp` の `try_reserve`/`try_assign` は `INJAMM_HAS_EXCEPTIONS` で分岐（有効時は `try/catch`、無効時は `max_size` チェック）。`serialize_value.hpp` の `vformat` も `HAS_EXCEPTIONS` で `try/catch` を分岐。通常ビルドでは通常の例外機構がそのまま動作します。
-- **WASI 時のみ無効な機能**: `format` フィルタ（`{{x | format("05")}}`）、`enchantum` による enum 文字列解決、`frozenchars` の `FrozenString` (`_fs`) — いずれも例外に依存するため `WASI_MINIMAL` 時のみ無効（`INJAMM_NO_FMT`/`INJAMM_NO_ENUM_REGISTRY`）。通常ビルドでは有効です。通常時は `format` / `enum` / `_fs` が通常通り使用可能です。
+- **WASI 時のみ無効な機能**: `frozenchars` の `FrozenString` (`_fs`) — 例外に依存するため `WASI_MINIMAL` 時のみ無効（`INJAMM_NO_FMT` 相当）。通常ビルドでは有効です。`format`（`std::format`/`fmt`）と `enum`（`enchantum`）は WASI minimal でも有効です（`_GLIBCXX_THROW_OR_ABORT`/`FMT_THROW=assert_fail`/`ENCHANTUM_THROW=trap` にフォールバック。不正フォーマットは `trap/abort`）。
 - **制約（WASI 時のみ）**: NTTP のチャンク溢れ（`ct_parsed_template` 容量超過）やネスト深度超過の診断は `trap/abort` に劣化します（`MaxChunks = Tmpl.size()+1` で通常到達不能のため実害は軽微）。`vector::reserve` の OOM は `syntax_error` ではなく `trap/abort` になります（事前の `max_*` チェックで不正バイト列の多くは `syntax_error` で弾かれます）。
 
 ```bash
@@ -616,16 +615,7 @@ cmake --build build-wasi
 file build-wasi/test_wasi_minimal  # WebAssembly
 ```
 
-wasm32 では glaze 7.8.3 の `atoi.hpp` が MSVC 組み込みの `_umul128` を未修飾で呼ぶため、`config.hpp` でグローバルな `_umul128` を補っています（glaze 上流修正後に削除予定）。
-
-### 引き続き使用できる機能
-
-- NTTP コンパイル時レンダリング（`render<kTmpl>`）とバイトコード VM（`engine<T>` の compile / render）
-- 文字列フィルター（upper / lower / trim / capitalize / title / replace など）
-- セクション / 逆セクション / if / loop 構文
-- glaze 構造体のフィールド解決
-- span ベースのバイトコード I/O（`save_bytecode(bc, std::vector<uint8_t>&)` /
-  `load_bytecode<T>(std::span<const uint8_t>)`）
+wasm32 では glaze 7.8.3+（8.3.0でも未修正）の `atoi.hpp` が MSVC 組み込みの `_umul128` を未修飾で呼ぶため、`config.hpp` でグローバルな `_umul128` を補っています（glaze 上流修正後に削除予定）。
 
 ## API リファレンス
 

@@ -8,6 +8,7 @@
  * 未知値（enchantum が認識できない値）は underlying 整数として10進出力する。
  */
 
+#include "config.hpp"
 #include "escape.hpp"
 #include <array>
 #include <charconv>
