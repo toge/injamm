@@ -130,12 +130,12 @@ enum class section_filter_op_kind : std::uint8_t {
 struct bytecode;
 
 template <class T>
-std::expected<std::string, error_ctx> bc_execute(bytecode const& bc, T const& value, std::size_t size_hint = 0);
+std::expected<std::string, error_ctx> bc_execute(bytecode const& bc, T const& value, std::size_t size_hint = 0) noexcept;
 
 template <class T>
-std::expected<void, error_ctx> bc_execute_into(bytecode const& bc, T const& value, std::string& out);
+std::expected<void, error_ctx> bc_execute_into(bytecode const& bc, T const& value, std::string& out) noexcept;
 
 template <class T, class Sink>
-std::expected<void, error_ctx> bc_execute_into_sink(bytecode const& bc, T const& value, Sink& sink);
+std::expected<void, error_ctx> bc_execute_into_sink(bytecode const& bc, T const& value, Sink& sink) noexcept;
 
 } // namespace injamm::detail

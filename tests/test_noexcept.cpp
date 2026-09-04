@@ -1,12 +1,26 @@
 #include "injamm/bytecode_io.hpp"
+#include "injamm/engine.hpp"
 #include "injamm/filters.hpp"
 #include "injamm/serialize_value.hpp"
 #include "injamm/types.hpp"
 #include <catch2/catch_test_macros.hpp>
+#include <glaze/glaze.hpp>
 
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
+
+namespace {
+struct NoexceptFmtCtx {
+  int age = 42;
+};
+}  // namespace
+
+template <>
+struct glz::meta<NoexceptFmtCtx> {
+  static constexpr auto value = glz::object("age", &NoexceptFmtCtx::age);
+};
 
 TEST_CASE("new error codes have messages", "[noexcept]") {
   CHECK(injamm::error_code_to_message(injamm::error_code::out_of_memory) == "Out of memory");
@@ -49,4 +63,17 @@ TEST_CASE("serialize_formatted maps format_error to invalid_format", "[noexcept]
   auto r = injamm::detail::serialize_formatted(out, 42, "{invalid!");
   CHECK(!r);
   CHECK(r.error().ec == injamm::error_code::invalid_format);
+}
+
+TEST_CASE("invalid format propagates through filtered render", "[noexcept]") {
+  injamm::engine<NoexceptFmtCtx> eng("{{ age | format(\"{invalid!\") }}");
+  auto r = eng.render(NoexceptFmtCtx{});
+  REQUIRE(!r);
+  CHECK(r.error().ec == injamm::error_code::invalid_format);
+}
+
+TEST_CASE("runtime paths are noexcept and propagate OOM as expected", "[noexcept]") {
+  static_assert(noexcept(injamm::detail::bc_execute_into(std::declval<injamm::detail::bytecode const&>(), std::declval<NoexceptFmtCtx const&>(), std::declval<std::string&>())));
+  static_assert(noexcept(injamm::detail::bc_compile<NoexceptFmtCtx>(std::declval<std::string_view>())));
+  CHECK(injamm::error_code_to_message(injamm::error_code::out_of_memory) == "Out of memory");
 }

@@ -1404,8 +1404,23 @@ class bc_compiler {
    *        各ボディを個別にバイトコードコンパイルして partial_entries に格納する。
    * @param tmpl_str クリーニング済みテンプレート文字列
    * @return partialdef ブロックを除去したメインテンプレート文字列
+   * @details 内部の vector/string 確保失敗（OOM）は bc_.error に out_of_memory を
+   *   設定して空文字を返す。noexcept 保証のため実体は extract_partials_impl に分離した。
    */
-  std::string extract_partials(std::string const& tmpl_str) {
+  std::string extract_partials(std::string const& tmpl_str) noexcept {
+#if INJAMM_HAS_EXCEPTIONS
+    try {
+      return extract_partials_impl(tmpl_str);
+    } catch (...) {
+      bc_.error = error_ctx{0, error_code::out_of_memory, "Out of memory"};
+      return {};
+    }
+#else
+    return extract_partials_impl(tmpl_str);
+#endif
+  }
+
+  std::string extract_partials_impl(std::string const& tmpl_str) {
     std::string_view tmpl = tmpl_str;
     std::string result;
     result.reserve(tmpl.size());
@@ -1578,8 +1593,16 @@ class bc_compiler {
    *
    * @param entries 注入する partial エントリのリスト
    */
-  void set_partial_entries(std::vector<partial_entry> const& entries) {
+  void set_partial_entries(std::vector<partial_entry> const& entries) noexcept {
+#if INJAMM_HAS_EXCEPTIONS
+    try {
+      bc_.partial_entries = entries;
+    } catch (...) {
+      bc_.error = error_ctx{0, error_code::out_of_memory, "Out of memory"};
+    }
+#else
     bc_.partial_entries = entries;
+#endif
   }
 
   /** @cond private */
@@ -1588,8 +1611,23 @@ class bc_compiler {
    * @brief テンプレート文字列をバイトコードにコンパイルする
    * @param tmpl Mustache 形式のテンプレート文字列
    * @return コンパイル済みバイトコード
+   * @details 内部の vector 確保失敗（OOM）は bc_.error に out_of_memory を設定して
+   *   コンパイルを中断する。noexcept 保証のため実体は compile_impl に分離した。
    */
-  bytecode compile(std::string_view tmpl, bool trim_blocks = false, bool lstrip_blocks = false) {
+  bytecode compile(std::string_view tmpl, bool trim_blocks = false, bool lstrip_blocks = false) noexcept {
+#if INJAMM_HAS_EXCEPTIONS
+    try {
+      return compile_impl(tmpl, trim_blocks, lstrip_blocks);
+    } catch (...) {
+      bc_.error = error_ctx{0, error_code::out_of_memory, "Out of memory"};
+      return std::move(bc_);
+    }
+#else
+    return compile_impl(tmpl, trim_blocks, lstrip_blocks);
+#endif
+  }
+
+  bytecode compile_impl(std::string_view tmpl, bool trim_blocks = false, bool lstrip_blocks = false) {
     trim_blocks_ = trim_blocks;
     lstrip_blocks_ = lstrip_blocks;
     clean_tmpl_ = transform_exists_sections(strip_bang_comments(strip_comments(strip_standalone_whitespace_tildes(tmpl))));
@@ -1634,23 +1672,62 @@ class bc_compiler {
  * @tparam T コンテキスト型
  * @param tmpl テンプレート文字列
  * @return コンパイル済みバイトコード
+ * @details 確保失敗（OOM）は例外ではなく bc.error の out_of_memory で報告する。
  */
 template <class T>
-bytecode bc_compile(std::string_view tmpl, bool trim_blocks = false, bool lstrip_blocks = false) {
+bytecode bc_compile(std::string_view tmpl, bool trim_blocks = false, bool lstrip_blocks = false) noexcept {
+#if INJAMM_HAS_EXCEPTIONS
+  try {
+    bc_compiler<T> compiler;
+    return compiler.compile(tmpl, trim_blocks, lstrip_blocks);
+  } catch (...) {
+    bytecode err_bc;
+    err_bc.error = error_ctx{0, error_code::out_of_memory, "Out of memory"};
+    return err_bc;
+  }
+#else
   bc_compiler<T> compiler;
   return compiler.compile(tmpl, trim_blocks, lstrip_blocks);
+#endif
 }
 
 template <class T>
 bytecode bc_compile(std::string_view tmpl, std::vector<partial_entry> partials,
-                    bool trim_blocks = false, bool lstrip_blocks = false) {
+                    bool trim_blocks = false, bool lstrip_blocks = false) noexcept {
+#if INJAMM_HAS_EXCEPTIONS
+  try {
+    bc_compiler<T> compiler;
+    compiler.set_partial_entries(partials);
+    return compiler.compile(tmpl, trim_blocks, lstrip_blocks);
+  } catch (...) {
+    bytecode err_bc;
+    err_bc.error = error_ctx{0, error_code::out_of_memory, "Out of memory"};
+    return err_bc;
+  }
+#else
   bc_compiler<T> compiler;
   compiler.set_partial_entries(partials);
   return compiler.compile(tmpl, trim_blocks, lstrip_blocks);
+#endif
 }
 
 template <class T, class ConstMap>
-bytecode bc_compile(std::string_view tmpl, ConstMap const& consts, bool trim_blocks = false, bool lstrip_blocks = false) {
+bytecode bc_compile(std::string_view tmpl, ConstMap const& consts, bool trim_blocks = false, bool lstrip_blocks = false) noexcept {
+#if INJAMM_HAS_EXCEPTIONS
+  try {
+    auto expanded = expand_vars_in_template(tmpl, consts);
+    if (!expanded) {
+      bytecode err_bc;
+      err_bc.error = expanded.error();
+      return err_bc;
+    }
+    return bc_compile<T>(*expanded, trim_blocks, lstrip_blocks);
+  } catch (...) {
+    bytecode err_bc;
+    err_bc.error = error_ctx{0, error_code::out_of_memory, "Out of memory"};
+    return err_bc;
+  }
+#else
   auto expanded = expand_vars_in_template(tmpl, consts);
   if (!expanded) {
     bytecode err_bc;
@@ -1658,6 +1735,7 @@ bytecode bc_compile(std::string_view tmpl, ConstMap const& consts, bool trim_blo
     return err_bc;
   }
   return bc_compile<T>(*expanded, trim_blocks, lstrip_blocks);
+#endif
 }
 
 } // namespace injamm::detail
