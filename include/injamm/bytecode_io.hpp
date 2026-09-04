@@ -205,36 +205,36 @@ struct read_state {
 
 /** @brief vector::reserve を例外安全に試行 */
 template <class Vec>
-inline bool try_reserve(Vec& v, std::size_t n, read_state& st) noexcept(!INJAMM_HAS_EXCEPTIONS) {
+inline bool try_reserve(Vec& v, std::size_t n, read_state& st) noexcept {
 #if INJAMM_HAS_EXCEPTIONS
   try {
     v.reserve(n);
     return true;
   } catch (...) {
     st.ok = false;
-    st.ec = error_code::syntax_error;
+    st.ec = error_code::out_of_memory;
     return false;
   }
 #else
-  if (n > v.max_size()) { st.ok = false; st.ec = error_code::syntax_error; return false; }
+  if (n > v.max_size()) { st.ok = false; st.ec = error_code::out_of_memory; return false; }
   v.reserve(n);
   return true;
 #endif
 }
 
 /** @brief string::assign(len,'\0') を例外安全に試行 */
-inline bool try_assign(std::string& s, std::size_t len, read_state& st) noexcept(!INJAMM_HAS_EXCEPTIONS) {
+inline bool try_assign(std::string& s, std::size_t len, read_state& st) noexcept {
 #if INJAMM_HAS_EXCEPTIONS
   try {
     s.assign(len, '\0');
     return true;
   } catch (...) {
     st.ok = false;
-    st.ec = error_code::syntax_error;
+    st.ec = error_code::out_of_memory;
     return false;
   }
 #else
-  if (len > s.max_size()) { st.ok = false; st.ec = error_code::syntax_error; return false; }
+  if (len > s.max_size()) { st.ok = false; st.ec = error_code::out_of_memory; return false; }
   s.assign(len, '\0');
   return true;
 #endif
@@ -515,19 +515,68 @@ struct span_cursor {
 
 /** @brief vector::reserve を例外安全に試行（span_cursor 版） */
 template <class Vec>
-inline bool try_reserve(Vec& v, std::size_t n, span_cursor& cur) noexcept(!INJAMM_HAS_EXCEPTIONS) {
+inline bool try_reserve(Vec& v, std::size_t n, span_cursor& cur) noexcept {
 #if INJAMM_HAS_EXCEPTIONS
   try {
     v.reserve(n);
     return true;
   } catch (...) {
     cur.ok = false;
-    cur.ec = error_code::syntax_error;
+    cur.ec = error_code::out_of_memory;
     return false;
   }
 #else
-  if (n > v.max_size()) { cur.ok = false; cur.ec = error_code::syntax_error; return false; }
+  if (n > v.max_size()) { cur.ok = false; cur.ec = error_code::out_of_memory; return false; }
   v.reserve(n);
+  return true;
+#endif
+}
+
+/** @brief string::append を例外安全に試行 */
+inline bool try_append(std::string& s, std::string_view sv, error_ctx* err) noexcept {
+#if INJAMM_HAS_EXCEPTIONS
+  try {
+    s.append(sv);
+    return true;
+  } catch (...) {
+    if (err != nullptr) {
+      err->ec = error_code::out_of_memory;
+    }
+    return false;
+  }
+#else
+  if (sv.size() > s.max_size() - s.size()) {
+    if (err != nullptr) {
+      err->ec = error_code::out_of_memory;
+    }
+    return false;
+  }
+  s.append(sv);
+  return true;
+#endif
+}
+
+/** @brief vector::push_back を例外安全に試行 */
+template <class Vec, class Val>
+inline bool try_push_back(Vec& v, Val const& val, error_ctx* err) noexcept {
+#if INJAMM_HAS_EXCEPTIONS
+  try {
+    v.push_back(val);
+    return true;
+  } catch (...) {
+    if (err != nullptr) {
+      err->ec = error_code::out_of_memory;
+    }
+    return false;
+  }
+#else
+  if (v.size() >= v.max_size()) {
+    if (err != nullptr) {
+      err->ec = error_code::out_of_memory;
+    }
+    return false;
+  }
+  v.push_back(val);
   return true;
 #endif
 }

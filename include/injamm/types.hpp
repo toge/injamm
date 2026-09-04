@@ -39,6 +39,8 @@ enum class error_code : int {
   invalid_utf8     = 6, /**< 不正な UTF-8 */
   unknown_filter   = 7, /**< 不明なフィルタ名 */
   division_by_zero = 8, /**< 除数ゼロエラー */
+  out_of_memory    = 9, /**< メモリ不足 */
+  invalid_format   = 10, /**< 不正なフォーマット文字列 */
 };
 
 /** @brief error_code から対応するエラーメッセージを取得する */
@@ -62,6 +64,10 @@ inline std::string_view error_code_to_message(error_code ec) {
     return "Unknown filter name";
   case error_code::division_by_zero:
     return "Division by zero";
+  case error_code::out_of_memory:
+    return "Out of memory";
+  case error_code::invalid_format:
+    return "Invalid format string";
   default:
     return "Unknown error";
   }
