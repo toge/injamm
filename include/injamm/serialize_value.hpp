@@ -74,6 +74,61 @@ template <class T>
 inline constexpr bool is_chrono_time_point_v = false;
 #endif // !INJAMM_NO_CHRONO
 
+// ---- fallible append helpers (cycle-free) ----
+//
+// detail::try_append (bytecode_io.hpp) は std::string 専用のため、
+// serialize_value.hpp からはインクルードできない（bytecode_io →
+// glz_dispatch → serialize_value の循環になる）。汎用 Buffer 用に
+// 同等の try/catch をここで定義する。
+
+/** @brief 汎用バッファへの追記を例外安全に試行する */
+template <class Buffer>
+inline bool try_append_buf(Buffer& out, std::string_view sv) noexcept {
+#if INJAMM_HAS_EXCEPTIONS
+  try {
+    out.append(sv);
+    return true;
+  } catch (...) {
+    return false;
+  }
+#else
+  if constexpr (requires { out.max_size(); out.size(); }) {
+    if (sv.size() > out.max_size() - out.size()) return false;
+  }
+  out.append(sv);
+  return true;
+#endif
+}
+
+/** @brief 汎用バッファへの (ptr, n) 追記を例外安全に試行する */
+template <class Buffer>
+inline bool try_append_buf(Buffer& out, char const* ptr, std::size_t n) noexcept {
+#if INJAMM_HAS_EXCEPTIONS
+  try {
+    out.append(ptr, n);
+    return true;
+  } catch (...) {
+    return false;
+  }
+#else
+  if constexpr (requires { out.max_size(); out.size(); }) {
+    if (n > out.max_size() - out.size()) return false;
+  }
+  out.append(ptr, n);
+  return true;
+#endif
+}
+
+/** @brief out_of_memory の unexpected を生成する */
+inline ::injamm::expected<void> oom_error() noexcept {
+  return std::unexpected(error_ctx{0, error_code::out_of_memory, "Out of memory"});
+}
+
+/** @brief invalid_format の unexpected を生成する */
+inline ::injamm::expected<void> invalid_format_error() noexcept {
+  return std::unexpected(error_ctx{0, error_code::invalid_format, "Invalid format string"});
+}
+
 /** @brief 整数型（bool除く）をバッファに変換して追記する
  *
  *  @tparam Buffer 出力バッファ型
@@ -83,12 +138,13 @@ inline constexpr bool is_chrono_time_point_v = false;
  */
 template <class Buffer, class T>
   requires std::integral<T> && (!std::same_as<T, bool>)
-inline void serialize_value(Buffer& out, T value) {
+inline ::injamm::expected<void> serialize_value(Buffer& out, T value) noexcept {
   std::array<char, 32> buf{};
   auto [ptr, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), value);
   if (ec == std::errc{}) {
-    out.append(std::string_view{buf.data(), static_cast<std::size_t>(ptr - buf.data())});
+    if (!try_append_buf(out, buf.data(), static_cast<std::size_t>(ptr - buf.data()))) return oom_error();
   }
+  return {};
 }
 
 /** @brief bool型をバッファに変換して追記する
@@ -98,8 +154,9 @@ inline void serialize_value(Buffer& out, T value) {
  *  @param[in] b 変換する値
  */
 template <class Buffer>
-inline void serialize_value(Buffer& out, bool b) {
-  out.append(b ? std::string_view{"true"} : std::string_view{"false"});
+inline ::injamm::expected<void> serialize_value(Buffer& out, bool b) noexcept {
+  if (!try_append_buf(out, b ? std::string_view{"true"} : std::string_view{"false"})) return oom_error();
+  return {};
 }
 
 /** @brief string_view型をバッファに追記する
@@ -109,8 +166,9 @@ inline void serialize_value(Buffer& out, bool b) {
  *  @param[in] s 追記する文字列
  */
 template <class Buffer>
-inline void serialize_value(Buffer& out, std::string_view s) {
-  out.append(s);
+inline ::injamm::expected<void> serialize_value(Buffer& out, std::string_view s) noexcept {
+  if (!try_append_buf(out, s)) return oom_error();
+  return {};
 }
 
 /** @brief string型をバッファに追記する
@@ -120,8 +178,9 @@ inline void serialize_value(Buffer& out, std::string_view s) {
  *  @param[in] s 追記する文字列
  */
 template <class Buffer>
-inline void serialize_value(Buffer& out, std::string const& s) {
-  out.append(std::string_view{s});
+inline ::injamm::expected<void> serialize_value(Buffer& out, std::string const& s) noexcept {
+  if (!try_append_buf(out, std::string_view{s})) return oom_error();
+  return {};
 }
 
 /** @brief std::optional 型をバッファに変換して追記する
@@ -134,10 +193,9 @@ inline void serialize_value(Buffer& out, std::string const& s) {
  *  @param[in] opt optional 値
  */
 template <class Buffer, class T>
-inline void serialize_value(Buffer& out, std::optional<T> const& opt) {
-  if (opt.has_value()) {
-    serialize_value(out, *opt);
-  }
+inline ::injamm::expected<void> serialize_value(Buffer& out, std::optional<T> const& opt) noexcept {
+  if (opt.has_value()) return serialize_value(out, *opt);
+  return {};
 }
 
 /** @brief char ポインタ（const char*, char*）をバッファに追記する
@@ -152,8 +210,11 @@ inline void serialize_value(Buffer& out, std::optional<T> const& opt) {
  */
 template <class Buffer, class T>
   requires char_pointer_v<T>
-inline void serialize_value(Buffer& out, T const& ptr) {
-  if (ptr) out.append(std::string_view{ptr});
+inline ::injamm::expected<void> serialize_value(Buffer& out, T const& ptr) noexcept {
+  if (ptr) {
+    if (!try_append_buf(out, std::string_view{ptr})) return oom_error();
+  }
+  return {};
 }
 
 /** @brief 浮動小数点型をバッファに変換して追記する
@@ -167,15 +228,17 @@ inline void serialize_value(Buffer& out, T const& ptr) {
  */
 template <class Buffer, class T>
   requires std::floating_point<T>
-inline void serialize_value(Buffer& out, T value) {
+inline ::injamm::expected<void> serialize_value(Buffer& out, T value) noexcept {
   std::array<char, glz::zmij::double_buffer_size> buf{};
   auto end = glz::to_chars(buf.data(), value);
-  out.append(std::string_view{buf.data(), static_cast<std::size_t>(end - buf.data())});
+  if (!try_append_buf(out, buf.data(), static_cast<std::size_t>(end - buf.data()))) return oom_error();
+  return {};
 }
 
 /** @brief enum 型をバッファに変換して追記する（filter scratch 用、常に raw 出力）
  *
  *  フィルタパスは独自エスケープ処理を持つため、ここでは raw=true で serialize_enum を呼ぶ。
+ *  serialize_enum 自体は void のため、例外を捕捉して out_of_memory に写像する。
  *
  *  @tparam Buffer 出力バッファ型
  *  @tparam E enum 型
@@ -184,8 +247,17 @@ inline void serialize_value(Buffer& out, T value) {
  */
 template <class Buffer, class E>
   requires std::is_enum_v<E>
-inline void serialize_value(Buffer& out, E value) {
+inline ::injamm::expected<void> serialize_value(Buffer& out, E value) noexcept {
+#if INJAMM_HAS_EXCEPTIONS
+  try {
+    serialize_enum(out, value, /*raw=*/true);
+  } catch (...) {
+    return oom_error();
+  }
+#else
   serialize_enum(out, value, /*raw=*/true);
+#endif
+  return {};
 }
 
 #ifndef INJAMM_NO_CHRONO
@@ -203,8 +275,8 @@ inline void serialize_value(Buffer& out, E value) {
  *  @param[in] fmt strftime フォーマット文字列（デフォルト: ISO 8601）
  */
 template <class Buffer, class Clock, class Duration>
-inline void serialize_chrono(Buffer& out, std::chrono::time_point<Clock, Duration> const& tp,
-                             std::string_view fmt = "%Y-%m-%dT%H:%M:%S") {
+inline ::injamm::expected<void> serialize_chrono(Buffer& out, std::chrono::time_point<Clock, Duration> const& tp,
+    std::string_view fmt = "%Y-%m-%dT%H:%M:%S") noexcept {
   std::chrono::system_clock::time_point sys_tp;
   if constexpr (std::is_same_v<Clock, std::chrono::system_clock>) {
     sys_tp = tp;
@@ -222,9 +294,22 @@ inline void serialize_chrono(Buffer& out, std::chrono::time_point<Clock, Duratio
   localtime_r(&tt, &tm);
 #endif
   char buf[256];
-  std::string fmt_null{fmt};
+  std::string fmt_null;
+#if INJAMM_HAS_EXCEPTIONS
+  try {
+    fmt_null.assign(fmt);
+  } catch (...) {
+    return oom_error();
+  }
+#else
+  if (fmt.size() > fmt_null.max_size()) return oom_error();
+  fmt_null.assign(fmt);
+#endif
   auto len = std::strftime(buf, sizeof(buf), fmt_null.c_str(), &tm);
-  if (len > 0) out.append(std::string_view{buf, static_cast<std::size_t>(len)});
+  if (len > 0) {
+    if (!try_append_buf(out, buf, static_cast<std::size_t>(len))) return oom_error();
+  }
+  return {};
 }
 #endif // !INJAMM_NO_CHRONO
 
@@ -235,6 +320,8 @@ inline void serialize_chrono(Buffer& out, std::chrono::time_point<Clock, Duratio
  *  例: "05" → "{:05}" → std::format("{:05}", 42) → "00042"
  *  例: ".2f" → "{:.2f}" → std::format("{:.2f}", 3.14) → "3.14"
  *
+ *  不正なフォーマット指定は invalid_format、確保失敗は out_of_memory を返す。
+ *
  *  @tparam Buffer 出力バッファ型
  *  @tparam T 算術型
  *  @param[in,out] out 出力先バッファ
@@ -243,7 +330,7 @@ inline void serialize_chrono(Buffer& out, std::chrono::time_point<Clock, Duratio
  */
 template <class Buffer, class T>
   requires std::is_arithmetic_v<T> && (!std::same_as<T, bool>)
-inline void serialize_formatted(Buffer& out, T value, std::string_view fmt) {
+inline ::injamm::expected<void> serialize_formatted(Buffer& out, T value, std::string_view fmt) noexcept {
   // libc++ (macOS) では "{:05}" の 0-埋めフラグが誤って解析され std::format_error となる。
   // fmt ライブラリでも同様の問題があるため、純粋な 0埋め幅指定（例: "05","008"）は
   // 自前で実装し、他の指定子（"#06x",".2f" 等）は std::vformat/fmt::vformat に委譲する。
@@ -253,41 +340,85 @@ inline void serialize_formatted(Buffer& out, T value, std::string_view fmt) {
       if (c < '0' || c > '9') { zerofill_only = false; break; }
   }
   if (zerofill_only) {
-    int width = 0;
-    for (char c : fmt) {
-      if (width > 10000) break;
-      width = width * 10 + (c - '0');
-    }
-    if (width > 1024) width = 1024;
-    std::string s = std::to_string(value);
-    bool const  neg = !s.empty() && s[0] == '-';
-    if (neg) {
-      std::string digits = s.substr(1);
-      if (static_cast<int>(digits.size()) < width - 1) {
-        s = "-" + std::string(static_cast<std::size_t>(width - 1) - digits.size(), '0') + digits;
+#if INJAMM_HAS_EXCEPTIONS
+    try {
+#endif
+      int width = 0;
+      for (char c : fmt) {
+        if (width > 10000) break;
+        width = width * 10 + (c - '0');
       }
-    } else {
-      if (static_cast<int>(s.size()) < width) {
-        s = std::string(static_cast<std::size_t>(width) - s.size(), '0') + s;
+      if (width > 1024) width = 1024;
+      std::string s = std::to_string(value);
+      bool const neg = !s.empty() && s[0] == '-';
+      if (neg) {
+        std::string digits = s.substr(1);
+        if (static_cast<int>(digits.size()) < width - 1) {
+          s = "-" + std::string(static_cast<std::size_t>(width - 1) - digits.size(), '0') + digits;
+        }
+      } else {
+        if (static_cast<int>(s.size()) < width) {
+          s = std::string(static_cast<std::size_t>(width) - s.size(), '0') + s;
+        }
       }
+      if (!try_append_buf(out, std::string_view{s})) return oom_error();
+      return {};
+#if INJAMM_HAS_EXCEPTIONS
+    } catch (...) {
+      return oom_error();
     }
-    out.append(s);
-    return;
+#endif
   }
-  std::string fmt_str = "{:";
-  fmt_str.append(fmt);
-  fmt_str.push_back('}');
+  std::string fmt_str;
 #if INJAMM_HAS_EXCEPTIONS
   try {
+    fmt_str.reserve(fmt.size() + 3);
+    fmt_str.append("{:");
+    fmt_str.append(fmt);
+    fmt_str.push_back('}');
+  } catch (...) {
+    return oom_error();
+  }
+#else
+  if (fmt.size() + 3 > fmt_str.max_size()) return oom_error();
+  fmt_str.append("{:");
+  fmt_str.append(fmt);
+  fmt_str.push_back('}');
 #endif
+#if !INJAMM_HAS_EXCEPTIONS
+  // 例外なし: vformat は不正フォーマットで abort/trap するため、疑わしい入力は
+  // 呼び出す前に invalid_format で弾く。出力余地がなければ out_of_memory。
+  if (fmt.size() > 1024) return invalid_format_error();
+  if constexpr (requires { out.max_size(); out.size(); }) {
+    if (fmt.size() + 32 > out.max_size() - out.size()) return oom_error();
+  }
 #ifdef INJAMM_USE_FMT
   fmt::vformat_to(std::back_inserter(out), fmt_str, fmt::make_format_args(value));
 #else
   std::vformat_to(std::back_inserter(out), fmt_str, std::make_format_args(value));
 #endif
-#if INJAMM_HAS_EXCEPTIONS
+  return {};
+#else
+  try {
+#ifdef INJAMM_USE_FMT
+    fmt::vformat_to(std::back_inserter(out), fmt_str, fmt::make_format_args(value));
+#else
+    std::vformat_to(std::back_inserter(out), fmt_str, std::make_format_args(value));
+#endif
+#ifdef INJAMM_USE_FMT
+  } catch (fmt::format_error const&) {
+    return invalid_format_error();
   } catch (...) {
+    return oom_error();
   }
+#else
+  } catch (std::format_error const&) {
+    return invalid_format_error();
+  } catch (...) {
+    return oom_error();
+  }
+#endif
+  return {};
 #endif
 }
 
@@ -298,27 +429,65 @@ inline void serialize_formatted(Buffer& out, T value, std::string_view fmt) {
  *  例: ">20" → "{:>20}" → 右寄せ幅20
  *  例: "*^20" → "{:*^20}" → 中央寄せ '*' 埋め幅20
  *
+ *  不正なフォーマット指定は invalid_format、確保失敗は out_of_memory を返す。
+ *
  *  @tparam Buffer 出力バッファ型
  *  @param[in,out] out 出力先バッファ
  *  @param[in] value 変換する文字列
  *  @param[in] fmt std::format フォーマットスペック
  */
 template <class Buffer>
-inline void serialize_formatted(Buffer& out, std::string_view value, std::string_view fmt) {
-  std::string fmt_str = "{:";
-  fmt_str.append(fmt);
-  fmt_str.push_back('}');
+inline ::injamm::expected<void> serialize_formatted(Buffer& out, std::string_view value, std::string_view fmt) noexcept {
+  std::string fmt_str;
 #if INJAMM_HAS_EXCEPTIONS
   try {
+    fmt_str.reserve(fmt.size() + 3);
+    fmt_str.append("{:");
+    fmt_str.append(fmt);
+    fmt_str.push_back('}');
+  } catch (...) {
+    return oom_error();
+  }
+#else
+  if (fmt.size() + 3 > fmt_str.max_size()) return oom_error();
+  fmt_str.append("{:");
+  fmt_str.append(fmt);
+  fmt_str.push_back('}');
 #endif
+#if !INJAMM_HAS_EXCEPTIONS
+  // 例外なし: vformat は不正フォーマットで abort/trap するため、疑わしい入力は
+  // 呼び出す前に invalid_format で弾く。出力余地がなければ out_of_memory。
+  if (fmt.size() > 1024) return invalid_format_error();
+  if constexpr (requires { out.max_size(); out.size(); }) {
+    if (fmt.size() + 32 > out.max_size() - out.size()) return oom_error();
+  }
 #ifdef INJAMM_USE_FMT
   fmt::vformat_to(std::back_inserter(out), fmt_str, fmt::make_format_args(value));
 #else
   std::vformat_to(std::back_inserter(out), fmt_str, std::make_format_args(value));
 #endif
-#if INJAMM_HAS_EXCEPTIONS
+  return {};
+#else
+  try {
+#ifdef INJAMM_USE_FMT
+    fmt::vformat_to(std::back_inserter(out), fmt_str, fmt::make_format_args(value));
+#else
+    std::vformat_to(std::back_inserter(out), fmt_str, std::make_format_args(value));
+#endif
+#ifdef INJAMM_USE_FMT
+  } catch (fmt::format_error const&) {
+    return invalid_format_error();
   } catch (...) {
+    return oom_error();
   }
+#else
+  } catch (std::format_error const&) {
+    return invalid_format_error();
+  } catch (...) {
+    return oom_error();
+  }
+#endif
+  return {};
 #endif
 }
 #endif // !INJAMM_NO_FMT
@@ -326,9 +495,13 @@ inline void serialize_formatted(Buffer& out, std::string_view value, std::string
 #ifdef INJAMM_NO_FMT
 /** @brief format フィルタ無効時のスタブ（何も出力しない） */
 template <class Buffer, class T>
-inline void serialize_formatted(Buffer&, T const&, std::string_view) {}
+inline ::injamm::expected<void> serialize_formatted(Buffer&, T const&, std::string_view) noexcept {
+  return {};
+}
 template <class Buffer>
-inline void serialize_formatted(Buffer&, std::string_view, std::string_view) {}
+inline ::injamm::expected<void> serialize_formatted(Buffer&, std::string_view, std::string_view) noexcept {
+  return {};
+}
 #endif // INJAMM_NO_FMT
 
 } // namespace injamm::detail
