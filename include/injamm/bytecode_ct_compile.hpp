@@ -498,14 +498,15 @@ consteval void compile_chunk_range(ct_bytecode_builder<N>& b,
             if (sf.filter == string_filter::safe) { raw_eff = true; continue; }
             if (sf.filter == string_filter::to_json || sf.filter == string_filter::format)
               { fold_ok = false; break; }
-            apply_string_filter(result, sf);
+            if (auto r = apply_string_filter(result, sf); !r) { fold_ok = false; break; }
           }
           for (std::uint8_t f = 0; f < chunks.int_filter_count[i] && fold_ok; ++f) {
             auto r = apply_int_filter(result, chunks.int_filters[i][f]);
             if (!r) { fold_ok = false; break; }
           }
-          for (std::uint8_t f = 0; f < chunks.float_filter_count[i] && fold_ok; ++f)
-            apply_float_filter(result, chunks.float_filters[i][f]);
+          for (std::uint8_t f = 0; f < chunks.float_filter_count[i] && fold_ok; ++f) {
+            if (auto r = apply_float_filter(result, chunks.float_filters[i][f]); !r) { fold_ok = false; break; }
+          }
           if (fold_ok) {
             if (!raw_eff) {
               std::string escaped;

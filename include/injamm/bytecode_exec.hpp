@@ -1290,11 +1290,15 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
       }
       if (!resolved) return std::unexpected(r.error());
     }
-    for (auto const& f : var_ref.filters) apply_string_filter(filtered, f);
+    for (auto const& f : var_ref.filters) {
+      if (auto err = apply_string_filter(filtered, f); !err) return std::unexpected(err.error());
+    }
     for (auto const& f : var_ref.int_filters) {
       if (auto err = apply_int_filter(filtered, f); !err) return std::unexpected(err.error());
     }
-    for (auto const& f : var_ref.float_filters) apply_float_filter(filtered, f);
+    for (auto const& f : var_ref.float_filters) {
+      if (auto err = apply_float_filter(filtered, f); !err) return std::unexpected(err.error());
+    }
     ++pc;
     pc += instr.operand;
     return {};
@@ -1524,7 +1528,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
       if ((kind == string_filter::replace || kind == string_filter::pluralize) && lit_idx + 1 < ex.bc_.literals.size())
         entry.str_arg2 = ex.bc_.literals[lit_idx + 1];
     }
-    apply_string_filter(filtered, entry);
+    if (auto r = apply_string_filter(filtered, entry); !r) return std::unexpected(r.error());
     ++pc;
     return {};
   }
@@ -1541,7 +1545,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
   INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_filter_float(bc_executor& ex, std::size_t& pc, std::string& filtered) {
     auto const& instr = ex.bc_.instructions[pc];
     auto        kind  = static_cast<float_filter>(instr.operand2);
-    apply_float_filter(filtered, {kind, static_cast<int>(instr.operand)});
+    if (auto r = apply_float_filter(filtered, {kind, static_cast<int>(instr.operand)}); !r) return std::unexpected(r.error());
     ++pc;
     return {};
   }

@@ -41,7 +41,10 @@ namespace injamm::detail {
  * @param str 対象の文字列
  * @param entry 適用するフィルタの種別と引数
  */
-constexpr void apply_string_filter(std::string& str, string_filter_entry entry) {
+[[nodiscard]] constexpr std::expected<void, error_ctx> apply_string_filter(std::string& str, string_filter_entry entry) noexcept {
+#if INJAMM_HAS_EXCEPTIONS
+  try {
+#endif
   switch (entry.filter) {
   case string_filter::upper:
     for (auto& c : str) {
@@ -299,6 +302,12 @@ constexpr void apply_string_filter(std::string& str, string_filter_entry entry) 
     break;
   }
   }
+  return {};
+#if INJAMM_HAS_EXCEPTIONS
+  } catch (...) {
+    return std::unexpected(error_ctx{.ec = error_code::out_of_memory});
+  }
+#endif
 }
 
 /**
@@ -307,6 +316,9 @@ constexpr void apply_string_filter(std::string& str, string_filter_entry entry) 
  * @param entry 適用するフィルタの種別と引数
  */
 [[nodiscard]] constexpr std::expected<void, error_ctx> apply_int_filter(std::string& str, int_filter_entry entry) {
+#if INJAMM_HAS_EXCEPTIONS
+  try {
+#endif
   switch (entry.filter) {
   case int_filter::abs: {
     auto data = str.data();
@@ -739,6 +751,11 @@ constexpr void apply_string_filter(std::string& str, string_filter_entry entry) 
   }
   }
   return {};
+#if INJAMM_HAS_EXCEPTIONS
+  } catch (...) {
+    return std::unexpected(error_ctx{.ec = error_code::out_of_memory});
+  }
+#endif
 }
 
 /**
@@ -746,7 +763,10 @@ constexpr void apply_string_filter(std::string& str, string_filter_entry entry) 
  * @param str 対象の文字列
  * @param entry 適用するフィルタの種別と引数
  */
-constexpr void apply_float_filter(std::string& str, float_filter_entry entry) {
+[[nodiscard]] constexpr std::expected<void, error_ctx> apply_float_filter(std::string& str, float_filter_entry entry) noexcept {
+#if INJAMM_HAS_EXCEPTIONS
+  try {
+#endif
   switch (entry.filter) {
   case float_filter::precision: {
     double val{};
@@ -780,6 +800,12 @@ constexpr void apply_float_filter(std::string& str, float_filter_entry entry) {
     break;
   }
   }
+  return {};
+#if INJAMM_HAS_EXCEPTIONS
+  } catch (...) {
+    return std::unexpected(error_ctx{.ec = error_code::out_of_memory});
+  }
+#endif
 }
 
 /**
@@ -807,7 +833,7 @@ try_fold_string_constant(std::string_view key, bool raw,
     // to_json と format はランタイムで特殊処理されるため畳み込み不可
     if (f.filter == string_filter::to_json || f.filter == string_filter::format)
       return std::nullopt;
-    apply_string_filter(result, f);
+    if (auto r = apply_string_filter(result, f); !r) return std::nullopt;
   }
 
   for (auto const& f : int_filters) {
@@ -816,7 +842,7 @@ try_fold_string_constant(std::string_view key, bool raw,
   }
 
   for (auto const& f : float_filters) {
-    apply_float_filter(result, f);
+    if (auto r = apply_float_filter(result, f); !r) return std::nullopt;
   }
 
   if (!use_raw) {

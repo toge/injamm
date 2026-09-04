@@ -1,4 +1,5 @@
 #include "injamm/bytecode_io.hpp"
+#include "injamm/filters.hpp"
 #include "injamm/serialize_value.hpp"
 #include "injamm/types.hpp"
 #include <catch2/catch_test_macros.hpp>
@@ -24,6 +25,23 @@ TEST_CASE("try_append and try_push_back succeed", "[noexcept]") {
   REQUIRE(v.size() == 1);
   CHECK(v[0] == 42);
   CHECK(err.ec == injamm::error_code::none);
+}
+
+TEST_CASE("string/float filters are fallible and noexcept", "[noexcept]") {
+  std::string s = "abc";
+  injamm::detail::string_filter_entry se{injamm::detail::string_filter::upper};
+  auto r = injamm::detail::apply_string_filter(s, se);
+  CHECK(r);
+  CHECK(s == "ABC");
+
+  std::string f = "3.14159";
+  injamm::detail::float_filter_entry fe{injamm::detail::float_filter::precision, 2};
+  auto rf = injamm::detail::apply_float_filter(f, fe);
+  CHECK(rf);
+  CHECK(f == "3.14");
+
+  static_assert(noexcept(injamm::detail::apply_string_filter(s, se)));
+  static_assert(noexcept(injamm::detail::apply_float_filter(f, fe)));
 }
 
 TEST_CASE("serialize_formatted maps format_error to invalid_format", "[noexcept]") {
