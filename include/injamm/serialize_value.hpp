@@ -75,16 +75,22 @@ inline constexpr bool is_chrono_time_point_v = false;
 #endif // !INJAMM_NO_CHRONO
 
 // ---- fallible append helpers (cycle-free) ----
+#if defined(__GNUC__) || defined(__clang__)
+#define INJAMM_COLD [[gnu::cold]]
+#else
+#define INJAMM_COLD
+#endif
 //
 // detail::try_append (bytecode_io.hpp) は std::string 専用のため、
 // serialize_value.hpp からはインクルードできない（bytecode_io →
 // glz_dispatch → serialize_value の循環になる）。汎用 Buffer 用に
 // 同等の try/catch をここで定義する。
 // serialize_formatted（cold path）の expected 実装でのみ使用する。
+// cold 属性でホットパスのインライン収支を圧迫しない（wide 系劣化の対策）。
 
 /** @brief 汎用バッファへの追記を例外安全に試行する */
 template <class Buffer>
-inline bool try_append_buf(Buffer& out, std::string_view sv) noexcept {
+INJAMM_COLD inline bool try_append_buf(Buffer& out, std::string_view sv) noexcept {
 #if INJAMM_HAS_EXCEPTIONS
   try {
     out.append(sv);
@@ -103,7 +109,7 @@ inline bool try_append_buf(Buffer& out, std::string_view sv) noexcept {
 
 /** @brief 汎用バッファへの (ptr, n) 追記を例外安全に試行する */
 template <class Buffer>
-inline bool try_append_buf(Buffer& out, char const* ptr, std::size_t n) noexcept {
+INJAMM_COLD inline bool try_append_buf(Buffer& out, char const* ptr, std::size_t n) noexcept {
 #if INJAMM_HAS_EXCEPTIONS
   try {
     out.append(ptr, n);
@@ -121,12 +127,12 @@ inline bool try_append_buf(Buffer& out, char const* ptr, std::size_t n) noexcept
 }
 
 /** @brief out_of_memory の unexpected を生成する */
-inline ::injamm::expected<void> oom_error() noexcept {
+INJAMM_COLD inline ::injamm::expected<void> oom_error() noexcept {
   return std::unexpected(error_ctx{0, error_code::out_of_memory, "Out of memory"});
 }
 
 /** @brief invalid_format の unexpected を生成する */
-inline ::injamm::expected<void> invalid_format_error() noexcept {
+INJAMM_COLD inline ::injamm::expected<void> invalid_format_error() noexcept {
   return std::unexpected(error_ctx{0, error_code::invalid_format, "Invalid format string"});
 }
 
@@ -301,7 +307,7 @@ inline void serialize_chrono(Buffer& out, std::chrono::time_point<Clock, Duratio
  */
 template <class Buffer, class T>
   requires std::is_arithmetic_v<T> && (!std::same_as<T, bool>)
-inline ::injamm::expected<void> serialize_formatted(Buffer& out, T value, std::string_view fmt) noexcept {
+INJAMM_COLD inline ::injamm::expected<void> serialize_formatted(Buffer& out, T value, std::string_view fmt) noexcept {
   // libc++ (macOS) では "{:05}" の 0-埋めフラグが誤って解析され std::format_error となる。
   // fmt ライブラリでも同様の問題があるため、純粋な 0埋め幅指定（例: "05","008"）は
   // 自前で実装し、他の指定子（"#06x",".2f" 等）は std::vformat/fmt::vformat に委譲する。
@@ -408,7 +414,7 @@ inline ::injamm::expected<void> serialize_formatted(Buffer& out, T value, std::s
  *  @param[in] fmt std::format フォーマットスペック
  */
 template <class Buffer>
-inline ::injamm::expected<void> serialize_formatted(Buffer& out, std::string_view value, std::string_view fmt) noexcept {
+INJAMM_COLD inline ::injamm::expected<void> serialize_formatted(Buffer& out, std::string_view value, std::string_view fmt) noexcept {
   std::string fmt_str;
 #if INJAMM_HAS_EXCEPTIONS
   try {
