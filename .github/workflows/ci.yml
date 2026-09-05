@@ -484,7 +484,9 @@ jobs:
           echo "Checking that raw throw only appears via INJAMM_THROW in ct/parse/config..."
           ! grep -rn -E '\bthrow\b' include/injamm --include="*.hpp" | grep -v "INJAMM_THROW" | grep -v -E 'ct_chunk\.hpp|ct_parse\.hpp|config\.hpp' || { echo "Found raw throw outside ct_chunk/ct_parse/config"; exit 1; }
           echo "Checking that try/catch only live in allowlisted OOM guards..."
-          ! grep -rn -E '\btry\b|\bcatch\b' include/injamm --include="*.hpp" | grep -v -E 'bytecode_io\.hpp|serialize_value\.hpp|filters\.hpp|bytecode_exec\.hpp|bytecode_compile\.hpp|types\.hpp|bytecode_debug\.hpp' || { echo "Found try/catch outside allowlist"; exit 1; }
+          ! grep -rn -E '\btry\b|\bcatch\b' include/injamm --include="*.hpp" | grep -v -E 'bytecode_io\.hpp|serialize_value\.hpp|bytecode_exec\.hpp|bytecode_compile\.hpp|types\.hpp|bytecode_debug\.hpp' || { echo "Found try/catch outside allowlist"; exit 1; }
+          echo "Checking that hot paths stay try/catch-free (coarse-guard policy)..."
+          ! grep -rn -E '\btry\b|\bcatch\b' include/injamm/filters.hpp || { echo "Found try/catch in filters.hpp hot path"; exit 1; }
           echo "ok"
 
   macos:
