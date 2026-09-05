@@ -1583,7 +1583,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
         try {
 #endif
           if (glz::write_json(ex.value_, ex.emit_this_scratch_)) {
-            return std::unexpected(error_ctx{.position = pc, .ec = error_code::syntax_error});
+            return oom_error();
           }
 #if INJAMM_HAS_EXCEPTIONS
         } catch (...) {
