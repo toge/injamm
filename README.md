@@ -766,7 +766,7 @@ auto eng = injamm::engine<User>(std::move(*bc));
 | 9   | out_of_memory  | メモリ不足                 |
 | 10  | invalid_format | 不正なフォーマット文字列   |
 
-実行時無例外保証: 実行時パスは例外を送出しません。OOM は `out_of_memory`、不正フォーマットは `invalid_format` を `expected` で返します。コンパイル時診断の `INJAMM_THROW` は維持されます（`test_noexcept` で検証、throw/try-catch の CI grep 検査あり）。
+実行時無例外保証（coarse-guard 方式）: 公開 render 経路 (`engine::render` / NTTP `render` / `bc_execute*` 直呼びを含む) から例外は漏出しません。OOM は `out_of_memory`、不正フォーマットは `invalid_format` を `expected` で返します。実装は `bc_execute` / `bc_execute_into` / `bc_execute_into_sink` の境界単一 `try/catch` 集約で、ホットな emit/serialize/filter パスは直接追記（ゼロコスト例外・分岐なし）のままです。コンパイル時診断の `INJAMM_THROW` は維持されます（`test_noexcept` で検証、throw/try-catch の CI grep 検査あり）。ただし `-fno-exceptions` ビルド（`ENABLE_WASI_MINIMAL=ON`）では catch できないため中間 OOM は trap に劣化します。性能はベースラインと実質同等（Release 計測で総命令数 +0.7%。マイクロベンチはコード配置で ±10% 程度振れるため PGO 推奨）。
 
 ### エラー診断・フォーマット（`formatError` / `error_ctx::format`）
 

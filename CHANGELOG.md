@@ -2,6 +2,8 @@
 
 ## 2026-09-05
 
+- `perf: mark cold OOM/format helpers gnu::cold to protect hot inline budget` — 粗粒度化後の wide 系 ~10% 残差を解析した結果、原因はホットパスの分岐ではなく TU 全体のインライン収支逼迫と判明（`--param=inline-unit-growth` 拡大で回復を確認）。`serialize_value.hpp` の cold 専用ヘルパ（`try_append_buf` / `oom_error` / `invalid_format_error` / `serialize_formatted`）に `[[gnu::cold]]` を付与し、マイクロベンチでベースラインに完全回復。全体でも総命令数 +0.7% で実質同等
+- `feat: aggregate OOM handling at render boundary catch (coarse-guard redesign)` — append 毎の fallible 配管が描画系に 5〜15% の劣化を与えたため粗粒度ガードに再設計。ホット emit/serialize/filter を直接追記に戻し、OOM は `bc_execute` / `bc_execute_into` / `bc_execute_into_sink` の境界単一 `try/catch` で `out_of_memory` に集約（`invalid_format` のみ `expected` 伝播を維持）。`-fno-exceptions` 時の中間 OOM は trap に劣化（承認済み仕様）。境界は `bc_execute*` に置く（`injamm-sqlite3` が直接呼ぶため上位移動不可）。CI ゲートはホットパス try/catch 禁止に強化（`filters.hpp` はゼロ件を厳密検査）
 - `docs: document no-runtime-exceptions guarantee` — 実行時パスは例外を送出せず OOM は `out_of_memory`（9）、不正フォーマットは `invalid_format`（10）を `expected` で返すことを README / SYNTAX のエラーコード表に追記。コンパイル時診断の `INJAMM_THROW` は維持。`test_noexcept` で検証、throw/try-catch の CI grep 検査あり
 
 ## 2026-09-02

@@ -1060,6 +1060,8 @@ auto side = injamm::render_partial<
 | 9   | `out_of_memory`    | メモリ不足                 |
 | 10  | `invalid_format`   | 不正なフォーマット文字列   |
 
+実行時無例外保証（coarse-guard 方式）: 公開 render 経路から例外は漏出しません。OOM は `out_of_memory`、不正フォーマットは `invalid_format` を `expected` で返します。`bc_execute` / `bc_execute_into` / `bc_execute_into_sink` の境界単一 `try/catch` 集約で、ホットパスは直接追記のままです。`-fno-exceptions` ビルド（`ENABLE_WASI_MINIMAL=ON`）では中間 OOM は trap に劣化します。
+
 ---
 
 ## API クイックリファレンス
