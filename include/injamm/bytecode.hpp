@@ -62,7 +62,7 @@ enum class special_var_kind : std::uint8_t {
 };
 
 /** @brief 変数キーを special_var_kind に分類する */
-constexpr special_var_kind classify_special_var(std::string_view key) {
+constexpr special_var_kind classify_special_var(std::string_view key) noexcept {
   if (key == "this") {
     return special_var_kind::this_;
   }

@@ -36,7 +36,7 @@ struct compile_ctx_ops {
 };
 
 /** @brief 何も解決できないコンテキスト（型不明時のフォールバック） */
-inline compile_ctx_ops null_compile_ctx_ops() {
+inline compile_ctx_ops null_compile_ctx_ops() noexcept {
   return {
       [](std::string_view) -> std::uint32_t { return UINT32_MAX; },
       [](std::string_view) { return null_compile_ctx_ops(); },
@@ -50,7 +50,7 @@ inline compile_ctx_ops null_compile_ctx_ops() {
 
 /** @brief glaze リフレクションでフィールド名→インデックスを解決する（型消去版の実体） */
 template <class V>
-std::uint32_t compile_ctx_resolve_field(std::string_view key) {
+std::uint32_t compile_ctx_resolve_field(std::string_view key) noexcept {
   if constexpr (ct_glz_reflectable<V>) {
     constexpr auto sz = static_cast<std::size_t>(glz::reflect<V>::size);
     for (std::size_t i = 0; i < sz; ++i) {
@@ -298,7 +298,7 @@ class bc_compiler {
    *          ルート型フォールバック（実行時の root_value_ 探索）に合わせて
    *          ルート型でも解決を試みる。
    */
-  std::uint32_t ctx_resolve(std::string_view key) const {
+  std::uint32_t ctx_resolve(std::string_view key) const noexcept {
     auto idx = ctx_stack_.back().resolve(key);
     if (idx == UINT32_MAX && ctx_stack_.size() > 1) {
       idx = resolve_field_index<T>(key);
@@ -425,7 +425,7 @@ class bc_compiler {
    * @return フィールドインデックス（見つからない場合は UINT32_MAX）
    */
   template <class V>
-  static std::uint32_t resolve_field_index(std::string_view key) {
+  static std::uint32_t resolve_field_index(std::string_view key) noexcept {
     if constexpr (ct_glz_reflectable<V>) {
       constexpr auto sz = static_cast<std::size_t>(glz::reflect<V>::size);
       for (std::size_t i = 0; i < sz; ++i) {

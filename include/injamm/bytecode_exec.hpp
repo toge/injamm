@@ -27,6 +27,7 @@
 #endif
 
 #include "bytecode.hpp"
+#include "config.hpp"
 #include "enum_io.hpp"
 #include "escape.hpp"
 #include "filters.hpp"
@@ -614,11 +615,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
     template <class Buffer>
     static void emit_value_static(Buffer& out, auto const& field, bool raw) {
       if (!try_emit_value(out, field, raw)) {
-#if INJAMM_HAS_EXCEPTIONS
-        throw std::bad_alloc{};
-#else
-        injamm_trap();
-#endif
+        INJAMM_THROW(std::bad_alloc{});
       }
     }
 

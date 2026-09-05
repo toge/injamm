@@ -294,7 +294,7 @@ inline std::string read_string(std::istream& is, read_state& state) {
 #endif // !INJAMM_NO_BYTECODE_IO
 
 /** @brief オペコードが有効な範囲か確認 */
-inline bool is_valid_opcode(bc_opcode op) {
+inline bool is_valid_opcode(bc_opcode op) noexcept {
   auto const value = static_cast<std::underlying_type_t<bc_opcode>>(op);
   auto const min = static_cast<std::underlying_type_t<bc_opcode>>(bc_opcode::emit_literal);
   auto const max = static_cast<std::underlying_type_t<bc_opcode>>(bc_opcode::halt);
@@ -581,24 +581,26 @@ inline bool try_push_back(Vec& v, Val const& val, error_ctx* err) noexcept {
 #endif
 }
 
-inline std::uint8_t read_u8(span_cursor& cur) {
+inline std::uint8_t read_u8(span_cursor& cur) noexcept {
   if (!cur.ok || cur.pos >= cur.data.size()) { cur.ok = false; cur.ec = error_code::no_read_input; return 0; }
   return cur.data[cur.pos++];
 }
 
-inline std::uint32_t read_u32_le(span_cursor& cur) {
+inline std::uint32_t read_u32_le(span_cursor& cur) noexcept {
   std::uint32_t v = 0;
   for (int i = 0; i < 4; ++i) v |= static_cast<std::uint32_t>(read_u8(cur)) << (i * 8);
   return v;
 }
 
-inline std::uint64_t read_u64_le(span_cursor& cur) {
+inline std::uint64_t read_u64_le(span_cursor& cur) noexcept {
   std::uint64_t v = 0;
   for (int i = 0; i < 8; ++i) v |= static_cast<std::uint64_t>(read_u8(cur)) << (i * 8);
   return v;
 }
 
-inline std::int32_t read_i32_le(span_cursor& cur) { return static_cast<std::int32_t>(read_u32_le(cur)); }
+inline std::int32_t read_i32_le(span_cursor& cur) noexcept {
+  return static_cast<std::int32_t>(read_u32_le(cur));
+}
 
 inline std::string read_string(span_cursor& cur) {
   auto len = read_u64_le(cur);
@@ -611,7 +613,7 @@ inline std::string read_string(span_cursor& cur) {
   return s;
 }
 
-inline bc_instruction read_instruction(span_cursor& cur) {
+inline bc_instruction read_instruction(span_cursor& cur) noexcept {
   bc_instruction inst;
   inst.op = static_cast<bc_opcode>(read_u8(cur));
   if (cur.ok && !is_valid_opcode(inst.op)) { cur.ok = false; cur.ec = error_code::syntax_error; }
@@ -621,7 +623,7 @@ inline bc_instruction read_instruction(span_cursor& cur) {
   return inst;
 }
 
-inline string_filter_entry read_string_filter_entry(span_cursor& cur, std::vector<std::string> const& literals) {
+inline string_filter_entry read_string_filter_entry(span_cursor& cur, std::vector<std::string> const& literals) noexcept {
   string_filter_entry e;
   e.filter = static_cast<string_filter>(read_u8(cur));
   e.arg1 = read_i32_le(cur);
@@ -635,14 +637,14 @@ inline string_filter_entry read_string_filter_entry(span_cursor& cur, std::vecto
   return e;
 }
 
-inline int_filter_entry read_int_filter_entry(span_cursor& cur) {
+inline int_filter_entry read_int_filter_entry(span_cursor& cur) noexcept {
   int_filter_entry e;
   e.filter = static_cast<int_filter>(read_u8(cur));
   e.arg = read_i32_le(cur);
   return e;
 }
 
-inline float_filter_entry read_float_filter_entry(span_cursor& cur) {
+inline float_filter_entry read_float_filter_entry(span_cursor& cur) noexcept {
   float_filter_entry e;
   e.filter = static_cast<float_filter>(read_u8(cur));
   e.arg = read_i32_le(cur);

@@ -124,6 +124,9 @@ namespace injamm::detail {
 }
 
 inline std::string bytecode::disassemble() const {
+#if INJAMM_HAS_EXCEPTIONS
+  try {
+#endif
   std::string out;
   auto append = [&](std::string_view sv) {
     out.append(sv);
@@ -381,6 +384,12 @@ inline std::string bytecode::disassemble() const {
   }
 
   return out;
+#if INJAMM_HAS_EXCEPTIONS
+  } catch (...) {
+    // ponytail: OOM時は空返却、expected化は見送り
+    return {};
+  }
+#endif
 }
 
 } // namespace injamm::detail

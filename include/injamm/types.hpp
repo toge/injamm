@@ -44,7 +44,7 @@ enum class error_code : int {
 };
 
 /** @brief error_code から対応するエラーメッセージを取得する */
-inline std::string_view error_code_to_message(error_code ec) {
+inline std::string_view error_code_to_message(error_code ec) noexcept {
   switch (ec) {
   case error_code::none:
     return "No error";
@@ -123,10 +123,19 @@ struct error_ctx {
 
   /** @brief エラーメッセージを生成する */
   [[nodiscard]] std::string message() const {
+#if INJAMM_HAS_EXCEPTIONS
+    try {
+#endif
     if (!custom_error_message.empty()) {
       return std::string(custom_error_message);
     }
     return std::string(error_code_to_message(ec));
+#if INJAMM_HAS_EXCEPTIONS
+    } catch (...) {
+      // ponytail: OOM時は空返却、expected化は見送り
+      return {};
+    }
+#endif
   }
 
   /** @brief エラーが発生しているか判定する */
@@ -138,6 +147,9 @@ struct error_ctx {
 
 /** @brief テンプレートエラーをコンパイラ風の診断メッセージにフォーマットする */
 inline std::string formatError(std::string_view source, error_ctx const& err, std::string_view filename = "") {
+#if INJAMM_HAS_EXCEPTIONS
+  try {
+#endif
   if (!err.has_error()) {
     return "No error";
   }
@@ -173,6 +185,12 @@ inline std::string formatError(std::string_view source, error_ctx const& err, st
   result += '\n';
 
   return result;
+#if INJAMM_HAS_EXCEPTIONS
+  } catch (...) {
+    // ponytail: OOM時は空返却、expected化は見送り
+    return {};
+  }
+#endif
 }
 
 inline std::string error_ctx::format(std::string_view source, std::string_view filename) const {
