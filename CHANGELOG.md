@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-09-05
+
+- `docs: document no-runtime-exceptions guarantee` — 実行時パスは例外を送出せず OOM は `out_of_memory`（9）、不正フォーマットは `invalid_format`（10）を `expected` で返すことを README / SYNTAX のエラーコード表に追記。コンパイル時診断の `INJAMM_THROW` は維持。`test_noexcept` を CI ゲート化
+
 ## 2026-09-02
 
 - `fix: WASI minimal でも format / enum を有効化` — `std::format`/`fmt` は `-fno-exceptions` で `_GLIBCXX_THROW_OR_ABORT`/`assert_fail` にフォールバック、`enchantum` コア API (`to_string`/`cast`/`contains`) は `noexcept` のため例外なしでも動作する。`config.hpp` で `ENCHANTUM_THROW` を `injamm_trap` に差し替え（`INJAMM_NO_FMT`/`INJAMM_NO_ENUM_REGISTRY` は自動無効化しない）、`CMakeLists.txt` の `USE_FMT`/`ENABLE_ENUM` 自動無効化を撤廃、`vcpkg.json` の `enchantum` の `!wasm32` 制限を撤廃、`enum_io.hpp` に `config.hpp` インクルードを先行。README の WASI 制限表から `format`/`enum` 行を削除

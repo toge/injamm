@@ -1057,6 +1057,8 @@ auto side = injamm::render_partial<
 | 6   | `invalid_utf8`     | 不正な UTF-8               |
 | 7   | `unknown_filter`   | 不明なフィルター名         |
 | 8   | `division_by_zero` | 除数ゼロエラー             |
+| 9   | `out_of_memory`    | メモリ不足                 |
+| 10  | `invalid_format`   | 不正なフォーマット文字列   |
 
 ---
 

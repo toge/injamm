@@ -763,6 +763,10 @@ auto eng = injamm::engine<User>(std::move(*bc));
 | 6   | invalid_utf8   | 不正な UTF-8               |
 | 7   | unknown_filter | 不明なフィルタ             |
 | 8   | division_by_zero | 除数ゼロエラー           |
+| 9   | out_of_memory  | メモリ不足                 |
+| 10  | invalid_format | 不正なフォーマット文字列   |
+
+実行時無例外保証: 実行時パスは例外を送出しません。OOM は `out_of_memory`、不正フォーマットは `invalid_format` を `expected` で返します。コンパイル時診断の `INJAMM_THROW` は維持されます（CI の `test_noexcept` でゲート）。
 
 ### エラー診断・フォーマット（`formatError` / `error_ctx::format`）
 
