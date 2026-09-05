@@ -2084,6 +2084,9 @@ std::size_t estimate_output_size(bytecode const& bc, T const&) {
  */
 template <class T>
 std::expected<std::string, error_ctx> bc_execute(bytecode const& bc, T const& value, std::size_t size_hint) {
+#if INJAMM_HAS_EXCEPTIONS
+  try {
+#endif
   if (bc.error.ec != error_code::none)
     return std::unexpected(bc.error);
   std::string out;
@@ -2097,6 +2100,11 @@ std::expected<std::string, error_ctx> bc_execute(bytecode const& bc, T const& va
     return std::unexpected(r.error());
   }
   return out;
+#if INJAMM_HAS_EXCEPTIONS
+  } catch (...) {
+    return std::unexpected(error_ctx{.ec = error_code::out_of_memory});
+  }
+#endif
 }
 
 /**
@@ -2109,11 +2117,19 @@ std::expected<std::string, error_ctx> bc_execute(bytecode const& bc, T const& va
  */
 template <class T>
 std::expected<void, error_ctx> bc_execute_into(bytecode const& bc, T const& value, std::string& out) {
+#if INJAMM_HAS_EXCEPTIONS
+  try {
+#endif
   out.clear();
   auto estimated = estimate_output_size(bc, value);
   if (estimated > 32 && out.capacity() < estimated) out.reserve(estimated);
   bc_executor<T> exec(bc, value, value, nullptr, out);
   return exec.execute();
+#if INJAMM_HAS_EXCEPTIONS
+  } catch (...) {
+    return std::unexpected(error_ctx{.ec = error_code::out_of_memory});
+  }
+#endif
 }
 
 /**
@@ -2129,8 +2145,16 @@ std::expected<void, error_ctx> bc_execute_into(bytecode const& bc, T const& valu
 template <class T, class Sink>
   requires output_sink<Sink>
 std::expected<void, error_ctx> bc_execute_into_sink(bytecode const& bc, T const& value, Sink& sink) {
+#if INJAMM_HAS_EXCEPTIONS
+  try {
+#endif
   bc_executor<T, T, Sink> exec(bc, value, value, nullptr, sink);
   return exec.execute();
+#if INJAMM_HAS_EXCEPTIONS
+  } catch (...) {
+    return std::unexpected(error_ctx{.ec = error_code::out_of_memory});
+  }
+#endif
 }
 
 }  // namespace injamm::detail
