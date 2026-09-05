@@ -80,6 +80,7 @@ inline constexpr bool is_chrono_time_point_v = false;
 // serialize_value.hpp からはインクルードできない（bytecode_io →
 // glz_dispatch → serialize_value の循環になる）。汎用 Buffer 用に
 // 同等の try/catch をここで定義する。
+// serialize_formatted（cold path）の expected 実装でのみ使用する。
 
 /** @brief 汎用バッファへの追記を例外安全に試行する */
 template <class Buffer>
@@ -138,13 +139,12 @@ inline ::injamm::expected<void> invalid_format_error() noexcept {
  */
 template <class Buffer, class T>
   requires std::integral<T> && (!std::same_as<T, bool>)
-inline ::injamm::expected<void> serialize_value(Buffer& out, T value) noexcept {
+inline void serialize_value(Buffer& out, T value) {
   std::array<char, 32> buf{};
   auto [ptr, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), value);
   if (ec == std::errc{}) {
-    if (!try_append_buf(out, buf.data(), static_cast<std::size_t>(ptr - buf.data()))) return oom_error();
+    out.append(std::string_view{buf.data(), static_cast<std::size_t>(ptr - buf.data())});
   }
-  return {};
 }
 
 /** @brief bool型をバッファに変換して追記する
@@ -154,9 +154,8 @@ inline ::injamm::expected<void> serialize_value(Buffer& out, T value) noexcept {
  *  @param[in] b 変換する値
  */
 template <class Buffer>
-inline ::injamm::expected<void> serialize_value(Buffer& out, bool b) noexcept {
-  if (!try_append_buf(out, b ? std::string_view{"true"} : std::string_view{"false"})) return oom_error();
-  return {};
+inline void serialize_value(Buffer& out, bool b) {
+  out.append(b ? std::string_view{"true"} : std::string_view{"false"});
 }
 
 /** @brief string_view型をバッファに追記する
@@ -166,9 +165,8 @@ inline ::injamm::expected<void> serialize_value(Buffer& out, bool b) noexcept {
  *  @param[in] s 追記する文字列
  */
 template <class Buffer>
-inline ::injamm::expected<void> serialize_value(Buffer& out, std::string_view s) noexcept {
-  if (!try_append_buf(out, s)) return oom_error();
-  return {};
+inline void serialize_value(Buffer& out, std::string_view s) {
+  out.append(s);
 }
 
 /** @brief string型をバッファに追記する
@@ -178,9 +176,8 @@ inline ::injamm::expected<void> serialize_value(Buffer& out, std::string_view s)
  *  @param[in] s 追記する文字列
  */
 template <class Buffer>
-inline ::injamm::expected<void> serialize_value(Buffer& out, std::string const& s) noexcept {
-  if (!try_append_buf(out, std::string_view{s})) return oom_error();
-  return {};
+inline void serialize_value(Buffer& out, std::string const& s) {
+  out.append(std::string_view{s});
 }
 
 /** @brief std::optional 型をバッファに変換して追記する
@@ -193,9 +190,10 @@ inline ::injamm::expected<void> serialize_value(Buffer& out, std::string const& 
  *  @param[in] opt optional 値
  */
 template <class Buffer, class T>
-inline ::injamm::expected<void> serialize_value(Buffer& out, std::optional<T> const& opt) noexcept {
-  if (opt.has_value()) return serialize_value(out, *opt);
-  return {};
+inline void serialize_value(Buffer& out, std::optional<T> const& opt) {
+  if (opt.has_value()) {
+    serialize_value(out, *opt);
+  }
 }
 
 /** @brief char ポインタ（const char*, char*）をバッファに追記する
@@ -210,11 +208,8 @@ inline ::injamm::expected<void> serialize_value(Buffer& out, std::optional<T> co
  */
 template <class Buffer, class T>
   requires char_pointer_v<T>
-inline ::injamm::expected<void> serialize_value(Buffer& out, T const& ptr) noexcept {
-  if (ptr) {
-    if (!try_append_buf(out, std::string_view{ptr})) return oom_error();
-  }
-  return {};
+inline void serialize_value(Buffer& out, T const& ptr) {
+  if (ptr) out.append(std::string_view{ptr});
 }
 
 /** @brief 浮動小数点型をバッファに変換して追記する
@@ -228,17 +223,15 @@ inline ::injamm::expected<void> serialize_value(Buffer& out, T const& ptr) noexc
  */
 template <class Buffer, class T>
   requires std::floating_point<T>
-inline ::injamm::expected<void> serialize_value(Buffer& out, T value) noexcept {
+inline void serialize_value(Buffer& out, T value) {
   std::array<char, glz::zmij::double_buffer_size> buf{};
   auto end = glz::to_chars(buf.data(), value);
-  if (!try_append_buf(out, buf.data(), static_cast<std::size_t>(end - buf.data()))) return oom_error();
-  return {};
+  out.append(std::string_view{buf.data(), static_cast<std::size_t>(end - buf.data())});
 }
 
 /** @brief enum 型をバッファに変換して追記する（filter scratch 用、常に raw 出力）
  *
  *  フィルタパスは独自エスケープ処理を持つため、ここでは raw=true で serialize_enum を呼ぶ。
- *  serialize_enum 自体は void のため、例外を捕捉して out_of_memory に写像する。
  *
  *  @tparam Buffer 出力バッファ型
  *  @tparam E enum 型
@@ -247,17 +240,8 @@ inline ::injamm::expected<void> serialize_value(Buffer& out, T value) noexcept {
  */
 template <class Buffer, class E>
   requires std::is_enum_v<E>
-inline ::injamm::expected<void> serialize_value(Buffer& out, E value) noexcept {
-#if INJAMM_HAS_EXCEPTIONS
-  try {
-    serialize_enum(out, value, /*raw=*/true);
-  } catch (...) {
-    return oom_error();
-  }
-#else
+inline void serialize_value(Buffer& out, E value) {
   serialize_enum(out, value, /*raw=*/true);
-#endif
-  return {};
 }
 
 #ifndef INJAMM_NO_CHRONO
@@ -275,8 +259,8 @@ inline ::injamm::expected<void> serialize_value(Buffer& out, E value) noexcept {
  *  @param[in] fmt strftime フォーマット文字列（デフォルト: ISO 8601）
  */
 template <class Buffer, class Clock, class Duration>
-inline ::injamm::expected<void> serialize_chrono(Buffer& out, std::chrono::time_point<Clock, Duration> const& tp,
-    std::string_view fmt = "%Y-%m-%dT%H:%M:%S") noexcept {
+inline void serialize_chrono(Buffer& out, std::chrono::time_point<Clock, Duration> const& tp,
+                             std::string_view fmt = "%Y-%m-%dT%H:%M:%S") {
   std::chrono::system_clock::time_point sys_tp;
   if constexpr (std::is_same_v<Clock, std::chrono::system_clock>) {
     sys_tp = tp;
@@ -294,22 +278,9 @@ inline ::injamm::expected<void> serialize_chrono(Buffer& out, std::chrono::time_
   localtime_r(&tt, &tm);
 #endif
   char buf[256];
-  std::string fmt_null;
-#if INJAMM_HAS_EXCEPTIONS
-  try {
-    fmt_null.assign(fmt);
-  } catch (...) {
-    return oom_error();
-  }
-#else
-  if (fmt.size() > fmt_null.max_size()) return oom_error();
-  fmt_null.assign(fmt);
-#endif
+  std::string fmt_null{fmt};
   auto len = std::strftime(buf, sizeof(buf), fmt_null.c_str(), &tm);
-  if (len > 0) {
-    if (!try_append_buf(out, buf, static_cast<std::size_t>(len))) return oom_error();
-  }
-  return {};
+  if (len > 0) out.append(std::string_view{buf, static_cast<std::size_t>(len)});
 }
 #endif // !INJAMM_NO_CHRONO
 

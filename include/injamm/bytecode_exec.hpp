@@ -27,7 +27,6 @@
 #endif
 
 #include "bytecode.hpp"
-#include "config.hpp"
 #include "enum_io.hpp"
 #include "escape.hpp"
 #include "filters.hpp"
@@ -38,80 +37,10 @@
 #include <cmath>
 #include <cstdint>
 #include <expected>
-#include <new>
 #include <span>
 #include <string>
 
 namespace injamm::detail {
-
-/** @brief HTMLエスケープ追記を例外安全に試行する (失敗時は out_of_memory) */
-template <class Buffer>
-inline std::expected<void, error_ctx> try_escape_into(Buffer& out, std::string_view sv) noexcept {
-#if INJAMM_HAS_EXCEPTIONS
-  try {
-    html_escape_into(out, sv);
-    return {};
-  } catch (...) {
-    return oom_error();
-  }
-#else
-  html_escape_into(out, sv);
-  return {};
-#endif
-}
-
-/** @brief enumシリアライズ追記を例外安全に試行する (失敗時は out_of_memory) */
-template <class Buffer, class E>
-  requires std::is_enum_v<E>
-inline std::expected<void, error_ctx> try_serialize_enum(Buffer& out, E value, bool raw) noexcept {
-#if INJAMM_HAS_EXCEPTIONS
-  try {
-    serialize_enum(out, value, raw);
-    return {};
-  } catch (...) {
-    return oom_error();
-  }
-#else
-  serialize_enum(out, value, raw);
-  return {};
-#endif
-}
-
-/** @brief for_each_field の void-visitor パスの欠損判定を再現する
- *  @details フラットな非@キーの欠損は unknown_key、それ以外（ネストパス・@キー）の
- *    欠損は成功扱い（無出力）とする。expected-visitor 化した呼び出し側で、
- *    void パスが返していた unknown_key を合成するために使う。 */
-inline bool void_path_miss_is_error(bc_var_ref const& ref) noexcept {
-  return !ref.has_dot && !ref.key.empty() && ref.key[0] != '@';
-}
-
-/** @brief bool 値版の out_of_memory の unexpected を生成する */
-inline std::expected<bool, error_ctx> oom_false() noexcept {
-  return std::unexpected(error_ctx{.ec = error_code::out_of_memory});
-}
-
-/** @brief ADL カスタム serialize_value を例外安全に呼び出す
- *  @details ユーザー定義の serialize_value（void 返却の legacy 拡張点。例: test_custom）と
- *    detail::serialize_value（expected 返却）の両対応。void 版の失敗（OOM）は
- *    投げられた例外を捕捉して out_of_memory に写像する。 */
-template <class Buffer, class V>
-inline std::expected<void, error_ctx> call_serialize_value(Buffer& out, V const& v) noexcept {
-  if constexpr (std::same_as<decltype(serialize_value(out, v)), void>) {
-#if INJAMM_HAS_EXCEPTIONS
-    try {
-      serialize_value(out, v);
-      return {};
-    } catch (...) {
-      return oom_error();
-    }
-#else
-    serialize_value(out, v);
-    return {};
-#endif
-  } else {
-    return serialize_value(out, v);
-  }
-}
 
 /**
  * @brief ループ状態を保持する構造体
@@ -136,7 +65,7 @@ struct bc_loop_state {
   /**< 現在ループのセクションキー名（ループ内で配列名＝現在要素として束縛） */
   void const* binding_elem = nullptr;
   /**< 現在要素へのポインタ（ループ内束縛用） */
-  std::expected<bool, error_ctx> (*binding_resolve)(std::string&, std::string_view, bool, void const*, std::string_view, std::uint32_t) noexcept = nullptr;
+  bool (*binding_resolve)(std::string&, std::string_view, bool, void const*, std::string_view, std::uint32_t) = nullptr;
   /**< 現在要素を key に従って出力する型消去リゾルバ（末尾はサブパスの field_index ヒント） */
   bool (*binding_truthy)(void const*, std::string_view) = nullptr;
   /**< 現在要素の真偽を評価する型消去リゾルバ */
@@ -496,24 +425,17 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
   /** @brief root_fallback 参照をルート型から解決する（現在コンテキストで解決不能なキーのフォールバック）
    *  @details コンパイル時に現在コンテキスト（既知型）に存在しないことが保証されているため、
    *           呼び出し側は要素型の走査をスキップしてこの関数を先に試せる。
-   *           root_fallback が未設定なら何もせず false を返す（ホットパスに影響なし）。
-   *           戻り値は解決有無。visitor の追記失敗（OOM）は unexpected で伝搬する。 */
+   *           root_fallback が未設定なら何もせず false を返す（ホットパスに影響なし）。 */
   template <class F>
-  static std::expected<bool, error_ctx> for_each_root_field_ref(bc_executor const& ex, bc_var_ref const& ref, F&& visitor) noexcept {
+  static bool for_each_root_field_ref(bc_executor const& ex, bc_var_ref const& ref, F&& visitor) {
     if (ref.root_fallback == root_fb_none) {
       return false;
     }
     bool found = false;
-    auto r = for_each_field_ref(ex.root_value_, ref, [&](auto const& field) -> std::expected<void, error_ctx> {
+    (void)for_each_field_ref(ex.root_value_, ref, [&](auto const& field) {
       found = true;
-      if constexpr (std::same_as<decltype(visitor(field)), void>) {
-        visitor(field);
-        return {};
-      } else {
-        return visitor(field);
-      }
+      visitor(field);
     });
-    if (!r) return std::unexpected(r.error());
     return found;
   }
 
@@ -539,134 +461,115 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
      return for_each_field(v, key, UINT32_MAX, true, std::forward<F>(visitor), {});
    }
 
-    /** @brief フィールド値を指定バッファに追記する（失敗時は out_of_memory 等を返す）
-     *
-     *  実行時 VM パスの fallible 版。ct_exec.hpp から再利用される emit_value_static
-     *  の実装本体も兼ねる（そちらは失敗時に例外送出する薄いラッパ）。
-     */
-    template <class Buffer>
-    static std::expected<void, error_ctx> try_emit_value(Buffer& out, auto const& field, bool raw) noexcept {
-      using FT = std::remove_cvref_t<decltype(field)>;
-      if constexpr (std::same_as<FT, bool>) {
-        if (!try_append_buf(out, field ? std::string_view{"true"} : std::string_view{"false"})) return oom_error();
-      } else if constexpr (std::same_as<FT, std::string> || std::same_as<FT, std::string_view> || char_pointer_v<FT>) {
-        auto sv = to_sv(field);
+   template <class Buffer>
+   static void emit_value_static(Buffer& out, auto const& field, bool raw) {
+    using FT = std::remove_cvref_t<decltype(field)>;
+    if constexpr (std::same_as<FT, bool>) {
+      if (field) {
+        out.append("true", 4);
+      } else {
+        out.append("false", 5);
+      }
+    } else if constexpr (std::same_as<FT, std::string> || std::same_as<FT, std::string_view> || char_pointer_v<FT>) {
+      auto sv = to_sv(field);
+      if (raw) {
+        out.append(sv.data(), sv.size());
+      } else {
+        html_escape_into(out, sv);
+      }
+    } else if constexpr (std::is_enum_v<FT>) {
+      serialize_enum(out, field, raw);
+    } else if constexpr (is_chrono_time_point_v<FT>) {
+      serialize_chrono(out, field);
+    } else if constexpr (std::is_arithmetic_v<FT> && !std::same_as<FT, bool>) {
+      if constexpr (std::floating_point<FT>) {
+        std::array<char, glz::zmij::double_buffer_size> buf;
+        auto end = glz::to_chars(buf.data(), field);
+        out.append(buf.data(), static_cast<std::size_t>(end - buf.data()));
+      } else {
+        std::array<char, 32> buf;
+        auto [ptr, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), field);
+        if (ec == std::errc{}) {
+          auto const n = static_cast<std::size_t>(ptr - buf.data());
+          out.append(buf.data(), n);
+        }
+      }
+    } else if constexpr (is_std_optional_v<FT>) {
+      if (field.has_value()) {
+        emit_value_static(out, *field, raw);
+      }
+    } else if constexpr (serializable_v<FT>) {
+      if (raw) {
+        serialize_value(out, field);
+      } else {
+        std::string scratch;
+        serialize_value(scratch, field);
+        html_escape_into(out, scratch);
+      }
+    } else if constexpr (ct_glz_reflectable<FT> && glz::write_supported<FT, glz::JSON>) {
+      if constexpr (std::same_as<Buffer, std::string>) {
         if (raw) {
-          if (!try_append_buf(out, sv)) return oom_error();
-        } else {
-          if (auto r = try_escape_into(out, sv); !r) return std::unexpected(r.error());
-        }
-      } else if constexpr (std::is_enum_v<FT>) {
-        if (auto r = try_serialize_enum(out, field, raw); !r) return std::unexpected(r.error());
-      } else if constexpr (is_chrono_time_point_v<FT>) {
-        if (auto r = serialize_chrono(out, field); !r) return std::unexpected(r.error());
-      } else if constexpr (std::is_arithmetic_v<FT> && !std::same_as<FT, bool>) {
-        if constexpr (std::floating_point<FT>) {
-          std::array<char, glz::zmij::double_buffer_size> buf;
-          auto end = glz::to_chars(buf.data(), field);
-          if (!try_append_buf(out, buf.data(), static_cast<std::size_t>(end - buf.data()))) return oom_error();
-        } else {
-          std::array<char, 32> buf;
-          auto [ptr, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), field);
-          if (ec == std::errc{}) {
-            if (!try_append_buf(out, buf.data(), static_cast<std::size_t>(ptr - buf.data()))) return oom_error();
-          }
-        }
-      } else if constexpr (is_std_optional_v<FT>) {
-        if (field.has_value()) {
-          if (auto r = try_emit_value(out, *field, raw); !r) return std::unexpected(r.error());
-        }
-      } else if constexpr (serializable_v<FT>) {
-        if (raw) {
-          if (auto r = call_serialize_value(out, field); !r) return std::unexpected(r.error());
+          std::string scratch;
+          (void)glz::write_json(field, scratch);
+          out.append(scratch);
         } else {
           std::string scratch;
-          if (auto r = call_serialize_value(scratch, field); !r) return std::unexpected(r.error());
-          if (auto r = try_escape_into(out, scratch); !r) return std::unexpected(r.error());
+          (void)glz::write_json(field, scratch);
+          html_escape_into(out, scratch);
         }
-      } else if constexpr (ct_glz_reflectable<FT> && glz::write_supported<FT, glz::JSON>) {
-        // 旧版は Buffer==std::string で分岐していたが両枝同一処理のため一本化した。
+      } else {
         std::string scratch;
-#if INJAMM_HAS_EXCEPTIONS
-        try {
-#endif
-          // ponytail: std::string への書き込み失敗は確保失敗のみ。glz エラーも OOM に写像する。
-          if (glz::write_json(field, scratch)) return oom_error();
-#if INJAMM_HAS_EXCEPTIONS
-        } catch (...) {
-          return oom_error();
-        }
-#endif
+        (void)glz::write_json(field, scratch);
         if (raw) {
-          if (!try_append_buf(out, std::string_view{scratch})) return oom_error();
+          out.append(scratch);
         } else {
-          if (auto r = try_escape_into(out, scratch); !r) return std::unexpected(r.error());
+          html_escape_into(out, scratch);
         }
       }
-      return {};
     }
+  }
 
-    /** @brief フィールド値を指定バッファに追記する（ct_exec.hpp から再利用される公開版）
-     *
-     *  @note ct_exec.hpp のコンパイル時アンロール実行器からも再利用するため public。
-     *  シグネチャ維持のため void のまま。失敗時（OOM）は従来どおり例外で報告する
-     *  （ct パスは noexcept ではない）。実行時 VM パスは try_emit_value を使うこと。
-     */
-    template <class Buffer>
-    static void emit_value_static(Buffer& out, auto const& field, bool raw) {
-      if (!try_emit_value(out, field, raw)) {
-        INJAMM_THROW(std::bad_alloc{});
-      }
-    }
-
-  std::expected<void, error_ctx> emit_var_value(auto const& field, bool raw) noexcept { return try_emit_value(out_, field, raw); }
+  void emit_var_value(auto const& field, bool raw) { emit_value_static(out_, field, raw); }
 
   /** @brief 数値を出力バッファに追記する共通ヘルパ */
   template <class Buffer>
-  static std::expected<void, error_ctx> append_number(Buffer& out, std::uint32_t v) noexcept {
+  static void append_number(Buffer& out, std::uint32_t v) {
     std::array<char, 16> buf;
     auto [ptr, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), v);
-    if (ec == std::errc{}) {
-      if (!try_append_buf(out, buf.data(), static_cast<std::size_t>(ptr - buf.data()))) return oom_error();
-    }
-    return {};
+    if (ec == std::errc{}) out.append(buf.data(), static_cast<std::size_t>(ptr - buf.data()));
   }
 
   /** @brief loop.parent.* 変数の解決。解決できれば true を返す（kind はコンパイル時分類済み） */
-  static std::expected<bool, error_ctx> resolve_loop_parent_var(bc_executor const& ex, special_var_kind kind, bool raw) noexcept {
+  static auto resolve_loop_parent_var(bc_executor const& ex, special_var_kind kind, bool raw) -> bool {
     // 呼び出し側で ref.is_loop_parent により事前ゲート済み。文字列比較は不要。
     if (!ex.loop_) return false;
     auto parent = ex.loop_->parent;
     if (!parent) return false;
     switch (kind) {
     case special_var_kind::lp_index:
-      if (auto r = append_number(ex.out_, parent->index); !r) return std::unexpected(r.error());
+      append_number(ex.out_, parent->index);
       return true;
     case special_var_kind::lp_index1:
-      if (auto r = append_number(ex.out_, parent->index + 1); !r) return std::unexpected(r.error());
+      append_number(ex.out_, parent->index + 1);
       return true;
     case special_var_kind::lp_size:
-      if (auto r = append_number(ex.out_, parent->count); !r) return std::unexpected(r.error());
+      append_number(ex.out_, parent->count);
       return true;
     case special_var_kind::lp_is_first:
-      if (!try_append_buf(ex.out_, parent->index == 0 ? std::string_view{"true"} : std::string_view{"false"})) return oom_false();
+      ex.out_.append(parent->index == 0 ? "true" : "false");
       return true;
     case special_var_kind::lp_is_last:
-      if (!try_append_buf(ex.out_, (parent->index + 1 == parent->count) ? std::string_view{"true"} : std::string_view{"false"})) return oom_false();
+      ex.out_.append((parent->index + 1 == parent->count) ? "true" : "false");
       return true;
     case special_var_kind::lp_is_even:
-      if (!try_append_buf(ex.out_, (parent->index % 2 == 0) ? std::string_view{"true"} : std::string_view{"false"})) return oom_false();
+      ex.out_.append((parent->index % 2 == 0) ? "true" : "false");
       return true;
     case special_var_kind::lp_is_odd:
-      if (!try_append_buf(ex.out_, (parent->index % 2 == 1) ? std::string_view{"true"} : std::string_view{"false"})) return oom_false();
+      ex.out_.append((parent->index % 2 == 1) ? "true" : "false");
       return true;
     case special_var_kind::lp_key:
       if (!parent->key.empty()) {
-        if (raw) {
-          if (!try_append_buf(ex.out_, parent->key)) return oom_false();
-        } else {
-          if (auto r = try_escape_into(ex.out_, parent->key); !r) return std::unexpected(r.error());
-        }
+        if (raw) { ex.out_.append(parent->key); } else { html_escape_into(ex.out_, parent->key); }
       }
       return true;
     default:
@@ -720,7 +623,6 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
       else if constexpr (ct_is_set_like<FT>) { result = !field.empty(); }
       found = true;
     };
-    // lookup-only visitor（追記なし）のため失敗は unknown_key のみ。found フラグで後続分岐する。
     (void)for_each_field_ref(ex.value_, ref, eval_field);
     if (found) return result;
     for (auto* lp = ex.loop_; lp; lp = lp->parent) {
@@ -733,8 +635,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
         return lp->binding_truthy(lp->binding_elem, sub);
       }
     }
-    // eval_field は追記しないため失敗は unknown_key のみ。miss は found=false で無視される。
-    if (auto rf = for_each_root_field_ref(ex, ref, eval_field); rf && *rf) {
+    if (for_each_root_field_ref(ex, ref, eval_field)) {
       return result;
     }
     return false;
@@ -742,7 +643,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
 
   /** @brief ループ内束縛の型消去リゾルバ: 現在要素を key に従って出力する */
   template <class ElemT>
-  static std::expected<bool, error_ctx> resolve_binding_var(std::string& out, std::string_view key, bool raw, void const* elem, std::string_view binding_name, std::uint32_t sub_field_index) noexcept {
+  static bool resolve_binding_var(std::string& out, std::string_view key, bool raw, void const* elem, std::string_view binding_name, std::uint32_t sub_field_index) {
     std::string_view sub = (key == binding_name)
                                ? std::string_view{}
                                : std::string_view{key.data() + binding_name.size() + 1,
@@ -750,22 +651,16 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
     auto const& e = *static_cast<ElemT const*>(elem);
     if constexpr (ct_glz_reflectable<ElemT>) {
       if (sub.empty()) {
-        if constexpr (serializable_v<ElemT>) {
-          if (auto r = call_serialize_value(out, e); !r) return std::unexpected(r.error());
-        }
+        if constexpr (serializable_v<ElemT>) serialize_value(out, e);
         return true;
       }
       bool found = false;
-      auto r = for_each_field(e, sub, sub_field_index, sub.find('.') != std::string_view::npos,
-        [&](auto const& f) -> std::expected<void, error_ctx> {
-          found = true;
-          return try_emit_value(out, f, raw);
-        });
-      if (!r) return std::unexpected(r.error());
+      (void)for_each_field(e, sub, sub_field_index, sub.find('.') != std::string_view::npos,
+        [&](auto const& f) { emit_value_static(out, f, raw); found = true; });
       return found;
     } else {
       if (!sub.empty()) return false;
-      if (auto r = try_emit_value(out, e, raw); !r) return std::unexpected(r.error());
+      emit_value_static(out, e, raw);
       return true;
     }
   }
@@ -777,7 +672,6 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
     if constexpr (ct_glz_reflectable<ElemT>) {
       if (!sub.empty()) {
         bool res = false;
-        // lookup-only visitor（追記なし）のため失敗は unknown_key のみ。res=false がそのまま falsy 判定になる。
         (void)for_each_field(e, sub, UINT32_MAX, sub.find('.') != std::string_view::npos, [&](auto const& f) {
           using FT = std::remove_cvref_t<decltype(f)>;
           if constexpr (std::same_as<FT, bool>) res = f;
@@ -805,25 +699,20 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
   }
 
   /** @brief ループスコープの束縛を探索し、key が配列名に一致すれば現在要素を出力する */
-  static std::expected<bool, error_ctx> try_resolve_loop_binding(bc_executor const& ex, bc_var_ref const& ref, bool raw) noexcept {
+  static bool try_resolve_loop_binding(bc_executor const& ex, bc_var_ref const& ref, bool raw) {
     for (auto* lp = ex.loop_; lp; lp = lp->parent) {
       if (!lp->binding_resolve) continue;
       if (ref.key == lp->binding_name ||
           (ref.key.starts_with(lp->binding_name) && ref.key[lp->binding_name.size()] == '.')) {
         if constexpr (std::is_same_v<Sink, std::string>) {
           // std::string 出力は直接書き込み（scratch 経由だと余分な確保+コピーが発生する）
-          auto r = lp->binding_resolve(ex.out_, ref.key, raw, lp->binding_elem, lp->binding_name, ref.field_index);
-          if (!r) return std::unexpected(r.error());
-          return *r;
+          return lp->binding_resolve(ex.out_, ref.key, raw, lp->binding_elem, lp->binding_name, ref.field_index);
         } else {
           // 型消去リゾルバは std::string& にしか書けないため scratch 経由で sink に流す
           std::string scratch;
-          auto r = lp->binding_resolve(scratch, ref.key, raw, lp->binding_elem, lp->binding_name, ref.field_index);
-          if (!r) return std::unexpected(r.error());
-          if (*r) {
-            if (!try_append_buf(ex.out_, std::string_view{scratch})) return oom_false();
-          }
-          return *r;
+          bool ok = lp->binding_resolve(scratch, ref.key, raw, lp->binding_elem, lp->binding_name, ref.field_index);
+          if (ok) ex.out_.append(scratch);
+          return ok;
         }
       }
     }
@@ -906,7 +795,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
     return (size / block) * w.stride_take + std::min(w.stride_take, size % block);
   }
 
-  static std::expected<void, error_ctx> do_section(bc_executor& ex, std::size_t& pc) noexcept {
+  static std::expected<void, error_ctx> do_section(bc_executor& ex, std::size_t& pc) {
     auto const& instr = ex.bc_.instructions[pc];
     auto const& ref   = ex.bc_.var_refs[instr.operand2];
     auto        body_end = instr.operand;
@@ -942,7 +831,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
           if (!r2) return r2;
           // join: 最初のイテレーション以外で区切り文字を出力
           if (!w.join_sep.empty() && ls.index + 1 < count && !ls.continue_flag) {
-            if (!try_append_buf(ex.out_, w.join_sep)) return oom_error();
+            ex.out_.append(w.join_sep);
           }
           if (w.bwd) --src; else ++src;
           if (ls.continue_flag) { ls.continue_flag = false; continue; }
@@ -1000,17 +889,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
             }
           } else {
             using pair_t = std::remove_cvref_t<decltype(*field.begin())>;
-            // ponytail: pair<const K, V> は代入不可のため assign ではなく move 代入で構築する。
-            std::vector<pair_t> temp;
-#if INJAMM_HAS_EXCEPTIONS
-            try {
-              temp = std::vector<pair_t>(field.begin(), field.end());
-            } catch (...) {
-              return oom_error();
-            }
-#else
-            temp = std::vector<pair_t>(field.begin(), field.end());
-#endif
+            std::vector<pair_t> temp(field.begin(), field.end());
             for (std::uint32_t pos = w.hi; pos > w.lo && map_res && !ls.break_flag && emitted < count;) {
               --pos;
               if (w.has_stride && !kept(w, pos)) continue;
@@ -1071,17 +950,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
               ++r_it;
             }
           } else {
-            // ponytail: 要素型が代入不可の場合に備え assign ではなく move 代入で構築する。
-            std::vector<elem_t> temp;
-#if INJAMM_HAS_EXCEPTIONS
-            try {
-              temp = std::vector<elem_t>(field.begin(), field.end());
-            } catch (...) {
-              return oom_error();
-            }
-#else
-            temp = std::vector<elem_t>(field.begin(), field.end());
-#endif
+            std::vector<elem_t> temp(field.begin(), field.end());
             for (std::uint32_t pos = w.hi; pos > w.lo && emitted < count;) {
               --pos;
               if (w.has_stride && !kept(w, pos)) continue;
@@ -1305,13 +1174,12 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
     return {};
   }
 
-  static std::expected<void, error_ctx> do_inverted(bc_executor& ex, std::size_t& pc) noexcept {
+  static std::expected<void, error_ctx> do_inverted(bc_executor& ex, std::size_t& pc) {
     auto const& instr = ex.bc_.instructions[pc];
     auto const& ref   = ex.bc_.var_refs[instr.operand2];
     auto        else_pc = instr.operand3;
     bool empty = true;
-    // lookup-only visitor（追記なし）のため失敗は unknown_key のみ。empty=true 初期値が miss 時の答えになる。
-    auto r0 = for_each_field_ref(ex.value_, ref,[&](auto const& field) {
+    (void)for_each_field_ref(ex.value_, ref,[&](auto const& field) {
       using FT = std::remove_cvref_t<decltype(field)>;
       if constexpr (ct_is_vector_like<FT>) { empty = field.empty(); }
       else if constexpr (std::same_as<FT, bool>) { empty = !field; }
@@ -1323,7 +1191,6 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
       else if constexpr (std::is_enum_v<FT>) { empty = (static_cast<std::underlying_type_t<FT>>(field) == 0); }
       else if constexpr (ct_glz_reflectable<FT>) { empty = false; }
     });
-    if (!r0 && r0.error().ec != error_code::unknown_key) return std::unexpected(r0.error());
     auto body_end = instr.operand;
     if (body_end <= pc + 1 || body_end > ex.bc_.instructions.size())
       return std::unexpected(error_ctx{.position = pc, .ec = error_code::syntax_error});
@@ -1341,7 +1208,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
     return {};
   }
 
-  static std::expected<void, error_ctx> do_resolve_filtered(bc_executor& ex, std::size_t& pc, std::string& filtered) noexcept {
+  static std::expected<void, error_ctx> do_resolve_filtered(bc_executor& ex, std::size_t& pc, std::string& filtered) {
     auto const& instr  = ex.bc_.instructions[pc];
     auto const& var_ref = ex.bc_.var_refs[instr.operand2];
     filtered.clear();
@@ -1354,89 +1221,81 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
         if (f.filter == string_filter::format) { chrono_fmt = f.str_arg1; break; }
       }
     }
-    bool field_found = false;
     auto serialize_field = [&](auto const& field) -> std::expected<void, error_ctx> {
-      field_found = true;
       using FT = std::remove_cvref_t<decltype(field)>;
       if (use_json) {
-        return json_serialize_value(filtered, field);
+        json_serialize_value(filtered, field);
       } else if constexpr (is_chrono_time_point_v<FT>) {
         if (use_chrono_format) {
-          return serialize_chrono(filtered, field, chrono_fmt);
+          serialize_chrono(filtered, field, chrono_fmt);
+        } else {
+          serialize_chrono(filtered, field);
         }
-        return serialize_chrono(filtered, field);
       } else if constexpr (std::is_arithmetic_v<FT> && !std::same_as<FT, bool>) {
         if (use_chrono_format) {
           return serialize_formatted(filtered, field, chrono_fmt);
         }
-        return serialize_value(filtered, field);
+        serialize_value(filtered, field);
       } else if constexpr (std::same_as<FT, std::string> || std::same_as<FT, std::string_view> || char_pointer_v<FT>) {
         auto sv = to_sv(field);
         if (use_chrono_format) {
           return serialize_formatted(filtered, sv, chrono_fmt);
         }
-        return serialize_value(filtered, sv);
+        serialize_value(filtered, sv);
       } else if constexpr (is_std_optional_v<FT>) {
         if (field.has_value()) {
           using inner_t = std::remove_cvref_t<decltype(*field)>;
           if constexpr (is_chrono_time_point_v<inner_t>) {
             if (use_chrono_format) {
-              return serialize_chrono(filtered, *field, chrono_fmt);
+              serialize_chrono(filtered, *field, chrono_fmt);
+            } else {
+              serialize_chrono(filtered, *field);
             }
-            return serialize_chrono(filtered, *field);
           } else if constexpr (std::is_arithmetic_v<inner_t> && !std::same_as<inner_t, bool>) {
             if (use_chrono_format) {
               return serialize_formatted(filtered, *field, chrono_fmt);
             }
-            return serialize_value(filtered, *field);
+            serialize_value(filtered, *field);
           } else if constexpr (std::same_as<inner_t, std::string> || std::same_as<inner_t, std::string_view>) {
             if (use_chrono_format) {
               return serialize_formatted(filtered, *field, chrono_fmt);
             }
-            return serialize_value(filtered, *field);
+            serialize_value(filtered, *field);
           } else {
-            return call_serialize_value(filtered, *field);
+            serialize_value(filtered, *field);
           }
         }
-        return {};
       } else if constexpr (serializable_v<FT>) {
-        return call_serialize_value(filtered, field);
+        serialize_value(filtered, field);
       }
       return {};
     };
     std::expected<void, error_ctx> r = std::unexpected(error_ctx{.ec = error_code::unknown_key});
     bool resolved = false;
-    // expected-visitor 化したため void パスの欠損判定は field_found + void_path_miss_is_error で再現する。
     if (var_ref.root_fallback == root_fb_none) {
-      field_found = false;
       r = for_each_field_ref(ex.value_, var_ref, serialize_field);
-      if (!r) return std::unexpected(r.error());
-      if (!field_found && void_path_miss_is_error(var_ref)) return std::unexpected(error_ctx{.ec = error_code::unknown_key});
-      resolved = true;
+      resolved = static_cast<bool>(r);
+      if (!resolved) return std::unexpected(r.error());
     } else {
       if (var_ref.root_fallback == root_fb_unproven) {
-        field_found = false;
         r = for_each_field_ref(ex.value_, var_ref, serialize_field);
-        if (!r) return std::unexpected(r.error());
-        resolved = field_found || !void_path_miss_is_error(var_ref);
+        if (!r && r.error().ec != error_code::unknown_key) return std::unexpected(r.error());
+        resolved = static_cast<bool>(r);
       }
       if (!resolved) {
-        field_found = false;
-        auto rf = for_each_root_field_ref(ex, var_ref, serialize_field);
-        if (!rf) return std::unexpected(rf.error());
-        resolved = *rf;
+        if (var_ref.root_fallback != root_fb_none) {
+          auto rr = for_each_field_ref(ex.root_value_, var_ref, serialize_field);
+          if (!rr && rr.error().ec != error_code::unknown_key) return std::unexpected(rr.error());
+          resolved = static_cast<bool>(rr);
+        }
+        if (!resolved) return std::unexpected(r.error());
       }
-      if (!resolved) return std::unexpected(error_ctx{.ec = error_code::unknown_key});
     }
-    for (auto const& f : var_ref.filters) {
-      if (auto err = apply_string_filter(filtered, f); !err) return std::unexpected(err.error());
-    }
+    for (auto const& f : var_ref.filters) apply_string_filter(filtered, f);
     for (auto const& f : var_ref.int_filters) {
       if (auto err = apply_int_filter(filtered, f); !err) return std::unexpected(err.error());
     }
-    for (auto const& f : var_ref.float_filters) {
-      if (auto err = apply_float_filter(filtered, f); !err) return std::unexpected(err.error());
-    }
+    for (auto const& f : var_ref.float_filters) apply_float_filter(filtered, f);
     ++pc;
     pc += instr.operand;
     return {};
@@ -1444,161 +1303,113 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
 
   // -- ハンドラ関数群（双方のディスパッチパスで共有） --
 
-  INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_emit_literal(bc_executor& ex, std::size_t& pc, std::string&) noexcept {
-    if (!try_append_buf(ex.out_, ex.bc_.literals[ex.bc_.instructions[pc].operand])) return oom_error();
+  INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_emit_literal(bc_executor& ex, std::size_t& pc, std::string&) {
+    ex.out_.append(ex.bc_.literals[ex.bc_.instructions[pc].operand]);
     ++pc;
     return {};
   }
 
-  INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_emit_var(bc_executor& ex, std::size_t& pc, std::string&) noexcept {
+  INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_emit_var(bc_executor& ex, std::size_t& pc, std::string&) {
     bool raw = ex.bc_.instructions[pc].op == bc_opcode::emit_var_raw;
     auto const& ref = ex.bc_.var_refs[ex.bc_.instructions[pc].operand];
     if (ref.is_dead) { ++pc; return {}; }
-    if (ref.is_loop_parent) {
-      auto lr = resolve_loop_parent_var(ex, ref.special, raw);
-      if (!lr) return std::unexpected(lr.error());
-      if (*lr) { ++pc; return {}; }
+    if (ref.is_loop_parent && resolve_loop_parent_var(ex, ref.special, raw)) { ++pc; return {}; }
+    if (ref.binding_first && ref.special == special_var_kind::none && try_resolve_loop_binding(ex, ref, raw)) {
+      ++pc;
+      return {};
     }
-    if (ref.binding_first && ref.special == special_var_kind::none) {
-      auto br = try_resolve_loop_binding(ex, ref, raw);
-      if (!br) return std::unexpected(br.error());
-      if (*br) { ++pc; return {}; }
+    if (ref.root_fallback == root_fb_proven &&
+        for_each_root_field_ref(ex, ref, [&](auto const& field) { ex.emit_var_value(field, raw); })) {
+      /** 実証済みルート参照: 要素型の走査をスキップしてルート型を直接走査 */
+      ++pc;
+      return {};
     }
-    if (ref.root_fallback == root_fb_proven) {
-      auto rf = for_each_root_field_ref(ex, ref, [&](auto const& field) -> std::expected<void, error_ctx> { return ex.emit_var_value(field, raw); });
-      if (!rf) return std::unexpected(rf.error());
-      if (*rf) {
-        /** 実証済みルート参照: 要素型の走査をスキップしてルート型を直接走査 */
-        ++pc;
-        return {};
-      }
-    }
-    bool found = false;
-    auto r = for_each_field_ref(ex.value_, ref, [&](auto const& field) -> std::expected<void, error_ctx> {
-      found = true;
-      return ex.emit_var_value(field, raw);
-    });
-    if (!r) return std::unexpected(r.error());
+    bool        found = false;
+    auto        r = for_each_field_ref(ex.value_, ref,[&](auto const& field) { found = true; ex.emit_var_value(field, raw); });
+    if (!r && r.error().ec != error_code::unknown_key) return std::unexpected(r.error());
     if (found) { ++pc; return {}; }
-    {
-      auto br = try_resolve_loop_binding(ex, ref, raw);
-      if (!br) return std::unexpected(br.error());
-      if (*br) { ++pc; return {}; }
+    if (try_resolve_loop_binding(ex, ref, raw)) { ++pc; return {}; }
+    if (ref.root_fallback != root_fb_none &&
+        for_each_root_field_ref(ex, ref, [&](auto const& field) { ex.emit_var_value(field, raw); })) {
+      ++pc;
+      return {};
     }
-    if (ref.root_fallback != root_fb_none) {
-      auto rf = for_each_root_field_ref(ex, ref, [&](auto const& field) -> std::expected<void, error_ctx> { return ex.emit_var_value(field, raw); });
-      if (!rf) return std::unexpected(rf.error());
-      if (*rf) { ++pc; return {}; }
-    }
-    // expected-visitor 化したため void パスが返していた unknown_key をここで合成する。
-    if (void_path_miss_is_error(ref)) return std::unexpected(error_ctx{.ec = error_code::unknown_key});
+    if (!r) return std::unexpected(r.error());
     ++pc;
     return {};
   }
 
-  INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_emit_litvar(bc_executor& ex, std::size_t& pc, std::string&) noexcept {
+  INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_emit_litvar(bc_executor& ex, std::size_t& pc, std::string&) {
     bool raw = ex.bc_.instructions[pc].op == bc_opcode::emit_litvar_raw;
-    if (!try_append_buf(ex.out_, ex.bc_.literals[ex.bc_.instructions[pc].operand])) return oom_error();
+    ex.out_.append(ex.bc_.literals[ex.bc_.instructions[pc].operand]);
     auto const& ref = ex.bc_.var_refs[ex.bc_.instructions[pc].operand2];
     if (ref.is_dead) { ++pc; return {}; }
-    if (ref.is_loop_parent) {
-      auto lr = resolve_loop_parent_var(ex, ref.special, raw);
-      if (!lr) return std::unexpected(lr.error());
-      if (*lr) { ++pc; return {}; }
+    if (ref.is_loop_parent && resolve_loop_parent_var(ex, ref.special, raw)) { ++pc; return {}; }
+    if (ref.binding_first && ref.special == special_var_kind::none && try_resolve_loop_binding(ex, ref, raw)) {
+      ++pc;
+      return {};
     }
-    if (ref.binding_first && ref.special == special_var_kind::none) {
-      auto br = try_resolve_loop_binding(ex, ref, raw);
-      if (!br) return std::unexpected(br.error());
-      if (*br) { ++pc; return {}; }
-    }
-    if (ref.root_fallback == root_fb_proven) {
-      auto rf = for_each_root_field_ref(ex, ref, [&](auto const& field) -> std::expected<void, error_ctx> { return ex.emit_var_value(field, raw); });
-      if (!rf) return std::unexpected(rf.error());
-      if (*rf) {
+    if (ref.root_fallback == root_fb_proven &&
+        for_each_root_field_ref(ex, ref, [&](auto const& field) { ex.emit_var_value(field, raw); })) {
       /** 実証済みルート参照: 要素型の走査をスキップしてルート型を直接走査 */
-        ++pc;
-        return {};
-      }
+      ++pc;
+      return {};
     }
-    bool found = false;
-    auto r = for_each_field_ref(ex.value_, ref, [&](auto const& field) -> std::expected<void, error_ctx> {
-      found = true;
-      return ex.emit_var_value(field, raw);
-    });
-    if (!r) return std::unexpected(r.error());
+    bool        found = false;
+    auto        r = for_each_field_ref(ex.value_, ref,[&](auto const& field) { found = true; ex.emit_var_value(field, raw); });
+    if (!r && r.error().ec != error_code::unknown_key) return std::unexpected(r.error());
     if (found) { ++pc; return {}; }
-    {
-      auto br = try_resolve_loop_binding(ex, ref, raw);
-      if (!br) return std::unexpected(br.error());
-      if (*br) { ++pc; return {}; }
+    if (try_resolve_loop_binding(ex, ref, raw)) { ++pc; return {}; }
+    if (ref.root_fallback != root_fb_none &&
+        for_each_root_field_ref(ex, ref, [&](auto const& field) { ex.emit_var_value(field, raw); })) {
+      ++pc;
+      return {};
     }
-    if (ref.root_fallback != root_fb_none) {
-      auto rf = for_each_root_field_ref(ex, ref, [&](auto const& field) -> std::expected<void, error_ctx> { return ex.emit_var_value(field, raw); });
-      if (!rf) return std::unexpected(rf.error());
-      if (*rf) { ++pc; return {}; }
-    }
-    // expected-visitor 化したため void パスが返していた unknown_key をここで合成する。
-    if (void_path_miss_is_error(ref)) return std::unexpected(error_ctx{.ec = error_code::unknown_key});
+    if (!r) return std::unexpected(r.error());
     ++pc;
     return {};
   }
 
-  INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_emit_at_root(bc_executor& ex, std::size_t& pc, std::string&) noexcept {
+  INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_emit_at_root(bc_executor& ex, std::size_t& pc, std::string&) {
     if constexpr (std::same_as<RootT, std::string> || std::same_as<RootT, std::string_view> || char_pointer_v<RootT>) {
-      if (auto r = try_escape_into(ex.out_, to_sv(ex.root_value_)); !r) return std::unexpected(r.error());
+      html_escape_into(ex.out_, to_sv(ex.root_value_));
     } else if constexpr (serializable_v<RootT>) {
-      if (auto r = call_serialize_value(ex.out_, ex.root_value_); !r) return std::unexpected(r.error());
+      serialize_value(ex.out_, ex.root_value_);
     }
     ++pc;
     return {};
   }
 
-  INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_emit_at_root_field(bc_executor& ex, std::size_t& pc, std::string&) noexcept {
+  INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_emit_at_root_field(bc_executor& ex, std::size_t& pc, std::string&) {
     bool raw = ex.bc_.instructions[pc].op == bc_opcode::emit_at_root_field_raw;
     auto const& ref = ex.bc_.var_refs[ex.bc_.instructions[pc].operand];
-    bool found = false;
-    auto r = for_each_field_ref(ex.root_value_, ref, [&](auto const& field) -> std::expected<void, error_ctx> {
-      found = true;
-      return ex.emit_var_value(field, raw);
-    });
+    auto r = for_each_field_ref(ex.root_value_, ref,[&](auto const& field) { ex.emit_var_value(field, raw); });
     if (!r) return std::unexpected(r.error());
-    // expected-visitor 化したため void パスが返していた unknown_key をここで合成する。
-    if (!found && void_path_miss_is_error(ref)) return std::unexpected(error_ctx{.ec = error_code::unknown_key});
     ++pc;
     return {};
   }
 
-  INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_emit_this(bc_executor& ex, std::size_t& pc, std::string&) noexcept {
+  INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_emit_this(bc_executor& ex, std::size_t& pc, std::string&) {
     if constexpr (std::same_as<T, std::string> || std::same_as<T, std::string_view> || char_pointer_v<T>) {
-      if (auto r = try_escape_into(ex.out_, to_sv(ex.value_)); !r) return std::unexpected(r.error());
+      html_escape_into(ex.out_, to_sv(ex.value_));
     } else {
       ex.emit_this_scratch_.clear();
       if constexpr (serializable_v<T>) {
-        if (auto r = call_serialize_value(ex.emit_this_scratch_, ex.value_); !r) return std::unexpected(r.error());
+        serialize_value(ex.emit_this_scratch_, ex.value_);
       } else if constexpr (ct_glz_reflectable<T> && glz::write_supported<T, glz::JSON>) {
-#if INJAMM_HAS_EXCEPTIONS
-        try {
-#endif
-          if (glz::write_json(ex.value_, ex.emit_this_scratch_)) {
-            return oom_error();
-          }
-#if INJAMM_HAS_EXCEPTIONS
-        } catch (...) {
-          return oom_error();
+        if (auto ec = glz::write_json(ex.value_, ex.emit_this_scratch_)) {
+          return std::unexpected(error_ctx{.position = pc, .ec = error_code::syntax_error});
         }
-#endif
       }
-      if (auto r = try_escape_into(ex.out_, ex.emit_this_scratch_); !r) return std::unexpected(r.error());
+      html_escape_into(ex.out_, ex.emit_this_scratch_);
     }
     ++pc;
     return {};
   }
 
-  INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_emit_var_size(bc_executor& ex, std::size_t& pc, std::string&) noexcept {
+  INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_emit_var_size(bc_executor& ex, std::size_t& pc, std::string&) {
     auto const& ref = ex.bc_.var_refs[ex.bc_.instructions[pc].operand];
-    bool found = false;
-    auto emit_size = [&](auto const& field) -> std::expected<void, error_ctx> {
-      found = true;
+    auto emit_size = [&](auto const& field) {
       using FT = std::remove_cvref_t<decltype(field)>;
       std::size_t sz = 0;
       if constexpr (ct_is_vector_like<FT>) {
@@ -1615,99 +1426,84 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
       std::array<char, 16> buf;
       auto [ptr, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), sz);
       if (ec == std::errc{}) {
-        if (!try_append_buf(ex.out_, buf.data(), static_cast<std::size_t>(ptr - buf.data()))) return oom_error();
+        ex.out_.append(buf.data(), static_cast<std::size_t>(ptr - buf.data()));
       }
-      return {};
     };
-    {
-      auto rf = for_each_root_field_ref(ex, ref, emit_size);
-      if (!rf) return std::unexpected(rf.error());
-      if (*rf) { ++pc; return {}; }
-    }
+    if (for_each_root_field_ref(ex, ref, emit_size)) { ++pc; return {}; }
     auto r = for_each_field_ref(ex.value_, ref, emit_size);
-    if (!r) return std::unexpected(r.error());
-    if (found) { ++pc; return {}; }
-    if (ref.root_fallback != root_fb_none) {
-      auto rf = for_each_root_field_ref(ex, ref, emit_size);
-      if (!rf) return std::unexpected(rf.error());
-      if (*rf) { ++pc; return {}; }
+    if (!r && r.error().ec != error_code::unknown_key) return std::unexpected(r.error());
+    if (!r && ref.root_fallback != root_fb_none &&
+        for_each_root_field_ref(ex, ref, emit_size)) {
+      ++pc;
+      return {};
     }
-    // expected-visitor 化したため void パスが返していた unknown_key をここで合成する。
-    if (void_path_miss_is_error(ref)) return std::unexpected(error_ctx{.ec = error_code::unknown_key});
+    if (!r) return std::unexpected(r.error());
     ++pc;
     return {};
   }
 
-  INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_emit_break(bc_executor& ex, std::size_t& pc, std::string&) noexcept {
+  INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_emit_break(bc_executor& ex, std::size_t& pc, std::string&) {
     if (ex.loop_) ex.loop_->break_flag = true;
     pc = SIZE_MAX;
     return {};
   }
 
-  INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_emit_continue(bc_executor& ex, std::size_t& pc, std::string&) noexcept {
+  INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_emit_continue(bc_executor& ex, std::size_t& pc, std::string&) {
     if (ex.loop_) ex.loop_->continue_flag = true;
     pc = SIZE_MAX;
     return {};
   }
 
-  INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_emit_at_index(bc_executor& ex, std::size_t& pc, std::string&) noexcept {
+  INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_emit_at_index(bc_executor& ex, std::size_t& pc, std::string&) {
     if (ex.loop_) {
       std::array<char, 16> buf;
       auto [ptr, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), ex.loop_->index);
-      if (ec == std::errc{}) {
-        if (!try_append_buf(ex.out_, buf.data(), static_cast<std::size_t>(ptr - buf.data()))) return oom_error();
-      }
+      if (ec == std::errc{}) ex.out_.append(buf.data(), static_cast<std::size_t>(ptr - buf.data()));
     }
     ++pc;
     return {};
   }
 
-  INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_emit_at_index1(bc_executor& ex, std::size_t& pc, std::string&) noexcept {
+  INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_emit_at_index1(bc_executor& ex, std::size_t& pc, std::string&) {
     if (ex.loop_) {
       std::array<char, 16> buf;
       auto [ptr, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), ex.loop_->index + 1);
-      if (ec == std::errc{}) {
-        if (!try_append_buf(ex.out_, buf.data(), static_cast<std::size_t>(ptr - buf.data()))) return oom_error();
-      }
+      if (ec == std::errc{}) ex.out_.append(buf.data(), static_cast<std::size_t>(ptr - buf.data()));
     }
     ++pc;
     return {};
   }
 
-  INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_emit_at_size(bc_executor& ex, std::size_t& pc, std::string&) noexcept {
+  INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_emit_at_size(bc_executor& ex, std::size_t& pc, std::string&) {
     if (ex.loop_) {
       std::array<char, 16> buf;
       auto [ptr, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), ex.loop_->count);
-      if (ec == std::errc{}) {
-        if (!try_append_buf(ex.out_, buf.data(), static_cast<std::size_t>(ptr - buf.data()))) return oom_error();
-      }
+      if (ec == std::errc{}) ex.out_.append(buf.data(), static_cast<std::size_t>(ptr - buf.data()));
     }
     ++pc;
     return {};
   }
 
-  INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_emit_at_first(bc_executor& ex, std::size_t& pc, std::string&) noexcept {
-    if (!try_append_buf(ex.out_, (ex.loop_ && ex.loop_->index == 0) ? std::string_view{"true"} : std::string_view{"false"})) return oom_error();
+  INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_emit_at_first(bc_executor& ex, std::size_t& pc, std::string&) {
+    if (ex.loop_ && ex.loop_->index == 0) { ex.out_.append("true"); } else { ex.out_.append("false"); }
     ++pc;
     return {};
   }
 
-  INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_emit_at_last(bc_executor& ex, std::size_t& pc, std::string&) noexcept {
-    if (!try_append_buf(ex.out_, (ex.loop_ && ex.loop_->index + 1 == ex.loop_->count) ? std::string_view{"true"} : std::string_view{"false"})) return oom_error();
+  INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_emit_at_last(bc_executor& ex, std::size_t& pc, std::string&) {
+    if (ex.loop_ && ex.loop_->index + 1 == ex.loop_->count) { ex.out_.append("true"); } else { ex.out_.append("false"); }
     ++pc;
     return {};
   }
 
-  INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_emit_at_key(bc_executor& ex, std::size_t& pc, std::string&) noexcept {
+  INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_emit_at_key(bc_executor& ex, std::size_t& pc, std::string&) {
     if (ex.loop_) {
       if (!ex.loop_->key.empty()) {
-        if (auto r = try_escape_into(ex.out_, ex.loop_->key); !r) return std::unexpected(r.error());
+        html_escape_into(ex.out_, ex.loop_->key);
       } else {
         std::array<char, 16> buf;
         auto [ptr, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), ex.loop_->index);
-        if (ec == std::errc{}) {
-          if (!try_append_buf(ex.out_, buf.data(), static_cast<std::size_t>(ptr - buf.data()))) return oom_error();
-        }
+        if (ec == std::errc{}) ex.out_.append(buf.data(), static_cast<std::size_t>(ptr - buf.data()));
       }
     }
     ++pc;
@@ -1715,7 +1511,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
   }
 
   /** @brief 汎用文字列フィルタ（operand2 = string_filter 種別） */
-  INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_filter_string(bc_executor& ex, std::size_t& pc, std::string& filtered) noexcept {
+  INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_filter_string(bc_executor& ex, std::size_t& pc, std::string& filtered) {
     auto const& instr = ex.bc_.instructions[pc];
     auto        kind  = static_cast<string_filter>(instr.operand2);
     auto        arg   = static_cast<int>(instr.operand);
@@ -1729,12 +1525,12 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
       if ((kind == string_filter::replace || kind == string_filter::pluralize) && lit_idx + 1 < ex.bc_.literals.size())
         entry.str_arg2 = ex.bc_.literals[lit_idx + 1];
     }
-    if (auto r = apply_string_filter(filtered, entry); !r) return std::unexpected(r.error());
+    apply_string_filter(filtered, entry);
     ++pc;
     return {};
   }
 
-  INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_filter_int(bc_executor& ex, std::size_t& pc, std::string& filtered) noexcept {
+  INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_filter_int(bc_executor& ex, std::size_t& pc, std::string& filtered) {
     auto const& instr = ex.bc_.instructions[pc];
     auto        kind  = static_cast<int_filter>(instr.operand2);
     if (auto r = apply_int_filter(filtered, {kind, static_cast<int>(instr.operand)}); !r)
@@ -1743,69 +1539,55 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
     return {};
   }
 
-  INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_filter_float(bc_executor& ex, std::size_t& pc, std::string& filtered) noexcept {
+  INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_filter_float(bc_executor& ex, std::size_t& pc, std::string& filtered) {
     auto const& instr = ex.bc_.instructions[pc];
     auto        kind  = static_cast<float_filter>(instr.operand2);
-    if (auto r = apply_float_filter(filtered, {kind, static_cast<int>(instr.operand)}); !r) return std::unexpected(r.error());
+    apply_float_filter(filtered, {kind, static_cast<int>(instr.operand)});
     ++pc;
     return {};
   }
 
   /** @brief JSONシリアライズヘルパー（glz::write_json を呼ぶ） */
   template <class Buffer, class V>
-  static std::expected<void, error_ctx> json_serialize_value(Buffer& out, V const& value) noexcept {
+  static void json_serialize_value(Buffer& out, V const& value) {
     if constexpr (glz::reflectable<V>) {
-#if INJAMM_HAS_EXCEPTIONS
-      try {
-#endif
-        // ponytail: std::string への書き込み失敗は確保失敗のみ。glz エラーも OOM に写像する。
-        if (glz::write_json(value, out)) return oom_error();
-        return {};
-#if INJAMM_HAS_EXCEPTIONS
-      } catch (...) {
-        return oom_error();
-      }
-#endif
+      auto ec = glz::write_json(value, out);
+      (void)ec;
     } else if constexpr (serializable_v<V>) {
-      return call_serialize_value(out, value);
+      serialize_value(out, value);
     }
-    return {};
   }
 
-  INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_resolve_filtered(bc_executor& ex, std::size_t& pc, std::string& filtered) noexcept {
+  INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_resolve_filtered(bc_executor& ex, std::size_t& pc, std::string& filtered) {
     return do_resolve_filtered(ex, pc, filtered);
   }
 
-  INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_emit_filtered(bc_executor& ex, std::size_t& pc, std::string& filtered) noexcept {
+  INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_emit_filtered(bc_executor& ex, std::size_t& pc, std::string& filtered) {
     bool raw = ex.bc_.instructions[pc].op == bc_opcode::emit_filtered_raw;
-    if (raw) {
-      if (!try_append_buf(ex.out_, filtered)) return oom_error();
-    } else {
-      if (auto r = try_escape_into(ex.out_, filtered); !r) return std::unexpected(r.error());
-    }
+    if (raw) { ex.out_.append(filtered); } else { html_escape_into(ex.out_, filtered); }
     ++pc;
     return {};
   }
 
-  INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_emit_end(bc_executor&, std::size_t& pc, std::string&) noexcept {
+  INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_emit_end(bc_executor&, std::size_t& pc, std::string&) {
     ++pc;
     return {};
   }
 
-  INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_emit_halt(bc_executor&, std::size_t& pc, std::string&) noexcept {
+  INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_emit_halt(bc_executor&, std::size_t& pc, std::string&) {
     ++pc;
     return {};
   }
 
-  INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_emit_section(bc_executor& ex, std::size_t& pc, std::string&) noexcept {
+  INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_emit_section(bc_executor& ex, std::size_t& pc, std::string&) {
     return do_section(ex, pc);
   }
 
-  INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_emit_inverted(bc_executor& ex, std::size_t& pc, std::string&) noexcept {
+  INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_emit_inverted(bc_executor& ex, std::size_t& pc, std::string&) {
     return do_inverted(ex, pc);
   }
 
-  INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_emit_if(bc_executor& ex, std::size_t& pc, std::string&) noexcept {
+  INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_emit_if(bc_executor& ex, std::size_t& pc, std::string&) {
     auto const& instr = ex.bc_.instructions[pc];
     auto const& ref   = ex.bc_.var_refs[instr.operand2];
     bool cond = eval_var_truthy(ex, ref);
@@ -1827,7 +1609,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
     }
   }
 
-  INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_emit_if_cmp(bc_executor& ex, std::size_t& pc, std::string&) noexcept {
+  INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_emit_if_cmp(bc_executor& ex, std::size_t& pc, std::string&) {
     auto const& instr = ex.bc_.instructions[pc];
     auto const& ref   = ex.bc_.var_refs[instr.operand2];
     int rhs = ref.int_filters.empty() ? 0 : ref.int_filters[0].arg;
@@ -1880,26 +1662,21 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
     } else {
       bool lhs_found = false;
       if (ref.root_fallback == root_fb_proven) {
-        auto rf = for_each_root_field_ref(ex, ref, do_cmp);
-        if (!rf) return std::unexpected(rf.error());
-        lhs_found = *rf;
+        lhs_found = for_each_root_field_ref(ex, ref, do_cmp);
       }
       if (!lhs_found) {
         auto do_cmp_found = [&](auto const& field) { lhs_found = true; do_cmp(field); };
-        // do_cmp は追記しない（cond 設定のみ）のため失敗は unknown_key のみ。lhs_found で後続分岐する。
-        auto r0 = for_each_field_ref(ex.value_, ref, do_cmp_found);
-        if (!r0 && r0.error().ec != error_code::unknown_key) return std::unexpected(r0.error());
+        (void)for_each_field_ref(ex.value_, ref, do_cmp_found);
       }
       if (!lhs_found && ref.root_fallback != root_fb_none) {
-        // do_cmp は追記しない（cond 設定のみ）。結果は cond に反映される。
-        if (auto rf = for_each_root_field_ref(ex, ref, do_cmp); !rf) return std::unexpected(rf.error());
+        (void)for_each_root_field_ref(ex, ref, do_cmp);
       }
     }
     if (!cond) { pc = instr.operand; } else { ++pc; }
     return {};
   }
 
-  INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_emit_if_logic(bc_executor& ex, std::size_t& pc, std::string&) noexcept {
+  INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_emit_if_logic(bc_executor& ex, std::size_t& pc, std::string&) {
     auto const& instr = ex.bc_.instructions[pc];
     auto const& lhs_ref = ex.bc_.var_refs[instr.operand2];
     bool cond = false;
@@ -1915,17 +1692,17 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
     return {};
   }
 
-  INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_emit_else(bc_executor& ex, std::size_t& pc, std::string&) noexcept {
+  INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_emit_else(bc_executor& ex, std::size_t& pc, std::string&) {
     pc = ex.bc_.instructions[pc].operand;
     return {};
   }
 
-  INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_emit_endif(bc_executor&, std::size_t& pc, std::string&) noexcept {
+  INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_emit_endif(bc_executor&, std::size_t& pc, std::string&) {
     ++pc;
     return {};
   }
 
-  static std::expected<void, error_ctx> handle_emit_at_section(bc_executor& ex, std::size_t& pc, std::string&) noexcept {
+  static std::expected<void, error_ctx> handle_emit_at_section(bc_executor& ex, std::size_t& pc, std::string&) {
     auto const& instr = ex.bc_.instructions[pc];
     bool cond = false;
     if (ex.loop_) {
@@ -1945,7 +1722,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
     return {};
   }
 
-  static std::expected<void, error_ctx> handle_emit_at_inverted(bc_executor& ex, std::size_t& pc, std::string&) noexcept {
+  static std::expected<void, error_ctx> handle_emit_at_inverted(bc_executor& ex, std::size_t& pc, std::string&) {
     auto const& instr = ex.bc_.instructions[pc];
     bool cond = false;
     if (ex.loop_) {
@@ -1965,14 +1742,14 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
     return {};
   }
 
-  INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_emit_if_filtered(bc_executor& ex, std::size_t& pc, std::string& filtered) noexcept {
+  INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_emit_if_filtered(bc_executor& ex, std::size_t& pc, std::string& filtered) {
     auto const& instr = ex.bc_.instructions[pc];
     bool cond = !filtered.empty() && filtered != "false" && filtered != "0";
     if (!cond) { pc = instr.operand; } else { ++pc; }
     return {};
   }
 
-  static std::expected<void, error_ctx> handle_call_partial(bc_executor& ex, std::size_t& pc, std::string&) noexcept {
+  static std::expected<void, error_ctx> handle_call_partial(bc_executor& ex, std::size_t& pc, std::string&) {
     auto const& instr = ex.bc_.instructions[pc];
     if (instr.operand >= ex.bc_.partial_entries.size()) {
       return std::unexpected(error_ctx{.position = pc, .ec = error_code::syntax_error});
@@ -1990,15 +1767,13 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
   }
 
 public:
-  bc_executor(bytecode const& bc, T const& value, RootT const& root_value, bc_loop_state const* loop, Sink& out,
-              std::string* shared_filtered = nullptr) noexcept
-      : bc_(bc), value_(value), root_value_(root_value), loop_(loop), out_(out), filtered_shared_(shared_filtered) {}
+  bc_executor(bytecode const& bc, T const& value, RootT const& root_value, bc_loop_state const* loop, Sink& out, std::string* shared_filtered = nullptr) : bc_(bc), value_(value), root_value_(root_value), loop_(loop), out_(out), filtered_shared_(shared_filtered) {}
 
   /**
    * @brief バイトコードの実行を開始する
    * @return std::expected<void, error_ctx> 実行結果
    */
-  std::expected<void, error_ctx> execute() noexcept { return execute_impl(0, bc_.instructions.size()); }
+  std::expected<void, error_ctx> execute() { return execute_impl(0, bc_.instructions.size()); }
 
   /**
    * @brief バイトコードを指定範囲で実行する（内部実装）
@@ -2010,7 +1785,7 @@ public:
    *          各命令ハンドラは L_emit_* ラベルとして実装され、DISPATCH マクロで
    *          次の命令にジャンプする。
    */
-  std::expected<void, error_ctx> execute_impl(std::size_t start, std::size_t end) noexcept {
+  std::expected<void, error_ctx> execute_impl(std::size_t start, std::size_t end) {
     std::size_t pc = start;
     std::string& filtered_value_ = filtered_shared_ ? *filtered_shared_ : filtered_scratch_;
     filtered_value_.clear();
@@ -2024,32 +1799,18 @@ public:
             auto const& instr = bc_.instructions[i];
             switch (instr.op) {
               case bc_opcode::emit_literal:
-                if (!try_append_buf(out_, bc_.literals[instr.operand])) return oom_error();
+                out_.append(bc_.literals[instr.operand]);
                 break;
               case bc_opcode::emit_litvar:
               case bc_opcode::emit_litvar_raw: {
-                if (!try_append_buf(out_, bc_.literals[instr.operand])) return oom_error();
+                out_.append(bc_.literals[instr.operand]);
                 auto const& ref = bc_.var_refs[instr.operand2];
                 if (ref.is_dead) break;
                 bool raw = (instr.op == bc_opcode::emit_litvar_raw);
-                bool skip_scan = false;
-                if (ref.is_loop_parent) {
-                  auto lr = resolve_loop_parent_var(*this, ref.special, raw);
-                  if (!lr) return std::unexpected(lr.error());
-                  skip_scan = *lr;
-                }
-                if (!skip_scan) {
-                  bool lit_found = false;
+                if (!ref.is_loop_parent || !resolve_loop_parent_var(*this, ref.special, raw)) {
                   auto r = for_each_field_ref(value_, ref,
-                    [&](auto const& field) -> std::expected<void, error_ctx> {
-                      lit_found = true;
-                      return emit_var_value(field, raw);
-                    });
+                    [&](auto const& field) { emit_var_value(field, raw); });
                   if (!r) return r;
-                  // expected-visitor 化したため void パスが返していた unknown_key をここで合成する。
-                  if (!lit_found && void_path_miss_is_error(ref)) {
-                    return std::unexpected(error_ctx{.ec = error_code::unknown_key});
-                  }
                 }
                 break;
               }
@@ -2058,34 +1819,18 @@ public:
                 auto const& ref = bc_.var_refs[instr.operand];
                 if (ref.is_dead) break;
                 bool raw = (instr.op == bc_opcode::emit_var_raw);
-                bool skip_scan = false;
-                if (ref.is_loop_parent) {
-                  auto lr = resolve_loop_parent_var(*this, ref.special, raw);
-                  if (!lr) return std::unexpected(lr.error());
-                  skip_scan = *lr;
-                }
-                if (!skip_scan) {
-                  if (ref.binding_first && ref.special == special_var_kind::none) {
-                    auto br = try_resolve_loop_binding(*this, ref, raw);
-                    if (!br) return std::unexpected(br.error());
+                if (!ref.is_loop_parent || !resolve_loop_parent_var(*this, ref.special, raw)) {
+                  bool        found = false;
+                  if (ref.binding_first && ref.special == special_var_kind::none && try_resolve_loop_binding(*this, ref, raw)) {
+                    found = true;
                   } else {
-                    bool found = false;
                     auto r = for_each_field_ref(value_, ref,
-                      [&](auto const& field) -> std::expected<void, error_ctx> {
-                        found = true;
-                        return emit_var_value(field, raw);
-                      });
-                    if (!r) return std::unexpected(r.error());
-                    if (!found) {
-                      auto br = try_resolve_loop_binding(*this, ref, raw);
-                      if (!br) return std::unexpected(br.error());
-                      found = *br;
-                    }
-                    // expected-visitor 化したため void パスが返していた unknown_key をここで合成する。
-                    if (!found && void_path_miss_is_error(ref)) {
-                      return std::unexpected(error_ctx{.ec = error_code::unknown_key});
-                    }
+                      [&](auto const& field) { found = true; emit_var_value(field, raw); });
+                    if (!r && r.error().ec != error_code::unknown_key) return std::unexpected(r.error());
+                    if (!found && try_resolve_loop_binding(*this, ref, raw)) found = true;
+                    else if (!r) return std::unexpected(r.error());
                   }
+                  (void)found;
                 }
                 break;
               }
@@ -2326,7 +2071,7 @@ private:
  * @return 推定出力サイズ
  */
 template <class T>
-std::size_t estimate_output_size(bytecode const& bc, T const&) noexcept {
+std::size_t estimate_output_size(bytecode const& bc, T const&) {
   return bc.literal_total_size * 4 + bc.var_refs.size() * 32;
 }
 
@@ -2338,24 +2083,14 @@ std::size_t estimate_output_size(bytecode const& bc, T const&) noexcept {
  * @return std::expected<std::string, error_ctx> レンダリング結果
  */
 template <class T>
-std::expected<std::string, error_ctx> bc_execute(bytecode const& bc, T const& value, std::size_t size_hint) noexcept {
+std::expected<std::string, error_ctx> bc_execute(bytecode const& bc, T const& value, std::size_t size_hint) {
   if (bc.error.ec != error_code::none)
     return std::unexpected(bc.error);
   std::string out;
   auto        estimated = estimate_output_size(bc, value);
   /** 前回レンダリングの実測サイズ（engine が渡す）を優先して再確保を防ぐ */
   if (size_hint > estimated) estimated = size_hint;
-  if (estimated > 32) {
-#if INJAMM_HAS_EXCEPTIONS
-    try {
-      out.reserve(estimated);
-    } catch (...) {
-      return std::unexpected(error_ctx{.ec = error_code::out_of_memory});
-    }
-#else
-    out.reserve(estimated);
-#endif
-  }
+  if (estimated > 32) out.reserve(estimated);
   bc_executor<T> exec(bc, value, value, nullptr, out);
   auto           r = exec.execute();
   if (!r) {
@@ -2373,20 +2108,10 @@ std::expected<std::string, error_ctx> bc_execute(bytecode const& bc, T const& va
  * @return std::expected<void, error_ctx> 実行結果
  */
 template <class T>
-std::expected<void, error_ctx> bc_execute_into(bytecode const& bc, T const& value, std::string& out) noexcept {
+std::expected<void, error_ctx> bc_execute_into(bytecode const& bc, T const& value, std::string& out) {
   out.clear();
   auto estimated = estimate_output_size(bc, value);
-  if (estimated > 32 && out.capacity() < estimated) {
-#if INJAMM_HAS_EXCEPTIONS
-    try {
-      out.reserve(estimated);
-    } catch (...) {
-      return std::unexpected(error_ctx{.ec = error_code::out_of_memory});
-    }
-#else
-    out.reserve(estimated);
-#endif
-  }
+  if (estimated > 32 && out.capacity() < estimated) out.reserve(estimated);
   bc_executor<T> exec(bc, value, value, nullptr, out);
   return exec.execute();
 }
@@ -2403,7 +2128,7 @@ std::expected<void, error_ctx> bc_execute_into(bytecode const& bc, T const& valu
  */
 template <class T, class Sink>
   requires output_sink<Sink>
-std::expected<void, error_ctx> bc_execute_into_sink(bytecode const& bc, T const& value, Sink& sink) noexcept {
+std::expected<void, error_ctx> bc_execute_into_sink(bytecode const& bc, T const& value, Sink& sink) {
   bc_executor<T, T, Sink> exec(bc, value, value, nullptr, sink);
   return exec.execute();
 }

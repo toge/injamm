@@ -41,21 +41,16 @@ TEST_CASE("try_append and try_push_back succeed", "[noexcept]") {
   CHECK(err.ec == injamm::error_code::none);
 }
 
-TEST_CASE("string/float filters are fallible and noexcept", "[noexcept]") {
+TEST_CASE("string/float filters are void direct appends", "[noexcept]") {
   std::string s = "abc";
   injamm::detail::string_filter_entry se{injamm::detail::string_filter::upper};
-  auto r = injamm::detail::apply_string_filter(s, se);
-  CHECK(r);
+  injamm::detail::apply_string_filter(s, se);
   CHECK(s == "ABC");
 
   std::string f = "3.14159";
   injamm::detail::float_filter_entry fe{injamm::detail::float_filter::precision, 2};
-  auto rf = injamm::detail::apply_float_filter(f, fe);
-  CHECK(rf);
+  injamm::detail::apply_float_filter(f, fe);
   CHECK(f == "3.14");
-
-  static_assert(noexcept(injamm::detail::apply_string_filter(s, se)));
-  static_assert(noexcept(injamm::detail::apply_float_filter(f, fe)));
 }
 
 TEST_CASE("serialize_formatted maps format_error to invalid_format", "[noexcept]") {
@@ -72,8 +67,7 @@ TEST_CASE("invalid format propagates through filtered render", "[noexcept]") {
   CHECK(r.error().ec == injamm::error_code::invalid_format);
 }
 
-TEST_CASE("runtime paths are noexcept and propagate OOM as expected", "[noexcept]") {
-  static_assert(noexcept(injamm::detail::bc_execute_into(std::declval<injamm::detail::bytecode const&>(), std::declval<NoexceptFmtCtx const&>(), std::declval<std::string&>())));
+TEST_CASE("compile path stays noexcept, error codes intact", "[noexcept]") {
   static_assert(noexcept(injamm::detail::bc_compile<NoexceptFmtCtx>(std::declval<std::string_view>())));
   CHECK(injamm::error_code_to_message(injamm::error_code::out_of_memory) == "Out of memory");
 }
