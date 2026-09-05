@@ -2,7 +2,7 @@
 
 ## 2026-09-05
 
-- `docs: document no-runtime-exceptions guarantee` — 実行時パスは例外を送出せず OOM は `out_of_memory`（9）、不正フォーマットは `invalid_format`（10）を `expected` で返すことを README / SYNTAX のエラーコード表に追記。コンパイル時診断の `INJAMM_THROW` は維持。`test_noexcept` を CI ゲート化
+- `docs: document no-runtime-exceptions guarantee` — 実行時パスは例外を送出せず OOM は `out_of_memory`（9）、不正フォーマットは `invalid_format`（10）を `expected` で返すことを README / SYNTAX のエラーコード表に追記。コンパイル時診断の `INJAMM_THROW` は維持。`test_noexcept` で検証、throw/try-catch の CI grep 検査あり
 
 ## 2026-09-02
 

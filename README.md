@@ -766,7 +766,7 @@ auto eng = injamm::engine<User>(std::move(*bc));
 | 9   | out_of_memory  | メモリ不足                 |
 | 10  | invalid_format | 不正なフォーマット文字列   |
 
-実行時無例外保証: 実行時パスは例外を送出しません。OOM は `out_of_memory`、不正フォーマットは `invalid_format` を `expected` で返します。コンパイル時診断の `INJAMM_THROW` は維持されます（CI の `test_noexcept` でゲート）。
+実行時無例外保証: 実行時パスは例外を送出しません。OOM は `out_of_memory`、不正フォーマットは `invalid_format` を `expected` で返します。コンパイル時診断の `INJAMM_THROW` は維持されます（`test_noexcept` で検証、throw/try-catch の CI grep 検査あり）。
 
 ### エラー診断・フォーマット（`formatError` / `error_ctx::format`）
 
