@@ -540,7 +540,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
   }
 
   /** @brief loop.parent.* 変数の解決。解決できれば true を返す（kind はコンパイル時分類済み） */
-  static auto resolve_loop_parent_var(bc_executor const& ex, special_var_kind kind, bool raw) -> bool {
+  static bool resolve_loop_parent_var(bc_executor const& ex, special_var_kind kind, bool raw) {
     // 呼び出し側で ref.is_loop_parent により事前ゲート済み。文字列比較は不要。
     if (!ex.loop_) return false;
     auto parent = ex.loop_->parent;
