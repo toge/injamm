@@ -112,10 +112,17 @@ target_compile_options(test_no_exceptions PRIVATE $<$<NOT:$<CXX_COMPILER_ID:MSVC
 add_test(NAME no_exceptions_smoke COMMAND test_no_exceptions)
 
 # ---- Tests & Examples ----
+# WASI: Catch2 は例外が必須のため使用不可。vcpkg.json でも catch2 を
+# `emscripten | !wasm32` に限定している。WASI ビルドは Catch2 不要の
+# test_no_exceptions のみ実行する。
 if(BUILD_TEST)
   enable_testing()
 
-  if(EMSCRIPTEN)
+  # WASI では Catch2 テストをスキップし test_no_exceptions のみ使う。
+  # (Catch2 は例外必須、vcpkg.json でも wasm32 を除外済み)
+  if(CMAKE_SYSTEM_NAME STREQUAL "WASI")
+    message(STATUS "WASI: skipping Catch2 tests (use test_no_exceptions)")
+  elseif(EMSCRIPTEN)
     # Emscripten: vcpkg がインストールした Catch2 静的ライブラリは
     # -sNO_DISABLE_EXCEPTION_CATCHING なしでコンパイルされているため、
     # Catch2 の例外翻訳関数が正しく動作しない。
@@ -156,35 +163,37 @@ if(BUILD_TEST)
     set(_need_custom_main FALSE)
   endif()
 
-  add_executable(injamm_tests
-    tests/test_injamm.cpp
-    tests/test_injamm_ct.cpp
-    tests/test_injamm_ja.cpp
-    tests/test_ct_overload.cpp
-    tests/test_ct_exec_crosscheck.cpp
-    tests/test_noexcept.cpp
-  )
-  if(_need_custom_main)
-    target_sources(injamm_tests PRIVATE tests/em_catch2_main.cpp)
-  endif()
-  target_link_libraries(injamm_tests PRIVATE injamm ${_catch2_targets})
-  target_include_directories(injamm_tests PRIVATE include)
-  target_compile_features(injamm_tests PRIVATE cxx_std_23)
-  if(EMSCRIPTEN)
-    target_compile_options(injamm_tests PRIVATE "-sNO_DISABLE_EXCEPTION_CATCHING")
-  endif()
-
-  # Optional: FrozenString NTTP tests (frozenchars header-only library)
-  # Clang 互換性問題があるため非 GCC コンパイラではスキップ
-  if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
-    find_package(frozenchars CONFIG QUIET)
-    if(frozenchars_FOUND)
-      target_link_libraries(injamm_tests PRIVATE frozenchars::frozenchars)
-      target_compile_definitions(injamm_tests PRIVATE INJAMM_HAS_FROZENCHARS=1)
+  if(NOT CMAKE_SYSTEM_NAME STREQUAL "WASI")
+    add_executable(injamm_tests
+      tests/test_injamm.cpp
+      tests/test_injamm_ct.cpp
+      tests/test_injamm_ja.cpp
+      tests/test_ct_overload.cpp
+      tests/test_ct_exec_crosscheck.cpp
+      tests/test_noexcept.cpp
+    )
+    if(_need_custom_main)
+      target_sources(injamm_tests PRIVATE tests/em_catch2_main.cpp)
     endif()
-  endif()
+    target_link_libraries(injamm_tests PRIVATE injamm ${_catch2_targets})
+    target_include_directories(injamm_tests PRIVATE include)
+    target_compile_features(injamm_tests PRIVATE cxx_std_23)
+    if(EMSCRIPTEN)
+      target_compile_options(injamm_tests PRIVATE "-sNO_DISABLE_EXCEPTION_CATCHING")
+    endif()
 
-  add_test(NAME injamm_tests COMMAND injamm_tests)
+    # Optional: FrozenString NTTP tests (frozenchars header-only library)
+    # Clang 互換性問題があるため非 GCC コンパイラではスキップ
+    if(CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
+      find_package(frozenchars CONFIG QUIET)
+      if(frozenchars_FOUND)
+        target_link_libraries(injamm_tests PRIVATE frozenchars::frozenchars)
+        target_compile_definitions(injamm_tests PRIVATE INJAMM_HAS_FROZENCHARS=1)
+      endif()
+    endif()
+
+    add_test(NAME injamm_tests COMMAND injamm_tests)
+  endif()
 endif()
 
 if(BUILD_EXAMPLE)

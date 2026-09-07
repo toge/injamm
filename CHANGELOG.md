@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-09-07
+
+- `fix: wasip1/wasip2 で Catch2 が見つからず configure エラーになる問題を修正` — `vcpkg.json` が catch2 を `emscripten | !wasm32` に限定しているのに `CMakeLists.txt` が WASI でも `find_package(Catch2 CONFIG REQUIRED)` していたのが原因。WASI時は `injamm_tests` をスキップし Catch2 不要の `test_no_exceptions` のみビルドするようガード（`enable_testing()` は維持）。CI の wasip1/wasip2 ジョブと README の WASI 手順に `-DBUILD_TEST=OFF -DBUILD_EXAMPLE=OFF` を追加
+
 ## 2026-09-05
 
 - `perf: mark cold OOM/format helpers gnu::cold to protect hot inline budget` — 粗粒度化後の wide 系 ~10% 残差を解析した結果、原因はホットパスの分岐ではなく TU 全体のインライン収支逼迫と判明（`--param=inline-unit-growth` 拡大で回復を確認）。`serialize_value.hpp` の cold 専用ヘルパ（`try_append_buf` / `oom_error` / `invalid_format_error` / `serialize_formatted`）に `[[gnu::cold]]` を付与し、マイクロベンチでベースラインに完全回復。全体でも総命令数 +0.7% で実質同等

@@ -587,7 +587,9 @@ cmake -B build-wasi -S . -G Ninja \
   -DCMAKE_TOOLCHAIN_FILE=~/vm/vcpkg/scripts/buildsystems/vcpkg.cmake \
   -DVCPKG_TARGET_TRIPLET=wasm32-wasip1 \
   -DVCPKG_OVERLAY_TRIPLETS=$PWD/triplets \
-  -DCMAKE_CXX_FLAGS="-fno-exceptions -fno-rtti"
+  -DCMAKE_CXX_FLAGS="-fno-exceptions -fno-rtti" \
+  -DBUILD_TEST=OFF \
+  -DBUILD_EXAMPLE=OFF
 cmake --build build-wasi
 file build-wasi/test_no_exceptions  # WebAssembly
 
@@ -596,7 +598,9 @@ cmake -B build-wasi-p2 -S . -G Ninja \
   -DCMAKE_TOOLCHAIN_FILE=~/vm/vcpkg/scripts/buildsystems/vcpkg.cmake \
   -DVCPKG_TARGET_TRIPLET=wasm32-wasip2 \
   -DVCPKG_OVERLAY_TRIPLETS=$PWD/triplets \
-  -DCMAKE_CXX_FLAGS="-fno-exceptions -fno-rtti"
+  -DCMAKE_CXX_FLAGS="-fno-exceptions -fno-rtti" \
+  -DBUILD_TEST=OFF \
+  -DBUILD_EXAMPLE=OFF
 cmake --build build-wasi-p2
 file build-wasi-p2/test_no_exceptions  # WebAssembly
 ```

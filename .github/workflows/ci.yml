@@ -480,7 +480,9 @@ jobs:
             -DVCPKG_TARGET_TRIPLET=wasm32-wasip1 \
             -DVCPKG_OVERLAY_TRIPLETS=$PWD/triplets \
             -DVCPKG_CHAINLOAD_TOOLCHAIN_FILE=/opt/wasi-sdk/share/cmake/wasi-sdk-p1.cmake \
-            -DCMAKE_CXX_FLAGS="-fno-exceptions -fno-rtti"
+            -DCMAKE_CXX_FLAGS="-fno-exceptions -fno-rtti" \
+            -DBUILD_TEST=OFF \
+            -DBUILD_EXAMPLE=OFF
           cmake --build build
           file build/test_no_exceptions | grep -q WebAssembly
 
@@ -550,7 +552,9 @@ jobs:
             -DVCPKG_TARGET_TRIPLET=wasm32-wasip2 \
             -DVCPKG_OVERLAY_TRIPLETS=$PWD/triplets \
             -DVCPKG_CHAINLOAD_TOOLCHAIN_FILE=/opt/wasi-sdk/share/cmake/wasi-sdk-p2.cmake \
-            -DCMAKE_CXX_FLAGS="-fno-exceptions -fno-rtti"
+            -DCMAKE_CXX_FLAGS="-fno-exceptions -fno-rtti" \
+            -DBUILD_TEST=OFF \
+            -DBUILD_EXAMPLE=OFF
           cmake --build build
           file build/test_no_exceptions | grep -q WebAssembly
 
