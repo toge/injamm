@@ -468,10 +468,14 @@ jobs:
             ~/vcpkg/bootstrap-vcpkg.sh
           fi
 
-      - name: Install wasmedge
+      - name: Install wasmtime
         run: |
-          curl -sSf --max-time 300 https://raw.githubusercontent.com/WasmEdge/WasmEdge/master/utils/install_v2.sh | bash -s -- --version=0.17.1
-          echo "$HOME/.wasmedge/bin" >> $GITHUB_PATH
+          WASMTIME_VERSION=$(curl -s https://api.github.com/repos/bytecodealliance/wasmtime/releases/latest | grep '"tag_name":' | sed -E 's/.*"v([^"]+)".*/\1/')
+          curl -sSL "https://github.com/bytecodealliance/wasmtime/releases/latest/download/wasmtime-v${WASMTIME_VERSION}-x86_64-linux.tar.xz" -o /tmp/wasmtime.tar.xz
+          tar -xf /tmp/wasmtime.tar.xz -C /tmp
+          WASMTIME_DIR="/tmp/wasmtime-v${WASMTIME_VERSION}-x86_64-linux"
+          echo "${WASMTIME_DIR}" >> $GITHUB_PATH
+          "${WASMTIME_DIR}/wasmtime" --version
 
       - name: Build WASM with vcpkg + wasi-sdk (wasip1, -fno-exceptions)
         run: |
@@ -486,8 +490,8 @@ jobs:
           cmake --build build
           file build/test_no_exceptions | grep -q WebAssembly
 
-      - name: Run WASM binary with wasmedge (wasip1)
-        run: wasmedge build/test_no_exceptions
+      - name: Run WASM binary with wasmtime (wasip1)
+        run: wasmtime run build/test_no_exceptions
 
       - name: Verify no direct throw/try/catch (except helpers)
         run: |
@@ -540,10 +544,14 @@ jobs:
             ~/vcpkg/bootstrap-vcpkg.sh
           fi
 
-      - name: Install wasmedge
+      - name: Install wasmtime
         run: |
-          curl -sSf --max-time 300 https://raw.githubusercontent.com/WasmEdge/WasmEdge/master/utils/install_v2.sh | bash -s -- --version=0.17.1
-          echo "$HOME/.wasmedge/bin" >> $GITHUB_PATH
+          WASMTIME_VERSION=$(curl -s https://api.github.com/repos/bytecodealliance/wasmtime/releases/latest | grep '"tag_name":' | sed -E 's/.*"v([^"]+)".*/\1/')
+          curl -sSL "https://github.com/bytecodealliance/wasmtime/releases/latest/download/wasmtime-v${WASMTIME_VERSION}-x86_64-linux.tar.xz" -o /tmp/wasmtime.tar.xz
+          tar -xf /tmp/wasmtime.tar.xz -C /tmp
+          WASMTIME_DIR="/tmp/wasmtime-v${WASMTIME_VERSION}-x86_64-linux"
+          echo "${WASMTIME_DIR}" >> $GITHUB_PATH
+          "${WASMTIME_DIR}/wasmtime" --version
 
       - name: Build WASM with vcpkg + wasi-sdk (wasip2, -fno-exceptions)
         run: |
@@ -558,8 +566,8 @@ jobs:
           cmake --build build
           file build/test_no_exceptions | grep -q WebAssembly
 
-      - name: Run WASM binary with wasmedge (wasip2)
-        run: wasmedge build/test_no_exceptions
+      - name: Run WASM binary with wasmtime (wasip2)
+        run: wasmtime run build/test_no_exceptions
 
   macos:
     runs-on: macos-latest
