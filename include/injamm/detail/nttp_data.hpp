@@ -513,7 +513,7 @@ namespace detail {
   };
 
   template <std::size_t N>
-  consteval partial_closure<N> compute_partial_closure(ct_parsed_template<N> const& p, std::string_view sv, std::string_view target) {
+  consteval partial_closure<N> compute_partial_closure(ct_parsed_template<N> const& p, std::string_view sv, std::string_view target) noexcept {
     partial_closure<N> result;
     std::size_t target_idx = static_cast<std::size_t>(-1);
     for (std::size_t i = 0; i < p.partial_count; ++i) {

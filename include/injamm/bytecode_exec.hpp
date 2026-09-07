@@ -733,7 +733,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
     std::string_view join_sep;     /**< join の区切り文字 (空なら join なし) */
   };
 
-  static section_window fold_section_ops(bc_var_ref const& ref, std::uint32_t sz) {
+  static section_window fold_section_ops(bc_var_ref const& ref, std::uint32_t sz) noexcept {
     section_window w{0, sz, false};
     for (std::uint8_t i = 0; i < ref.section_op_count; ++i) {
       auto const& op = ref.section_ops[i];
@@ -777,7 +777,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
 
   /** @brief 絶対インデックスがウィンドウ・stride 条件を満たすか判定する
    *  @details bwd 時は stride パターンを hi 側基準でミラーする（既存 take/skip の末尾基準と同じ規則）。 */
-  static bool kept(section_window const& w, std::uint32_t abs_idx) {
+  static bool kept(section_window const& w, std::uint32_t abs_idx) noexcept {
     if (abs_idx < w.lo || abs_idx >= w.hi) return false;
     if (!w.has_stride) return true;
     if (w.stride_take == 0) return false;
@@ -787,7 +787,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
   }
 
   /** @brief ウィンドウ内で kept() を満たす要素数 */
-  static std::uint32_t kept_count(section_window const& w) {
+  static std::uint32_t kept_count(section_window const& w) noexcept {
     auto size = w.hi - w.lo;
     if (!w.has_stride) return size;
     if (w.stride_take == 0) return 0;
@@ -1597,7 +1597,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
 
   /** @brief 数値比較の共通ヘルパ（emit_if_eq/ne/gt/gte/lt/lte）。整数・実数共用。 */
   template <class U>
-  static bool compare_vals(bc_opcode op, U lv, U rv) {
+  static bool compare_vals(bc_opcode op, U lv, U rv) noexcept {
     switch (op) {
     case bc_opcode::emit_if_eq:  return lv == rv;
     case bc_opcode::emit_if_ne:  return lv != rv;

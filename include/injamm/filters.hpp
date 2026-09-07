@@ -41,7 +41,7 @@ namespace injamm::detail {
  * @param str 対象の文字列
  * @param entry 適用するフィルタの種別と引数
  */
-constexpr void apply_string_filter(std::string& str, string_filter_entry entry) {
+constexpr void apply_string_filter(std::string& str, string_filter_entry const& entry) {
   switch (entry.filter) {
   case string_filter::upper:
     for (auto& c : str) {
@@ -306,7 +306,7 @@ constexpr void apply_string_filter(std::string& str, string_filter_entry entry) 
  * @param str 対象の文字列
  * @param entry 適用するフィルタの種別と引数
  */
-[[nodiscard]] constexpr std::expected<void, error_ctx> apply_int_filter(std::string& str, int_filter_entry entry) {
+[[nodiscard]] constexpr std::expected<void, error_ctx> apply_int_filter(std::string& str, int_filter_entry const& entry) {
   switch (entry.filter) {
   case int_filter::abs: {
     auto data = str.data();
@@ -746,7 +746,7 @@ constexpr void apply_string_filter(std::string& str, string_filter_entry entry) 
  * @param str 対象の文字列
  * @param entry 適用するフィルタの種別と引数
  */
-constexpr void apply_float_filter(std::string& str, float_filter_entry entry) {
+constexpr void apply_float_filter(std::string& str, float_filter_entry const& entry) {
   switch (entry.filter) {
   case float_filter::precision: {
     double val{};

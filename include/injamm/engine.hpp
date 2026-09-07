@@ -248,7 +248,7 @@ class engine {
    *          出力する。命令列・リテラルテーブル・変数参照テーブルを含む。
    * @return std::string 逆アセンブル結果
    */
-  [[nodiscard]] std::string disassemble() const { return bc_.disassemble(); }
+  [[nodiscard]] std::string disassemble() const noexcept { return bc_.disassemble(); }
 
   /**
    * @brief 内部バイトコードへの const 参照を取得する
@@ -258,7 +258,7 @@ class engine {
    *
    * @return detail::bytecode const& 内部バイトコードへの const 参照
    */
-  [[nodiscard]] detail::bytecode const& get_bytecode() const { return bc_; }
+  [[nodiscard]] detail::bytecode const& get_bytecode() const noexcept { return bc_; }
 };
 
 /**

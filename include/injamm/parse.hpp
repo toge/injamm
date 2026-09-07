@@ -557,7 +557,7 @@ struct pipe_parts {
  * @param input 入力文字列
  * @return 分割された文字列の固定サイズ配列
  */
-[[nodiscard]] constexpr pipe_parts split_by_pipe(std::string_view input) {
+[[nodiscard]] constexpr pipe_parts split_by_pipe(std::string_view input) noexcept {
   pipe_parts  result;
   std::size_t pos = 0;
   while (pos < input.size() && result.count < pipe_parts::max_parts) {

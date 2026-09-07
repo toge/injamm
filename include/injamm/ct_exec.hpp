@@ -41,7 +41,7 @@ inline constexpr bool ct_exec_dependent_false = false;
 //  opcode 分類
 // ============================================================================
 
-constexpr bool ct_is_straight_op(bc_opcode op) {
+constexpr bool ct_is_straight_op(bc_opcode op) noexcept {
   switch (op) {
     case bc_opcode::emit_literal:
     case bc_opcode::emit_var:
@@ -56,7 +56,7 @@ constexpr bool ct_is_straight_op(bc_opcode op) {
 }
 
 /** @brief ブロック開始命令（セクション/条件分岐）。span 区間の委譲対象。 */
-constexpr bool ct_is_block_start_op(bc_opcode op) {
+constexpr bool ct_is_block_start_op(bc_opcode op) noexcept {
   switch (op) {
     case bc_opcode::emit_section:
     case bc_opcode::emit_inverted:
@@ -90,7 +90,7 @@ constexpr bool ct_is_block_start_op(bc_opcode op) {
  * @return ブロック末尾のインデックス（ terminator の次）。不正な構造の場合は bc.instr_count
  */
 template <std::size_t N>
-constexpr std::size_t ct_span_end(ct_bytecode<N> const& bc, std::size_t start) {
+constexpr std::size_t ct_span_end(ct_bytecode<N> const& bc, std::size_t start) noexcept {
   std::size_t depth = 0;
   for (std::size_t i = start; i < bc.instr_count; ++i) {
     auto op = bc.instructions[i].op;

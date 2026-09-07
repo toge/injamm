@@ -284,14 +284,14 @@ struct bytecode {
    * @brief 現在の命令数を取得する
    * @return 命令列のサイズ
    */
-  std::size_t current_offset() const { return instructions.size(); }
+  std::size_t current_offset() const noexcept { return instructions.size(); }
 
   /**
    * @brief 指定した命令のジャンプ先オペランドを書き換える
    * @param instr_idx 書き換え対象の命令インデックス
    * @param target ジャンプ先オフセット
    */
-  void patch_jump(std::size_t instr_idx, std::uint32_t target) {
+  void patch_jump(std::size_t instr_idx, std::uint32_t target) noexcept {
     instructions[instr_idx].operand = target;
   }
 

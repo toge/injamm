@@ -110,9 +110,9 @@ struct ct_bytecode_builder {
     ++bc.instr_count;
   }
 
-  constexpr std::size_t current_offset() const { return bc.instr_count; }
+  constexpr std::size_t current_offset() const noexcept { return bc.instr_count; }
 
-  constexpr void patch_jump(std::size_t idx, std::uint32_t target) {
+  constexpr void patch_jump(std::size_t idx, std::uint32_t target) noexcept {
     bc.instructions[idx].operand = target;
   }
 };
