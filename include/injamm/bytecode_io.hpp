@@ -723,7 +723,7 @@ expected<detail::bytecode> load_bytecode(std::istream& is) {
 /**
  * @brief バイトコードをバイト列（vector<uint8_t>）に保存する
  *
- * INJAMM_WASI_MINIMAL でも使用可能。出力バッファに追記する。
+ * 例外なしビルドでも使用可能。出力バッファに追記する。
  * @param bc 保存するバイトコード
  * @param out 出力先バッファ（追記）
  * @return error_code エラーコード（現在は常に none）
@@ -739,7 +739,7 @@ expected<detail::bytecode> load_bytecode(std::istream& is) {
 /**
  * @brief バイト列（span<const uint8_t>）からバイトコードを読み込む
  *
- * INJAMM_WASI_MINIMAL でも使用可能。ゼロコピーで読み込む。
+ * 例外なしビルドでも使用可能。ゼロコピーで読み込む。
  * @tparam T コンテキスト型（field_index 再解決に使用）
  * @param buf 入力バイト列
  * @return expected<detail::bytecode> 読み込まれたバイトコード、またはエラー

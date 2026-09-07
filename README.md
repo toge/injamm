@@ -58,8 +58,7 @@ cmake --build build
 | `BUILD_TEST`               | ON     | テストをビルドする                                       |
 | `BUILD_EXAMPLE`            | ON     | サンプルをビルドする                                     |
 | `BUILD_UTIL`               | OFF    | CLI ユーティリティ（`injamm_bc` / `injamm_codegen`）をビルドする            |
-| `ENABLE_ENUM`              | ON     | enchantum による enum 文字列出力を有効化（WASI minimal でも有効。`ENCHANTUM_THROW` を `trap` に差し替えて動作） |
-| `ENABLE_WASI_MINIMAL`      | OFF    | WASI minimal 環境向けに例外を無効化（自動検出なし、明示指定のみ。`wasm32-unknown-unknown` (freestanding) は非対応、[WASI minimal 対応](#wasi-minimal-対応)参照） |
+| `ENABLE_ENUM`              | ON     | enchantum による enum 文字列出力を有効化（`-fno-exceptions` でも `ENCHANTUM_THROW` を `trap` に差し替えて動作） |
 
 ### find_package
 
@@ -558,61 +557,48 @@ auto r3 = injamm::render<"{{title}}: {{status}}">(Task{"fix bug", Status::Active
 {{age | abs | numify}}         // -1234567 → "1,234,567"
 ```
 
-## WASI minimal 対応
+## wasip1 対応
 
-Wasm など例外が利用できない環境でも使用できます。
+Wasm など例外が利用できない環境でも使用できます（frozenchars と同様）。
 
 `wasm32-wasip1` + `wasi-sdk` の hosted 環境（`<iostream>`/`<chrono>` が利用可能）に対応しています。
-CMake オプション `ENABLE_WASI_MINIMAL=ON`、またはマクロ `INJAMM_WASI_MINIMAL` を直接定義して有効化します。
-自動検出は行いません。
+ライブラリは既定で例外なしでも動作するため、wasip1 ビルド時はユーザーが `-fno-exceptions` を直接指定します。
 
 `wasm32-unknown-unknown` (freestanding, `-nostdlib`) は hosted stdlib (`glaze`, `<string>` 等) に依存するため非対応です。
 
-wasm32-wasip2 環境の対応は現時点では未検証です。
+### 制限
 
-### 制限（無効化される機能）
+- **Catch2 テスト**: 例外が必要なため wasip1 ビルド時は無効（`no_exceptions_smoke` のみ実行）
 
-`INJAMM_WASI_MINIMAL` は例外のみを無効化します。`wasm32-wasip1` は `wasi-sdk` の hosted 環境で `<iostream>`（`<istream>`/`<ostream>`）や `<chrono>` が利用可能なため、`INJAMM_NO_BYTECODE_IO` / `INJAMM_NO_CHRONO` は定義されません（`frozenchars` の `FROZENCHARS_WASI_MINIMAL` と同様）。
+### 例外なし対応
 
-`wasm32-wasip2` 環境の対応は現時点では未検証です。wasi-sdk が正式対応したら検証予定です。
-
-| 機能                                                       | 理由                                          |
-| ---------------------------------------------------------- | --------------------------------------------- |
-| Catch2 テスト（`injamm_tests`）                             | 例外必須のため無効（`wasi_minimal_smoke` のみ） |
-
-通常ビルド（`ENABLE_WASI_MINIMAL=OFF`）では `format` / `enum` / Catch2 は有効です（WASI minimal でも `format` / `enum` は `trap/abort` フォールバックで有効。不正フォーマットは `trap`）。
-
-`INJAMM_NO_BYTECODE_IO` / `INJAMM_NO_CHRONO` / `INJAMM_NO_FMT` / `INJAMM_NO_ENUM_REGISTRY`
-の各サブガードは個別に手動定義可能です。`WASI_MINIMAL` 定義時に自動で無効になるサブガードはありません（`FMT`/`ENUM` とも `trap/abort` フォールバックで有効）。
-
-### 例外なし（WASI minimal のみ）対応
-
-例外は `ENABLE_WASI_MINIMAL=ON` のときのみ無効化されます（`-fno-exceptions -fno-rtti` 付与）。
-通常ビルド（`OFF`）では例外有効で `throw` / `try/catch` が使用可能です。
-
-- **実装**: `config.hpp` で `INJAMM_WASI_MINIMAL` 定義時に `INJAMM_NO_EXCEPTIONS` を自動定義し、`INJAMM_HAS_EXCEPTIONS` は `0`、`INJAMM_THROW` は `__builtin_trap()`（wasm では `unreachable`）/ `std::abort()` に展開。`bytecode_io.hpp` の `try_reserve`/`try_assign` は `INJAMM_HAS_EXCEPTIONS` で分岐（有効時は `try/catch`、無効時は `max_size` チェック）。`serialize_value.hpp` の `vformat` も `HAS_EXCEPTIONS` で `try/catch` を分岐。通常ビルドでは通常の例外機構がそのまま動作します。
-- **WASI 時のみ無効な機能**: `frozenchars` の `FrozenString` (`_fs`) — 例外に依存するため `WASI_MINIMAL` 時のみ無効（`INJAMM_NO_FMT` 相当）。通常ビルドでは有効です。`format`（`std::format`/`fmt`）と `enum`（`enchantum`）は WASI minimal でも有効です（`_GLIBCXX_THROW_OR_ABORT`/`FMT_THROW=assert_fail`/`ENCHANTUM_THROW=trap` にフォールバック。不正フォーマットは `trap/abort`）。
-- **制約（WASI 時のみ）**: NTTP のチャンク溢れ（`ct_parsed_template` 容量超過）やネスト深度超過の診断は `trap/abort` に劣化します（`MaxChunks = Tmpl.size()+1` で通常到達不能のため実害は軽微）。`vector::reserve` の OOM は `syntax_error` ではなく `trap/abort` になります（事前の `max_*` チェックで不正バイト列の多くは `syntax_error` で弾かれます）。
+- **実装**: `config.hpp` で `__cpp_exceptions` 未定義（`-fno-exceptions`）時に `INJAMM_HAS_EXCEPTIONS=0`、`INJAMM_THROW` は `__builtin_trap()`（wasm では `unreachable`）/ `std::abort()` に展開。`bytecode_io.hpp` の `try_reserve`/`try_assign` は `INJAMM_HAS_EXCEPTIONS` で分岐（有効時は `try/catch`、無効時は `max_size` チェック）。`serialize_value.hpp` の `vformat` も `HAS_EXCEPTIONS` で `try/catch` を分岐。
+- **全ビルドで有効な機能**: `format`（`std::format`/`fmt`）と `enum`（`enchantum`）は `-fno-exceptions` でも有効（`_GLIBCXX_THROW_OR_ABORT`/`FMT_THROW=assert_fail`/`ENCHANTUM_THROW=trap` にフォールバック。不正フォーマットは `trap/abort`）。
+- **制約（`-fno-exceptions` 時）**: NTTP のチャンク溢れ（`ct_parsed_template` 容量超過）やネスト深度超過の診断は `trap/abort` に劣化（`MaxChunks = Tmpl.size()+1` で通常到達不能のため実害は軽微）。`vector::reserve` の OOM は `syntax_error` ではなく `trap/abort`（事前の `max_*` チェックで不正バイト列の多くは `syntax_error` で弾かれます）。
 
 ```bash
 # 通常ビルド（例外有効）
 cmake -B build -S . -DCMAKE_TOOLCHAIN_FILE=~/vm/vcpkg/scripts/buildsystems/vcpkg.cmake
-cmake --build build && ctest --test-dir build -V  # injamm_tests + wasi_minimal_smoke
+cmake --build build && ctest --test-dir build -V  # injamm_tests + no_exceptions_smoke
 
-# WASI minimal（例外なし、ホストコンパイラで検証）
-cmake -B build-wasm -S . -DENABLE_WASI_MINIMAL=ON \
-  -DCMAKE_TOOLCHAIN_FILE=~/vm/vcpkg/scripts/buildsystems/vcpkg.cmake
-cmake --build build-wasm && ctest --test-dir build-wasm -V  # wasi_minimal_smoke のみ
-
-# wasm32-wasip1（wasi-sdk + vcpkg triplet、CI の linux-wasi-minimal と同じ構成）
+# wasip1（wasi-sdk + vcpkg triplet、CI の linux-wasip1 と同じ構成）
 # triplets/wasm32-wasip1.cmake が /opt/wasi-sdk または ~/vm/wasi-sdk を chainload する
 cmake -B build-wasi -S . -G Ninja \
   -DCMAKE_TOOLCHAIN_FILE=~/vm/vcpkg/scripts/buildsystems/vcpkg.cmake \
   -DVCPKG_TARGET_TRIPLET=wasm32-wasip1 \
   -DVCPKG_OVERLAY_TRIPLETS=$PWD/triplets \
-  -DENABLE_WASI_MINIMAL=ON
+  -DCMAKE_CXX_FLAGS="-fno-exceptions -fno-rtti"
 cmake --build build-wasi
-file build-wasi/test_wasi_minimal  # WebAssembly
+file build-wasi/test_no_exceptions  # WebAssembly
+
+# wasip2（wasip1 と同じだが triplet と chainload ファイルが異なる）
+cmake -B build-wasi-p2 -S . -G Ninja \
+  -DCMAKE_TOOLCHAIN_FILE=~/vm/vcpkg/scripts/buildsystems/vcpkg.cmake \
+  -DVCPKG_TARGET_TRIPLET=wasm32-wasip2 \
+  -DVCPKG_OVERLAY_TRIPLETS=$PWD/triplets \
+  -DCMAKE_CXX_FLAGS="-fno-exceptions -fno-rtti"
+cmake --build build-wasi-p2
+file build-wasi-p2/test_no_exceptions  # WebAssembly
 ```
 
 wasm32 では glaze 7.8.3+（8.3.0でも未修正）の `atoi.hpp` が MSVC 組み込みの `_umul128` を未修飾で呼ぶため、`config.hpp` でグローバルな `_umul128` を補っています（glaze 上流修正後に削除予定）。

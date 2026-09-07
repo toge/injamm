@@ -8,13 +8,14 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(CMAKE_CXX_SCAN_FOR_MODULES OFF)
 
 # ---- オプション ----
+# 例外は既定で有効。wasip1 ビルド時はユーザーが -fno-exceptions を直接指定する。
+# (frozenchars と同様の方針: ライブラリは例外なしでも動作するが、オプションは不要)
 option(ENABLE_THREADED_DISPATCH "GCC computed goto dispatch (GCC only)" ON)
 option(BUILD_TEST "Build tests" ON)
 option(BUILD_EXAMPLE "Build examples" ON)
 option(BUILD_FUZZ "Build fuzz targets (requires -fsanitize=fuzzer)" OFF)
 option(ENABLE_ENUM "Enable enchantum-based enum string conversion" ON)
 option(BUILD_UTIL "Build CLI utilities" OFF)
-option(ENABLE_WASI_MINIMAL "Enable WASI minimal (no exceptions) mode - wasi-sdk wasm32-wasip1 assumed" OFF)
 # Apple Clang の libc++ は std::vformat("{:05}", ...) 等の 0 flag を
 # 正しくパースできない既知の不具合がある。fmt を使うことで回避する。
 if(CMAKE_CXX_COMPILER_ID STREQUAL "AppleClang")
@@ -54,11 +55,6 @@ if(USE_FMT)
   target_compile_definitions(injamm INTERFACE INJAMM_USE_FMT)
 endif()
 target_compile_features(injamm INTERFACE cxx_std_23)
-
-if(ENABLE_WASI_MINIMAL)
-  target_compile_definitions(injamm INTERFACE INJAMM_WASI_MINIMAL=1 INJAMM_NO_EXCEPTIONS)
-  target_compile_options(injamm INTERFACE $<$<COMPILE_LANGUAGE:CXX>:-fno-exceptions -fno-rtti>)
-endif()
 
 # GCC スレッデッドディスパッチ制御
 # ヘッダ側でも自動有効化されるが、CMake から明示的に制御できるよう残す。
@@ -105,23 +101,17 @@ install(
   DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/injamm
 )
 
-# ---- WASI minimal スモークテスト ----
-# 全構成で常時ビルドする。INJAMM_WASI_MINIMAL ガード下でもヘッダがコンパイルでき、
-# 維持機能（NTTP / engine / フィルタ / セクション / span ベースバイトコード I/O）が
-# 動作することを自己検証する。
-enable_testing()
-add_executable(test_wasi_minimal tests/test_wasi_minimal.cpp)
-target_link_libraries(test_wasi_minimal PRIVATE injamm)
-target_include_directories(test_wasi_minimal PRIVATE include)
-target_compile_features(test_wasi_minimal PRIVATE cxx_std_23)
-target_compile_definitions(test_wasi_minimal PRIVATE INJAMM_WASI_MINIMAL)
-add_test(NAME wasi_minimal_smoke COMMAND test_wasi_minimal)
+# ---- 例外なしスモークテスト ----
+# ライブラリが -fno-exceptions でも動作することを検証する。
+# wasip1 ビルド時はユーザーが -fno-exceptions を直接指定する（frozenchars と同様）。
+add_executable(test_no_exceptions tests/test_no_exceptions.cpp)
+target_link_libraries(test_no_exceptions PRIVATE injamm)
+target_include_directories(test_no_exceptions PRIVATE include)
+target_compile_features(test_no_exceptions PRIVATE cxx_std_23)
+target_compile_options(test_no_exceptions PRIVATE $<$<NOT:$<CXX_COMPILER_ID:MSVC>>:-fno-exceptions>)
+add_test(NAME no_exceptions_smoke COMMAND test_no_exceptions)
 
 # ---- Tests & Examples ----
-if(BUILD_TEST AND ENABLE_WASI_MINIMAL)
-  message(STATUS "ENABLE_WASI_MINIMAL=ON: Catch2 tests require exceptions -- disabling BUILD_TEST (wasi_minimal_smoke remains)")
-  set(BUILD_TEST OFF)
-endif()
 if(BUILD_TEST)
   enable_testing()
 

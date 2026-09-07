@@ -6,23 +6,14 @@
  *
  * @details このファイルは必ず他の injamm ヘッダより先にインクルードされる。
  *
- *  INJAMM_WASI_MINIMAL は wasm32-wasip1 + wasi-sdk の hosted (WASI) を想定し、
- *  無効化するのは例外のみ。wasm32-wasip1 では WASI 経由で <iostream> (<istream>/
- *  <ostream>) が利用可能なため INJAMM_NO_BYTECODE_IO は定義しない。
+ *  ライブラリは既定で例外なしでも動作する（frozenchars と同様）。
+ *  実行時APIの失敗は `std::expected<T, error_ctx>` で返る。
+ *  wasip1 ビルド時はユーザーが -fno-exceptions を直接指定する。
  *
- *  自動検出は行わない。CMake の ENABLE_WASI_MINIMAL=ON または -DINJAMM_WASI_MINIMAL
- *  で明示的に有効化する。wasm32-unknown-unknown (freestanding, -nostdlib) は
- *  hosted stdlib (glaze, <string> 等) に依存するため非対応。
- *
- *  ENABLE_WASI_MINIMAL=ON のときのみ例外を無効化する（-fno-exceptions）。
- *  通常ビルド（OFF）では例外有効で Catch2 テストが実行可能。
+ *  -fno-exceptions 時に __cpp_exceptions が未定義となり、自動的に例外なしモードになる。
  */
 
-#if defined(INJAMM_WASI_MINIMAL) && !defined(INJAMM_NO_EXCEPTIONS)
-#define INJAMM_NO_EXCEPTIONS
-#endif
-
-#if defined(INJAMM_NO_EXCEPTIONS) || !defined(__cpp_exceptions)
+#if !defined(__cpp_exceptions)
 // 例外無効 — enchantum のコア API (to_string / cast / contains) は noexcept
 // のため例外なしでも動作する。array::at / bitset::test|set|reset|flip のみが
 // throw するため ENCHANTUM_THROW を trap に差し替えて -fno-exceptions でも
@@ -36,7 +27,7 @@
 
 namespace injamm::detail {
 [[noreturn]] inline void injamm_trap() noexcept {
-#if defined(__wasm__) || defined(INJAMM_WASI_MINIMAL)
+#if defined(__wasm__)
 #if defined(__has_builtin)
 #if __has_builtin(__builtin_trap)
   __builtin_trap();
