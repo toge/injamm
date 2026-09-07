@@ -5474,3 +5474,126 @@ TEST_CASE("implicit parent stack resolution", "[injamm][loop][root]") {
     REQUIRE(*r == "0|m1|root;0|m1|root;");
   }
 }
+
+// ---- Mustache / glaze 互換の不足項目 (kainjow/Mustache, glaze stencil 対照) ----
+
+struct BcDepthE {
+  std::string name;
+};
+
+struct BcDepthD {
+  BcDepthE e;
+};
+
+struct BcDepthC {
+  BcDepthD d;
+};
+
+struct BcDepthB {
+  BcDepthC c;
+};
+
+struct BcDepthA {
+  BcDepthB b;
+};
+
+struct BcDepthRoot {
+  BcDepthA a;
+};
+
+template <>
+struct glz::meta<BcDepthE> {
+  static constexpr auto value = glz::object("name", &BcDepthE::name);
+};
+
+template <>
+struct glz::meta<BcDepthD> {
+  static constexpr auto value = glz::object("e", &BcDepthD::e);
+};
+
+template <>
+struct glz::meta<BcDepthC> {
+  static constexpr auto value = glz::object("d", &BcDepthC::d);
+};
+
+template <>
+struct glz::meta<BcDepthB> {
+  static constexpr auto value = glz::object("c", &BcDepthB::c);
+};
+
+template <>
+struct glz::meta<BcDepthA> {
+  static constexpr auto value = glz::object("b", &BcDepthA::b);
+};
+
+template <>
+struct glz::meta<BcDepthRoot> {
+  static constexpr auto value = glz::object("a", &BcDepthRoot::a);
+};
+
+/**
+ * @brief 変数値に含まれるタグ記法は再解釈しない (Mustache variables/braces 対応)
+ * @details `{{te}}st` という値を描画しても `te` が変数として再評価されず、
+ *          文字列がそのまま出力されることを確認する。
+ */
+TEST_CASE("mustache_variables_braces_no_reread", "[injamm][mustache]") {
+  BcUser data{"{{te}}st", 30};
+  auto   bc = injamm::engine<BcUser>("my {{name}}");
+  auto   r  = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "my {{te}}st");
+}
+
+/**
+ * @brief タグ内の前後空白を許容する (Mustache unescaped2_spaces 対応)
+ * @details `{{  name  }}` や `{{   &      name  }}` のようにタグ名の前後に
+ *          余分な空白があっても正しく描画されることを確認する。
+ */
+TEST_CASE("mustache_whitespace_inside_tags", "[injamm][mustache]") {
+  BcUser data{"<b>", 30};
+  auto   esc = injamm::engine<BcUser>("Hello {{  name  }}!");
+  auto   r1  = esc.render(data);
+  REQUIRE(r1.has_value());
+  REQUIRE(*r1 == "Hello &lt;b&gt;!");
+
+  auto raw = injamm::engine<BcUser>("Hello {{   &      name  }}");
+  auto r2  = raw.render(data);
+  REQUIRE(r2.has_value());
+  REQUIRE(*r2 == "Hello <b>");
+}
+
+/**
+ * @brief 5階層のドットチェーンを解決する (Mustache dotted_names/depth 対応)
+ */
+TEST_CASE("mustache_dotted_depth5", "[injamm][mustache]") {
+  BcDepthRoot data{.a = {.b = {.c = {.d = {.e = {.name = "Phil"}}}}}};
+  auto        bc = injamm::engine<BcDepthRoot>("\"{{a.b.c.d.e.name}}\" == \"Phil\"");
+  auto        r  = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "\"Phil\" == \"Phil\"");
+}
+
+/**
+ * @brief 存在しない末端キーを含むパスは空出力する (Mustache broken_chains1 対応)
+ * @details トップレベルの未知キー (`{{nope}}`) は `unknown_key` エラーだが、
+ *          ネストパスの末端欠落 (`{{a.b.x}}`) は Mustache と同様に空出力となる。
+ */
+TEST_CASE("mustache_broken_chain_empty", "[injamm][mustache]") {
+  BcDepthRoot data{.a = {.b = {.c = {.d = {.e = {.name = "Phil"}}}}}};
+  auto        bc = injamm::engine<BcDepthRoot>("\"{{a.b.x}}\" == \"\"");
+  auto        r  = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "\"\" == \"\"");
+}
+
+/**
+ * @brief ループ内の変数も HTML エスケープする (glaze container_iteration_with_html_escaping 対応)
+ */
+TEST_CASE("glaze_container_iteration_with_html_escaping", "[injamm][glaze]") {
+  BcOuter data;
+  data.items.push_back({"<script>alert('test')</script>"});
+  auto bc = injamm::engine<BcOuter>("{{#items}}<p>{{inner}}</p>{{/items}}");
+  auto r  = bc.render(data);
+  REQUIRE(r.has_value());
+  REQUIRE(*r == "<p>&lt;script&gt;alert(&#x27;test&#x27;)&lt;/script&gt;</p>");
+}
