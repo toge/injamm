@@ -416,6 +416,8 @@ jobs:
             -DCMAKE_TOOLCHAIN_FILE=$HOME/vcpkg/scripts/buildsystems/vcpkg.cmake \
             -DVCPKG_TARGET_TRIPLET=wasm32-emscripten \
             -DVCPKG_CHAINLOAD_TOOLCHAIN_FILE=$EMSDK/upstream/emscripten/cmake/Modules/Platform/Emscripten.cmake \
+            -DCMAKE_CXX_FLAGS="-O3 -msimd128" \
+            -DCMAKE_C_FLAGS="-O3 -msimd128" \
             -DBUILD_EXAMPLE=OFF \
             -DBUILD_FUZZ=OFF
       - name: Build
@@ -484,7 +486,8 @@ jobs:
             -DVCPKG_TARGET_TRIPLET=wasm32-wasip1 \
             -DVCPKG_OVERLAY_TRIPLETS=$PWD/triplets \
             -DVCPKG_CHAINLOAD_TOOLCHAIN_FILE=/opt/wasi-sdk/share/cmake/wasi-sdk-p1.cmake \
-            -DCMAKE_CXX_FLAGS="-fno-exceptions -fno-rtti" \
+            -DCMAKE_CXX_FLAGS="-fno-exceptions -fno-rtti -O3 -msimd128" \
+            -DCMAKE_C_FLAGS="-O3 -msimd128" \
             -DBUILD_TEST=OFF \
             -DBUILD_EXAMPLE=OFF
           cmake --build build
@@ -560,7 +563,8 @@ jobs:
             -DVCPKG_TARGET_TRIPLET=wasm32-wasip2 \
             -DVCPKG_OVERLAY_TRIPLETS=$PWD/triplets \
             -DVCPKG_CHAINLOAD_TOOLCHAIN_FILE=/opt/wasi-sdk/share/cmake/wasi-sdk-p2.cmake \
-            -DCMAKE_CXX_FLAGS="-fno-exceptions -fno-rtti" \
+            -DCMAKE_CXX_FLAGS="-fno-exceptions -fno-rtti -O3 -msimd128" \
+            -DCMAKE_C_FLAGS="-O3 -msimd128" \
             -DBUILD_TEST=OFF \
             -DBUILD_EXAMPLE=OFF
           cmake --build build
