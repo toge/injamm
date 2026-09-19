@@ -3992,6 +3992,71 @@ TEST_CASE("bc_const_if_via_atvar_1", "[injamm][const_if][atvar]") {
   CHECK(*r == "yes");
 }
 
+TEST_CASE("bc_const_if_0_inverted_in_skipped_body", "[injamm][const_if]") {
+  /** 回帰: if 0 本体スキップ中に反転セクション {{^age}} があっても正しくスキップされる */
+  BcIfData data{"alice", 0};
+  auto     bc = injamm::engine<BcIfData>("{{#if 0}}{{^age}}inv{{/age}}never{{/if}}ok");
+  auto     r  = bc.render(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "ok");
+}
+
+TEST_CASE("bc_const_if_1_else_inverted_in_skipped_body", "[injamm][const_if]") {
+  /** 回帰: if 1 の else 本体スキップ中に反転セクションがあっても正しくスキップされる */
+  BcIfData data{"alice", 0};
+  auto     bc = injamm::engine<BcIfData>("{{#if 1}}A{{else}}{{^age}}inv{{/age}}B{{/if}}");
+  auto     r  = bc.render(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "A");
+}
+
+TEST_CASE("bc_const_if_0_else_inverted_renders", "[injamm][const_if]") {
+  /** if 0 の else 本体に反転セクションがある場合は通常どおり描画される */
+  BcIfData data{"alice", 0};
+  auto     bc = injamm::engine<BcIfData>("{{#if 0}}never{{else}}{{^age}}inv{{/age}}{{/if}}");
+  auto     r  = bc.render(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "inv");
+}
+
+TEST_CASE("bc_mismatched_close_section_error", "[injamm][syntax]") {
+  /** {{#a}}...{{/b}} のような閉じタグ取り違えは構文エラー */
+  BcIfData data{"alice", 0};
+  auto     bc = injamm::engine<BcIfData>("{{#name}}x{{/age}}");
+  auto     r  = bc.render(data);
+  REQUIRE_FALSE(r.has_value());
+  CHECK(r.error().ec == injamm::error_code::syntax_error);
+}
+
+TEST_CASE("bc_mismatched_close_if_error", "[injamm][syntax]") {
+  /** {{#if ...}} を別名で閉じるのは構文エラー */
+  BcIfData data{"alice", 1};
+  auto     bc = injamm::engine<BcIfData>("{{#if age}}x{{/name}}");
+  auto     r  = bc.render(data);
+  REQUIRE_FALSE(r.has_value());
+  CHECK(r.error().ec == injamm::error_code::syntax_error);
+}
+
+TEST_CASE("bc_mismatched_close_inverted_error", "[injamm][syntax]") {
+  /** {{^a}} を別名で閉じるのは構文エラー */
+  BcIfData data{"alice", 0};
+  auto     bc = injamm::engine<BcIfData>("{{^age}}x{{/name}}");
+  auto     r  = bc.render(data);
+  REQUIRE_FALSE(r.has_value());
+  CHECK(r.error().ec == injamm::error_code::syntax_error);
+}
+
+TEST_CASE("bc_section_with_filter_close_matches_base", "[injamm][syntax]") {
+  /** {{#users | take(1)}}...{{/users}} はベース名で閉じられれば従来どおり有効 */
+  BcUsersData data;
+  data.users.push_back(BcUser{"Alice", 30});
+  data.users.push_back(BcUser{"Bob", 25});
+  auto bc = injamm::engine<BcUsersData>("{{#users | take(1)}}{{name}}{{/users}}");
+  auto r  = bc.render(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "Alice");
+}
+
 // ---- partials テスト用データ型 ----
 
 struct BcPartialUser {
@@ -4014,6 +4079,44 @@ struct glz::meta<BcPartialUsers> {
   using T                     = BcPartialUsers;
   static constexpr auto value = object(&T::users);
 };
+
+TEST_CASE("partial_self_cycle_compile_error", "[injamm][partial][syntax]") {
+  /** 自己参照 partial はコンパイル時に構文エラー（実行時エラーにしない） */
+  BcPartialUser user{"Alice", 30};
+  auto          eng = injamm::engine<BcPartialUser>{"{{#partialdef a}}{{#partial a}}{{/partialdef}}{{> a}}"};
+  auto          r   = eng.render(user);
+  REQUIRE_FALSE(r.has_value());
+  CHECK(r.error().ec == injamm::error_code::syntax_error);
+}
+
+TEST_CASE("partial_mutual_cycle_compile_error", "[injamm][partial][syntax]") {
+  /** a→b→a の相互参照 partial もコンパイル時に構文エラー */
+  BcPartialUser user{"Alice", 30};
+  auto          eng = injamm::engine<BcPartialUser>{"{{#partialdef a}}{{#partial b}}{{/partialdef}}"
+                                                    "{{#partialdef b}}{{#partial a}}{{/partialdef}}{{> a}}"};
+  auto          r   = eng.render(user);
+  REQUIRE_FALSE(r.has_value());
+  CHECK(r.error().ec == injamm::error_code::syntax_error);
+}
+
+TEST_CASE("partial_mustache_cycle_compile_error", "[injamm][partial][syntax]") {
+  /** {{> a}} 形式の自己参照もコンパイル時に検出する */
+  BcPartialUser user{"Alice", 30};
+  auto          eng = injamm::engine<BcPartialUser>{"{{#partialdef a}}{{> a}}{{/partialdef}}{{> a}}"};
+  auto          r   = eng.render(user);
+  REQUIRE_FALSE(r.has_value());
+  CHECK(r.error().ec == injamm::error_code::syntax_error);
+}
+
+TEST_CASE("partial_nested_no_cycle_still_works", "[injamm][partial]") {
+  /** 非循環の入れ子 partial はトポロジカル順で従来どおり動作する */
+  BcPartialUser user{"Alice", 30};
+  auto          eng = injamm::engine<BcPartialUser>{"{{#partialdef outer}}[{{#partial inner}}]{{/partialdef}}"
+                                                    "{{#partialdef inner}}I{{/partialdef}}{{> outer}}"};
+  auto          r   = eng.render(user);
+  REQUIRE(r.has_value());
+  CHECK(*r == "[I]");
+}
 
 TEST_CASE("simple_partial_literal_only", "[injamm][partial]") {
   BcPartialUser user{"Alice", 30};

@@ -1758,6 +1758,10 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
     if (!entry.bc) {
       return std::unexpected(error_ctx{.position = pc, .ec = error_code::syntax_error});
     }
+    /** partial 本体のコンパイルエラー（循環参照等）は実行時エラーとして表面化させる */
+    if (entry.bc->error.ec != error_code::none) [[unlikely]] {
+      return std::unexpected(entry.bc->error);
+    }
     bc_executor<T, RootT, Sink> child_exec(*entry.bc, ex.value_, ex.root_value_, ex.loop_, ex.out_, ex.filtered_shared_ ? ex.filtered_shared_ : &ex.filtered_scratch_);
     auto r = child_exec.execute();
     if (!r)

@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-09-10
+
+- `fix: 定数畳み込み if のスキップ経路が反転セクション {{^...}} を数えていなかった問題を修正` — `if 0` / `if 1` の到達不能節をテキスト走査でスキップする `skip_to_else_or_end` が depth を `#`・`/` のみで増減し `^` を無視していたため、`{{#if 0}}{{^items}}foo{{/items}}bar{{/if}}` のような有効なテンプレートが `syntax_error` でコンパイル不能になっていた（NTTP 側 `ct_parse` は `^` を追跡済みで、VM と挙動が食い違っていた）。skip 中も `^` を depth に算入して修正
+- `fix: 閉じタグ名の不一致を構文エラー化` — ランタイムコンパイラが `{{/...}}` の名前を検証せず、`{{#user}}...{{/users}}` のような取り違えを黙って受理していた（`{{#flag}}A{{/items}}B` が `AB` を出力）。`compile_body_impl` に期待閉じ名を渡し、不一致は `syntax_error` に。NTTP パーサはキー一致で閉じタグを探すため、両エンジンの挙動が揃う
+- `fix: 循環 partial をコンパイル時エラー化` — `{{#partialdef a}}{{#partial a}}{{/partialdef}}{{> a}}` のような自己/相互参照 partial がコンパイルを通過し、実行時に解決不能な `bc` を呼んで不可解な `syntax_error`（または無出力）になっていた。partial 依存グラフの DFS で back-edge を検出し `syntax_error` を返す（`{{#partial}}` / `{{> }}` 両形式）。`handle_call_partial` に partial 本体のコンパイルエラーを表面化するガードを追加し、`disassemble()` の未充填 partial エントリ参照も null 安全化
+
+## 2026-09-08
+
+- `feat: WASI 描画デモ injamm_wasi_render を追加し ctest を wasmtime 経由化` — bytecode→WASM 翻訳なしに VM ごと WASM 化できることの end-to-end 証明。`examples/wasi_render.cpp` は argv テンプレートを実行時コンパイルして固定デモデータ（section/if/filter/partial/escape）で描画する WASI 専用ターゲット（`BUILD_EXAMPLE=ON` かつ `CMAKE_SYSTEM_NAME=WASI` でのみビルド）。`CMakeLists.txt` は WASI 時に `CMAKE_CROSSCOMPILING_EMULATOR` を wasmtime に自動設定し `ctest --test-dir build-wasi` がそのまま通るように。代表 5 テンプレートで native/wasmtime のバイト一致を確認。README の wasip1 章に手順を追記（SYNTAX 変更なし）
+
 ## 2026-09-07
 
 - `fix: wasip1/wasip2 で Catch2 が見つからず configure エラーになる問題を修正` — `vcpkg.json` が catch2 を `emscripten | !wasm32` に限定しているのに `CMakeLists.txt` が WASI でも `find_package(Catch2 CONFIG REQUIRED)` していたのが原因。WASI時は `injamm_tests` をスキップし Catch2 不要の `test_no_exceptions` のみビルドするようガード（`enable_testing()` は維持）。CI の wasip1/wasip2 ジョブと README の WASI 手順に `-DBUILD_TEST=OFF -DBUILD_EXAMPLE=OFF` を追加

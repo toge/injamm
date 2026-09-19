@@ -8,6 +8,7 @@
 #include <string>
 #include <string_view>
 #include <unordered_set>
+#include <vector>
 
 namespace injamm::detail {
 
@@ -734,6 +735,8 @@ template <class ConstMap>
     return std::string(tmpl);
   std::string result;
   result.reserve(tmpl.size());
+  /** 開いた exists セクションの変数名スタック。{{/exists}} を対応する変数名へ書き換える */
+  std::vector<std::string_view> exists_stack;
   std::size_t pos = 0;
   while (pos < tmpl.size()) {
     auto tag = tmpl.find("{{", pos);
@@ -750,7 +753,8 @@ template <class ConstMap>
     auto inner = tmpl.substr(tag + 2, end - tag - 2);
     auto trimmed = trim_sv(inner);
     if (trimmed == "#exists" || trimmed.starts_with("#exists ")) {
-      auto rest = trimmed.substr(7);
+      auto rest = trim_sv(trimmed.substr(7));
+      exists_stack.push_back(rest);
       result += "{{#";
       if (!rest.empty()) {
         result += rest;
@@ -760,12 +764,22 @@ template <class ConstMap>
       pos = end + 2;
       continue;
     } else if (trimmed == "^exists" || trimmed.starts_with("^exists ")) {
-      auto rest = trimmed.substr(8);
+      auto rest = trim_sv(trimmed.substr(8));
+      exists_stack.push_back(rest);
       result += "{{^";
       if (!rest.empty()) {
         result += rest;
         result += " ";
       }
+      result += "}}";
+      pos = end + 2;
+      continue;
+    } else if (trimmed == "/exists" && !exists_stack.empty()) {
+      /** 閉じタグ {{/exists}} を対応する変数名で閉じる（閉じタグ名一致検証のため） */
+      auto name = exists_stack.back();
+      exists_stack.pop_back();
+      result += "{{/";
+      result += name;
       result += "}}";
       pos = end + 2;
       continue;

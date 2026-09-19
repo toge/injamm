@@ -607,6 +607,25 @@ file build-wasi-p2/test_no_exceptions  # WebAssembly
 
 wasm32 では glaze 7.8.3+（8.3.0でも未修正）の `atoi.hpp` が MSVC 組み込みの `_umul128` を未修飾で呼ぶため、`config.hpp` でグローバルな `_umul128` を補っています（glaze 上流修正後に削除予定）。
 
+WASI ビルド時は `ctest` が `wasmtime` 経由でテストを実行します（`CMAKE_CROSSCOMPILING_EMULATOR` を自動設定、wasmtime が見つからない場合は従来どおり直接実行を試みます）。
+
+### WASI 描画デモ（`injamm_wasi_render`）
+
+`BUILD_EXAMPLE=ON`（既定）で WASI 専用デモ `injamm_wasi_render` がビルドされます。argv[1] のテンプレートを実行時コンパイル（Bytecode VM）して固定デモデータで描画する、サーバサイド WASI 描画の end-to-end 例です。bytecode→WASM 翻訳は不要で、VM ごと WASM 化できることの証明になっています。
+
+```bash
+cmake -B build-wasi -S . -G Ninja \
+  -DCMAKE_TOOLCHAIN_FILE=~/vm/vcpkg/scripts/buildsystems/vcpkg.cmake \
+  -DVCPKG_TARGET_TRIPLET=wasm32-wasip1 \
+  -DVCPKG_OVERLAY_TRIPLETS=$PWD/triplets \
+  -DCMAKE_CXX_FLAGS="-fno-exceptions -fno-rtti" \
+  -DBUILD_TEST=ON -DBUILD_EXAMPLE=ON
+cmake --build build-wasi
+ctest --test-dir build-wasi  # wasmtime 経由で no_exceptions_smoke を実行
+wasmtime run build-wasi/injamm_wasi_render "{{title}}: {{#users}}{{name}}({{age}}){{/users}}"
+# → team: Alice(30)Bob(20)
+```
+
 ## API リファレンス
 
 ### `injamm::fixed_string<N>`

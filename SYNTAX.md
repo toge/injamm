@@ -245,6 +245,8 @@ bc.render(BoolData{true});   // r == "active"
 bc.render(BoolData{false});  // r == ""
 ```
 
+**閉じタグ:** セクションの閉じタグ名は開きタグと一致させる必要があります。`{{#user}}...{{/users}}` のような取り違えは構文エラー（`syntax_error`）になります。`if` は `{{/if}}`、`loop.*` セクションは `{{/loop.*}}` で閉じます（セクションフィルタ付きはベース名で閉じる）。
+
 ### 5.2 逆セクション (`{{^section}}...{{/section}}`)
 
 セクションが偽/空のときにボディを描画します。
@@ -1000,6 +1002,7 @@ eng2.render(User{"Alice",30}); // → "|Hi Alice|" だが {{#partial greeting}} 
 ### 19.9 制限
 
 - ファイルインクルード（`{% include %}`）には対応していません
+- partial の循環参照（`a` が `b` を、`b` が `a` を呼ぶ等。`{{#partial}}` / `{{> }}` いずれの形式も検出）はコンパイル時に `syntax_error` になります
 
 ---
 

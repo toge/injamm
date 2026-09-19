@@ -692,7 +692,7 @@ class bc_compiler {
     ctx_stack_.push_back(ctx_stack_.back().section_child(key));
     section_keys_.emplace_back(key);
     bool reached_end = false;
-    auto result = compile_body_impl(reached_end);
+    auto result = compile_body_impl(reached_end, key);
     section_keys_.pop_back();
     ctx_stack_.pop_back();
     --nesting_depth_;
@@ -708,7 +708,7 @@ class bc_compiler {
 
       // else 本体（閉じタグまで）をコンパイルする
       bool else_reached_end = false;
-      auto else_result = compile_body_impl(else_reached_end);
+      auto else_result = compile_body_impl(else_reached_end, key);
       if (else_result == body_result::eof) {
         bc_.error = error_ctx{section_instr_idx, error_code::unexpected_end, key};
         return;
@@ -747,7 +747,7 @@ class bc_compiler {
     auto section_instr_idx = bc_.current_offset() - 1;
 
     bool reached_end = false;
-    auto result = compile_body_impl(reached_end);
+    auto result = compile_body_impl(reached_end, key);
 
     if (result == body_result::else_) {
       // section が {{else}} を持つ場合は else 本体の先を飛び越えるトランポリンジャンプを発行する
@@ -760,7 +760,7 @@ class bc_compiler {
 
       // else 本体（閉じタグまで）をコンパイルする
       bool else_reached_end = false;
-      auto else_result = compile_body_impl(else_reached_end);
+      auto else_result = compile_body_impl(else_reached_end, key);
       if (else_result == body_result::eof) {
         bc_.error = error_ctx{section_instr_idx, error_code::unexpected_end, key};
         return;
@@ -830,6 +830,10 @@ class bc_compiler {
         ++depth;
         continue;
       }
+      if (inner.starts_with("^")) {
+        ++depth;
+        continue;
+      }
     }
     return skip_result::eof;
   }
@@ -841,7 +845,7 @@ class bc_compiler {
    *          else がある場合とない場合の両方を処理する。
    *          定数条件（if 0 / if 1）はコンパイル時に解決し、到達不可能な分岐のバイトコード生成を省略する。
    */
-  void compile_if(std::string_view expr_full) {
+  void compile_if(std::string_view expr_full, std::string_view close_key = "if") {
     if (nesting_depth_ >= max_nesting_depth) { bc_.error = error_ctx{pos_, error_code::syntax_error, "nesting too deep"}; return; }
     ++nesting_depth_;
     struct depth_guard { int* p; ~depth_guard() { --*p; } } guard{&nesting_depth_};
@@ -865,14 +869,14 @@ class bc_compiler {
           }
           if (result == skip_result::else_) {
             bool else_reached_end = false;
-            auto else_result = compile_body_impl(else_reached_end);
+            auto else_result = compile_body_impl(else_reached_end, close_key);
             if (bc_.error.ec == error_code::none && else_result == body_result::eof) {
               bc_.error = error_ctx{pos_, error_code::unexpected_end, "if"};
             }
           }
         } else {
           bool reached_end = false;
-          auto result = compile_body_impl(reached_end);
+          auto result = compile_body_impl(reached_end, close_key);
           if (bc_.error.ec == error_code::none && reached_end) {
             bc_.error = error_ctx{pos_, error_code::unexpected_end, "if"};
             return;
@@ -886,16 +890,16 @@ class bc_compiler {
       }
     }
 
-    auto finish_if = [this](std::size_t if_instr_idx) {
+    auto finish_if = [this, close_key](std::size_t if_instr_idx) {
       bool reached_end = false;
-      auto result = compile_body_impl(reached_end);
+      auto result = compile_body_impl(reached_end, close_key);
 
       if (result == body_result::else_) {
         auto else_jump_idx = static_cast<std::uint32_t>(bc_.current_offset());
         bc_.add_instruction(bc_opcode::emit_else, 0, 0);
 
         bool else_reached_end = false;
-        auto else_result = compile_body_impl(else_reached_end);
+        auto else_result = compile_body_impl(else_reached_end, close_key);
         if (else_result == body_result::eof) reached_end = true;
 
         auto endif_addr = static_cast<std::uint32_t>(bc_.current_offset());
@@ -1099,7 +1103,7 @@ class bc_compiler {
       bc_.add_instruction(bc_opcode::emit_if_not, 0, idx);
       auto if_idx = static_cast<std::uint32_t>(bc_.current_offset() - 1);
 
-      bool found_close = compile_body();
+      bool found_close = compile_body(key);
       if (bc_.error.ec == error_code::none && !found_close) {
         bc_.error = error_ctx{if_idx, error_code::unexpected_end, key};
         return;
@@ -1123,7 +1127,7 @@ class bc_compiler {
     bc_.add_instruction(bc_opcode::emit_at_inverted, 0, kind);
     auto instr_idx = bc_.current_offset() - 1;
 
-    bool found_close = compile_body();
+    bool found_close = compile_body(key);
     if (bc_.error.ec == error_code::none && !found_close) {
       bc_.error = error_ctx{instr_idx, error_code::unexpected_end, key};
       return;
@@ -1149,7 +1153,7 @@ class bc_compiler {
     if (*k == at_var_kind::even || *k == at_var_kind::odd) {
       /** {{#loop.is_even}} / {{#loop.is_odd}}: {{#if loop.is_even}} と同一の既存命令列へ脱糖
        *  （eval_var_truthy が special_var_kind を判定するため emit_if がそのまま使える） */
-      compile_if(key);
+      compile_if(key, key);
       return;
     }
     std::uint32_t kind;
@@ -1163,7 +1167,7 @@ class bc_compiler {
     bc_.add_instruction(bc_opcode::emit_at_section, 0, kind);
     auto instr_idx = bc_.current_offset() - 1;
 
-    bool found_close = compile_body();
+    bool found_close = compile_body(key);
     if (bc_.error.ec == error_code::none && !found_close) {
       bc_.error = error_ctx{instr_idx, error_code::unexpected_end, key};
       return;
@@ -1180,8 +1184,10 @@ class bc_compiler {
    * @return close: {{/xxx}} 検出、else_: {{else}} 検出、eof: 終端に到達
    * @details {{{var}}} の raw プレースホルダ、セクション、if、@変数、フィルタに対応。
    *          呼び出し元は {{else}} を適切に処理する責任を持つ。
+   * @param expected_close 期待する閉じタグ名（空なら名前検証をスキップ）。不一致は
+   *        syntax_error とし、{{#a}}...{{/b}} のような取り違えを検出する。
    */
-  body_result compile_body_impl(bool& reached_end) {
+  body_result compile_body_impl(bool& reached_end, std::string_view expected_close = {}) {
     reached_end = false;
     while (pos_ < tmpl_.size()) {
       auto tag_start = tmpl_.find("{{", pos_);
@@ -1256,6 +1262,10 @@ class bc_compiler {
         continue;
       }
       if (inner.starts_with("/")) {
+        if (!expected_close.empty() && trim_sv(inner.substr(1)) != expected_close) {
+          bc_.error = error_ctx{tag_start, error_code::syntax_error, "mismatched closing tag"};
+          return body_result::close;
+        }
         return body_result::close;
       }
 
@@ -1521,21 +1531,39 @@ class bc_compiler {
       order.reserve(pending.size());
       std::vector<bool> visited(pending.size(), false);
       std::vector<bool> in_stack(pending.size(), false);
+      /** 循環参照（a→b→a 等）を検出する。実行時に解決できないため構文エラーとする。 */
+      bool cyclic = false;
       auto dfs = [&](auto& self, std::size_t node) -> void {
-        if (visited[node]) return;
+        if (cyclic || visited[node]) return;
         visited[node]   = true;
         in_stack[node]  = true;
         std::string_view body = pending[node].body;
         std::size_t pos = 0;
-        while (pos < body.size()) {
-          auto at = constexpr_find(body, "{{#partial ", pos);
-          if (at == std::string_view::npos) break;
-          auto end = constexpr_find(body, "}}", at);
+        while (pos < body.size() && !cyclic) {
+          /** 参照タグ {{#partial name}} / {{> name}} を検出（{{#partialdef は除外） */
+          auto p1 = constexpr_find(body, "{{#partial ", pos);
+          auto p2 = constexpr_find(body, "{{> ", pos);
+          std::size_t tag_at;
+          std::size_t ref_at;
+          if (p1 != std::string_view::npos && (p2 == std::string_view::npos || p1 < p2)) {
+            tag_at = p1;
+            ref_at = p1 + 11;
+          } else if (p2 != std::string_view::npos) {
+            tag_at = p2;
+            ref_at = p2 + 4;
+          } else {
+            break;
+          }
+          auto end = constexpr_find(body, "}}", tag_at);
           if (end == std::string_view::npos) break;
-          std::string_view ref = trim_sv(body.substr(at + 11, end - (at + 11)));
+          std::string_view ref = trim_sv(body.substr(ref_at, end - ref_at));
           for (std::size_t j = 0; j < pending.size(); ++j) {
             if (pending[j].name == ref) {
-              if (!in_stack[j]) self(self, j);
+              if (in_stack[j]) {
+                cyclic = true;
+              } else {
+                self(self, j);
+              }
               break;
             }
           }
@@ -1544,8 +1572,12 @@ class bc_compiler {
         in_stack[node] = false;
         order.push_back(node);
       };
-      for (std::size_t i = 0; i < pending.size(); ++i)
+      for (std::size_t i = 0; i < pending.size() && !cyclic; ++i)
         dfs(dfs, i);
+      if (cyclic) {
+        bc_.error = error_ctx{0, error_code::syntax_error, "circular partial reference"};
+        return {};
+      }
     }
 
     for (auto idx : order) {
@@ -1578,9 +1610,9 @@ class bc_compiler {
     return result;
   }
 
-  bool compile_body() {
+  bool compile_body(std::string_view expected_close = {}) {
     bool reached_end = false;
-    return compile_body_impl(reached_end) != body_result::eof;
+    return compile_body_impl(reached_end, expected_close) != body_result::eof;
   }
 
  public:

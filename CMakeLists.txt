@@ -101,6 +101,14 @@ install(
   DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/injamm
 )
 
+# ---- WASI: ctest が .wasm を直接実行できないため wasmtime 経由にする ----
+if(CMAKE_SYSTEM_NAME STREQUAL "WASI")
+  find_program(WASMTIME_EXECUTABLE wasmtime HINTS "$ENV{HOME}/.wasmtime/bin")
+  if(WASMTIME_EXECUTABLE)
+    set(CMAKE_CROSSCOMPILING_EMULATOR "${WASMTIME_EXECUTABLE};run")
+  endif()
+endif()
+
 # ---- 例外なしスモークテスト ----
 # ライブラリが -fno-exceptions でも動作することを検証する。
 # wasip1 ビルド時はユーザーが -fno-exceptions を直接指定する（frozenchars と同様）。
@@ -229,6 +237,16 @@ if(BUILD_EXAMPLE)
   target_compile_features(injamm_codegen_bench PRIVATE cxx_std_23)
   if((CMAKE_CXX_COMPILER_ID STREQUAL "GNU" OR CMAKE_CXX_COMPILER_ID MATCHES "Clang") AND NOT CMAKE_SYSTEM_NAME MATCHES "WASI|Emscripten")
     target_compile_options(injamm_codegen_bench PRIVATE -march=native)
+  endif()
+
+  # WASI サーバサイド描画デモ: argv テンプレートを実行時コンパイル→描画 (wasmtime で実行)
+  if(CMAKE_SYSTEM_NAME STREQUAL "WASI")
+    add_executable(injamm_wasi_render
+      examples/wasi_render.cpp
+    )
+    target_link_libraries(injamm_wasi_render PRIVATE injamm)
+    target_include_directories(injamm_wasi_render PRIVATE include)
+    target_compile_features(injamm_wasi_render PRIVATE cxx_std_23)
   endif()
 endif()
 

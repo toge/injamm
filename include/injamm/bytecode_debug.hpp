@@ -377,7 +377,9 @@ inline std::string bytecode::disassemble() const {
       append(": \"");
       append(partial_entries[i].name);
       append("\" (");
-      auto [p2, ec2] = std::to_chars(addr_buf, addr_buf + sizeof(addr_buf), partial_entries[i].bc->instructions.size());
+      // コンパイルエラー中断時は bc 未充填のエントリがあり得る
+      auto const instr_count = partial_entries[i].bc ? partial_entries[i].bc->instructions.size() : 0;
+      auto [p2, ec2] = std::to_chars(addr_buf, addr_buf + sizeof(addr_buf), instr_count);
       append(std::string_view{addr_buf, static_cast<std::size_t>(p2 - addr_buf)});
       append(" instr)\n");
     }
