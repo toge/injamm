@@ -769,7 +769,7 @@ auto eng = injamm::engine<User>(std::move(*bc));
 | 3   | unknown_key    | 不明なキー                 |
 | 4   | syntax_error   | 構文エラー                 |
 | 5   | type_mismatch  | 型不一致                   |
-| 6   | invalid_utf8   | 不正な UTF-8               |
+| 6   | invalid_utf8   | 不正な UTF-8（予約: 現行実装では未使用） |
 | 7   | unknown_filter | 不明なフィルタ             |
 | 8   | division_by_zero | 除数ゼロエラー           |
 | 9   | out_of_memory  | メモリ不足                 |
@@ -861,3 +861,18 @@ for (auto& t : threads) {
 ### 注意点
 - 並列レンダリング時、出力先バッファ（`std::string& out`）は各スレッドで独立している必要があります
 - 同じ `std::string` インスタンスを複数スレッドから同時に書き込むことは避けてください
+
+## 実行限界（DoS 対策）
+
+- ネスト深さ: 256（`max_nesting_depth`）
+- instruction 数: 1,048,576
+- literal 数: 1,048,576
+- var ref 数: 1,048,576
+- partial 数: 1,024（読み込み再帰深さ 64）
+- 文字列 `repeat`: 最大 10,000 回
+- `indent` 幅: 最大 1,000
+- `left` / `right` / `center` 幅: 最大 100,000
+- `-fno-exceptions` ビルド (`WASI` 等) では中間 OOM が trap に劣化する
+- ARM platforms (including Apple Silicon) use the NEON HTML-escape path
+- OOM 時の diagnostics API は空文字を返す場合がある
+- glaze の wasm 用 `_umul128` workaround は glaze 側修正後に削除予定

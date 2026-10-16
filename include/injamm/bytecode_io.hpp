@@ -301,6 +301,54 @@ inline bool is_valid_opcode(bc_opcode op) noexcept {
   return value >= min && value <= max;
 }
 
+/** @brief string_filter が有効範囲か確認 */
+inline bool is_valid_string_filter(string_filter f) noexcept {
+  auto const value = static_cast<std::underlying_type_t<string_filter>>(f);
+  auto const min = static_cast<std::underlying_type_t<string_filter>>(string_filter::upper);
+  auto const max = static_cast<std::underlying_type_t<string_filter>>(string_filter::urlencode);
+  return value >= min && value <= max;
+}
+
+/** @brief int_filter が有効範囲か確認 */
+inline bool is_valid_int_filter(int_filter f) noexcept {
+  auto const value = static_cast<std::underlying_type_t<int_filter>>(f);
+  auto const min = static_cast<std::underlying_type_t<int_filter>>(int_filter::abs);
+  auto const max = static_cast<std::underlying_type_t<int_filter>>(int_filter::div);
+  return value >= min && value <= max;
+}
+
+/** @brief float_filter が有効範囲か確認 */
+inline bool is_valid_float_filter(float_filter f) noexcept {
+  auto const value = static_cast<std::underlying_type_t<float_filter>>(f);
+  auto const min = static_cast<std::underlying_type_t<float_filter>>(float_filter::precision);
+  auto const max = static_cast<std::underlying_type_t<float_filter>>(float_filter::round);
+  return value >= min && value <= max;
+}
+
+/** @brief compare_operand_kind が有効範囲か確認 */
+inline bool is_valid_compare_operand_kind(compare_operand_kind k) noexcept {
+  auto const value = static_cast<std::underlying_type_t<compare_operand_kind>>(k);
+  auto const min = static_cast<std::underlying_type_t<compare_operand_kind>>(compare_operand_kind::none);
+  auto const max = static_cast<std::underlying_type_t<compare_operand_kind>>(compare_operand_kind::variable);
+  return value >= min && value <= max;
+}
+
+/** @brief section_filter_op_kind が有効 range か確認（6 は未使用のため除外） */
+inline bool is_valid_section_filter_op_kind(section_filter_op_kind k) noexcept {
+  switch (k) {
+    case section_filter_op_kind::reverse:
+    case section_filter_op_kind::take:
+    case section_filter_op_kind::skip:
+    case section_filter_op_kind::take_last:
+    case section_filter_op_kind::skip_last:
+    case section_filter_op_kind::stride:
+    case section_filter_op_kind::join:
+      return true;
+    default:
+      return false;
+  }
+}
+
 #ifndef INJAMM_NO_BYTECODE_IO
 /** @brief bc_instruction を読み込み */
 inline bc_instruction read_instruction(std::istream& is, read_state& state) {
@@ -321,6 +369,7 @@ inline string_filter_entry read_string_filter_entry(std::istream& is, read_state
                                                       std::vector<std::string> const& literals) {
   string_filter_entry e;
   e.filter = static_cast<string_filter>(read_u8(is, state));
+  if (state.ok && !is_valid_string_filter(e.filter)) { state.ok = false; state.ec = error_code::syntax_error; return e; }
   e.arg1 = read_i32_le(is, state);
   e.arg2 = read_i32_le(is, state);
   auto idx1 = read_u64_le(is, state);
@@ -336,6 +385,7 @@ inline string_filter_entry read_string_filter_entry(std::istream& is, read_state
 inline int_filter_entry read_int_filter_entry(std::istream& is, read_state& state) {
   int_filter_entry e;
   e.filter = static_cast<int_filter>(read_u8(is, state));
+  if (state.ok && !is_valid_int_filter(e.filter)) { state.ok = false; state.ec = error_code::syntax_error; return e; }
   e.arg = read_i32_le(is, state);
   return e;
 }
@@ -344,6 +394,7 @@ inline int_filter_entry read_int_filter_entry(std::istream& is, read_state& stat
 inline float_filter_entry read_float_filter_entry(std::istream& is, read_state& state) {
   float_filter_entry e;
   e.filter = static_cast<float_filter>(read_u8(is, state));
+  if (state.ok && !is_valid_float_filter(e.filter)) { state.ok = false; state.ec = error_code::syntax_error; return e; }
   e.arg = read_i32_le(is, state);
   return e;
 }
@@ -626,6 +677,7 @@ inline bc_instruction read_instruction(span_cursor& cur) noexcept {
 inline string_filter_entry read_string_filter_entry(span_cursor& cur, std::vector<std::string> const& literals) noexcept {
   string_filter_entry e;
   e.filter = static_cast<string_filter>(read_u8(cur));
+  if (cur.ok && !is_valid_string_filter(e.filter)) { cur.ok = false; cur.ec = error_code::syntax_error; return e; }
   e.arg1 = read_i32_le(cur);
   e.arg2 = read_i32_le(cur);
   auto idx1 = read_u64_le(cur);
@@ -640,6 +692,7 @@ inline string_filter_entry read_string_filter_entry(span_cursor& cur, std::vecto
 inline int_filter_entry read_int_filter_entry(span_cursor& cur) noexcept {
   int_filter_entry e;
   e.filter = static_cast<int_filter>(read_u8(cur));
+  if (cur.ok && !is_valid_int_filter(e.filter)) { cur.ok = false; cur.ec = error_code::syntax_error; return e; }
   e.arg = read_i32_le(cur);
   return e;
 }
@@ -647,6 +700,7 @@ inline int_filter_entry read_int_filter_entry(span_cursor& cur) noexcept {
 inline float_filter_entry read_float_filter_entry(span_cursor& cur) noexcept {
   float_filter_entry e;
   e.filter = static_cast<float_filter>(read_u8(cur));
+  if (cur.ok && !is_valid_float_filter(e.filter)) { cur.ok = false; cur.ec = error_code::syntax_error; return e; }
   e.arg = read_i32_le(cur);
   return e;
 }
@@ -820,9 +874,11 @@ bytecode read_bytecode_body(std::istream& is, read_state& state, int depth) {
     auto has_dot = read_u8(is, state) != 0;
     auto is_loop_parent = read_u8(is, state) != 0;
     auto cmp_kind = static_cast<compare_operand_kind>(read_u8(is, state));
+    if (state.ok && !is_valid_compare_operand_kind(cmp_kind)) { state.ok = false; state.ec = error_code::syntax_error; return bc; }
     auto cmp_text = read_string(is, state);
     auto cmp_has_dot = read_u8(is, state) != 0;
     auto filter_flags = read_u8(is, state);
+    if (state.ok && filter_flags > 3) { state.ok = false; state.ec = error_code::syntax_error; return bc; }
     if (!state.ok) return bc;
 
     bc_var_ref ref;
@@ -837,7 +893,9 @@ bytecode read_bytecode_body(std::istream& is, read_state& state, int depth) {
       ref.section_op_count = read_u8(is, state);
       if (state.ok && ref.section_op_count > bc_var_ref::max_section_ops) { state.ok = false; state.ec = error_code::syntax_error; return bc; }
       for (std::uint8_t si = 0; si < ref.section_op_count && si < bc_var_ref::max_section_ops; ++si) {
-        ref.section_ops[si].kind = static_cast<section_filter_op_kind>(read_u8(is, state));
+        auto kind = static_cast<section_filter_op_kind>(read_u8(is, state));
+        if (state.ok && !is_valid_section_filter_op_kind(kind)) { state.ok = false; state.ec = error_code::syntax_error; return bc; }
+        ref.section_ops[si].kind = kind;
         ref.section_ops[si].arg  = static_cast<std::int32_t>(read_u32_le(is, state));
         if (state.version >= 4)
           ref.section_ops[si].arg2 = static_cast<std::int32_t>(read_u32_le(is, state));
@@ -1003,6 +1061,31 @@ bytecode read_bytecode_body(std::istream& is, read_state& state, int depth) {
     }
   }
 
+  // is_simple が declared true の場合は、高速パスが実際に許す opcode に限定する。
+  // loader は operand bounds を検証済みだが、opcode の種類までは is_simple と
+  // 整合するように検証していなかったため、ここで再検証する。
+  if (state.ok && bc.is_simple) {
+    for (auto const& inst : bc.instructions) {
+      switch (inst.op) {
+        case bc_opcode::emit_literal:
+        case bc_opcode::halt:
+          break;
+        case bc_opcode::emit_litvar:
+        case bc_opcode::emit_litvar_raw:
+          if (inst.operand >= bc.literals.size() || inst.operand2 >= bc.var_refs.size()) { state.ok = false; state.ec = error_code::syntax_error; }
+          break;
+        case bc_opcode::emit_var:
+        case bc_opcode::emit_var_raw:
+          if (inst.operand >= bc.var_refs.size()) { state.ok = false; state.ec = error_code::syntax_error; }
+          break;
+        default:
+          state.ok = false;
+          state.ec = error_code::syntax_error;
+          break;
+      }
+    }
+  }
+
   return bc;
 }
 
@@ -1060,6 +1143,7 @@ bytecode read_bytecode_body(span_cursor& cur, int depth) {
     auto cmp_text     = read_string(cur);
     auto cmp_has_dot  = read_u8(cur) != 0;
     auto filter_flags = read_u8(cur);
+    if (cur.ok && (!is_valid_compare_operand_kind(cmp_kind) || filter_flags > 3)) { cur.ok = false; cur.ec = error_code::syntax_error; return bc; }
     if (!cur.ok) return bc;
 
     bc_var_ref ref;
@@ -1074,7 +1158,9 @@ bytecode read_bytecode_body(span_cursor& cur, int depth) {
       ref.section_op_count = read_u8(cur);
       if (cur.ok && ref.section_op_count > bc_var_ref::max_section_ops) { cur.ok = false; cur.ec = error_code::syntax_error; return bc; }
       for (std::uint8_t si = 0; si < ref.section_op_count && si < bc_var_ref::max_section_ops; ++si) {
-        ref.section_ops[si].kind = static_cast<section_filter_op_kind>(read_u8(cur));
+        auto kind = static_cast<section_filter_op_kind>(read_u8(cur));
+        if (cur.ok && !is_valid_section_filter_op_kind(kind)) { cur.ok = false; cur.ec = error_code::syntax_error; return bc; }
+        ref.section_ops[si].kind = kind;
         ref.section_ops[si].arg  = static_cast<std::int32_t>(read_u32_le(cur));
         if (cur.version >= 4)
           ref.section_ops[si].arg2 = static_cast<std::int32_t>(read_u32_le(cur));
@@ -1224,6 +1310,29 @@ bytecode read_bytecode_body(span_cursor& cur, int depth) {
           break;
       }
       if (bad) { cur.ok = false; cur.ec = error_code::syntax_error; break; }
+    }
+  }
+
+  // span ベース loaders でも is_simple の整合性を検証する
+  if (cur.ok && bc.is_simple) {
+    for (auto const& inst : bc.instructions) {
+      switch (inst.op) {
+        case bc_opcode::emit_literal:
+        case bc_opcode::halt:
+          break;
+        case bc_opcode::emit_litvar:
+        case bc_opcode::emit_litvar_raw:
+          if (inst.operand >= bc.literals.size() || inst.operand2 >= bc.var_refs.size()) { cur.ok = false; cur.ec = error_code::syntax_error; }
+          break;
+        case bc_opcode::emit_var:
+        case bc_opcode::emit_var_raw:
+          if (inst.operand >= bc.var_refs.size()) { cur.ok = false; cur.ec = error_code::syntax_error; }
+          break;
+        default:
+          cur.ok = false;
+          cur.ec = error_code::syntax_error;
+          break;
+      }
     }
   }
 

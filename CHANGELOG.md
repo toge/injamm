@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-10-16
+
+- `fix: バイトコード読み込みの信頼境界を強化` — loader の `is_simple` 整合性を検証し、`compare_operand_kind` / `section_filter_op_kind` / `string|int|float_filter` / `filter_flags` の値域検証を stream/span 両パスに追加
+- `fix: 文字列フィルタのリソース増幅を抑制` — `repeat` を 10,000 回、`indent` 幅を 1,000 に制限
+- `fix: `transform_exists_sections` の不正入力耐性を強化` — 空/複数トークンや空 stack を変換せず安全側に保持
+- `docs: `invalid_utf8` を現行未使用として明記` — error_code/docs の契約ズレを整理
+- `docs: 実行限界を README/SYNTAX に追記` — DoS 対策 caps を公開
+
+
 ## 2026-09-10
 
 - `fix: 定数畳み込み if のスキップ経路が反転セクション {{^...}} を数えていなかった問題を修正` — `if 0` / `if 1` の到達不能節をテキスト走査でスキップする `skip_to_else_or_end` が depth を `#`・`/` のみで増減し `^` を無視していたため、`{{#if 0}}{{^items}}foo{{/items}}bar{{/if}}` のような有効なテンプレートが `syntax_error` でコンパイル不能になっていた（NTTP 側 `ct_parse` は `^` を追跡済みで、VM と挙動が食い違っていた）。skip 中も `^` を depth に算入して修正

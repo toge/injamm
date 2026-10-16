@@ -181,7 +181,7 @@ constexpr void html_escape_into(Buffer& out, std::string_view s) {
     html_escape_scalar(out, s);
   }
 }
-#elif defined(__ARM_NEON) && !defined(__apple_build_version__)
+#elif defined(__ARM_NEON)
 template <class Buffer>
 constexpr void html_escape_into(Buffer& out, std::string_view s) {
   if !consteval {

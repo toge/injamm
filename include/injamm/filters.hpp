@@ -249,6 +249,10 @@ constexpr void apply_string_filter(std::string& str, string_filter_entry const& 
     if (n < 1) {
       str.clear();
     } else if (n > 1 && !str.empty()) {
+      // 巨大展開によるメモリ枯渇を防ぐ（テンプレート authored の範囲だが任意数値で
+      // 数十 GiB を要求できるため上限を設ける）。
+      constexpr int max_repeat = 10000;
+      if (n > max_repeat) n = max_repeat;
       auto saved = str;
       str.reserve(saved.size() * static_cast<std::size_t>(n));
       for (int i = 1; i < n; ++i)
@@ -258,7 +262,9 @@ constexpr void apply_string_filter(std::string& str, string_filter_entry const& 
   }
   case string_filter::indent: {
     if (entry.arg1 > 0 && !str.empty()) {
-      auto pad = std::string(static_cast<std::size_t>(entry.arg1), ' ');
+      constexpr int max_indent = 1000;
+      auto width = entry.arg1 > max_indent ? max_indent : entry.arg1;
+      auto pad = std::string(static_cast<std::size_t>(width), ' ');
       std::string result;
       std::size_t pos = 0;
       while (pos < str.size()) {

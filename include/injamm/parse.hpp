@@ -754,27 +754,33 @@ template <class ConstMap>
     auto trimmed = trim_sv(inner);
     if (trimmed == "#exists" || trimmed.starts_with("#exists ")) {
       auto rest = trim_sv(trimmed.substr(7));
+      // exists は単一フィールド名のみを扱う。空/複数トークンは推定不能なため、
+      // 埋め込み変換を行わず元のタグをそのまま保持する。
+      if (rest.empty() || rest.find_first_of(" \t\r\n") != std::string_view::npos) {
+        result.append(tmpl.substr(tag, end - tag + 2));
+        pos = end + 2;
+        continue;
+      }
       exists_stack.push_back(rest);
       result += "{{#";
-      if (!rest.empty()) {
-        result += rest;
-        result += " ";
-      }
-      result += "}}";
+      result += rest;
+      result += " }}";
       pos = end + 2;
       continue;
     } else if (trimmed == "^exists" || trimmed.starts_with("^exists ")) {
       auto rest = trim_sv(trimmed.substr(8));
+      if (rest.empty() || rest.find_first_of(" \t\r\n") != std::string_view::npos) {
+        result.append(tmpl.substr(tag, end - tag + 2));
+        pos = end + 2;
+        continue;
+      }
       exists_stack.push_back(rest);
       result += "{{^";
-      if (!rest.empty()) {
-        result += rest;
-        result += " ";
-      }
-      result += "}}";
+      result += rest;
+      result += " }}";
       pos = end + 2;
       continue;
-    } else if (trimmed == "/exists" && !exists_stack.empty()) {
+    } else if (trimmed == "/exists" && !exists_stack.empty() && !exists_stack.back().empty()) {
       /** 閉じタグ {{/exists}} を対応する変数名で閉じる（閉じタグ名一致検証のため） */
       auto name = exists_stack.back();
       exists_stack.pop_back();

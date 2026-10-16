@@ -4877,6 +4877,65 @@ TEST_CASE("bytecode load: invalid partial reference", "[bytecode_io][error]") {
   REQUIRE(result.error().ec == injamm::error_code::syntax_error);
 }
 
+TEST_CASE("bytecode load: is_simple opcode mismatch", "[bytecode_io][error]") {
+  injamm::detail::bytecode bc;
+  bc.is_simple = true;
+  injamm::detail::bc_instruction instr{};
+  instr.op = injamm::detail::bc_opcode::emit_end;
+  bc.instructions.push_back(instr);
+
+  std::stringstream ss;
+  REQUIRE(injamm::save_bytecode(bc, ss) == injamm::error_code::none);
+
+  auto result = injamm::load_bytecode<BcRootData>(ss);
+  REQUIRE_FALSE(result.has_value());
+  REQUIRE(result.error().ec == injamm::error_code::syntax_error);
+}
+
+TEST_CASE("bytecode load: invalid compare operand kind", "[bytecode_io][error]") {
+  injamm::detail::bytecode bc;
+  bc.is_simple = false;
+  injamm::detail::bc_var_ref ref;
+  ref.key = "app_name";
+  ref.compare_rhs_kind = static_cast<injamm::detail::compare_operand_kind>(255);
+  bc.var_refs.push_back(ref);
+
+  injamm::detail::bc_instruction instr{};
+  instr.op = injamm::detail::bc_opcode::emit_var;
+  instr.operand = 0;
+  bc.instructions.push_back(instr);
+
+  std::stringstream ss;
+  REQUIRE(injamm::save_bytecode(bc, ss) == injamm::error_code::none);
+
+  auto result = injamm::load_bytecode<BcRootData>(ss);
+  REQUIRE_FALSE(result.has_value());
+  REQUIRE(result.error().ec == injamm::error_code::syntax_error);
+}
+
+TEST_CASE("bytecode load: invalid string filter", "[bytecode_io][error]") {
+  injamm::detail::bytecode bc;
+  bc.is_simple = false;
+  injamm::detail::bc_var_ref ref;
+  ref.key = "app_name";
+  injamm::detail::string_filter_entry fe;
+  fe.filter = static_cast<injamm::detail::string_filter>(255);
+  ref.filters.push_back(fe);
+  bc.var_refs.push_back(ref);
+
+  injamm::detail::bc_instruction instr{};
+  instr.op = injamm::detail::bc_opcode::emit_var;
+  instr.operand = 0;
+  bc.instructions.push_back(instr);
+
+  std::stringstream ss;
+  REQUIRE(injamm::save_bytecode(bc, ss) == injamm::error_code::none);
+
+  auto result = injamm::load_bytecode<BcRootData>(ss);
+  REQUIRE_FALSE(result.has_value());
+  REQUIRE(result.error().ec == injamm::error_code::syntax_error);
+}
+
 TEST_CASE("bytecode executor: invalid partial reference", "[bytecode_exec][error]") {
   injamm::detail::bytecode       bc;
   injamm::detail::bc_instruction instr{};

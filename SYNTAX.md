@@ -1057,7 +1057,7 @@ auto side = injamm::render_partial<
 | 3   | `unknown_key`      | 不明なキー                 |
 | 4   | `syntax_error`     | 構文エラー                 |
 | 5   | `type_mismatch`    | 型不一致                   |
-| 6   | `invalid_utf8`     | 不正な UTF-8               |
+| 6   | `invalid_utf8`     | 不正な UTF-8（予約: 現行実装では未使用） |
 | 7   | `unknown_filter`   | 不明なフィルター名         |
 | 8   | `division_by_zero` | 除数ゼロエラー             |
 | 9   | `out_of_memory`    | メモリ不足                 |
@@ -1088,3 +1088,13 @@ auto bc2 = injamm::engine<User>("{{@var(f)}}", c);
 // trim_blocks / lstrip_blocks
 auto bc3 = injamm::engine<User>("a\n{{name}}\nb", true, false);
 ```
+
+## 実行限界（DoS 対策）
+
+- ネスト深さ: 256
+- instruction/literal/var ref 数: 各 1,048,576
+- partial 数: 1,024（読み込み再帰深さ 64）
+- 文字列 `repeat`: 最大 10,000 回
+- `indent` 幅: 最大 1,000
+- `left` / `right` / `center` 幅: 最大 100,000
+- `-fno-exceptions` ビルドでは中間 OOM が trap に劣化する

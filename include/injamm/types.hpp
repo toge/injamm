@@ -36,7 +36,7 @@ enum class error_code : int {
   unknown_key      = 3, /**< 不明なキー */
   syntax_error     = 4, /**< 構文エラー */
   type_mismatch    = 5, /**< 型不一致 */
-  invalid_utf8     = 6, /**< 不正な UTF-8 */
+  invalid_utf8     = 6, /**< 不正な UTF-8（予約; 現行実装では未使用） */
   unknown_filter   = 7, /**< 不明なフィルタ名 */
   division_by_zero = 8, /**< 除数ゼロエラー */
   out_of_memory    = 9, /**< メモリ不足 */
