@@ -44,12 +44,12 @@ TEST_CASE("try_append and try_push_back succeed", "[noexcept]") {
 TEST_CASE("string/float filters are void direct appends", "[noexcept]") {
   std::string s = "abc";
   injamm::detail::string_filter_entry se{injamm::detail::string_filter::upper};
-  injamm::detail::apply_string_filter(s, se);
+  (void)injamm::detail::apply_string_filter(s, se);
   CHECK(s == "ABC");
 
   std::string f = "3.14159";
   injamm::detail::float_filter_entry fe{injamm::detail::float_filter::precision, 2};
-  injamm::detail::apply_float_filter(f, fe);
+  (void)injamm::detail::apply_float_filter(f, fe);
   CHECK(f == "3.14");
 }
 
