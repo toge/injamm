@@ -1,4 +1,6 @@
 #pragma once
+#include "config.hpp"
+#include "detail/append_guard.hpp"
 
 /**
  * @file enum_io.hpp
@@ -40,7 +42,7 @@ inline void serialize_enum(Buffer& out, E value, bool raw) {
   if (!name.empty()) {
     /** 有効な列挙子名が取得できた場合: rawフラグに応じてエスケープ */
     if (raw) {
-      out.append(name.data(), name.size());
+      (void)hot_append(out, name.data(), name.size());
     } else {
       html_escape_into(out, name);
     }
@@ -52,7 +54,7 @@ inline void serialize_enum(Buffer& out, E value, bool raw) {
   std::array<char, 32> buf{};
   auto [ptr, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), static_cast<U>(value));
   if (ec == std::errc{}) {
-    out.append(std::string_view{buf.data(), static_cast<std::size_t>(ptr - buf.data())});
+    (void)hot_append(out, std::string_view{buf.data(), static_cast<std::size_t>(ptr - buf.data())});
   }
 }
 

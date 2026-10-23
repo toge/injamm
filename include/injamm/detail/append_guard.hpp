@@ -24,6 +24,18 @@ constexpr bool hot_append(Buffer& out, const char* data, std::size_t n) {
   out.append(data, n);
   return true;
 }
+
+template <class Buffer>
+constexpr bool hot_append(Buffer& out, std::string const& src, std::size_t pos, std::size_t n) {
+  out.append(src, pos, n);
+  return true;
+}
+
+template <class Buffer>
+constexpr bool hot_append(Buffer& out, std::size_t n, char c) {
+  out.append(n, c);
+  return true;
+}
 #else
 template <class Buffer>
 constexpr bool hot_append(Buffer& out, std::string_view sv) noexcept {
@@ -36,6 +48,20 @@ template <class Buffer>
 constexpr bool hot_append(Buffer& out, const char* data, std::size_t n) noexcept {
   if (static_cast<std::size_t>(n) > out.capacity() - out.size()) return false;
   out.append(data, n);
+  return true;
+}
+
+template <class Buffer>
+constexpr bool hot_append(Buffer& out, std::string const& src, std::size_t pos, std::size_t n) noexcept {
+  if (n > out.capacity() - out.size()) return false;
+  out.append(src, pos, n);
+  return true;
+}
+
+template <class Buffer>
+constexpr bool hot_append(Buffer& out, std::size_t n, char c) noexcept {
+  if (n > out.capacity() - out.size()) return false;
+  out.append(n, c);
   return true;
 }
 #endif

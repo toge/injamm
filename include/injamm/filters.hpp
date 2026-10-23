@@ -1,4 +1,6 @@
 #pragma once
+#include "config.hpp"
+#include "detail/append_guard.hpp"
 
 #include "bytecode.hpp"
 #include "escape.hpp"
@@ -150,7 +152,7 @@ namespace injamm::detail {
     if (width <= 0) break;
     if (width > 100000) width = 100000;
     if (str.size() < static_cast<std::size_t>(width)) {
-      str.append(static_cast<std::size_t>(width) - str.size(), ' ');
+      (void)hot_append(str, static_cast<std::size_t>(width) - str.size(), ' ');
     }
     break;
   }
@@ -163,7 +165,7 @@ namespace injamm::detail {
       auto left_pad  = pad / 2;
       str.reserve(static_cast<std::size_t>(width));
       str.insert(0, left_pad, ' ');
-      str.append(pad - left_pad, ' ');
+      (void)hot_append(str, pad - left_pad, ' ');
     }
     break;
   }
@@ -172,7 +174,7 @@ namespace injamm::detail {
     if (max_len < 0) { str.clear(); break; }
     if (str.size() > static_cast<std::size_t>(max_len) && max_len >= 3) {
       str.erase(static_cast<std::size_t>(max_len - 3));
-      str.append("...");
+      (void)hot_append(str, "...");
     } else if (str.size() > static_cast<std::size_t>(max_len)) {
       str.erase(static_cast<std::size_t>(max_len));
     }
@@ -201,11 +203,11 @@ namespace injamm::detail {
       while (pos < str.size()) {
         auto found = str.find(entry.str_arg1, pos);
         if (found == std::string::npos) {
-          result.append(str, pos, std::string::npos);
+          (void)hot_append(result, str, pos, std::string::npos);
           break;
         }
-        result.append(str, pos, found - pos);
-        result.append(entry.str_arg2);
+        (void)hot_append(result, str, pos, found - pos);
+        (void)hot_append(result, entry.str_arg2);
         pos = found + entry.str_arg1.size();
       }
       str = std::move(result);
@@ -273,12 +275,12 @@ namespace injamm::detail {
       while (pos < str.size()) {
         auto nl = str.find('\n', pos);
         if (nl == std::string::npos) {
-          result.append(str, pos, str.size() - pos);
+          (void)hot_append(result, str, pos, str.size() - pos);
           break;
         }
-        result.append(str, pos, nl - pos);
+        (void)hot_append(result, str, pos, nl - pos);
         result.push_back('\n');
-        result.append(pad);
+        (void)hot_append(result, pad);
         pos = nl + 1;
       }
       str = std::move(result);
@@ -293,7 +295,7 @@ namespace injamm::detail {
       str.reserve(target + pad_str.size());
       /** 複数文字パディングを直接追記し、超過分を切り詰める */
       while (str.size() < target) {
-        str.append(pad_str);
+        (void)hot_append(str, pad_str);
       }
       str.resize(target);
     }
