@@ -1,4 +1,5 @@
 #pragma once
+#include "detail/append_guard.hpp"
 
 #include <string_view>
 #include <type_traits>
@@ -507,7 +508,7 @@ class bc_compiler {
     // 直前の命令が emit_literal なら同じリテラルに append して命令を纏める (D3 literal coalesce)
     if (!bc_.instructions.empty() && bc_.instructions.back().op == bc_opcode::emit_literal) {
       auto prev_idx = bc_.instructions.back().operand;
-      bc_.literals[prev_idx].append(lit.data(), lit.size());
+      (void)hot_append(bc_.literals[prev_idx], lit.data(), lit.size());
       return;
     }
     auto idx = bc_.add_literal(lit);
@@ -1447,21 +1448,21 @@ class bc_compiler {
     while (pos < tmpl.size()) {
       auto pdef_start = tmpl.find("{{#partialdef", pos);
       if (pdef_start == std::string_view::npos) {
-        result.append(tmpl.substr(pos));
+        (void)hot_append(result, tmpl.substr(pos));
         break;
       }
 
-      result.append(tmpl.substr(pos, pdef_start - pos));
+      (void)hot_append(result, tmpl.substr(pos, pdef_start - pos));
 
       auto tag_end = tmpl.find("}}", pdef_start);
       if (tag_end == std::string_view::npos) {
-        result.append(tmpl.substr(pdef_start));
+        (void)hot_append(result, tmpl.substr(pdef_start));
         break;
       }
 
       auto inner = trim_sv(tmpl.substr(pdef_start + 2, tag_end - pdef_start - 2));
       if (!inner.starts_with("#partialdef ")) {
-        result.append(tmpl.substr(pdef_start, tag_end - pdef_start + 2));
+        (void)hot_append(result, tmpl.substr(pdef_start, tag_end - pdef_start + 2));
         pos = tag_end + 2;
         continue;
       }
@@ -1494,7 +1495,7 @@ class bc_compiler {
 
       auto close_tag = constexpr_find_close_partialdef(tmpl, tag_end + 2);
       if (close_tag == std::string_view::npos) {
-        result.append(tmpl.substr(pdef_start));
+        (void)hot_append(result, tmpl.substr(pdef_start));
         break;
       }
 
