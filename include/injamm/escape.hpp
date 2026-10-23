@@ -1,5 +1,6 @@
 #pragma once
 
+#include "config.hpp"
 #include <string_view>
 
 #if defined(__AVX2__)
@@ -12,63 +13,100 @@
 
 namespace injamm::detail {
 
-// スカラー版 HTML エスケープのフォールバック実装。constexpr-safe（out.append と switch のみ使用）。
+/**
+ * @brief 出力バッファへエスケープ済み文字列を追記する（例外利用時は通常の append）。
+ * @details INJAMM_HAS_EXCEPTIONS 時は try/catch を境界で受けるため zero-cost append を維持する。
+ *          !INJAMM_HAS_EXCEPTIONS 時は、追記前に残容量を検査し、不足時は false を返す
+ *          ことで例外 trap を避ける。
+ */
+#if INJAMM_HAS_EXCEPTIONS
 template <class Buffer>
-constexpr void html_escape_scalar(Buffer& out, std::string_view s) {
+constexpr bool html_escape_append(Buffer& out, std::string_view const& sv) {
+  out.append(sv);
+  return true;
+}
+
+template <class Buffer>
+constexpr bool html_escape_append(Buffer& out, const char* data, std::size_t n) {
+  out.append(data, n);
+  return true;
+}
+#else
+template <class Buffer>
+constexpr bool html_escape_append(Buffer& out, std::string_view const& sv) noexcept {
+  if (sv.size() > out.capacity() - out.size()) return false;
+  out.append(sv);
+  return true;
+}
+
+template <class Buffer>
+constexpr bool html_escape_append(Buffer& out, const char* data, std::size_t n) noexcept {
+  if (static_cast<std::size_t>(n) > out.capacity() - out.size()) return false;
+  out.append(data, n);
+  return true;
+}
+#endif
+
+// スカラー版 HTML エスケープのフォールバック実装。constexpr-safe（html_escape_append と switch のみ使用）。
+template <class Buffer>
+constexpr bool html_escape_scalar(Buffer& out, std::string_view s) {
   std::size_t safe = 0;
   for (std::size_t i = 0; i < s.size(); ++i) {
     auto const c = s[i];
     if (c != '<' && c != '>' && c != '&' && c != '"' && c != '\'')
       continue;
     if (i > safe)
-      out.append(s.data() + safe, i - safe);
+      if (!html_escape_append(out, s.data() + safe, i - safe)) return false;
     switch (c) {
     case '<':
-      out.append("&lt;");
+      if (!html_escape_append(out, "&lt;")) return false;
       break;
     case '>':
-      out.append("&gt;");
+      if (!html_escape_append(out, "&gt;")) return false;
       break;
     case '&':
-      out.append("&amp;");
+      if (!html_escape_append(out, "&amp;")) return false;
       break;
     case '"':
-      out.append("&quot;");
+      if (!html_escape_append(out, "&quot;")) return false;
       break;
     case '\'':
-      out.append("&#x27;");
+      if (!html_escape_append(out, "&#x27;")) return false;
       break;
     }
     safe = i + 1;
   }
-  if (safe < s.size())
-    out.append(s.data() + safe, s.size() - safe);
+  if (safe < s.size()) {
+    if (!html_escape_append(out, s.data() + safe, s.size() - safe)) return false;
+  }
+  return true;
 }
 
 #if defined(__AVX2__)
 template <class Buffer>
-constexpr void html_escape_into(Buffer& out, std::string_view s) {
+constexpr bool html_escape_into(Buffer& out, std::string_view s) {
   if !consteval {
     std::size_t i    = 0;
     std::size_t len  = s.size();
     auto const* data = s.data();
 
-    auto const process_special = [&](std::size_t start, std::size_t end) {
+    auto const process_special = [&](std::size_t start, std::size_t end) -> bool {
       std::size_t safe = start;
       for (std::size_t j = start; j < end; ++j) {
         auto const c = data[j];
         if (c != '<' && c != '>' && c != '&' && c != '"' && c != '\'') continue;
-        if (j > safe) out.append(data + safe, j - safe);
+        if (j > safe) if (!html_escape_append(out, data + safe, j - safe)) return false;
         switch (c) {
-        case '<': out.append("&lt;");   break;
-        case '>': out.append("&gt;");   break;
-        case '&': out.append("&amp;");  break;
-        case '"': out.append("&quot;"); break;
-        case '\'': out.append("&#x27;"); break;
+        case '<': if (!html_escape_append(out, "&lt;")) return false;   break;
+        case '>': if (!html_escape_append(out, "&gt;")) return false;   break;
+        case '&': if (!html_escape_append(out, "&amp;")) return false;  break;
+        case '"': if (!html_escape_append(out, "&quot;")) return false; break;
+        case '\'': if (!html_escape_append(out, "&#x27;")) return false; break;
         }
         safe = j + 1;
       }
-      if (safe < end) out.append(data + safe, end - safe);
+      if (safe < end) if (!html_escape_append(out, data + safe, end - safe)) return false;
+      return true;
     };
 
     auto const find_first_match = [](unsigned mask) -> int {
@@ -93,49 +131,51 @@ constexpr void html_escape_into(Buffer& out, std::string_view s) {
       unsigned mask = static_cast<unsigned>(_mm256_movemask_epi8(any));
 
       if (mask == 0) {
-        out.append(data + i, 32);
+        if (!html_escape_append(out, data + i, 32)) return false;
         i += 32;
       } else {
         int first = find_first_match(mask);
         if (first > 0) {
-          out.append(data + i, first);
+          if (!html_escape_append(out, data + i, first)) return false;
         }
-        process_special(i + first, i + 32);
+        if (!process_special(i + first, i + 32)) return false;
         i += 32;
       }
     }
 
     if (i < len) {
-      process_special(i, len);
+      if (!process_special(i, len)) return false;
     }
   } else {
-    html_escape_scalar(out, s);
+    if (!html_escape_scalar(out, s)) return false;
   }
+  return true;
 }
 #elif defined(__SSE2__)
 template <class Buffer>
-constexpr void html_escape_into(Buffer& out, std::string_view s) {
+constexpr bool html_escape_into(Buffer& out, std::string_view s) {
   if !consteval {
     std::size_t i    = 0;
     std::size_t len  = s.size();
     auto const* data = s.data();
 
-    auto const process_special = [&](std::size_t start, std::size_t end) {
+    auto const process_special = [&](std::size_t start, std::size_t end) -> bool {
       std::size_t safe = start;
       for (std::size_t j = start; j < end; ++j) {
         auto const c = data[j];
         if (c != '<' && c != '>' && c != '&' && c != '"' && c != '\'') continue;
-        if (j > safe) out.append(data + safe, j - safe);
+        if (j > safe) if (!html_escape_append(out, data + safe, j - safe)) return false;
         switch (c) {
-        case '<': out.append("&lt;");   break;
-        case '>': out.append("&gt;");   break;
-        case '&': out.append("&amp;");  break;
-        case '"': out.append("&quot;"); break;
-        case '\'': out.append("&#x27;"); break;
+        case '<': if (!html_escape_append(out, "&lt;")) return false;   break;
+        case '>': if (!html_escape_append(out, "&gt;")) return false;   break;
+        case '&': if (!html_escape_append(out, "&amp;")) return false;  break;
+        case '"': if (!html_escape_append(out, "&quot;")) return false; break;
+        case '\'': if (!html_escape_append(out, "&#x27;")) return false; break;
         }
         safe = j + 1;
       }
-      if (safe < end) out.append(data + safe, end - safe);
+      if (safe < end) if (!html_escape_append(out, data + safe, end - safe)) return false;
+      return true;
     };
 
     auto const find_first_match = [](unsigned mask) -> int {
@@ -162,49 +202,51 @@ constexpr void html_escape_into(Buffer& out, std::string_view s) {
       unsigned mask = static_cast<unsigned>(_mm_movemask_epi8(any));
 
       if (mask == 0) {
-        out.append(data + i, 16);
+        if (!html_escape_append(out, data + i, 16)) return false;
         i += 16;
       } else {
         int first = find_first_match(mask);
         if (first > 0) {
-          out.append(data + i, first);
+          if (!html_escape_append(out, data + i, first)) return false;
         }
-        process_special(i + first, i + 16);
+        if (!process_special(i + first, i + 16)) return false;
         i += 16;
       }
     }
 
     if (i < len) {
-      process_special(i, len);
+      if (!process_special(i, len)) return false;
     }
   } else {
-    html_escape_scalar(out, s);
+    if (!html_escape_scalar(out, s)) return false;
   }
+  return true;
 }
 #elif defined(__ARM_NEON)
 template <class Buffer>
-constexpr void html_escape_into(Buffer& out, std::string_view s) {
+constexpr bool html_escape_into(Buffer& out, std::string_view s) {
   if !consteval {
     std::size_t i    = 0;
     std::size_t len  = s.size();
     auto const* data = s.data();
 
-    auto const process_special = [&](std::size_t start, std::size_t end) {
+    auto const process_special = [&](std::size_t start, std::size_t end) -> bool {
       std::size_t safe = start;
       for (std::size_t j = start; j < end; ++j) {
         auto const c = data[j];
         if (c != '<' && c != '>' && c != '&' && c != '"' && c != '\'') continue;
-        if (j > safe) out.append(data + safe, j - safe);
+        if (j > safe) if (!html_escape_append(out, data + safe, j - safe)) return false;
         switch (c) {
-        case '<': out.append("&lt;");   break;
-        case '>': out.append("&gt;");   break;
-        case '&': out.append("&amp;");  break;
-        case '"': out.append("&quot;"); break;
-        case '\'': out.append("&#x27;"); break;
+        case '<': if (!html_escape_append(out, "&lt;")) return false;   break;
+        case '>': if (!html_escape_append(out, "&gt;")) return false;   break;
+        case '&': if (!html_escape_append(out, "&amp;")) return false;  break;
+        case '"': if (!html_escape_append(out, "&quot;")) return false; break;
+        case '\'': if (!html_escape_append(out, "&#x27;")) return false; break;
         }
         safe = j + 1;
       }
-      if (safe < end) out.append(data + safe, end - safe);
+      if (safe < end) if (!html_escape_append(out, data + safe, end - safe)) return false;
+      return true;
     };
 
     auto const neon_movemask = [](uint8x16_t v) -> uint16_t {
@@ -242,24 +284,25 @@ constexpr void html_escape_into(Buffer& out, std::string_view s) {
       uint16_t   mask  = neon_movemask(any);
 
       if (mask == 0) {
-        out.append(data + i, 16);
+        if (!html_escape_append(out, data + i, 16)) return false;
         i += 16;
       } else {
         int first = find_first_match(mask);
         if (first > 0) {
-          out.append(data + i, first);
+          if (!html_escape_append(out, data + i, first)) return false;
         }
-        process_special(i + first, i + 16);
+        if (!process_special(i + first, i + 16)) return false;
         i += 16;
       }
     }
 
     if (i < len) {
-      process_special(i, len);
+      if (!process_special(i, len)) return false;
     }
   } else {
-    html_escape_scalar(out, s);
+    if (!html_escape_scalar(out, s)) return false;
   }
+  return true;
 }
 #else
 /** @brief HTMLエスケープをバッファに書き込む
@@ -272,8 +315,8 @@ constexpr void html_escape_into(Buffer& out, std::string_view s) {
  *  特殊文字を含まない連続区間は一括 append し、push_back の呼び出し回数を削減する。
  */
 template <class Buffer>
-constexpr void html_escape_into(Buffer& out, std::string_view s) {
-  html_escape_scalar(out, s);
+constexpr bool html_escape_into(Buffer& out, std::string_view s) {
+  return html_escape_scalar(out, s);
 }
 #endif
 

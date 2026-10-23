@@ -569,7 +569,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
       return true;
     case special_var_kind::lp_key:
       if (!parent->key.empty()) {
-        if (raw) { ex.out_.append(parent->key); } else { html_escape_into(ex.out_, parent->key); }
+        if (raw) { ex.out_.append(parent->key); } else { if (!html_escape_into(ex.out_, parent->key)) return false; }
       }
       return true;
     default:
@@ -1372,7 +1372,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
 
   INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_emit_at_root(bc_executor& ex, std::size_t& pc, std::string&) {
     if constexpr (std::same_as<RootT, std::string> || std::same_as<RootT, std::string_view> || char_pointer_v<RootT>) {
-      html_escape_into(ex.out_, to_sv(ex.root_value_));
+      if (!html_escape_into(ex.out_, to_sv(ex.root_value_))) return std::unexpected(error_ctx{.position = pc, .ec = error_code::out_of_memory});
     } else if constexpr (serializable_v<RootT>) {
       serialize_value(ex.out_, ex.root_value_);
     }
@@ -1391,7 +1391,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
 
   INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_emit_this(bc_executor& ex, std::size_t& pc, std::string&) {
     if constexpr (std::same_as<T, std::string> || std::same_as<T, std::string_view> || char_pointer_v<T>) {
-      html_escape_into(ex.out_, to_sv(ex.value_));
+      if (!html_escape_into(ex.out_, to_sv(ex.value_))) return std::unexpected(error_ctx{.position = pc, .ec = error_code::out_of_memory});
     } else {
       ex.emit_this_scratch_.clear();
       if constexpr (serializable_v<T>) {
@@ -1401,7 +1401,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
           return std::unexpected(error_ctx{.position = pc, .ec = error_code::syntax_error});
         }
       }
-      html_escape_into(ex.out_, ex.emit_this_scratch_);
+      if (!html_escape_into(ex.out_, ex.emit_this_scratch_)) return std::unexpected(error_ctx{.position = pc, .ec = error_code::out_of_memory});
     }
     ++pc;
     return {};
@@ -1499,7 +1499,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
   INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_emit_at_key(bc_executor& ex, std::size_t& pc, std::string&) {
     if (ex.loop_) {
       if (!ex.loop_->key.empty()) {
-        html_escape_into(ex.out_, ex.loop_->key);
+        if (!html_escape_into(ex.out_, ex.loop_->key)) return std::unexpected(error_ctx{.position = pc, .ec = error_code::out_of_memory});
       } else {
         std::array<char, 16> buf;
         auto [ptr, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), ex.loop_->index);
@@ -1564,7 +1564,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
 
   INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_emit_filtered(bc_executor& ex, std::size_t& pc, std::string& filtered) {
     bool raw = ex.bc_.instructions[pc].op == bc_opcode::emit_filtered_raw;
-    if (raw) { ex.out_.append(filtered); } else { html_escape_into(ex.out_, filtered); }
+    if (raw) { ex.out_.append(filtered); } else { if (!html_escape_into(ex.out_, filtered)) return std::unexpected(error_ctx{.position = pc, .ec = error_code::out_of_memory}); }
     ++pc;
     return {};
   }
