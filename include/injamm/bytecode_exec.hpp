@@ -29,6 +29,7 @@
 #include "bytecode.hpp"
 #include "enum_io.hpp"
 #include "escape.hpp"
+#include "detail/append_guard.hpp"
 #include "filters.hpp"
 #include "glz_dispatch.hpp"
 #include "serialize_value.hpp"
@@ -462,20 +463,20 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
    }
 
    template <class Buffer>
-   static void emit_value_static(Buffer& out, auto const& field, bool raw) {
+   static bool emit_value_static(Buffer& out, auto const& field, bool raw) {
     using FT = std::remove_cvref_t<decltype(field)>;
     if constexpr (std::same_as<FT, bool>) {
       if (field) {
-        out.append("true", 4);
+        if (!hot_append(out, "true", 4)) return false;
       } else {
-        out.append("false", 5);
+        if (!hot_append(out, "false", 5)) return false;
       }
     } else if constexpr (std::same_as<FT, std::string> || std::same_as<FT, std::string_view> || char_pointer_v<FT>) {
       auto sv = to_sv(field);
       if (raw) {
-        out.append(sv.data(), sv.size());
+        if (!hot_append(out, sv.data(), sv.size())) return false;
       } else {
-        html_escape_into(out, sv);
+        if (!html_escape_into(out, sv)) return false;
       }
     } else if constexpr (std::is_enum_v<FT>) {
       serialize_enum(out, field, raw);
@@ -485,18 +486,18 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
       if constexpr (std::floating_point<FT>) {
         std::array<char, glz::zmij::double_buffer_size> buf;
         auto end = glz::to_chars(buf.data(), field);
-        out.append(buf.data(), static_cast<std::size_t>(end - buf.data()));
+        if (!hot_append(out, buf.data(), static_cast<std::size_t>(end - buf.data()))) return false;
       } else {
         std::array<char, 32> buf;
         auto [ptr, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), field);
         if (ec == std::errc{}) {
           auto const n = static_cast<std::size_t>(ptr - buf.data());
-          out.append(buf.data(), n);
+          if (!hot_append(out, buf.data(), n)) return false;
         }
       }
     } else if constexpr (is_std_optional_v<FT>) {
       if (field.has_value()) {
-        emit_value_static(out, *field, raw);
+        if (!emit_value_static(out, *field, raw)) return false;
       }
     } else if constexpr (serializable_v<FT>) {
       if (raw) {
@@ -504,32 +505,32 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
       } else {
         std::string scratch;
         serialize_value(scratch, field);
-        html_escape_into(out, scratch);
+        if (!html_escape_into(out, scratch)) return false;
       }
     } else if constexpr (ct_glz_reflectable<FT> && glz::write_supported<FT, glz::JSON>) {
       if constexpr (std::same_as<Buffer, std::string>) {
         if (raw) {
           std::string scratch;
           (void)glz::write_json(field, scratch);
-          out.append(scratch);
+          if (!hot_append(out, scratch)) return false;
         } else {
           std::string scratch;
           (void)glz::write_json(field, scratch);
-          html_escape_into(out, scratch);
+          if (!html_escape_into(out, scratch)) return false;
         }
       } else {
         std::string scratch;
         (void)glz::write_json(field, scratch);
         if (raw) {
-          out.append(scratch);
+          if (!hot_append(out, scratch)) return false;
         } else {
-          html_escape_into(out, scratch);
+          if (!html_escape_into(out, scratch)) return false;
         }
       }
     }
-  }
-
-  void emit_var_value(auto const& field, bool raw) { emit_value_static(out_, field, raw); }
+    return true;
+}
+  bool emit_var_value(auto const& field, bool raw) { return emit_value_static(out_, field, raw); }
 
   /** @brief 数値を出力バッファに追記する共通ヘルパ */
   template <class Buffer>
