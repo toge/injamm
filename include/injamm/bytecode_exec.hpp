@@ -534,10 +534,13 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
 
   /** @brief 数値を出力バッファに追記する共通ヘルパ */
   template <class Buffer>
-  static void append_number(Buffer& out, std::uint32_t v) {
+  static bool append_number(Buffer& out, std::uint32_t v) {
     std::array<char, 16> buf;
     auto [ptr, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), v);
-    if (ec == std::errc{}) out.append(buf.data(), static_cast<std::size_t>(ptr - buf.data()));
+    if (ec == std::errc{}) {
+      if (!hot_append(out, buf.data(), static_cast<std::size_t>(ptr - buf.data()))) return false;
+    }
+    return true;
   }
 
   /** @brief loop.parent.* 変数の解決。解決できれば true を返す（kind はコンパイル時分類済み） */
@@ -557,20 +560,20 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
       append_number(ex.out_, parent->count);
       return true;
     case special_var_kind::lp_is_first:
-      ex.out_.append(parent->index == 0 ? "true" : "false");
+      if (!hot_append(ex.out_, parent->index == 0 ? "true" : "false")) return false;
       return true;
     case special_var_kind::lp_is_last:
-      ex.out_.append((parent->index + 1 == parent->count) ? "true" : "false");
+      if (!hot_append(ex.out_, (parent->index + 1 == parent->count) ? "true" : "false")) return false;
       return true;
     case special_var_kind::lp_is_even:
-      ex.out_.append((parent->index % 2 == 0) ? "true" : "false");
+      if (!hot_append(ex.out_, (parent->index % 2 == 0) ? "true" : "false")) return false;
       return true;
     case special_var_kind::lp_is_odd:
-      ex.out_.append((parent->index % 2 == 1) ? "true" : "false");
+      if (!hot_append(ex.out_, (parent->index % 2 == 1) ? "true" : "false")) return false;
       return true;
     case special_var_kind::lp_key:
       if (!parent->key.empty()) {
-        if (raw) { ex.out_.append(parent->key); } else { if (!html_escape_into(ex.out_, parent->key)) return false; }
+        if (raw) { if (!hot_append(ex.out_, parent->key)) return false; } else { if (!html_escape_into(ex.out_, parent->key)) return false; }
       }
       return true;
     default:
@@ -712,7 +715,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
           // 型消去リゾルバは std::string& にしか書けないため scratch 経由で sink に流す
           std::string scratch;
           bool ok = lp->binding_resolve(scratch, ref.key, raw, lp->binding_elem, lp->binding_name, ref.field_index);
-          if (ok) ex.out_.append(scratch);
+          if (ok && !hot_append(ex.out_, scratch)) return false;
           return ok;
         }
       }
@@ -832,7 +835,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
           if (!r2) return r2;
           // join: 最初のイテレーション以外で区切り文字を出力
           if (!w.join_sep.empty() && ls.index + 1 < count && !ls.continue_flag) {
-            ex.out_.append(w.join_sep);
+            if (!hot_append(ex.out_, w.join_sep)) return std::unexpected(error_ctx{.position = pc, .ec = error_code::out_of_memory});
           }
           if (w.bwd) --src; else ++src;
           if (ls.continue_flag) { ls.continue_flag = false; continue; }
@@ -1305,7 +1308,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
   // -- ハンドラ関数群（双方のディスパッチパスで共有） --
 
   INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_emit_literal(bc_executor& ex, std::size_t& pc, std::string&) {
-    ex.out_.append(ex.bc_.literals[ex.bc_.instructions[pc].operand]);
+    if (!hot_append(ex.out_, ex.bc_.literals[ex.bc_.instructions[pc].operand])) return std::unexpected(error_ctx{.position = pc, .ec = error_code::out_of_memory});
     ++pc;
     return {};
   }
@@ -1342,7 +1345,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
 
   INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_emit_litvar(bc_executor& ex, std::size_t& pc, std::string&) {
     bool raw = ex.bc_.instructions[pc].op == bc_opcode::emit_litvar_raw;
-    ex.out_.append(ex.bc_.literals[ex.bc_.instructions[pc].operand]);
+    if (!hot_append(ex.out_, ex.bc_.literals[ex.bc_.instructions[pc].operand])) return std::unexpected(error_ctx{.position = pc, .ec = error_code::out_of_memory});
     auto const& ref = ex.bc_.var_refs[ex.bc_.instructions[pc].operand2];
     if (ref.is_dead) { ++pc; return {}; }
     if (ref.is_loop_parent && resolve_loop_parent_var(ex, ref.special, raw)) { ++pc; return {}; }
@@ -1427,7 +1430,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
       std::array<char, 16> buf;
       auto [ptr, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), sz);
       if (ec == std::errc{}) {
-        ex.out_.append(buf.data(), static_cast<std::size_t>(ptr - buf.data()));
+        (void)hot_append(ex.out_, buf.data(), static_cast<std::size_t>(ptr - buf.data()));
       }
     };
     if (for_each_root_field_ref(ex, ref, emit_size)) { ++pc; return {}; }
@@ -1459,7 +1462,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
     if (ex.loop_) {
       std::array<char, 16> buf;
       auto [ptr, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), ex.loop_->index);
-      if (ec == std::errc{}) ex.out_.append(buf.data(), static_cast<std::size_t>(ptr - buf.data()));
+      if (ec == std::errc{}) { if (!hot_append(ex.out_, buf.data(), static_cast<std::size_t>(ptr - buf.data()))) return std::unexpected(error_ctx{.position = pc, .ec = error_code::out_of_memory}); }
     }
     ++pc;
     return {};
@@ -1469,7 +1472,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
     if (ex.loop_) {
       std::array<char, 16> buf;
       auto [ptr, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), ex.loop_->index + 1);
-      if (ec == std::errc{}) ex.out_.append(buf.data(), static_cast<std::size_t>(ptr - buf.data()));
+      if (ec == std::errc{}) { if (!hot_append(ex.out_, buf.data(), static_cast<std::size_t>(ptr - buf.data()))) return std::unexpected(error_ctx{.position = pc, .ec = error_code::out_of_memory}); }
     }
     ++pc;
     return {};
@@ -1479,20 +1482,20 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
     if (ex.loop_) {
       std::array<char, 16> buf;
       auto [ptr, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), ex.loop_->count);
-      if (ec == std::errc{}) ex.out_.append(buf.data(), static_cast<std::size_t>(ptr - buf.data()));
+      if (ec == std::errc{}) { if (!hot_append(ex.out_, buf.data(), static_cast<std::size_t>(ptr - buf.data()))) return std::unexpected(error_ctx{.position = pc, .ec = error_code::out_of_memory}); }
     }
     ++pc;
     return {};
   }
 
   INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_emit_at_first(bc_executor& ex, std::size_t& pc, std::string&) {
-    if (ex.loop_ && ex.loop_->index == 0) { ex.out_.append("true"); } else { ex.out_.append("false"); }
+    if (ex.loop_ && ex.loop_->index == 0) { if (!hot_append(ex.out_, "true")) return std::unexpected(error_ctx{.position = pc, .ec = error_code::out_of_memory}); } else { if (!hot_append(ex.out_, "false")) return std::unexpected(error_ctx{.position = pc, .ec = error_code::out_of_memory}); }
     ++pc;
     return {};
   }
 
   INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_emit_at_last(bc_executor& ex, std::size_t& pc, std::string&) {
-    if (ex.loop_ && ex.loop_->index + 1 == ex.loop_->count) { ex.out_.append("true"); } else { ex.out_.append("false"); }
+    if (ex.loop_ && ex.loop_->index + 1 == ex.loop_->count) { if (!hot_append(ex.out_, "true")) return std::unexpected(error_ctx{.position = pc, .ec = error_code::out_of_memory}); } else { if (!hot_append(ex.out_, "false")) return std::unexpected(error_ctx{.position = pc, .ec = error_code::out_of_memory}); }
     ++pc;
     return {};
   }
@@ -1504,7 +1507,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
       } else {
         std::array<char, 16> buf;
         auto [ptr, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), ex.loop_->index);
-        if (ec == std::errc{}) ex.out_.append(buf.data(), static_cast<std::size_t>(ptr - buf.data()));
+        if (ec == std::errc{}) { if (!hot_append(ex.out_, buf.data(), static_cast<std::size_t>(ptr - buf.data()))) return std::unexpected(error_ctx{.position = pc, .ec = error_code::out_of_memory}); }
       }
     }
     ++pc;
@@ -1565,7 +1568,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
 
   INJAMM_ALWAYS_INLINE static std::expected<void, error_ctx> handle_emit_filtered(bc_executor& ex, std::size_t& pc, std::string& filtered) {
     bool raw = ex.bc_.instructions[pc].op == bc_opcode::emit_filtered_raw;
-    if (raw) { ex.out_.append(filtered); } else { if (!html_escape_into(ex.out_, filtered)) return std::unexpected(error_ctx{.position = pc, .ec = error_code::out_of_memory}); }
+    if (raw) { if (!hot_append(ex.out_, filtered)) return std::unexpected(error_ctx{.position = pc, .ec = error_code::out_of_memory}); } else { if (!html_escape_into(ex.out_, filtered)) return std::unexpected(error_ctx{.position = pc, .ec = error_code::out_of_memory}); }
     ++pc;
     return {};
   }
@@ -1804,11 +1807,11 @@ public:
             auto const& instr = bc_.instructions[i];
             switch (instr.op) {
               case bc_opcode::emit_literal:
-                out_.append(bc_.literals[instr.operand]);
+                if (!hot_append(out_, bc_.literals[instr.operand])) return std::unexpected(error_ctx{.position = i, .ec = error_code::out_of_memory});
                 break;
               case bc_opcode::emit_litvar:
               case bc_opcode::emit_litvar_raw: {
-                out_.append(bc_.literals[instr.operand]);
+                if (!hot_append(out_, bc_.literals[instr.operand])) return std::unexpected(error_ctx{.position = i, .ec = error_code::out_of_memory});
                 auto const& ref = bc_.var_refs[instr.operand2];
                 if (ref.is_dead) break;
                 bool raw = (instr.op == bc_opcode::emit_litvar_raw);
