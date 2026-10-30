@@ -1,4 +1,5 @@
 #pragma once
+#include "detail/append_guard.hpp"
 
 /**
  * @file engine.hpp
@@ -65,7 +66,7 @@ public:
 
   void append(std::string_view sv) {
     if (!buf_.empty() && buf_.size() + sv.size() > chunk_size_) flush();
-    buf_.append(sv.data(), sv.size());
+    (void)detail::hot_append(buf_, sv.data(), sv.size());
   }
   void append(char const* p, std::size_t n) { append(std::string_view{p, n}); }
 

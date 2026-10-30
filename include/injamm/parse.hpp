@@ -1,4 +1,5 @@
 #pragma once
+#include "detail/append_guard.hpp"
 
 #include "bytecode_fwd.hpp"
 #include "types.hpp"
@@ -588,16 +589,16 @@ template <class ConstMap>
   while (pos < content.size()) {
     auto var_start = content.find("@var(", pos);
     if (var_start == std::string_view::npos) {
-      result.append(content.substr(pos));
+      (void)hot_append(result, content.substr(pos));
       break;
     }
 
-    result.append(content.substr(pos, var_start - pos));
+    (void)hot_append(result, content.substr(pos, var_start - pos));
 
     auto paren_start = var_start + 5;
     auto paren_end   = content.find(')', paren_start);
     if (paren_end == std::string_view::npos) {
-      result.append(content.substr(var_start));
+      (void)hot_append(result, content.substr(var_start));
       break;
     }
 
@@ -633,16 +634,16 @@ template <class ConstMap>
   while (pos < tmpl.size()) {
     auto tag_start = tmpl.find("{{", pos);
     if (tag_start == std::string_view::npos) {
-      result.append(tmpl.substr(pos));
+      (void)hot_append(result, tmpl.substr(pos));
       break;
     }
 
-    result.append(tmpl.substr(pos, tag_start - pos));
+    (void)hot_append(result, tmpl.substr(pos, tag_start - pos));
 
     if (tag_start + 2 < tmpl.size() && tmpl[tag_start + 2] == '{') {
       auto raw_end = tmpl.find("}}}", tag_start + 3);
       if (raw_end == std::string_view::npos) {
-        result.append(tmpl.substr(tag_start));
+        (void)hot_append(result, tmpl.substr(tag_start));
         break;
       }
       auto raw_inner = tmpl.substr(tag_start + 3, raw_end - tag_start - 3);
@@ -664,7 +665,7 @@ template <class ConstMap>
 
     auto tag_end = tmpl.find("}}", tag_start + 2);
     if (tag_end == std::string_view::npos) {
-      result.append(tmpl.substr(tag_start));
+      (void)hot_append(result, tmpl.substr(tag_start));
       break;
     }
 
@@ -698,18 +699,18 @@ template <class ConstMap>
   while (pos < tmpl.size()) {
     auto tag = tmpl.find("{{", pos);
     if (tag == std::string_view::npos) {
-      result.append(tmpl.substr(pos));
+      (void)hot_append(result, tmpl.substr(pos));
       break;
     }
     if (tag > 0 && tmpl[tag - 1] == '{') {
-      result.append(tmpl.substr(pos, tag - pos + 1));
+      (void)hot_append(result, tmpl.substr(pos, tag - pos + 1));
       pos = tag + 1;
       continue;
     }
-    result.append(tmpl.substr(pos, tag - pos));
+    (void)hot_append(result, tmpl.substr(pos, tag - pos));
     auto end = tmpl.find("}}", tag + 2);
     if (end == std::string_view::npos) {
-      result.append(tmpl.substr(tag));
+      (void)hot_append(result, tmpl.substr(tag));
       break;
     }
     std::size_t inner_start = tag + 2;
@@ -741,13 +742,13 @@ template <class ConstMap>
   while (pos < tmpl.size()) {
     auto tag = tmpl.find("{{", pos);
     if (tag == std::string_view::npos) {
-      result.append(tmpl.substr(pos));
+      (void)hot_append(result, tmpl.substr(pos));
       break;
     }
-    result.append(tmpl.substr(pos, tag - pos));
+    (void)hot_append(result, tmpl.substr(pos, tag - pos));
     auto end = tmpl.find("}}", tag + 2);
     if (end == std::string_view::npos) {
-      result.append(tmpl.substr(tag));
+      (void)hot_append(result, tmpl.substr(tag));
       break;
     }
     auto inner = tmpl.substr(tag + 2, end - tag - 2);
@@ -757,7 +758,7 @@ template <class ConstMap>
       // exists は単一フィールド名のみを扱う。空/複数トークンは推定不能なため、
       // 埋め込み変換を行わず元のタグをそのまま保持する。
       if (rest.empty() || rest.find_first_of(" \t\r\n") != std::string_view::npos) {
-        result.append(tmpl.substr(tag, end - tag + 2));
+        (void)hot_append(result, tmpl.substr(tag, end - tag + 2));
         pos = end + 2;
         continue;
       }
@@ -770,7 +771,7 @@ template <class ConstMap>
     } else if (trimmed == "^exists" || trimmed.starts_with("^exists ")) {
       auto rest = trim_sv(trimmed.substr(8));
       if (rest.empty() || rest.find_first_of(" \t\r\n") != std::string_view::npos) {
-        result.append(tmpl.substr(tag, end - tag + 2));
+        (void)hot_append(result, tmpl.substr(tag, end - tag + 2));
         pos = end + 2;
         continue;
       }
@@ -790,7 +791,7 @@ template <class ConstMap>
       pos = end + 2;
       continue;
     } else {
-      result.append(tmpl.substr(tag, end - tag + 2));
+      (void)hot_append(result, tmpl.substr(tag, end - tag + 2));
       pos = end + 2;
       continue;
     }
@@ -807,15 +808,15 @@ template <class ConstMap>
   while (pos < tmpl.size()) {
     auto cs = tmpl.find("{{!", pos);
     if (cs == std::string_view::npos) {
-      result.append(tmpl.substr(pos));
+      (void)hot_append(result, tmpl.substr(pos));
       break;
     }
     if (cs > 0 && tmpl[cs - 1] == '{') {
-      result.append(tmpl.substr(pos, cs - pos + 1));
+      (void)hot_append(result, tmpl.substr(pos, cs - pos + 1));
       pos = cs + 1;
       continue;
     }
-    result.append(tmpl.substr(pos, cs - pos));
+    (void)hot_append(result, tmpl.substr(pos, cs - pos));
     auto ce = tmpl.find("}}", cs + 3);
     if (ce == std::string_view::npos) {
       result += '{';
@@ -836,15 +837,15 @@ template <class ConstMap>
   while (pos < tmpl.size()) {
     auto cs = tmpl.find("{#", pos);
     if (cs == std::string_view::npos) {
-      result.append(tmpl.substr(pos));
+      (void)hot_append(result, tmpl.substr(pos));
       break;
     }
     if (cs > 0 && tmpl[cs - 1] == '{') {
-      result.append(tmpl.substr(pos, cs - pos + 1));
+      (void)hot_append(result, tmpl.substr(pos, cs - pos + 1));
       pos = cs + 1;
       continue;
     }
-    result.append(tmpl.substr(pos, cs - pos));
+    (void)hot_append(result, tmpl.substr(pos, cs - pos));
     auto ce = tmpl.find("#}", cs + 2);
     if (ce == std::string_view::npos) {
       result += '{';
