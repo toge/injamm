@@ -2101,7 +2101,12 @@ std::expected<std::string, error_ctx> bc_execute(bytecode const& bc, T const& va
   auto        estimated = estimate_output_size(bc, value);
   /** 前回レンダリングの実測サイズ（engine が渡す）を優先して再確保を防ぐ */
   if (size_hint > estimated) estimated = size_hint;
-  if (estimated > 32) out.reserve(estimated);
+  if (estimated > 32) {
+#if !INJAMM_HAS_EXCEPTIONS
+    if (estimated > out.max_size()) return std::unexpected(error_ctx{.ec = error_code::out_of_memory});
+#endif
+    out.reserve(estimated);
+  }
   bc_executor<T> exec(bc, value, value, nullptr, out);
   auto           r = exec.execute();
   if (!r) {
@@ -2130,7 +2135,12 @@ std::expected<void, error_ctx> bc_execute_into(bytecode const& bc, T const& valu
 #endif
   out.clear();
   auto estimated = estimate_output_size(bc, value);
-  if (estimated > 32 && out.capacity() < estimated) out.reserve(estimated);
+  if (estimated > 32 && out.capacity() < estimated) {
+#if !INJAMM_HAS_EXCEPTIONS
+    if (estimated > out.max_size()) return std::unexpected(error_ctx{.ec = error_code::out_of_memory});
+#endif
+    out.reserve(estimated);
+  }
   bc_executor<T> exec(bc, value, value, nullptr, out);
   return exec.execute();
 #if INJAMM_HAS_EXCEPTIONS
