@@ -15,7 +15,7 @@ namespace injamm::detail {
 
 /**
  * @brief 出力バッファへエスケープ済み文字列を追記する（例外利用時は通常の append）。
- * @details INJAMM_HAS_EXCEPTIONS 時は try/catch を境界で受けるため zero-cost append を維持する。
+ * @details INJAMM_HAS_EXCEPTIONS 時は境界で例外を受けるため zero-cost append を維持する。
  *          !INJAMM_HAS_EXCEPTIONS 時は、追記前に残容量を検査し、不足時は false を返す
  *          ことで例外 trap を避ける。
  */

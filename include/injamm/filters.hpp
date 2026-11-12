@@ -44,9 +44,6 @@ namespace injamm::detail {
  * @param entry 適用するフィルタの種別と引数
  */
 [[nodiscard]] constexpr std::expected<void, error_ctx> apply_string_filter(std::string& str, string_filter_entry const& entry) {
-#if INJAMM_HAS_EXCEPTIONS
-  try {
-#endif
   switch (entry.filter) {
   case string_filter::upper:
     for (auto& c : str) {
@@ -310,11 +307,6 @@ namespace injamm::detail {
     break;
   }
   }
-#if INJAMM_HAS_EXCEPTIONS
-  } catch (...) {
-    return std::unexpected(error_ctx{.ec = error_code::out_of_memory});
-  }
-#endif
   return {};
 }
 
@@ -764,9 +756,6 @@ namespace injamm::detail {
  * @param entry 適用するフィルタの種別と引数
  */
 [[nodiscard]] constexpr std::expected<void, error_ctx> apply_float_filter(std::string& str, float_filter_entry const& entry) {
-#if INJAMM_HAS_EXCEPTIONS
-  try {
-#endif
   switch (entry.filter) {
   case float_filter::precision: {
     double val{};
@@ -800,11 +789,6 @@ namespace injamm::detail {
     break;
   }
   }
-#if INJAMM_HAS_EXCEPTIONS
-  } catch (...) {
-    return std::unexpected(error_ctx{.ec = error_code::out_of_memory});
-  }
-#endif
   return {};
 }
 

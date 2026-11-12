@@ -9,7 +9,7 @@ namespace injamm::detail {
 
 /**
  * @brief hot path 用の容量確認付き append helper。
- * @details INJAMM_HAS_EXCEPTIONS 時は通常の append を行い、allocation failure は境界 catch に委ねる。
+ * @details INJAMM_HAS_EXCEPTIONS 時は通常の append を行い、allocation failure は境界の例外処理に委ねる。
  *          !INJAMM_HAS_EXCEPTIONS 時は事前に残容量を確認し、不足時は false を返すことで trap を避ける。
  */
 #if INJAMM_HAS_EXCEPTIONS
