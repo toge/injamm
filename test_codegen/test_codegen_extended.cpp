@@ -73,6 +73,9 @@ struct glz::meta<TestData> {
 #include "render11.hpp"
 #include "render12.hpp"
 #include "render13.hpp"
+#include "render_logic_or.hpp"
+#include "render_logic_and.hpp"
+#include "render_if_filtered.hpp"
 
 int test_count = 0;
 int pass_count = 0;
@@ -162,6 +165,14 @@ int main() {
     [](auto const& d) { return generated::render12(d); });
   check_ext("json filter", "{{name|json}}", d,
     [](auto const& d) { return generated::render13(d); });
+
+  // 論理条件・フィルタ条件の AOT/VM 一致（監査 finding 2, 3）
+  check_ext("logical or rhs", "{{#if active || age}}YES{{else}}NO{{/if}}", TestData{"x", false, 25, {}, {}},
+    [](auto const& d) { return generated::render_logic_or(d); });
+  check_ext("logical and rhs", "{{#if active && age}}YES{{else}}NO{{/if}}", TestData{"x", true, 0, {}, {}},
+    [](auto const& d) { return generated::render_logic_and(d); });
+  check_ext("filtered if false", "{{#if age|is_neg}}YES{{else}}NO{{/if}}", TestData{"x", false, 25, {}, {}},
+    [](auto const& d) { return generated::render_if_filtered(d); });
 
   // バッファ再利用版
   check_into("into num compare gt", "{{#if age > 20}}adult{{else}}minor{{/if}}", u,

@@ -862,6 +862,14 @@ bytecode read_bytecode_body(std::istream& is, read_state& state, int depth) {
   }
   if (!state.ok) return bc;
 
+  // 宣言された literal_total_size が実データの合計と一致することを検証する
+  // （不一致のまま実行すると estimate_output_size が巨大 reserve を試みる）
+  {
+    std::uint64_t literal_bytes = 0;
+    for (auto const& lit : bc.literals) literal_bytes += lit.size();
+    if (bc.literal_total_size != literal_bytes) { state.ok = false; state.ec = error_code::syntax_error; return bc; }
+  }
+
   // 変数参照テーブル
   auto vc = read_u64_le(is, state);
   if (!state.ok) return bc;
@@ -1127,6 +1135,13 @@ bytecode read_bytecode_body(span_cursor& cur, int depth) {
     bc.literals.push_back(read_string(cur));
   }
   if (!cur.ok) return bc;
+
+  // 宣言された literal_total_size が実データの合計と一致することを検証する
+  {
+    std::uint64_t literal_bytes = 0;
+    for (auto const& lit : bc.literals) literal_bytes += lit.size();
+    if (bc.literal_total_size != literal_bytes) { cur.ok = false; cur.ec = error_code::syntax_error; return bc; }
+  }
 
   // 変数参照テーブル
   auto vc = read_u64_le(cur);

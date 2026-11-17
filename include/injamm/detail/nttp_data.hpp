@@ -58,6 +58,21 @@ namespace detail {
     static constexpr std::size_t count = sizeof...(Pairs) / 2;
     static_assert(sizeof...(Pairs) % 2 == 0, "injamm: ct_partials requires name/body pairs (even count). "
                                             "Example: ct_partials<\"name\", \"body\", \"name2\", \"body2\">");
+
+    /** @brief レジストリに指定名の partial が含まれるか（コンパイル時） */
+    static constexpr bool contains(std::string_view name) noexcept {
+      bool found = false;
+      std::size_t i = 0;
+      auto check = [&](auto const& fs) {
+        if (i % 2 == 0) {
+          std::string_view sv{fs.data, fs.size()};
+          if (sv == name) found = true;
+        }
+        ++i;
+      };
+      (check(Pairs), ...);
+      return found;
+    }
   };
 
   template <typename T>
@@ -88,6 +103,42 @@ namespace detail {
                                      "Expected injamm::fixed_string or frozenchars::FrozenString. "
                                      "Ensure your type has either a '.data' member or a '.data()' method.");
     }
+  }
+
+  /**
+   * @brief partial の循環参照をコンパイル時に検出する
+   * @return 循環がなければ error_code::none の error_ctx
+   */
+  template <std::size_t N>
+  consteval error_ctx detect_partial_cycle(ct_parsed_template<N> const& p, std::string_view tmpl) noexcept {
+    std::array<bool, N> visited{};
+    std::array<bool, N> in_stack{};
+    bool        cyclic = false;
+    std::size_t cycle_pos = 0;
+    auto dfs = [&](auto& self, std::size_t node) -> void {
+      if (cyclic || visited[node]) return;
+      visited[node] = true;
+      in_stack[node] = true;
+      auto body = tmpl.substr(p.partial_body_starts[node], p.partial_body_ends[node] - p.partial_body_starts[node]);
+      for_each_partial_ref(body, [&](std::string_view ref, std::size_t at) {
+        if (cyclic) return;
+        for (std::size_t j = 0; j < p.partial_count; ++j) {
+          if (p.partial_names[j] == ref) {
+            if (in_stack[j]) {
+              cyclic = true;
+              cycle_pos = p.partial_body_starts[node] + at;
+            } else {
+              self(self, j);
+            }
+            break;
+          }
+        }
+      });
+      in_stack[node] = false;
+    };
+    for (std::size_t i = 0; i < p.partial_count && !cyclic; ++i) dfs(dfs, i);
+    if (cyclic) return error_ctx{cycle_pos, error_code::syntax_error, "circular partial reference"};
+    return {};
   }
 
   /**
@@ -314,7 +365,21 @@ namespace detail {
     static constexpr std::string_view tmpl_sv  = nttp_string_view(Tmpl);
     static constexpr auto             parsed   = detail::parse_fixed_impl<Tmpl, Trim, Lstrip>();
     static constexpr auto             resolved = detail::resolve_field_indices<T>(parsed);
-    static constexpr auto             ct_bc    = detail::ct_chunks_to_bytecode<T>(resolved);
+    static constexpr auto             ct_bc    = [] {
+      auto bc = detail::ct_chunks_to_bytecode<T>(resolved);
+      if (bc.error.ec == error_code::none)
+        bc.error = detail::detect_partial_cycle(parsed, tmpl_sv);
+      // 外部レジストリ参照（{{> name}}）が未定義ならコンパイル時エラー
+      if (bc.error.ec == error_code::none) {
+        for (std::size_t i = parsed.partial_count; i < parsed.partial_total; ++i) {
+          if (!PartialSet::contains(parsed.partial_names[i])) {
+            bc.error = error_ctx{0, error_code::unknown_key, parsed.partial_names[i]};
+            break;
+          }
+        }
+      }
+      return bc;
+    }();
     using partial_set = PartialSet;  ///< 外部レジストリ（ct_partials<...>） */
   };
 
@@ -429,31 +494,31 @@ namespace detail {
         {
           std::array<bool, Data::parsed.partial_count> visited{};
           std::array<bool, Data::parsed.partial_count> in_stack{};
+          bool cyclic = false;
           auto dfs = [&](auto& self, std::size_t node) -> void {
-            if (visited[node]) return;
+            if (cyclic || visited[node]) return;
             visited[node] = true;
             in_stack[node] = true;
             std::string_view body = tmpl_sv.substr(Data::parsed.partial_body_starts[node], Data::parsed.partial_body_ends[node] - Data::parsed.partial_body_starts[node]);
-            std::size_t pos = 0;
-            while (pos < body.size()) {
-              auto at = constexpr_find(body, "{{#partial ", pos);
-              if (at == std::string_view::npos) break;
-              auto end = constexpr_find(body, "}}", at);
-              if (end == std::string_view::npos) break;
-              std::string_view ref = trim_sv(body.substr(at + 11, end - (at + 11)));
+            for_each_partial_ref(body, [&](std::string_view ref, std::size_t) {
+              if (cyclic) return;
               for (std::size_t j = 0; j < Data::parsed.partial_count; ++j) {
                 if (Data::parsed.partial_names[j] == ref) {
-                  if (!in_stack[j]) self(self, j);
+                  if (in_stack[j]) cyclic = true;
+                  else self(self, j);
                   break;
                 }
               }
-              pos = end + 2;
-            }
+            });
             in_stack[node] = false;
             order[order_count++] = node;
           };
           for (std::size_t i = 0; i < Data::parsed.partial_count; ++i)
             dfs(dfs, i);
+          if (cyclic) {
+            bc.error = error_ctx{0, error_code::syntax_error, "circular partial reference"};
+            return bc;
+          }
         }
         for (std::size_t k = 0; k < order_count; ++k) {
           std::size_t i = order[k];
@@ -507,6 +572,7 @@ namespace detail {
     std::array<std::size_t, N> order{};
     std::size_t count = 0;
     bool found = false;
+    bool cyclic = false;  ///< 循環参照を検出した
     // ネストした partial のボディ範囲（count == 0 かつ found の場合に有効）
     std::size_t nested_body_start = 0;
     std::size_t nested_body_end   = 0;
@@ -555,29 +621,21 @@ namespace detail {
     std::array<bool, N> visited{};
     std::array<bool, N> in_stack{};
     auto dfs = [&](auto& self, std::size_t node) -> void {
-      if (visited[node])
+      if (result.cyclic || visited[node])
         return;
       visited[node] = true;
       in_stack[node] = true;
       std::string_view body = sv.substr(p.partial_body_starts[node], p.partial_body_ends[node] - p.partial_body_starts[node]);
-      std::size_t pos = 0;
-      while (pos < body.size()) {
-        auto at = constexpr_find(body, "{{#partial ", pos);
-        if (at == std::string_view::npos)
-          break;
-        auto end = constexpr_find(body, "}}", at);
-        if (end == std::string_view::npos)
-          break;
-        std::string_view ref = trim_sv(body.substr(at + 11, end - (at + 11)));  // "{{#partial " は 11 文字
+      for_each_partial_ref(body, [&](std::string_view ref, std::size_t) {
+        if (result.cyclic) return;
         for (std::size_t j = 0; j < p.partial_count; ++j) {
           if (p.partial_names[j] == ref) {
-            if (!in_stack[j])
-              self(self, j);
+            if (in_stack[j]) result.cyclic = true;
+            else self(self, j);
             break;
           }
         }
-        pos = end + 2;
-      }
+      });
       in_stack[node] = false;
       result.order[result.count++] = node;  // 後行順：依存先の後
     };
@@ -595,6 +653,10 @@ namespace detail {
       detail::bytecode bc;
       if constexpr (!closure.found) {
         bc.error = error_ctx{0, error_code::unknown_key, target_sv};
+        return bc;
+      }
+      if constexpr (closure.cyclic) {
+        bc.error = error_ctx{0, error_code::syntax_error, "circular partial reference"};
         return bc;
       }
       auto tmpl_sv = Data::tmpl_sv;

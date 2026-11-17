@@ -5,6 +5,7 @@
 
 #include <cstdint>
 #include <cstdio>
+#include <limits>
 #include <span>
 #include <string>
 #include <utility>
@@ -43,6 +44,15 @@ template <>
 struct glz::meta<smoke_group> {
   static constexpr auto value =
       glz::object("title", &smoke_group::title, "users", &smoke_group::users, "flag", &smoke_group::flag);
+};
+
+struct smoke_min {
+  long long n{};
+};
+
+template <>
+struct glz::meta<smoke_min> {
+  static constexpr auto value = glz::object("n", &smoke_min::n);
 };
 
 int main() {
@@ -94,6 +104,39 @@ int main() {
     if (r.has_value()) {
       check(*r == "&lt;b&gt;&amp;|<b>&", "escape render value");
     }
+  }
+
+  // 推定容量を超える長い変数が切り詰められないこと（監査 finding 1）
+  {
+    const smoke_user long_name{std::string(1000, 'x'), 0};
+    auto e = injamm::engine<smoke_user>{"Value: {{name}}"};
+    auto r = e.render(long_name);
+    check(r.has_value(), "long value has_value");
+    if (r.has_value()) check(r->size() == 1007, "long value not truncated");
+  }
+
+  // セクションの大量出力が切り詰められないこと
+  {
+    smoke_group many{"t", {}, false};
+    for (int i = 0; i < 1000; ++i) many.users.push_back({"abcdefghij", i});
+    auto e = injamm::engine<smoke_group>{"{{#users}}{{name}},{{/users}}"};
+    auto r = e.render(many);
+    check(r.has_value(), "long section has_value");
+    if (r.has_value()) check(r->size() == 11000, "long section not truncated");
+  }
+
+  // 不正フォーマットは abort せず invalid_format を返す
+  {
+    auto r = injamm::render<"{{age | format(\"q\")}}">(smoke_user{"x", 30});
+    check(!r.has_value() && r.error().ec == injamm::error_code::invalid_format,
+          "invalid format returns invalid_format");
+  }
+
+  // bin フィルタが LLONG_MIN を変換できること
+  {
+    auto r = injamm::render<"{{n | bin}}">(smoke_min{std::numeric_limits<long long>::min()});
+    const std::string expected = "-1000000000000000000000000000000000000000000000000000000000000000";
+    check(r.has_value() && *r == expected, "bin LLONG_MIN");
   }
 
   // span ベースのバイトコード保存 / 読み込み

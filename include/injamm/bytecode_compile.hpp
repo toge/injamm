@@ -1,6 +1,7 @@
 #pragma once
 #include "detail/append_guard.hpp"
 
+#include <array>
 #include <string_view>
 #include <type_traits>
 
@@ -251,6 +252,17 @@ class bc_compiler {
   /** @brief ネスト深さ（スタックオーバーフロー対策） */
   int nesting_depth_ = 0;
   static constexpr int max_nesting_depth = 256;
+
+  /** @brief {{#partialdef}} の定義位置と登録エントリ（compile_body が本体をスキップするため） */
+  struct partial_def_site {
+    std::size_t tag_start = 0;
+    std::size_t entry_index = 0;
+    bool immediate = false;
+  };
+  std::vector<partial_def_site> partial_def_sites_;
+  /** @brief 前処理（コメント除去等）の出力→元テンプレートのオフセット写像。逆順に適用する */
+  std::array<offset_map, 4> source_maps_{};
+  std::size_t               source_map_count_ = 0;
 
   /**
    * @brief ループ束縛参照の事前判定を行い binding_first フラグを設定する
@@ -658,7 +670,7 @@ class bc_compiler {
    * @details {{#section}}...{{/section}} の構文を emit_section / emit_end 命令に変換する。
    *          セクション命令には /section の次の命令位置がジャンプ先として書き込まれる。
    */
-  void compile_section(std::string_view key) {
+  void compile_section(std::string_view key, std::size_t tag_start) {
     if (nesting_depth_ >= max_nesting_depth) { bc_.error = error_ctx{pos_, error_code::syntax_error, "nesting too deep"}; return; }
     /** セクションキーをパイプ分割しセクションフィルタを検出する（ベースキー = parts[0]） */
     auto parts     = split_by_pipe(key);
@@ -711,7 +723,7 @@ class bc_compiler {
       bool else_reached_end = false;
       auto else_result = compile_body_impl(else_reached_end, key);
       if (else_result == body_result::eof) {
-        bc_.error = error_ctx{section_instr_idx, error_code::unexpected_end, key};
+        bc_.error = error_ctx{tag_start, error_code::unexpected_end, key};
         return;
       }
 
@@ -725,7 +737,7 @@ class bc_compiler {
       bc_.add_instruction(bc_opcode::emit_end);
       bc_.patch_jump(section_instr_idx, static_cast<std::uint32_t>(bc_.current_offset()));
     } else {
-      bc_.error = error_ctx{section_instr_idx, error_code::unexpected_end, key};
+      bc_.error = error_ctx{tag_start, error_code::unexpected_end, key};
       return;
     }
 
@@ -737,7 +749,7 @@ class bc_compiler {
    * @param key セクション変数名
    * @details {{^section}}...{{/section}} は変数が偽/空の場合に本体が描画される。
    */
-  void compile_inverted(std::string_view key) {
+  void compile_inverted(std::string_view key, std::size_t tag_start) {
     if (nesting_depth_ >= max_nesting_depth) { bc_.error = error_ctx{pos_, error_code::syntax_error, "nesting too deep"}; return; }
     ++nesting_depth_;
     struct depth_guard2 { int* p; ~depth_guard2() { --*p; } } guard2{&nesting_depth_};
@@ -763,7 +775,7 @@ class bc_compiler {
       bool else_reached_end = false;
       auto else_result = compile_body_impl(else_reached_end, key);
       if (else_result == body_result::eof) {
-        bc_.error = error_ctx{section_instr_idx, error_code::unexpected_end, key};
+        bc_.error = error_ctx{tag_start, error_code::unexpected_end, key};
         return;
       }
 
@@ -777,7 +789,7 @@ class bc_compiler {
       bc_.add_instruction(bc_opcode::emit_end);
       bc_.patch_jump(section_instr_idx, static_cast<std::uint32_t>(bc_.current_offset()));
     } else {
-      bc_.error = error_ctx{section_instr_idx, error_code::unexpected_end, key};
+      bc_.error = error_ctx{tag_start, error_code::unexpected_end, key};
       return;
     }
 
@@ -846,7 +858,7 @@ class bc_compiler {
    *          else がある場合とない場合の両方を処理する。
    *          定数条件（if 0 / if 1）はコンパイル時に解決し、到達不可能な分岐のバイトコード生成を省略する。
    */
-  void compile_if(std::string_view expr_full, std::string_view close_key = "if") {
+  void compile_if(std::string_view expr_full, std::size_t tag_start, std::string_view close_key = "if") {
     if (nesting_depth_ >= max_nesting_depth) { bc_.error = error_ctx{pos_, error_code::syntax_error, "nesting too deep"}; return; }
     ++nesting_depth_;
     struct depth_guard { int* p; ~depth_guard() { --*p; } } guard{&nesting_depth_};
@@ -865,21 +877,21 @@ class bc_compiler {
         if (!cond) {
           auto result = skip_to_else_or_end();
           if (result == skip_result::eof) {
-            bc_.error = error_ctx{pos_, error_code::unexpected_end, "if"};
+            bc_.error = error_ctx{tag_start, error_code::unexpected_end, "if"};
             return;
           }
           if (result == skip_result::else_) {
             bool else_reached_end = false;
             auto else_result = compile_body_impl(else_reached_end, close_key);
             if (bc_.error.ec == error_code::none && else_result == body_result::eof) {
-              bc_.error = error_ctx{pos_, error_code::unexpected_end, "if"};
+              bc_.error = error_ctx{tag_start, error_code::unexpected_end, "if"};
             }
           }
         } else {
           bool reached_end = false;
           auto result = compile_body_impl(reached_end, close_key);
           if (bc_.error.ec == error_code::none && reached_end) {
-            bc_.error = error_ctx{pos_, error_code::unexpected_end, "if"};
+            bc_.error = error_ctx{tag_start, error_code::unexpected_end, "if"};
             return;
           }
           if (result == body_result::else_) {
@@ -891,7 +903,7 @@ class bc_compiler {
       }
     }
 
-    auto finish_if = [this, close_key](std::size_t if_instr_idx) {
+    auto finish_if = [this, close_key, tag_start](std::size_t if_instr_idx) {
       bool reached_end = false;
       auto result = compile_body_impl(reached_end, close_key);
 
@@ -915,7 +927,7 @@ class bc_compiler {
       }
 
       if (bc_.error.ec == error_code::none && reached_end) {
-        bc_.error = error_ctx{if_instr_idx, error_code::unexpected_end, "if"};
+        bc_.error = error_ctx{tag_start, error_code::unexpected_end, "if"};
       }
     };
 
@@ -1090,7 +1102,7 @@ class bc_compiler {
    * @details ループ状態の値を用いて真偽判定を行う反転セクションをコンパイルする。
    *          kind フィールドに index=0 / is_first=1 / is_last=2 をエンコードする。
    */
-  void compile_at_inverted(std::string_view key) {
+  void compile_at_inverted(std::string_view key, std::size_t tag_start) {
     if (nesting_depth_ >= max_nesting_depth) { bc_.error = error_ctx{pos_, error_code::syntax_error, "nesting too deep"}; return; }
     ++nesting_depth_;
     struct depth_guard2 { int* p; ~depth_guard2() { --*p; } } guard2{&nesting_depth_};
@@ -1106,7 +1118,7 @@ class bc_compiler {
 
       bool found_close = compile_body(key);
       if (bc_.error.ec == error_code::none && !found_close) {
-        bc_.error = error_ctx{if_idx, error_code::unexpected_end, key};
+        bc_.error = error_ctx{tag_start, error_code::unexpected_end, key};
         return;
       }
       if (trim_blocks_ && pos_ < tmpl_.size()) { if (tmpl_[pos_] == '\n') ++pos_; else if (tmpl_[pos_] == '\r') { if (pos_ + 1 < tmpl_.size() && tmpl_[pos_ + 1] == '\n') pos_ += 2; else ++pos_; } }
@@ -1130,7 +1142,7 @@ class bc_compiler {
 
     bool found_close = compile_body(key);
     if (bc_.error.ec == error_code::none && !found_close) {
-      bc_.error = error_ctx{instr_idx, error_code::unexpected_end, key};
+      bc_.error = error_ctx{tag_start, error_code::unexpected_end, key};
       return;
     }
     if (trim_blocks_ && pos_ < tmpl_.size()) { if (tmpl_[pos_] == '\n') ++pos_; else if (tmpl_[pos_] == '\r') { if (pos_ + 1 < tmpl_.size() && tmpl_[pos_ + 1] == '\n') pos_ += 2; else ++pos_; } }
@@ -1145,7 +1157,7 @@ class bc_compiler {
    * @details ループ状態の値に応じて本体を条件描画するセクションをコンパイルする。
    *          kind フィールドに index=0 / is_first=1 / is_last=2 をエンコードする。
    */
-  void compile_at_section(std::string_view key) {
+  void compile_at_section(std::string_view key, std::size_t tag_start) {
     if (nesting_depth_ >= max_nesting_depth) { bc_.error = error_ctx{pos_, error_code::syntax_error, "nesting too deep"}; return; }
     ++nesting_depth_;
     struct depth_guard { int* p; ~depth_guard() { --*p; } } guard{&nesting_depth_};
@@ -1154,7 +1166,7 @@ class bc_compiler {
     if (*k == at_var_kind::even || *k == at_var_kind::odd) {
       /** {{#loop.is_even}} / {{#loop.is_odd}}: {{#if loop.is_even}} と同一の既存命令列へ脱糖
        *  （eval_var_truthy が special_var_kind を判定するため emit_if がそのまま使える） */
-      compile_if(key, key);
+      compile_if(key, tag_start, key);
       return;
     }
     std::uint32_t kind;
@@ -1170,7 +1182,7 @@ class bc_compiler {
 
     bool found_close = compile_body(key);
     if (bc_.error.ec == error_code::none && !found_close) {
-      bc_.error = error_ctx{instr_idx, error_code::unexpected_end, key};
+      bc_.error = error_ctx{tag_start, error_code::unexpected_end, key};
       return;
     }
     if (trim_blocks_ && pos_ < tmpl_.size()) { if (tmpl_[pos_] == '\n') ++pos_; else if (tmpl_[pos_] == '\r') { if (pos_ + 1 < tmpl_.size() && tmpl_[pos_ + 1] == '\n') pos_ += 2; else ++pos_; } }
@@ -1285,6 +1297,19 @@ class bc_compiler {
           continue;
         }
         if (key.starts_with("partialdef ")) {
+          /** 本体はコンパイルしない。{{#partialdef name now}} / local は定義位置で即時展開する。 */
+          for (auto const& site : partial_def_sites_) {
+            if (site.tag_start != tag_start) continue;
+            if (site.immediate)
+              bc_.add_instruction(bc_opcode::call_partial, static_cast<std::uint32_t>(site.entry_index));
+            break;
+          }
+          auto close_tag = constexpr_find_close_partialdef(tmpl_, pos_);
+          if (close_tag == std::string_view::npos) {
+            bc_.error = error_ctx{tag_start, error_code::unexpected_end, "partialdef"};
+            return body_result::eof;
+          }
+          pos_ = close_tag + 15;
           continue;
         }
         if (key.starts_with("partiallocal ")) {
@@ -1315,14 +1340,14 @@ class bc_compiler {
         }
         if (key.starts_with("if") && (key.size() == 2 || key[2] == ' ')) {
           auto expr = key.size() > 2 ? trim_sv(key.substr(3)) : std::string_view{};
-          compile_if(expr);
+          compile_if(expr, tag_start);
           continue;
         }
         if (parse_loop_kind(key)) {
-          compile_at_section(key);
+          compile_at_section(key, tag_start);
           continue;
         }
-        compile_section(key);
+        compile_section(key, tag_start);
         continue;
       }
 
@@ -1342,9 +1367,9 @@ class bc_compiler {
       if (inner.starts_with("^")) {
         auto key = trim_sv(inner.substr(1));
         if (parse_loop_kind(key)) {
-          compile_at_inverted(key);
+          compile_at_inverted(key, tag_start);
         } else {
-          compile_inverted(key);
+          compile_inverted(key, tag_start);
         }
         continue;
       }
@@ -1414,55 +1439,47 @@ class bc_compiler {
    * @brief テンプレートから {{#partialdef name}}...{{/partialdef}} を抽出し、
    *        各ボディを個別にバイトコードコンパイルして partial_entries に格納する。
    * @param tmpl_str クリーニング済みテンプレート文字列
-   * @return partialdef ブロックを除去したメインテンプレート文字列
-   * @details 内部の vector/string 確保失敗（OOM）は bc_.error に out_of_memory を
-   *   設定して空文字を返す。noexcept 保証のため実体は extract_partials_impl に分離した。
+   * @details テンプレート文字列自体は置換しない。定義位置は partial_def_sites_ に
+   *   記録し、compile_body が本体を読み飛ばす（エラー位置を元テンプレートに保つ）。
+   *   内部の vector/string 確保失敗（OOM）は bc_.error に out_of_memory を設定する。
+   *   noexcept 保証のため実体は extract_partials_impl に分離した。
    */
-  std::string extract_partials(std::string const& tmpl_str) noexcept {
+  void extract_partials(std::string const& tmpl_str) noexcept {
 #if INJAMM_HAS_EXCEPTIONS
     try {
-      return extract_partials_impl(tmpl_str);
+      extract_partials_impl(tmpl_str);
     } catch (...) {
       bc_.error = error_ctx{0, error_code::out_of_memory, "Out of memory"};
-      return {};
     }
 #else
-    return extract_partials_impl(tmpl_str);
+    extract_partials_impl(tmpl_str);
 #endif
   }
 
-  std::string extract_partials_impl(std::string const& tmpl_str) {
+  void extract_partials_impl(std::string const& tmpl_str) {
     std::string_view tmpl = tmpl_str;
-    std::string result;
-    result.reserve(tmpl.size());
+    /** set_partial_entries で注入済みのエントリ数を加味した登録インデックスの基点 */
+    std::size_t const entry_base = bc_.partial_entries.size();
 
     struct pending_partial {
       std::string name;
       std::string body;
       bool immediate = false;
       bool local = false;
+      std::size_t body_start = 0;
     };
     std::vector<pending_partial> pending;
 
     std::size_t pos = 0;
     while (pos < tmpl.size()) {
       auto pdef_start = tmpl.find("{{#partialdef", pos);
-      if (pdef_start == std::string_view::npos) {
-        (void)hot_append(result, tmpl.substr(pos));
-        break;
-      }
-
-      (void)hot_append(result, tmpl.substr(pos, pdef_start - pos));
+      if (pdef_start == std::string_view::npos) break;
 
       auto tag_end = tmpl.find("}}", pdef_start);
-      if (tag_end == std::string_view::npos) {
-        (void)hot_append(result, tmpl.substr(pdef_start));
-        break;
-      }
+      if (tag_end == std::string_view::npos) break;
 
       auto inner = trim_sv(tmpl.substr(pdef_start + 2, tag_end - pdef_start - 2));
       if (!inner.starts_with("#partialdef ")) {
-        (void)hot_append(result, tmpl.substr(pdef_start, tag_end - pdef_start + 2));
         pos = tag_end + 2;
         continue;
       }
@@ -1494,29 +1511,11 @@ class bc_compiler {
       }
 
       auto close_tag = constexpr_find_close_partialdef(tmpl, tag_end + 2);
-      if (close_tag == std::string_view::npos) {
-        (void)hot_append(result, tmpl.substr(pdef_start));
-        break;
-      }
+      if (close_tag == std::string_view::npos) break;
 
       auto body = std::string_view{tmpl}.substr(tag_end + 2, close_tag - (tag_end + 2));
-      pending.push_back({std::string(name), std::string(body), immediate, local});
-
-      if (immediate) {
-        if (local) {
-          // 内部タグ {{#partiallocal <index>}} を残し、即時展開させる。
-          // インデックスは登録後の位置なので、ここでは {{#partiallocal name}} とし、
-          // ボディパーサが local エントリを直接解決する。
-          result += "{{#partiallocal ";
-          result += name;
-          result += "}}";
-        } else {
-          // 定義ブロックの代わりに {{#partial name}} 呼び出しタグを残し、即時展開させる
-          result += "{{#partial ";
-          result += name;
-          result += "}}";
-        }
-      }
+      partial_def_sites_.push_back({pdef_start, entry_base + pending.size(), immediate});
+      pending.push_back({std::string(name), std::string(body), immediate, local, tag_end + 2});
 
       pos = close_tag + 15;
     }
@@ -1534,50 +1533,33 @@ class bc_compiler {
       std::vector<bool> in_stack(pending.size(), false);
       /** 循環参照（a→b→a 等）を検出する。実行時に解決できないため構文エラーとする。 */
       bool cyclic = false;
+      std::size_t cycle_pos = 0;
       auto dfs = [&](auto& self, std::size_t node) -> void {
         if (cyclic || visited[node]) return;
         visited[node]   = true;
         in_stack[node]  = true;
-        std::string_view body = pending[node].body;
-        std::size_t pos = 0;
-        while (pos < body.size() && !cyclic) {
-          /** 参照タグ {{#partial name}} / {{> name}} を検出（{{#partialdef は除外） */
-          auto p1 = constexpr_find(body, "{{#partial ", pos);
-          auto p2 = constexpr_find(body, "{{> ", pos);
-          std::size_t tag_at;
-          std::size_t ref_at;
-          if (p1 != std::string_view::npos && (p2 == std::string_view::npos || p1 < p2)) {
-            tag_at = p1;
-            ref_at = p1 + 11;
-          } else if (p2 != std::string_view::npos) {
-            tag_at = p2;
-            ref_at = p2 + 4;
-          } else {
-            break;
-          }
-          auto end = constexpr_find(body, "}}", tag_at);
-          if (end == std::string_view::npos) break;
-          std::string_view ref = trim_sv(body.substr(ref_at, end - ref_at));
+        for_each_partial_ref(pending[node].body, [&](std::string_view ref, std::size_t at) {
+          if (cyclic) return;
           for (std::size_t j = 0; j < pending.size(); ++j) {
             if (pending[j].name == ref) {
               if (in_stack[j]) {
                 cyclic = true;
+                cycle_pos = pending[node].body_start + at;
               } else {
                 self(self, j);
               }
               break;
             }
           }
-          pos = end + 2;
-        }
+        });
         in_stack[node] = false;
         order.push_back(node);
       };
       for (std::size_t i = 0; i < pending.size() && !cyclic; ++i)
         dfs(dfs, i);
       if (cyclic) {
-        bc_.error = error_ctx{0, error_code::syntax_error, "circular partial reference"};
-        return {};
+        bc_.error = error_ctx{cycle_pos, error_code::syntax_error, "circular partial reference"};
+        return;
       }
     }
 
@@ -1588,7 +1570,9 @@ class bc_compiler {
       auto partial_bc = partial_compiler.compile(pp.body, trim_blocks_, lstrip_blocks_);
       if (partial_bc.error.ec != error_code::none) {
         bc_.error = partial_bc.error;
-        return {};
+        /** 子コンパイラの位置は本文先頭基準。メインテンプレート基準へ変換する */
+        bc_.error.position += pp.body_start;
+        return;
       }
       // 同名のプレースホルダを探して bc を埋める（shared_ptr はコピー間で共有）
       auto it = std::find_if(bc_.partial_entries.begin(), bc_.partial_entries.end(),
@@ -1608,7 +1592,6 @@ class bc_compiler {
       }
     }
 
-    return result;
   }
 
   bool compile_body(std::string_view expected_close = {}) {
@@ -1663,24 +1646,43 @@ class bc_compiler {
   bytecode compile_impl(std::string_view tmpl, bool trim_blocks = false, bool lstrip_blocks = false) {
     trim_blocks_ = trim_blocks;
     lstrip_blocks_ = lstrip_blocks;
-    clean_tmpl_ = transform_exists_sections(strip_bang_comments(strip_comments(strip_standalone_whitespace_tildes(tmpl))));
+    auto t1 = strip_standalone_whitespace_tildes(tmpl);
+    auto t2 = strip_comments(t1.text);
+    auto t3 = strip_bang_comments(t2.text);
+    auto t4 = transform_exists_sections(t3.text);
+    clean_tmpl_ = std::move(t4.text);
+    // 前処理はテンプレート長を変えるため、エラー位置を元オフセットへ逆変換する
+    source_map_count_ = 0;
+    source_maps_[source_map_count_++] = std::move(t4.map);
+    source_maps_[source_map_count_++] = std::move(t3.map);
+    source_maps_[source_map_count_++] = std::move(t2.map);
+    source_maps_[source_map_count_++] = std::move(t1.map);
     bc_.template_storage = clean_tmpl_;
     tmpl_ = bc_.template_storage;
     pos_ = 0;
 
-    // メインコンパイルの前に partial を抽出する
-    auto main_tmpl = extract_partials(bc_.template_storage);
-    if (bc_.error.ec != error_code::none) {
+    auto finish = [this]() -> bytecode {
+      if (bc_.error.ec != error_code::none) {
+        for (std::size_t i = 0; i < source_map_count_; ++i)
+          bc_.error.position = source_maps_[i].map(bc_.error.position);
+      }
       return std::move(bc_);
+    };
+
+    // メインコンパイルの前に partial を抽出する。
+    // テンプレート文字列は置換せず、compile_body が partialdef 本体を読み飛ばす
+    // （エラー位置を元テンプレートのオフセットに保つため）。
+    extract_partials(bc_.template_storage);
+    if (bc_.error.ec != error_code::none) {
+      return finish();
     }
-    bc_.template_storage = main_tmpl;
     tmpl_ = bc_.template_storage;
     pos_ = 0;
 
     bool found_close = compile_body();
     if (bc_.error.ec == error_code::none && found_close) {
       bc_.error = error_ctx{pos_, error_code::syntax_error, "stray closing tag"};
-      return std::move(bc_);
+      return finish();
     }
     stabilize_filter_strings();
     bc_.add_instruction(bc_opcode::halt);
@@ -1696,7 +1698,7 @@ class bc_compiler {
         break;
       }
     }
-    return std::move(bc_);
+    return finish();
   }
 };
 
@@ -1748,26 +1750,23 @@ template <class T, class ConstMap>
 bytecode bc_compile(std::string_view tmpl, ConstMap const& consts, bool trim_blocks = false, bool lstrip_blocks = false) noexcept {
 #if INJAMM_HAS_EXCEPTIONS
   try {
+#endif
     auto expanded = expand_vars_in_template(tmpl, consts);
     if (!expanded) {
       bytecode err_bc;
       err_bc.error = expanded.error();
       return err_bc;
     }
-    return bc_compile<T>(*expanded, trim_blocks, lstrip_blocks);
+    auto bc = bc_compile<T>(expanded->text, trim_blocks, lstrip_blocks);
+    /** @var 展開後の位置を元テンプレートへ変換する */
+    if (bc.error.ec != error_code::none) bc.error.position = expanded->map.map(bc.error.position);
+    return bc;
+#if INJAMM_HAS_EXCEPTIONS
   } catch (...) {
     bytecode err_bc;
     err_bc.error = error_ctx{0, error_code::out_of_memory, "Out of memory"};
     return err_bc;
   }
-#else
-  auto expanded = expand_vars_in_template(tmpl, consts);
-  if (!expanded) {
-    bytecode err_bc;
-    err_bc.error = expanded.error();
-    return err_bc;
-  }
-  return bc_compile<T>(*expanded, trim_blocks, lstrip_blocks);
 #endif
 }
 

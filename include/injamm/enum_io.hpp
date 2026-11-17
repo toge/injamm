@@ -36,17 +36,13 @@ namespace injamm::detail {
  */
 template <class Buffer, class E>
   requires std::is_enum_v<E>
-inline void serialize_enum(Buffer& out, E value, bool raw) {
+inline bool serialize_enum(Buffer& out, E value, bool raw) {
 #ifndef INJAMM_NO_ENUM_REGISTRY
   auto const name = enchantum::to_string(value);
   if (!name.empty()) {
     /** 有効な列挙子名が取得できた場合: rawフラグに応じてエスケープ */
-    if (raw) {
-      (void)hot_append(out, name.data(), name.size());
-    } else {
-      html_escape_into(out, name);
-    }
-    return;
+    if (raw) return hot_append(out, name.data(), name.size());
+    return html_escape_into(out, name);
   }
 #endif
   /** フォールバック: underlying 整数を10進で出力 */
@@ -54,8 +50,9 @@ inline void serialize_enum(Buffer& out, E value, bool raw) {
   std::array<char, 32> buf{};
   auto [ptr, ec] = std::to_chars(buf.data(), buf.data() + buf.size(), static_cast<U>(value));
   if (ec == std::errc{}) {
-    (void)hot_append(out, std::string_view{buf.data(), static_cast<std::size_t>(ptr - buf.data())});
+    return hot_append(out, std::string_view{buf.data(), static_cast<std::size_t>(ptr - buf.data())});
   }
+  return true;
 }
 
 template <class E>

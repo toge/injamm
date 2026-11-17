@@ -2,11 +2,13 @@
 #include <cstdint>
 #include <cstdio>
 #include <fstream>
+#include <span>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
-#include "../include/injamm/escape_hatch.hpp"
+#include "../include/injamm.hpp"
 
 // ファズ用のネスト構造アイテム（配列要素として使用）
 struct FuzzItem {
@@ -62,6 +64,15 @@ extern "C" int LLVMFuzzerTestOneInput(const uint8_t* raw_data, size_t size) {
 
   auto engine = injamm::engine<FuzzData>(tmpl);
   (void)engine.render(data);
+
+  // 同じバイト列を信頼できない .bc としても解釈し、loader の境界検証を fuzz する
+  {
+    auto bc = injamm::load_bytecode<FuzzData>(std::span<const std::uint8_t>(raw_data, size));
+    if (bc) {
+      injamm::engine<FuzzData> loaded{std::move(*bc)};
+      (void)loaded.render(data);
+    }
+  }
 
   return 0;
 }

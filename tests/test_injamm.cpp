@@ -6,11 +6,15 @@
 #include <catch2/catch_test_macros.hpp>
 #include <chrono>
 #include <climits>
+#include <cstring>
 #include <glaze/glaze.hpp>
+#include <limits>
 #include <map>
 #include <optional>
 #include <set>
+#include <span>
 #include <sstream>
+#include <unordered_map>
 #include <vector>
 
 // ---- テスト用データ型 ----
@@ -4975,6 +4979,30 @@ TEST_CASE("bytecode load: truncated data", "[bytecode_io][error]") {
   REQUIRE(result.error().ec == injamm::error_code::no_read_input);
 }
 
+/** @brief literal_total_size を改竄したバイトコードを拒否する（巨大 reserve 対策） */
+TEST_CASE("bytecode load: literal_total_size mismatch", "[bytecode_io][error]") {
+  auto              eng = injamm::engine<BcRootData>("hello {{app_name}}");
+  std::stringstream ss;
+  REQUIRE(injamm::save_bytecode(eng.get_bytecode(), ss) == injamm::error_code::none);
+  std::string data = ss.str();
+  REQUIRE(data.size() > 17);
+  std::uint64_t const huge = 1ull << 60;
+  std::memcpy(data.data() + 9, &huge, sizeof(huge));  // magic(4)+version(4)+is_simple(1)
+
+  SECTION("stream") {
+    std::stringstream in(data);
+    auto result = injamm::load_bytecode<BcRootData>(in);
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(result.error().ec == injamm::error_code::syntax_error);
+  }
+  SECTION("span") {
+    auto bytes = std::span<const std::uint8_t>(reinterpret_cast<const std::uint8_t*>(data.data()), data.size());
+    auto result = injamm::load_bytecode<BcRootData>(bytes);
+    REQUIRE_FALSE(result.has_value());
+    REQUIRE(result.error().ec == injamm::error_code::syntax_error);
+  }
+}
+
 TEST_CASE("partial_nested_engine_render_named", "[injamm][partial][engine]") {
   BcPartialUser user{"Bob", 25};
   // {{#partialdef row}} が {{#partialdef table}} の内側で定義されている。
@@ -5758,4 +5786,116 @@ TEST_CASE("glaze_container_iteration_with_html_escaping", "[injamm][glaze]") {
   auto r  = bc.render(data);
   REQUIRE(r.has_value());
   REQUIRE(*r == "<p>&lt;script&gt;alert(&#x27;test&#x27;)&lt;/script&gt;</p>");
+}
+
+/** @brief 64bit 整数フィルタの境界テスト用データ型 */
+struct BcInt64Data {
+  long long n{};
+};
+
+template <>
+struct glz::meta<BcInt64Data> {
+  static constexpr auto value = glz::object("n", &BcInt64Data::n);
+};
+
+TEST_CASE("partial cycle forms detected", "[injamm][partial][regression]") {
+  {
+    injamm::engine<BcUser> e("{{#partialdef a}}{{#partial a}}{{/partialdef}}{{> a}}");
+    REQUIRE(e.get_bytecode().error.ec == injamm::error_code::syntax_error);
+    REQUIRE(e.get_bytecode().error.custom_error_message == "circular partial reference");
+  }
+  {
+    injamm::engine<BcUser> e("{{#partialdef a}}{{>a}}{{/partialdef}}{{>a}}");
+    REQUIRE(e.get_bytecode().error.ec == injamm::error_code::syntax_error);
+  }
+  {
+    injamm::engine<BcUser> e("{{#partialdef a local}}{{#partiallocal a}}{{/partialdef}}");
+    REQUIRE(e.get_bytecode().error.ec == injamm::error_code::syntax_error);
+  }
+}
+
+TEST_CASE("error position points at opening tag", "[injamm][error][regression]") {
+  SECTION("unclosed section") {
+    injamm::engine<BcUser> e("abcd{{#foo}}");
+    REQUIRE(e.get_bytecode().error.ec == injamm::error_code::unexpected_end);
+    REQUIRE(e.get_bytecode().error.position == 4);
+  }
+  SECTION("unclosed if") {
+    injamm::engine<BcUser> e("abcd{{#if name}}");
+    REQUIRE(e.get_bytecode().error.ec == injamm::error_code::unexpected_end);
+    REQUIRE(e.get_bytecode().error.position == 4);
+  }
+  SECTION("after partialdef extraction") {
+    std::string t = "0123456789{{#partialdef a}}ABCDEFGHIJ{{/partialdef}}0123456789{{#unknown}}";
+    auto const expected_pos = t.find("{{#unknown}}");
+    injamm::engine<BcUser> e(t);
+    REQUIRE(e.get_bytecode().error.ec == injamm::error_code::unexpected_end);
+    REQUIRE(e.get_bytecode().error.position == expected_pos);
+  }
+}
+
+TEST_CASE("error position maps through preprocessing", "[injamm][error][regression]") {
+  auto expected = [](std::string const& t) { return t.find("{{#foo}}"); };
+  SECTION("bang comment") {
+    std::string t = "{{! comment }}abcd{{#foo}}";
+    injamm::engine<BcUser> e(t);
+    REQUIRE(e.get_bytecode().error.ec == injamm::error_code::unexpected_end);
+    REQUIRE(e.get_bytecode().error.position == expected(t));
+  }
+  SECTION("brace comment") {
+    std::string t = "{# comment #}abcd{{#foo}}";
+    injamm::engine<BcUser> e(t);
+    REQUIRE(e.get_bytecode().error.position == expected(t));
+  }
+  SECTION("tag trim") {
+    std::string t = "{{ name }}abcd{{#foo}}";
+    injamm::engine<BcUser> e(t);
+    REQUIRE(e.get_bytecode().error.position == expected(t));
+  }
+  SECTION("exists rewrite") {
+    std::string t = "{{#exists name}}x{{/exists}}abcd{{#foo}}";
+    injamm::engine<BcUser> e(t);
+    REQUIRE(e.get_bytecode().error.position == expected(t));
+  }
+  SECTION("@var expansion") {
+    std::string t = "{{@var(v)}}abcd{{#foo}}";
+    std::unordered_map<std::string, std::string> consts{{"v", "XYZ"}};
+    injamm::engine<BcUser> e(t, consts);
+    REQUIRE(e.get_bytecode().error.position == expected(t));
+  }
+  SECTION("partial body comment") {
+    std::string t = "{{#partialdef p}}{{! c }}X{{#foo}}{{/partialdef}}{{#partial p}}";
+    injamm::engine<BcUser> e(t);
+    REQUIRE(e.get_bytecode().error.position == t.find("{{#foo}}"));
+  }
+}
+
+TEST_CASE("@var error position is absolute", "[injamm][error][regression]") {
+  std::unordered_map<std::string, std::string> consts{};
+  injamm::engine<BcUser> e("1234{{@var(missing)}}", consts);
+  REQUIRE(e.get_bytecode().error.ec == injamm::error_code::unknown_key);
+  REQUIRE(e.get_bytecode().error.position == 6);
+}
+
+TEST_CASE("bc_filter_int64_edges", "[injamm][filter][regression]") {
+  BcInt64Data data{std::numeric_limits<long long>::min()};
+
+  SECTION("bin keeps all 65 chars") {
+    auto bc = injamm::engine<BcInt64Data>("{{n | bin}}");
+    auto r  = bc.render(data);
+    REQUIRE(r.has_value());
+    REQUIRE(*r == "-1000000000000000000000000000000000000000000000000000000000000000");
+  }
+  SECTION("mod -1 avoids LLONG_MIN overflow") {
+    auto bc = injamm::engine<BcInt64Data>("{{n | mod(-1)}}");
+    auto r  = bc.render(data);
+    REQUIRE(r.has_value());
+    REQUIRE(*r == "0");
+  }
+  SECTION("div -1 avoids LLONG_MIN overflow") {
+    auto bc = injamm::engine<BcInt64Data>("{{n | div(-1)}}");
+    auto r  = bc.render(data);
+    REQUIRE(r.has_value());
+    REQUIRE(*r == "9223372036854775808");
+  }
 }

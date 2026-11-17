@@ -2555,6 +2555,30 @@ TEST_CASE("ct_partial_unknown_name_error", "[injamm][ct][partial]") {
   CHECK(r.error().ec == injamm::error_code::unknown_key);
 }
 
+TEST_CASE("ct_partial_circular_reference_forms", "[injamm][ct][partial]") {
+  CtUser user{"Alice", 30};
+  {
+    auto r = injamm::render<injamm::fixed_string("{{#partialdef a}}{{#partial a}}{{/partialdef}}{{> a}}")>(user);
+    REQUIRE_FALSE(r.has_value());
+    CHECK(r.error().ec == injamm::error_code::syntax_error);
+    CHECK(r.error().custom_error_message == "circular partial reference");
+  }
+  {
+    auto r = injamm::render<injamm::fixed_string("{{#partialdef a}}{{>a}}{{/partialdef}}{{>a}}")>(user);
+    REQUIRE_FALSE(r.has_value());
+    CHECK(r.error().ec == injamm::error_code::syntax_error);
+  }
+}
+
+TEST_CASE("ct_partial_undefined_include_error", "[injamm][ct][partial]") {
+  CtUser user{"Alice", 30};
+  auto constexpr tmpl = injamm::fixed_string("X{{> missing}}Y");
+  auto r              = injamm::render<tmpl>(user);
+  REQUIRE_FALSE(r.has_value());
+  CHECK(r.error().ec == injamm::error_code::unknown_key);
+  CHECK(r.error().custom_error_message == "missing");
+}
+
 TEST_CASE("ct_partial_include_from_registry", "[injamm][ct][partial]") {
   CtUser user{"Alice", 30};
   using Reg = injamm::ct_partials<"header", "<h1>{{name}}({{age}})</h1>">;

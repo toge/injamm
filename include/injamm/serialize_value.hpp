@@ -249,7 +249,7 @@ inline void serialize_value(Buffer& out, T value) {
 template <class Buffer, class E>
   requires std::is_enum_v<E>
 inline void serialize_value(Buffer& out, E value) {
-  serialize_enum(out, value, /*raw=*/true);
+  (void)serialize_enum(out, value, /*raw=*/true);
 }
 
 #ifndef INJAMM_NO_CHRONO
@@ -293,6 +293,60 @@ inline void serialize_chrono(Buffer& out, std::chrono::time_point<Clock, Duratio
 #endif // !INJAMM_NO_CHRONO
 
 #ifndef INJAMM_NO_FMT
+#if !INJAMM_HAS_EXCEPTIONS
+/**
+ * @brief std::format の書式指定子を簡易検証する
+ *
+ * -fno-exceptions では不正な指定子を渡すと std::vformat が abort するため、
+ * 明らかに不正な指定子を事前に invalid_format として弾く。完全な文法検証ではなく、
+ * 未知の型文字・波括弧・壊れた precision を拒否する保守的なチェック。
+ */
+constexpr bool is_valid_format_spec(std::string_view f, bool integral, bool string_value) noexcept {
+  if (f.find('{') != std::string_view::npos || f.find('}') != std::string_view::npos) return false;
+  std::size_t i = 0;
+  auto const is_align = [](char c) { return c == '<' || c == '>' || c == '^'; };
+  if (f.size() >= 2 && is_align(f[1])) i = 2;
+  else if (!f.empty() && is_align(f[0])) i = 1;
+  if (string_value) {
+    while (i < f.size() && f[i] >= '0' && f[i] <= '9') ++i;
+    if (i < f.size() && f[i] == '.') {
+      ++i;
+      if (i >= f.size() || f[i] < '0' || f[i] > '9') return false;
+      while (i < f.size() && f[i] >= '0' && f[i] <= '9') ++i;
+    }
+    if (i < f.size() && f[i] == 'L') ++i;
+    if (i < f.size() && f[i] == 's') ++i;
+    return i == f.size();
+  }
+  if (i < f.size() && (f[i] == '+' || f[i] == '-' || f[i] == ' ')) ++i;
+  if (i < f.size() && f[i] == '#') ++i;
+  if (i < f.size() && f[i] == '0') ++i;
+  while (i < f.size() && f[i] >= '0' && f[i] <= '9') ++i;
+  if (i < f.size() && f[i] == '.') {
+    ++i;
+    if (i >= f.size() || f[i] < '0' || f[i] > '9') return false;
+    while (i < f.size() && f[i] >= '0' && f[i] <= '9') ++i;
+  }
+  if (i < f.size() && f[i] == 'L') ++i;
+  if (i < f.size()) {
+    char const t = f[i++];
+    auto const allowed = integral ? std::string_view{"bBcdoxXn"} : std::string_view{"aAeEfFgGn"};
+    if (allowed.find(t) == std::string_view::npos) return false;
+  }
+  return i == f.size();
+}
+
+/** @brief 算術値用の書式検証（value の型から整数/浮動を判定） */
+template <class T>
+constexpr bool is_valid_format_spec_for(T const&, std::string_view f) noexcept {
+  return is_valid_format_spec(f, std::is_integral_v<T>, false);
+}
+/** @brief 文字列用の書式検証 */
+constexpr bool is_valid_format_spec_for(std::string_view, std::string_view f) noexcept {
+  return is_valid_format_spec(f, false, true);
+}
+#endif
+
 /** @brief 算術型を std::format スタイルのフォーマット指定子でバッファに追記する
  *
  *  fmt には std::format のフォーマットスペックを指定する（引数の部分のみ）。
@@ -367,7 +421,7 @@ INJAMM_COLD inline ::injamm::expected<void> serialize_formatted(Buffer& out, T v
 #if !INJAMM_HAS_EXCEPTIONS
   // 例外なし: vformat は不正フォーマットで abort/trap するため、疑わしい入力は
   // 呼び出す前に invalid_format で弾く。出力余地がなければ out_of_memory。
-  if (fmt.size() > 1024) return invalid_format_error();
+  if (fmt.size() > 1024 || !is_valid_format_spec_for(value, fmt)) return invalid_format_error();
   if constexpr (requires { out.max_size(); out.size(); }) {
     if (fmt.size() + 32 > out.max_size() - out.size()) return oom_error();
   }
@@ -436,7 +490,7 @@ INJAMM_COLD inline ::injamm::expected<void> serialize_formatted(Buffer& out, std
 #if !INJAMM_HAS_EXCEPTIONS
   // 例外なし: vformat は不正フォーマットで abort/trap するため、疑わしい入力は
   // 呼び出す前に invalid_format で弾く。出力余地がなければ out_of_memory。
-  if (fmt.size() > 1024) return invalid_format_error();
+  if (fmt.size() > 1024 || !is_valid_format_spec_for(value, fmt)) return invalid_format_error();
   if constexpr (requires { out.max_size(); out.size(); }) {
     if (fmt.size() + 32 > out.max_size() - out.size()) return oom_error();
   }

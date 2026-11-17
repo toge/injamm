@@ -16,7 +16,7 @@ ctest --test-dir build -V
 ./build/injamm_tests           # 直接実行 (Catch2)
 ```
 
-CMake オプション: `ENABLE_THREADED_DISPATCH`（デフォルト ON、GCC のみ）、`BUILD_TEST`、`BUILD_EXAMPLE`、`BUILD_FUZZ`、`BUILD_UTIL`、`ENABLE_ENUM`。
+CMake オプション: `ENABLE_THREADED_DISPATCH`（デフォルト ON、GCC のみ）、`BUILD_TEST`、`BUILD_EXAMPLE`、`BUILD_FUZZ`、`BUILD_UTIL`、`USE_FMT`（AppleClang で既定 ON）、`ENABLE_ENUM`。
 
 ## 重要な規約
 
@@ -25,7 +25,7 @@ CMake オプション: `ENABLE_THREADED_DISPATCH`（デフォルト ON、GCC の
 - clang-tidy 命名: 型/変数は `lower_case`、関数は `camelBack`、定数は `upper_case`。
 - 後置戻り値型禁止（`modernize-use-trailing-return-type` 無効）。
 - `.clangd` と CMake はともに `c++23` / `cxx_std_23` で統一。
-- `build.sh` は `~/vm/vcpkg` の vcpkg を使用、スタティックトリプレット `x64-linux-static`。
+- `build.sh` は `~/vm/vcpkg` の vcpkg を使用。`./build.sh static` のときだけ `x64-linux-static`、既定は `x64-linux`。
 
 ## API の注意点
 
@@ -39,7 +39,7 @@ CMake オプション: `ENABLE_THREADED_DISPATCH`（デフォルト ON、GCC の
 ## 依存関係
 
 - `glaze`（必須、vcpkg。fast_float は glaze 内蔵のものを利用）
-- `fmt`（`format` フィルタの AppleClang フォールバック + `injamm_bench_format` の FMT_COMPILE 計測用。vcpkg、osx | linux）
+- `fmt`（`format` フィルタの libc++ フォールバック。`USE_FMT=ON` 時のみ。vcpkg では osx のみ導入）
 - `catch2`（テストのみ、vcpkg）
 - `frozenchars`（GCC NTTP テストのみ、vcpkg）
 - `enchantum`（`ENABLE_ENUM`=ON 時、vcpkg）

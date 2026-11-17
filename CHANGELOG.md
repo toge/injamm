@@ -1,5 +1,26 @@
 # Changelog
 
+## 2026-11-16
+
+- `fix: -fno-exceptions で出力が推定容量を超えると切り詰められる問題を修正` — `hot_append` / `html_escape_append` の容量ガードが実行時にも働き、推定容量（リテラル×4＋var_ref×32）を超える出力が `out_of_memory` になるか、`emit_var_value` の戻り値が破棄されて成功扱いのまま切り詰められていた。実行時は `append` で伸長し、容量ガードは定数評価時のみに限定。長い変数・大量セクションの出力を回帰テスト化
+- `fix: AOT 生成コードの if 条件を VM と一致` — `emit_if_or` / `emit_if_and` が右辺 (`operand3`) を無視していた問題と、`emit_if_filtered` が `"false"` / `"0"` を真と判定していた問題（反転分岐は死にコード）を修正
+- `fix: injamm_codegen の .bc リーダを信頼境界として強化` — 巨大カウント/文字列長による abort・整数オーバーフロー・opcode/operand の範囲外アクセス・partial 再帰のスタックオーバーフローを、library loader と同じ上限（命令/リテラル/var_ref 1M、partial 1024、深さ 64、文字列 16MiB）と境界検証で拒否
+- `fix: AOT ヘルパの LLONG_MIN 演算を VM と一致` — `filter_int_mod` / `filter_int_div` の `% -1` / `/ -1` で SIGFPE していた問題をガードし、`filter_int_bin` のバッファを 65 文字に拡大
+- `fix: -fno-exceptions の不正フォーマットを abort ではなく invalid_format に` — `vformat` 前に書式指定子を検証
+- `fix: HTML エスケープの single quote を AOT でも &#x27; に統一` — `--no-simd` 生成時のみ `&#39;` になっていたドリフトを解消
+- `fix: バイトコード loader が literal_total_size を検証` — 改竄された巨大値による過大 reserve を拒否（stream/span 両パス）
+- `fix: WASI ビルドで ctest が 0 件になる問題を修正` — `enable_testing()` を BUILD_TEST の外へ移動し、`BUILD_TEST=OFF` でも `no_exceptions_smoke` を実行可能に
+- `fix: build.sh の POSIX 非準拠と STATIC フラグを修正` — `==` を `=` にし、STATIC に応じて vcpkg triplet を切り替え
+- `chore: clang-tidy の readability-identifier-naming を有効化` — `Checks` 未登録で命名規約が未強制だった点と `portabilty-*` タイポを修正
+- `test: 上記の回帰テストを追加` — no-exceptions の長い出力/不正 format/LLONG_MIN bin、AOT の論理条件・フィルタ条件・ヘルパ、壊れた .bc の拒否、fuzz に .bc loader を追加
+- `docs: 例外なし・バイトコード・CMake オプションの記述を現状に同期` — 削除済み `ENABLE_WASI_MINIMAL` への参照、存在しない `injamm_bench_format`、fmt のプラットフォーム記述を修正
+- `fix: partial 循環検出を全表記に拡張` — `{{>a}}`（空白なし）と `{{#partiallocal a}}` を検出対象に追加し、自己/相互参照を VM と同じくコンパイル時 `syntax_error`（"circular partial reference"）に
+- `fix: NTTP の partial 循環・未定義参照をコンパイル時エラー化` — `render<Tmpl>` の partialdef 循環を consteval で検出し、外部レジストリ未定義の `{{> name}}` は `unknown_key`（名前付き）に。従来は実行時に空メッセージの `syntax_error` になっていた
+- `fix: 未閉じ section / if の error position を開始タグ位置に` — 命令インデックスではなく `{{` のバイトオフセットを返す
+- `fix: partialdef 抽出後も error position を元テンプレートと一致` — partialdef ブロックをテンプレートから除去せず `compile_body` が読み飛ばす方式に変更
+- `fix: @var エラー位置を絶対オフセットに` — `undefined @var constant` / 循環エラーが元テンプレートの `@var(` 位置を指す
+- `fix: 前処理後のエラー位置を元テンプレートへ逆変換` — コメント除去（`{{! }}` / `{# #}`）、タグ内空白除去、`{{#exists}}` 書換、`@var` 展開、partialdef 抽出の各変換にオフセットマップを持たせ、`error_ctx.position` が常に `bc_compile` 入力のバイトオフセットを指すように修正（partial 本文内のエラーも本文先頭オフセットを加算して変換）
+
 ## 2026-10-16
 
 - `fix: バイトコード読み込みの信頼境界を強化` — loader の `is_simple` 整合性を検証し、`compare_operand_kind` / `section_filter_op_kind` / `string|int|float_filter` / `filter_flags` の値域検証を stream/span 両パスに追加

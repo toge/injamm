@@ -4,6 +4,7 @@
 #include <cstddef>
 #include <string>
 #include <string_view>
+#include <type_traits>
 
 namespace injamm::detail {
 
@@ -37,30 +38,34 @@ constexpr bool hot_append(Buffer& out, std::size_t n, char c) {
   return true;
 }
 #else
+// 実行時は capacity を超えても通常の append で伸ばす（伸ばさないと推定容量を超える
+// 出力がすべて out_of_memory になる）。容量ガードは定数評価時のみ必要
+// （constexpr std::string は再確保できないため）。
+// 真の OOM では append が trap する（README 記載の -fno-exceptions の制約）。
 template <class Buffer>
 constexpr bool hot_append(Buffer& out, std::string_view sv) noexcept {
-  if (sv.size() > out.capacity() - out.size()) return false;
+  if (std::is_constant_evaluated() && sv.size() > out.capacity() - out.size()) return false;
   out.append(sv);
   return true;
 }
 
 template <class Buffer>
 constexpr bool hot_append(Buffer& out, const char* data, std::size_t n) noexcept {
-  if (static_cast<std::size_t>(n) > out.capacity() - out.size()) return false;
+  if (std::is_constant_evaluated() && static_cast<std::size_t>(n) > out.capacity() - out.size()) return false;
   out.append(data, n);
   return true;
 }
 
 template <class Buffer>
 constexpr bool hot_append(Buffer& out, std::string const& src, std::size_t pos, std::size_t n) noexcept {
-  if (n > out.capacity() - out.size()) return false;
+  if (std::is_constant_evaluated() && n > out.capacity() - out.size()) return false;
   out.append(src, pos, n);
   return true;
 }
 
 template <class Buffer>
 constexpr bool hot_append(Buffer& out, std::size_t n, char c) noexcept {
-  if (n > out.capacity() - out.size()) return false;
+  if (std::is_constant_evaluated() && n > out.capacity() - out.size()) return false;
   out.append(n, c);
   return true;
 }

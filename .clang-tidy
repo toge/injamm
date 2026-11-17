@@ -2,7 +2,6 @@ Checks: >
   -*,
   boost-*,
   bugprone-*,
-  bugprone-exception-escape,
   clang-diagnostic-*,
   cppcoreguidelines-*,
   -cppcoreguidelines-avoid-magic-numbers,
@@ -18,7 +17,8 @@ Checks: >
   modernize-*,
   -modernize-use-trailing-return-type,
   performance-*,
-  portabilty-*,
+  portability-*,
+  readability-identifier-naming,
 
 CheckOptions:
   - key:             readability-identifier-naming.ClassCase

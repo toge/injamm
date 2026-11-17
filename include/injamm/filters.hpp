@@ -362,7 +362,7 @@ namespace injamm::detail {
   case int_filter::bin: {
     long long val{};
     if (auto [p, ec] = std::from_chars(str.data(), str.data() + str.size(), val); ec == std::errc()) {
-      std::array<char, 64> buf;
+      std::array<char, 65> buf;  // LLONG_MIN: 符号 + 64 桁
       auto [ptr, ec2] = std::to_chars(buf.data(), buf.data() + buf.size(), val, 2);
       if (ec2 == std::errc()) {
         str.assign(buf.data(), ptr - buf.data());

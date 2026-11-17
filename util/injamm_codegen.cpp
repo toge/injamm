@@ -151,6 +151,14 @@ class reader {
   std::size_t pos_ = 0;  /**< 現在の読み込み位置 */
   std::size_t size_;  /**< バッファサイズ */
   int version_ = 1;  /**< バイトコードバージョン（v2 以降はセクションフィルタを読み込む） */
+  bool failed_ = false;  /**< 境界違反・上限超過などで読み込みを中断した */
+  static constexpr std::uint64_t max_string_len = 16 * 1024 * 1024;
+  static constexpr std::uint64_t max_instructions = 1 << 20;
+  static constexpr std::uint64_t max_literals = 1 << 20;
+  static constexpr std::uint64_t max_var_refs = 1 << 20;
+  static constexpr std::uint64_t max_partials = 1024;
+  static constexpr std::uint64_t max_filters = 64;
+  static constexpr int max_partial_depth = 64;
 
 public:
   /**
@@ -161,19 +169,25 @@ public:
   reader(const char* data, std::size_t size) : data_(data), size_(size) {}
 
   /** @brief 読み込み状態が正常か */
-  bool ok() const { return pos_ <= size_; }
+  bool ok() const { return !failed_ && pos_ <= size_; }
   /** @brief 現在の読み込み位置 */
   std::size_t pos() const { return pos_; }
 
+  /** @brief 読み込み失敗を記録する */
+  void fail() { failed_ = true; }
+
+  /** @brief 残りバイト数 */
+  std::size_t remaining() const { return pos_ <= size_ ? size_ - pos_ : 0; }
+
   /** @brief 1 バイト読み込み */
   std::uint8_t read_u8() {
-    if (pos_ + 1 > size_) return 0;
+    if (remaining() < 1) { fail(); return 0; }
     return static_cast<std::uint8_t>(data_[pos_++]);
   }
 
   /** @brief 32 ビット符号なし整数をリトルエンディアンで読み込み */
   std::uint32_t read_u32_le() {
-    if (pos_ + 4 > size_) return 0;
+    if (remaining() < 4) { fail(); return 0; }
     std::uint32_t v = 0;
     std::memcpy(&v, data_ + pos_, 4);
     pos_ += 4;
@@ -182,7 +196,7 @@ public:
 
   /** @brief 64 ビット符号なし整数をリトルエンディアンで読み込み */
   std::uint64_t read_u64_le() {
-    if (pos_ + 8 > size_) return 0;
+    if (remaining() < 8) { fail(); return 0; }
     std::uint64_t v = 0;
     std::memcpy(&v, data_ + pos_, 8);
     pos_ += 8;
@@ -197,9 +211,13 @@ public:
   /** @brief 文字列を長さ前置形式で読み込み（サイズ(64bit) + 実データ） */
   std::string read_string() {
     auto len = read_u64_le();
-    if (pos_ + len > size_) return {};
-    std::string s(data_ + pos_, len);
-    pos_ += len;
+    // 16MiB 上限 + 減算によるオーバーフロー回避
+    if (failed_ || len > max_string_len || len > remaining()) {
+      fail();
+      return {};
+    }
+    std::string s(data_ + pos_, static_cast<std::size_t>(len));
+    pos_ += static_cast<std::size_t>(len);
     return s;
   }
 
@@ -277,19 +295,24 @@ public:
       }
     }
 
+    if (ref.section_op_count > bc::var_ref::max_section_ops) { fail(); return ref; }
+
     auto fc = read_u64_le();
-    ref.filters.reserve(fc);
-    for (std::uint64_t i = 0; i < fc; ++i)
+    if (failed_ || fc > max_filters) { fail(); return ref; }
+    ref.filters.reserve(static_cast<std::size_t>(fc));
+    for (std::uint64_t i = 0; i < fc && !failed_; ++i)
       ref.filters.push_back(read_string_filter_entry(literals));
 
     auto ifc = read_u64_le();
-    ref.int_filters.reserve(ifc);
-    for (std::uint64_t i = 0; i < ifc; ++i)
+    if (failed_ || ifc > max_filters) { fail(); return ref; }
+    ref.int_filters.reserve(static_cast<std::size_t>(ifc));
+    for (std::uint64_t i = 0; i < ifc && !failed_; ++i)
       ref.int_filters.push_back(read_int_filter_entry());
 
     auto ffc = read_u64_le();
-    ref.float_filters.reserve(ffc);
-    for (std::uint64_t i = 0; i < ffc; ++i)
+    if (failed_ || ffc > max_filters) { fail(); return ref; }
+    ref.float_filters.reserve(static_cast<std::size_t>(ffc));
+    for (std::uint64_t i = 0; i < ffc && !failed_; ++i)
       ref.float_filters.push_back(read_float_filter_entry());
 
     if (version_ >= 6) {
@@ -303,36 +326,127 @@ public:
    * @brief バイトコード本体を読み込み
    * @details 命令列・リテラルテーブル・変数参照テーブル・partial を再帰的に読み込む。
    */
-  bc::bytecode read_bytecode_body() {
-    bc::bytecode bc;
-    bc.is_simple = read_u8() != 0;
-    bc.literal_total_size = read_u64_le();
+  bc::bytecode read_bytecode_body(int depth = 0) {
+    if (depth > max_partial_depth) { fail(); return {}; }
+    bc::bytecode out;
+    out.is_simple = read_u8() != 0;
+    out.literal_total_size = read_u64_le();
+    if (failed_) return out;
 
     auto ic = read_u64_le();
-    bc.instructions.reserve(ic);
-    for (std::uint64_t i = 0; i < ic; ++i)
-      bc.instructions.push_back(read_instruction());
+    if (failed_ || ic > max_instructions) { fail(); return out; }
+    out.instructions.reserve(static_cast<std::size_t>(ic));
+    for (std::uint64_t i = 0; i < ic && !failed_; ++i)
+      out.instructions.push_back(read_instruction());
+    if (failed_) return out;
 
     auto lc = read_u64_le();
-    bc.literals.reserve(lc);
-    for (std::uint64_t i = 0; i < lc; ++i)
-      bc.literals.push_back(read_string());
+    if (failed_ || lc > max_literals) { fail(); return out; }
+    out.literals.reserve(static_cast<std::size_t>(lc));
+    std::uint64_t literal_bytes = 0;
+    for (std::uint64_t i = 0; i < lc && !failed_; ++i) {
+      out.literals.push_back(read_string());
+      literal_bytes += out.literals.back().size();
+    }
+    if (failed_) return out;
+    // 宣言された literal_total_size と実データの合計が一致しない .bc を拒否する
+    if (out.literal_total_size != literal_bytes) { fail(); return out; }
 
     auto vc = read_u64_le();
-    bc.var_refs.reserve(vc);
-    for (std::uint64_t i = 0; i < vc; ++i)
-      bc.var_refs.push_back(read_var_ref(bc.literals));
+    if (failed_ || vc > max_var_refs) { fail(); return out; }
+    out.var_refs.reserve(static_cast<std::size_t>(vc));
+    for (std::uint64_t i = 0; i < vc && !failed_; ++i)
+      out.var_refs.push_back(read_var_ref(out.literals));
+    if (failed_) return out;
 
     auto pc = read_u64_le();
-    bc.partial_entries.reserve(pc);
-    for (std::uint64_t i = 0; i < pc; ++i) {
+    if (failed_ || pc > max_partials) { fail(); return out; }
+    out.partial_entries.reserve(static_cast<std::size_t>(pc));
+    for (std::uint64_t i = 0; i < pc && !failed_; ++i) {
       auto name = read_string();
       auto local = read_u8() != 0;
-      auto partial_bc = new bc::bytecode(read_bytecode_body());
-      bc.partial_entries.push_back({std::move(name), local, partial_bc});
+      if (failed_) break;
+      auto partial_bc = new bc::bytecode(read_bytecode_body(depth + 1));
+      out.partial_entries.push_back({std::move(name), local, partial_bc});
     }
 
-    return bc;
+    return out;
+  }
+
+  /** @brief opcode と operand の境界を検証する（library の bytecode_io と同基準） */
+  bool validate_bytecode(bc::bytecode const& bc) {
+    auto const n_lit = bc.literals.size();
+    auto const n_var = bc.var_refs.size();
+    auto const n_ins = bc.instructions.size();
+    auto const n_par = bc.partial_entries.size();
+    for (auto const& inst : bc.instructions) {
+      bool bad = false;
+      if (static_cast<unsigned>(inst.op) > static_cast<unsigned>(bc::opcode::halt)) { fail(); return false; }
+      switch (inst.op) {
+      case bc::opcode::emit_literal:
+        bad = inst.operand >= n_lit;
+        break;
+      case bc::opcode::emit_litvar:
+      case bc::opcode::emit_litvar_raw:
+        bad = inst.operand >= n_lit || inst.operand2 >= n_var;
+        break;
+      case bc::opcode::emit_var:
+      case bc::opcode::emit_var_raw:
+      case bc::opcode::emit_var_size:
+      case bc::opcode::emit_at_root_field:
+      case bc::opcode::emit_at_root_field_raw:
+        bad = inst.operand >= n_var;
+        break;
+      case bc::opcode::emit_section:
+      case bc::opcode::emit_inverted:
+        if (inst.operand2 >= n_var) bad = true;
+        else if (inst.operand == 0 || inst.operand > n_ins) bad = true;
+        else if (inst.operand3 != 0 && inst.operand3 > n_ins) bad = true;
+        break;
+      case bc::opcode::emit_if:
+      case bc::opcode::emit_if_eq:
+      case bc::opcode::emit_if_ne:
+      case bc::opcode::emit_if_gt:
+      case bc::opcode::emit_if_gte:
+      case bc::opcode::emit_if_lt:
+      case bc::opcode::emit_if_lte:
+      case bc::opcode::emit_if_or:
+      case bc::opcode::emit_if_and:
+      case bc::opcode::emit_if_not:
+      case bc::opcode::emit_if_filtered:
+        if (inst.operand2 >= n_var) bad = true;
+        else if (inst.operand == 0 || inst.operand > n_ins) bad = true;
+        else if ((inst.op == bc::opcode::emit_if_or || inst.op == bc::opcode::emit_if_and) && inst.operand3 >= n_var) bad = true;
+        break;
+      case bc::opcode::resolve_filtered:
+        bad = inst.operand2 >= n_var;
+        break;
+      case bc::opcode::call_partial:
+        bad = inst.operand >= n_par;
+        break;
+      case bc::opcode::emit_else:
+      case bc::opcode::emit_endif:
+      case bc::opcode::emit_end:
+        bad = inst.operand != 0 && inst.operand > n_ins;
+        break;
+      case bc::opcode::emit_at_section:
+      case bc::opcode::emit_at_inverted:
+        bad = inst.operand == 0 || inst.operand > n_ins || inst.operand2 > 2;
+        break;
+      case bc::opcode::filter_string:
+      case bc::opcode::filter_int:
+      case bc::opcode::filter_float:
+        bad = inst.operand2 > 64;
+        break;
+      default:
+        break;
+      }
+      if (bad) { fail(); return false; }
+    }
+    for (auto const& pe : bc.partial_entries) {
+      if (pe.bc && !validate_bytecode(*pe.bc)) return false;
+    }
+    return true;
   }
 
   /**
@@ -367,7 +481,9 @@ public:
       return std::nullopt;
     }
 
-    return read_bytecode_body();
+    auto bc = read_bytecode_body();
+    if (failed_ || !validate_bytecode(bc)) return std::nullopt;
+    return bc;
   }
 };
 
@@ -1083,11 +1199,11 @@ class code_generator {
           --indent_;
           emit("} else if constexpr (std::is_arithmetic_v<decltype(" + access + ")> && !std::is_same_v<std::remove_cvref_t<decltype(" + access + ")>, bool>) {");
           ++indent_;
-          emit("_filtered.clear(); ::injamm::detail::serialize_formatted(_filtered, " + access + ", " + cpp_string(fmt_str) + ");");
+          emit("_filtered.clear(); (void)::injamm::detail::serialize_formatted(_filtered, " + access + ", " + cpp_string(fmt_str) + ");");
           --indent_;
           emit("} else if constexpr (std::is_same_v<std::remove_cvref_t<decltype(" + access + ")>, std::string> || std::is_same_v<std::remove_cvref_t<decltype(" + access + ")>, std::string_view>) {");
           ++indent_;
-          emit("_filtered.clear(); ::injamm::detail::serialize_formatted(_filtered, ::injamm::detail::to_sv(" + access + "), " + cpp_string(fmt_str) + ");");
+          emit("_filtered.clear(); (void)::injamm::detail::serialize_formatted(_filtered, ::injamm::detail::to_sv(" + access + "), " + cpp_string(fmt_str) + ");");
           --indent_;
           emit("} else ");
         }
@@ -1185,22 +1301,14 @@ class code_generator {
       }
     }
     else if (op == bc::opcode::emit_if_filtered) {
-      bool invert = inst.operand != 0;
-      if (invert) {
-        emit("if (!static_cast<bool>(_filtered.empty())) {");
-      } else {
-        emit("if (!_filtered.empty()) {");
-      }
+      // VM (bytecode_exec.hpp handle_emit_if_filtered) と同じ真偽判定
+      emit("if (!_filtered.empty() && _filtered != \"false\" && _filtered != \"0\") {");
       ++indent_;
     }
-    else if (op == bc::opcode::emit_if_or) {
-      auto access = resolve_if_access(bc.var_refs[inst.operand2]);
-      emit("if (static_cast<bool>(" + access + ")) {");
-      ++indent_;
-    }
-    else if (op == bc::opcode::emit_if_and) {
-      auto access = resolve_if_access(bc.var_refs[inst.operand2]);
-      emit("if (static_cast<bool>(" + access + ")) {");
+    else if (op == bc::opcode::emit_if_or || op == bc::opcode::emit_if_and) {
+      auto lhs = resolve_if_access(bc.var_refs[inst.operand2]);
+      auto rhs = resolve_if_access(bc.var_refs[inst.operand3]);
+      emit("if ((static_cast<bool>(" + lhs + ")) " + (op == bc::opcode::emit_if_or ? "||" : "&&") + " (static_cast<bool>(" + rhs + "))) {");
       ++indent_;
     }
     else if (op == bc::opcode::emit_if_not) {

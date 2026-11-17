@@ -47,7 +47,7 @@ render18(const T& data, Sink& out) {
   } else if constexpr (::injamm::detail::ct_glz_reflectable<decltype(data.order_id)>) {
     (void)::glz::write_json(data.order_id, _filtered);
   } else {
-    _filtered.assign(data.order_id);
+    _filtered.assign((data.order_id).data(), (data.order_id).size());
   }
   filter_int_numify(_filtered);
   html_escape_append(out, _filtered);
@@ -57,7 +57,7 @@ render18(const T& data, Sink& out) {
   } else if constexpr (::injamm::detail::ct_glz_reflectable<decltype(data.order_id)>) {
     (void)::glz::write_json(data.order_id, _filtered);
   } else {
-    _filtered.assign(data.order_id);
+    _filtered.assign((data.order_id).data(), (data.order_id).size());
   }
   filter_int_zerofill(_filtered, 7);
   html_escape_append(out, _filtered);
@@ -67,7 +67,7 @@ render18(const T& data, Sink& out) {
   } else if constexpr (::injamm::detail::ct_glz_reflectable<decltype(data.email)>) {
     (void)::glz::write_json(data.email, _filtered);
   } else {
-    _filtered.assign(data.email);
+    _filtered.assign((data.email).data(), (data.email).size());
   }
   filter_truncate(_filtered, 8);
   html_escape_append(out, _filtered);
@@ -77,7 +77,7 @@ render18(const T& data, Sink& out) {
   } else if constexpr (::injamm::detail::ct_glz_reflectable<decltype(data.name)>) {
     (void)::glz::write_json(data.name, _filtered);
   } else {
-    _filtered.assign(data.name);
+    _filtered.assign((data.name).data(), (data.name).size());
   }
   filter_left(_filtered, 10);
   html_escape_append(out, _filtered);
@@ -85,16 +85,16 @@ render18(const T& data, Sink& out) {
   if constexpr (::injamm::detail::is_chrono_time_point_v<decltype(data.total)>) {
     _filtered.clear(); ::injamm::detail::serialize_chrono(_filtered, data.total, ".2f");
   } else if constexpr (std::is_arithmetic_v<decltype(data.total)> && !std::is_same_v<std::remove_cvref_t<decltype(data.total)>, bool>) {
-    _filtered.clear(); ::injamm::detail::serialize_formatted(_filtered, data.total, ".2f");
+    _filtered.clear(); (void)::injamm::detail::serialize_formatted(_filtered, data.total, ".2f");
   } else if constexpr (std::is_same_v<std::remove_cvref_t<decltype(data.total)>, std::string> || std::is_same_v<std::remove_cvref_t<decltype(data.total)>, std::string_view>) {
-    _filtered.clear(); ::injamm::detail::serialize_formatted(_filtered, ::injamm::detail::to_sv(data.total), ".2f");
+    _filtered.clear(); (void)::injamm::detail::serialize_formatted(_filtered, ::injamm::detail::to_sv(data.total), ".2f");
   } else 
   if constexpr (::injamm::detail::serializable_v<decltype(data.total)>) {
     _filtered.clear(); ::injamm::detail::serialize_value(_filtered, data.total);
   } else if constexpr (::injamm::detail::ct_glz_reflectable<decltype(data.total)>) {
     (void)::glz::write_json(data.total, _filtered);
   } else {
-    _filtered.assign(data.total);
+    _filtered.assign((data.total).data(), (data.total).size());
   }
   filter_format(_filtered);
   html_escape_append(out, _filtered);
@@ -104,7 +104,7 @@ render18(const T& data, Sink& out) {
   } else if constexpr (::injamm::detail::ct_glz_reflectable<decltype(data.name)>) {
     (void)::glz::write_json(data.name, _filtered);
   } else {
-    _filtered.assign(data.name);
+    _filtered.assign((data.name).data(), (data.name).size());
   }
   filter_replace(_filtered, "i", "X");
   html_escape_append(out, _filtered);

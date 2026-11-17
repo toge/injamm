@@ -1002,7 +1002,7 @@ eng2.render(User{"Alice",30}); // → "|Hi Alice|" だが {{#partial greeting}} 
 ### 19.9 制限
 
 - ファイルインクルード（`{% include %}`）には対応していません
-- partial の循環参照（`a` が `b` を、`b` が `a` を呼ぶ等。`{{#partial}}` / `{{> }}` いずれの形式も検出）はコンパイル時に `syntax_error` になります
+- partial の循環参照（`a` が `b` を、`b` が `a` を呼ぶ等）は VM / NTTP ともコンパイル時に `syntax_error`（"circular partial reference"）になります。`{{#partial}}` / `{{> }}`（`{{>a}}` の空白なしを含む）/ `{{#partiallocal}}` のいずれの形式も検出します。再帰 partial（ツリー描画等）はサポートしていません
 
 ---
 
@@ -1011,6 +1011,8 @@ eng2.render(User{"Alice",30}); // → "|Hi Alice|" だが {{#partial greeting}} 
 NTTP `render` でも `{{> name}}` を利用できます。外部 partial はテンプレート引数に渡す
 `ct_partials<"name", "body", ...>` レジストリで与えます（`§19.7` の CT 版）。同一の
 `ct_partials` 型を複数の `render` 呼び出しに共有できます。
+テンプレート内で定義されていない `{{> name}}` はコンパイル時に `unknown_key`
+（`custom_error_message` に名前）になります。
 
 ```cpp
 struct User { std::string name; int age; };
@@ -1063,7 +1065,7 @@ auto side = injamm::render_partial<
 | 9   | `out_of_memory`    | メモリ不足                 |
 | 10  | `invalid_format`   | 不正なフォーマット文字列   |
 
-実行時無例外保証（coarse-guard 方式）: 公開 render 経路から例外は漏出しません。OOM は `out_of_memory`、不正フォーマットは `invalid_format` を `expected` で返します。`bc_execute` / `bc_execute_into` / `bc_execute_into_sink` の境界単一 `try/catch` 集約で、ホットパスは直接追記のままです。`-fno-exceptions` ビルドでは中間 OOM は trap に劣化します。
+実行時無例外保証: 例外ありビルドでは公開 render 経路から例外は漏出しません。OOM は `out_of_memory`、不正フォーマットは `invalid_format` を `expected` で返します（`bc_execute` / `bc_execute_into` / `bc_execute_into_sink` の境界 `try/catch` に集約）。ホットパスは直接追記のままです。`-fno-exceptions` ビルドでは真の OOM は trap に劣化します。出力バッファは実行時に伸長するため、推定容量を超える出力も正しく描画されます。
 
 ---
 

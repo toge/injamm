@@ -58,6 +58,8 @@ cmake --build build
 | `BUILD_TEST`               | ON     | テストをビルドする                                       |
 | `BUILD_EXAMPLE`            | ON     | サンプルをビルドする                                     |
 | `BUILD_UTIL`               | OFF    | CLI ユーティリティ（`injamm_bc` / `injamm_codegen`）をビルドする            |
+| `BUILD_FUZZ`               | OFF    | fuzz ターゲットをビルドする（`-fsanitize=fuzzer` 必須） |
+| `USE_FMT`                  | AppleClang のみ ON | `format` フィルタに fmt を使う（libc++ の不具合回避） |
 | `ENABLE_ENUM`              | ON     | enchantum による enum 文字列出力を有効化（`-fno-exceptions` でも `ENCHANTUM_THROW` を `trap` に差し替えて動作） |
 
 ### find_package
@@ -294,7 +296,7 @@ int main() {
 コンパイル済みのバイトコードをファイルに保存し、後で読み込んで再利用できます。
 `field_index` は保存されず、読み込み時に glaze リフレクションで再解決されます。
 
-WASI minimal 環境でもバイトコードの保存・読み込みは利用できます（例外のみ無効、ストリーム版・span 版の両方が有効）。
+例外なしビルド（`-fno-exceptions`、WASI 等）でもバイトコードの保存・読み込みは利用できます（ストリーム版・span 版の両方が有効）。
 
 ```cpp
 #include "injamm.hpp"
@@ -573,7 +575,7 @@ Wasm など例外が利用できない環境でも使用できます（frozencha
 ### 例外なし対応
 
 - **実装**: `config.hpp` で `__cpp_exceptions` 未定義（`-fno-exceptions`）時に `INJAMM_HAS_EXCEPTIONS=0`、`INJAMM_THROW` は `__builtin_trap()`（wasm では `unreachable`）/ `std::abort()` に展開。`bytecode_io.hpp` の `try_reserve`/`try_assign` は `INJAMM_HAS_EXCEPTIONS` で分岐（有効時は `try/catch`、無効時は `max_size` チェック）。`serialize_value.hpp` の `vformat` も `HAS_EXCEPTIONS` で `try/catch` を分岐。
-- **全ビルドで有効な機能**: `format`（`std::format`/`fmt`）と `enum`（`enchantum`）は `-fno-exceptions` でも有効（`_GLIBCXX_THROW_OR_ABORT`/`FMT_THROW=assert_fail`/`ENCHANTUM_THROW=trap` にフォールバック。不正フォーマットは `trap/abort`）。
+- **全ビルドで有効な機能**: `format`（`std::format`/`fmt`）と `enum`（`enchantum`）は `-fno-exceptions` でも有効（`ENCHANTUM_THROW=trap` にフォールバック）。`format` の不正な指定子は `vformat` 前に検証して `invalid_format` を返します。
 - **制約（`-fno-exceptions` 時）**: NTTP のチャンク溢れ（`ct_parsed_template` 容量超過）やネスト深度超過の診断は `trap/abort` に劣化（`MaxChunks = Tmpl.size()+1` で通常到達不能のため実害は軽微）。`vector::reserve` の OOM は `syntax_error` ではなく `trap/abort`（事前の `max_*` チェックで不正バイト列の多くは `syntax_error` で弾かれます）。
 
 ```bash
@@ -775,11 +777,13 @@ auto eng = injamm::engine<User>(std::move(*bc));
 | 9   | out_of_memory  | メモリ不足                 |
 | 10  | invalid_format | 不正なフォーマット文字列   |
 
-実行時無例外保証（coarse-guard 方式）: 公開 render 経路 (`engine::render` / NTTP `render` / `bc_execute*` 直呼びを含む) から例外は漏出しません。OOM は `out_of_memory`、不正フォーマットは `invalid_format` を `expected` で返します。実装は `bc_execute` / `bc_execute_into` / `bc_execute_into_sink` の境界単一 `try/catch` 集約で、ホットな emit/serialize/filter パスは直接追記（ゼロコスト例外・分岐なし）のままです。コンパイル時診断の `INJAMM_THROW` は維持されます（`test_noexcept` で検証、throw/try-catch の CI grep 検査あり）。ただし `-fno-exceptions` ビルド（`ENABLE_WASI_MINIMAL=ON`）では catch できないため中間 OOM は trap に劣化します。性能はベースラインと実質同等（Release 計測で総命令数 +0.7%。マイクロベンチはコード配置で ±10% 程度振れるため PGO 推奨）。
+実行時無例外保証: 例外ありビルドでは公開 render 経路 (`engine::render` / NTTP `render` / `bc_execute*` 直呼びを含む) から例外は漏出しません。OOM は `out_of_memory`、不正フォーマットは `invalid_format` を `expected` で返します（`bc_execute` / `bc_execute_into` / `bc_execute_into_sink` の境界 `try/catch` に集約）。ホットな emit/serialize/filter パスは直接追記（分岐なし）のままです。`-fno-exceptions` ビルドでは catch できないため真の OOM は trap/abort に劣化します。出力バッファは実行時に必要に応じて伸長し、推定容量を超えた出力も正しく描画されます（容量ガードは定数評価時のみ）。コンパイル時診断の `INJAMM_THROW` は維持されます（`test_noexcept` で検証、throw/try-catch の CI grep 検査あり）。性能はベースラインと実質同等（Release 計測で総命令数 +0.7%。マイクロベンチはコード配置で ±10% 程度振れるため PGO 推奨）。
 
 ### エラー診断・フォーマット（`formatError` / `error_ctx::format`）
 
 エラー発生時にテンプレートの該当行・列番号および周辺コードスニペット付きで診断メッセージを整形できます。
+
+`error_ctx.position` は、コメント除去（`{{! }}` / `{# #}`）、タグ内空白の除去、`{{#exists}}` 変換、`@var` 展開、partialdef 抽出の後でも **`bc_compile` に渡した元テンプレートのバイトオフセット**を指します（前処理のオフセットマップで逆変換）。
 
 ```cpp
 auto res = eng.render(data);

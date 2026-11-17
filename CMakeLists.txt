@@ -112,6 +112,9 @@ endif()
 # ---- 例外なしスモークテスト ----
 # ライブラリが -fno-exceptions でも動作することを検証する。
 # wasip1 ビルド時はユーザーが -fno-exceptions を直接指定する（frozenchars と同様）。
+# add_test を有効にするため enable_testing() は BUILD_TEST の外に置く
+# （WASI は BUILD_TEST=OFF でも test_no_exceptions を ctest から実行する）。
+enable_testing()
 add_executable(test_no_exceptions tests/test_no_exceptions.cpp)
 target_link_libraries(test_no_exceptions PRIVATE injamm)
 target_include_directories(test_no_exceptions PRIVATE include)
@@ -124,8 +127,6 @@ add_test(NAME no_exceptions_smoke COMMAND test_no_exceptions)
 # `emscripten | !wasm32` に限定している。WASI ビルドは Catch2 不要の
 # test_no_exceptions のみ実行する。
 if(BUILD_TEST)
-  enable_testing()
-
   # WASI では Catch2 テストをスキップし test_no_exceptions のみ使う。
   # (Catch2 は例外必須、vcpkg.json でも wasm32 を除外済み)
   if(CMAKE_SYSTEM_NAME STREQUAL "WASI")
@@ -302,6 +303,7 @@ if(BUILD_UTIL)
     target_link_libraries(test_ct_if PRIVATE injamm)
     target_include_directories(test_ct_if PRIVATE include)
     target_compile_features(test_ct_if PRIVATE cxx_std_23)
+    add_test(NAME ct_if_test COMMAND test_ct_if)
 
     add_executable(test_codegen_ext
       test_codegen/test_codegen_extended.cpp
@@ -310,6 +312,22 @@ if(BUILD_UTIL)
     target_include_directories(test_codegen_ext PRIVATE include test_codegen)
     target_compile_features(test_codegen_ext PRIVATE cxx_std_23)
     add_test(NAME codegen_ext_test COMMAND test_codegen_ext)
+
+    add_executable(test_codegen_nosimd
+      test_codegen/test_codegen_nosimd.cpp
+    )
+    target_link_libraries(test_codegen_nosimd PRIVATE injamm)
+    target_include_directories(test_codegen_nosimd PRIVATE include test_codegen)
+    target_compile_features(test_codegen_nosimd PRIVATE cxx_std_23)
+    add_test(NAME codegen_nosimd_test COMMAND test_codegen_nosimd)
+
+    add_executable(test_codegen_badbc
+      test_codegen/test_codegen_badbc.cpp
+    )
+    target_link_libraries(test_codegen_badbc PRIVATE injamm)
+    target_include_directories(test_codegen_badbc PRIVATE include)
+    target_compile_features(test_codegen_badbc PRIVATE cxx_std_23)
+    add_test(NAME codegen_badbc_test COMMAND test_codegen_badbc $<TARGET_FILE:injamm_codegen>)
   endif()
 
   install(

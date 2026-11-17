@@ -479,7 +479,7 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
         if (!html_escape_into(out, sv)) return false;
       }
     } else if constexpr (std::is_enum_v<FT>) {
-      serialize_enum(out, field, raw);
+      if (!serialize_enum(out, field, raw)) return false;
     } else if constexpr (is_chrono_time_point_v<FT>) {
       serialize_chrono(out, field);
     } else if constexpr (std::is_arithmetic_v<FT> && !std::same_as<FT, bool>) {

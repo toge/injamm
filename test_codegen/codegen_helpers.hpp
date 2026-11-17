@@ -5,6 +5,7 @@
 #include <charconv>
 #include <cmath>
 #include <injamm/glz_dispatch.hpp>
+#include <limits>
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -34,7 +35,7 @@ inline void html_escape_append(Buffer& out, std::string_view sv) {
       case '<':  out.append("&lt;");   break;
       case '>':  out.append("&gt;");   break;
       case '"': out.append("&quot;"); break;
-      case '\'': out.append("&#39;");  break;
+      case '\'': out.append("&#x27;"); break;
       default:   out.append(1, c);    break;
     }
   }
@@ -195,7 +196,7 @@ inline void filter_int_oct(std::string& s) {
 inline void filter_int_bin(std::string& s) {
   long long val = 0;
   if (auto [ptr, ec] = std::from_chars(s.data(), s.data() + s.size(), val); ec == std::errc{}) {
-    char buf[64];
+    char buf[65];  // LLONG_MIN: 符号 + 64 桁
     auto [p, ec2] = std::to_chars(buf, buf + sizeof(buf), val, 2);
     if (ec2 == std::errc{}) {
       s.assign(buf, p);
@@ -236,6 +237,7 @@ inline void filter_int_mod(std::string& s, int n) {
   if (n == 0) return;
   long long val = 0;
   if (auto [ptr, ec] = std::from_chars(s.data(), s.data() + s.size(), val); ec == std::errc{}) {
+    if (n == -1 && val == std::numeric_limits<long long>::min()) { s = "0"; return; }
     val %= n;
     s = std::to_string(val);
   }
@@ -428,6 +430,7 @@ inline void filter_int_div(std::string& s, int n) {
   } else {
     long long val = 0;
     if (auto [p, ec] = std::from_chars(s.data(), s.data() + s.size(), val); ec == std::errc{}) {
+      if (n == -1 && val == std::numeric_limits<long long>::min()) { s = "9223372036854775808"; return; }
       char buf[32];
       if (auto [tp, tec] = std::to_chars(buf, buf + sizeof(buf), val / n); tec == std::errc{}) {
         s.assign(buf, tp - buf);

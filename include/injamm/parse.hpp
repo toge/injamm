@@ -576,9 +576,82 @@ struct pipe_parts {
 
 constexpr int max_var_depth = 100;
 
+/**
+ * @brief 前処理後のオフセットを元テンプレートのオフセットへ変換する写像
+ *
+ * @details コメント除去・タグ整形・@var 展開はテンプレート長を変えるため、
+ *          エラー位置をそのまま返すと元ソースとずれる。変換時に「出力範囲 →
+ *          入力範囲」のセグメントを記録し、エラー発生時に逆引きする。
+ */
+struct offset_map {
+  /** @brief 長さが変わる地点。変更の無い区間は map() が差分シフトで処理する */
+  struct change {
+    std::size_t dst;      /**< 出力側の開始オフセット */
+    std::size_t src;      /**< 入力側の開始オフセット */
+    std::size_t dst_len;  /**< 出力側の長さ（削除なら 0） */
+    std::size_t src_len;  /**< 入力側の長さ */
+  };
+  std::vector<change> changes;
+
+  void add(std::size_t dst, std::size_t src, std::size_t dst_len, std::size_t src_len) {
+    if (dst_len == 0 && src_len == 0) return;
+    changes.push_back({dst, src, dst_len, src_len});
+  }
+
+  /** @brief 出力オフセットを入力オフセットへ変換する */
+  [[nodiscard]] std::size_t map(std::size_t p) const noexcept {
+    if (changes.empty()) return p;  // 長さ不変なら恒等写像
+    std::size_t lo = 0;
+    std::size_t hi = changes.size();
+    while (lo < hi) {
+      auto mid = (lo + hi) / 2;
+      if (changes[mid].dst <= p) lo = mid + 1;
+      else hi = mid;
+    }
+    if (lo == 0) return p;  // 最初の変更より前は恒等
+    auto const& c = changes[lo - 1];
+    if (c.dst_len != 0 && p < c.dst + c.dst_len) {
+      auto const delta = p - c.dst;
+      return c.src + (delta < c.src_len ? delta : c.src_len);
+    }
+    // 変更区間の後ろ: 累積シフトを適用
+    return p + (c.src + c.src_len) - (c.dst + c.dst_len);
+  }
+};
+
+/** @brief 変換結果と、出力→入力のオフセットマップ */
+struct mapped_text {
+  std::string text;
+  offset_map  map;
+
+  void reserve(std::size_t n) { text.reserve(n); }
+
+  /** @brief 入力の一部をそのままコピーする（マップ不要） */
+  void copy(std::string_view src, std::size_t) {
+    if (src.empty()) return;
+    (void)hot_append(text, src);
+  }
+
+  /** @brief 入力 1 文字をそのままコピーする（マップ不要） */
+  void copy_char(char c, std::size_t) { text.push_back(c); }
+
+  /** @brief 入力範囲を削除する（長さが変わる地点を記録） */
+  void remove(std::size_t src_off, std::size_t src_len) {
+    if (src_len == 0) return;
+    map.add(text.size(), src_off, 0, src_len);
+  }
+
+  /** @brief 入力を別の文字列に書き換えて追記する */
+  void rewrite(std::string_view out, std::size_t src_off, std::size_t src_len) {
+    map.add(text.size(), src_off, out.size(), src_len);
+    if (!out.empty()) (void)hot_append(text, out);
+  }
+};
+
 template <class ConstMap>
 [[nodiscard]] expected<std::string> expand_var_refs_cycle_safe(std::string_view content, ConstMap const& consts,
-                                                                std::unordered_set<std::string>& visited, int depth = 0) {
+                                                                std::unordered_set<std::string>& visited, int depth = 0,
+                                                                std::size_t base = 0) {
   if (depth > max_var_depth) {
     return std::unexpected(error_ctx{0, error_code::syntax_error, "circular @var reference"});
   }
@@ -604,18 +677,21 @@ template <class ConstMap>
 
     auto name = std::string{content.substr(paren_start, paren_end - paren_start)};
     if (visited.contains(name)) {
-      return std::unexpected(error_ctx{var_start, error_code::syntax_error, "circular @var reference (detected)"});
+      return std::unexpected(error_ctx{base + var_start, error_code::syntax_error, "circular @var reference (detected)"});
     }
     auto it = consts.find(name);
     if (it == consts.end()) {
-      return std::unexpected(error_ctx{var_start, error_code::unknown_key, "undefined @var constant"});
+      return std::unexpected(error_ctx{base + var_start, error_code::unknown_key, "undefined @var constant"});
     }
 
     visited.insert(name);
     auto expanded = expand_var_refs_cycle_safe(std::string_view{it->second}, consts, visited, depth + 1);
     visited.erase(name);
     if (!expanded) {
-      return std::unexpected(expanded.error());
+      /** 定数値の展開中に発生したエラーは、呼び出し元の @var タグ位置を指す */
+      auto err = expanded.error();
+      err.position = base + var_start;
+      return std::unexpected(err);
     }
     result += *expanded;
 
@@ -626,91 +702,114 @@ template <class ConstMap>
 }
 
 template <class ConstMap>
-[[nodiscard]] expected<std::string> expand_vars_in_template(std::string_view tmpl, ConstMap const& consts) {
-  std::string result;
+[[nodiscard]] expected<mapped_text> expand_vars_in_template(std::string_view tmpl, ConstMap const& consts) {
+  mapped_text out;
   std::size_t pos = 0;
   std::unordered_set<std::string> visited;
 
   while (pos < tmpl.size()) {
     auto tag_start = tmpl.find("{{", pos);
     if (tag_start == std::string_view::npos) {
-      (void)hot_append(result, tmpl.substr(pos));
+      out.copy(tmpl.substr(pos), pos);
       break;
     }
 
-    (void)hot_append(result, tmpl.substr(pos, tag_start - pos));
+    out.copy(tmpl.substr(pos, tag_start - pos), pos);
 
     if (tag_start + 2 < tmpl.size() && tmpl[tag_start + 2] == '{') {
       auto raw_end = tmpl.find("}}}", tag_start + 3);
       if (raw_end == std::string_view::npos) {
-        (void)hot_append(result, tmpl.substr(tag_start));
+        out.copy(tmpl.substr(tag_start), tag_start);
         break;
       }
       auto raw_inner = tmpl.substr(tag_start + 3, raw_end - tag_start - 3);
-      auto expanded  = expand_var_refs_cycle_safe(raw_inner, consts, visited);
+      if (raw_inner.find("@var(") == std::string_view::npos) {
+        out.copy(tmpl.substr(tag_start, raw_end + 3 - tag_start), tag_start);
+        pos = raw_end + 3;
+        continue;
+      }
+      auto expanded  = expand_var_refs_cycle_safe(raw_inner, consts, visited, 0, tag_start + 3);
       if (!expanded) {
         return std::unexpected(expanded.error());
       }
-      auto raw_trim = trim_sv(*expanded);
+      auto        raw_trim = trim_sv(*expanded);
+      std::string rebuilt;
       if (raw_trim.starts_with("{{{") || raw_trim.starts_with("{{")) {
-        result += raw_trim;
+        rebuilt.assign(raw_trim);
       } else {
-        result += "{{{";
-        result += *expanded;
-        result += "}}}";
+        rebuilt.reserve(expanded->size() + 6);
+        rebuilt += "{{{";
+        rebuilt += *expanded;
+        rebuilt += "}}}";
       }
+      auto const orig_tag = tmpl.substr(tag_start, raw_end + 3 - tag_start);
+      if (std::string_view{rebuilt} == orig_tag) out.copy(orig_tag, tag_start);
+      else out.rewrite(rebuilt, tag_start, raw_end + 3 - tag_start);
       pos = raw_end + 3;
       continue;
     }
 
     auto tag_end = tmpl.find("}}", tag_start + 2);
     if (tag_end == std::string_view::npos) {
-      (void)hot_append(result, tmpl.substr(tag_start));
+      out.copy(tmpl.substr(tag_start), tag_start);
       break;
     }
 
     auto inner    = tmpl.substr(tag_start + 2, tag_end - tag_start - 2);
-    auto expanded = expand_var_refs_cycle_safe(inner, consts, visited);
+    if (inner.find("@var(") == std::string_view::npos) {
+      out.copy(tmpl.substr(tag_start, tag_end + 2 - tag_start), tag_start);
+      pos = tag_end + 2;
+      continue;
+    }
+    auto expanded = expand_var_refs_cycle_safe(inner, consts, visited, 0, tag_start + 2);
     if (!expanded) {
       return std::unexpected(expanded.error());
     }
 
-    auto norm_trim = trim_sv(*expanded);
+    auto        norm_trim = trim_sv(*expanded);
+    std::string rebuilt;
     if (norm_trim.starts_with("{{")) {
-      result += norm_trim;
+      rebuilt.assign(norm_trim);
     } else {
-      result += "{{";
-      result += *expanded;
-      result += "}}";
+      rebuilt.reserve(expanded->size() + 4);
+      rebuilt += "{{";
+      rebuilt += *expanded;
+      rebuilt += "}}";
     }
 
+    auto const orig_tag = tmpl.substr(tag_start, tag_end + 2 - tag_start);
+    if (std::string_view{rebuilt} == orig_tag) out.copy(orig_tag, tag_start);
+    else out.rewrite(rebuilt, tag_start, tag_end + 2 - tag_start);
     pos = tag_end + 2;
   }
 
-  return result;
+  return out;
 }
 
-[[nodiscard]] inline std::string strip_standalone_whitespace_tildes(std::string_view tmpl) {
+[[nodiscard]] inline mapped_text strip_standalone_whitespace_tildes(std::string_view tmpl) {
+  mapped_text out;
   // A1: {{ を含まない場合は早期 return (コピー1回のみ)
-  if (tmpl.find("{{") == std::string_view::npos) return std::string(tmpl);
-  std::string result;
-  result.reserve(tmpl.size());
+  if (tmpl.find("{{") == std::string_view::npos) {
+    out.copy(tmpl, 0);
+    return out;
+  }
+  out.reserve(tmpl.size());
   std::size_t pos = 0;
   while (pos < tmpl.size()) {
     auto tag = tmpl.find("{{", pos);
     if (tag == std::string_view::npos) {
-      (void)hot_append(result, tmpl.substr(pos));
+      out.copy(tmpl.substr(pos), pos);
       break;
     }
     if (tag > 0 && tmpl[tag - 1] == '{') {
-      (void)hot_append(result, tmpl.substr(pos, tag - pos + 1));
+      out.copy(tmpl.substr(pos, tag - pos + 1), pos);
       pos = tag + 1;
       continue;
     }
-    (void)hot_append(result, tmpl.substr(pos, tag - pos));
+    out.copy(tmpl.substr(pos, tag - pos), pos);
     auto end = tmpl.find("}}", tag + 2);
     if (end == std::string_view::npos) {
-      (void)hot_append(result, tmpl.substr(tag));
+      out.copy(tmpl.substr(tag), tag);
       break;
     }
     std::size_t inner_start = tag + 2;
@@ -721,36 +820,45 @@ template <class ConstMap>
     if (trailing_tilde && inner_end > inner_start) --inner_end;
     auto inner = tmpl.substr(inner_start, inner_end - inner_start);
     auto trimmed = trim_sv(inner);
-    result += "{{";
-    result += trimmed;
-    result += "}}";
+    bool changed = leading_tilde || trailing_tilde || trimmed.size() != inner.size();
+    if (!changed) {
+      out.copy(tmpl.substr(tag, end + 2 - tag), tag);
+    } else {
+      out.map.add(out.text.size(), tag, trimmed.size() + 4, end + 2 - tag);
+      out.text += "{{";
+      out.text += trimmed;
+      out.text += "}}";
+    }
     pos = end + 2;
   }
-  return result;
+  return out;
 }
 
-[[nodiscard]] inline std::string transform_exists_sections(std::string_view tmpl) {
+[[nodiscard]] inline mapped_text transform_exists_sections(std::string_view tmpl) {
+  mapped_text out;
   // A2: {{ を含まない場合、または exists 構文が無い場合は早期 return
-  if (tmpl.find("{{") == std::string_view::npos) return std::string(tmpl);
-  if (tmpl.find("#exists") == std::string_view::npos && tmpl.find("^exists") == std::string_view::npos)
-    return std::string(tmpl);
-  std::string result;
-  result.reserve(tmpl.size());
+  if (tmpl.find("{{") == std::string_view::npos ||
+      (tmpl.find("#exists") == std::string_view::npos && tmpl.find("^exists") == std::string_view::npos)) {
+    out.copy(tmpl, 0);
+    return out;
+  }
+  out.reserve(tmpl.size());
   /** 開いた exists セクションの変数名スタック。{{/exists}} を対応する変数名へ書き換える */
   std::vector<std::string_view> exists_stack;
   std::size_t pos = 0;
   while (pos < tmpl.size()) {
     auto tag = tmpl.find("{{", pos);
     if (tag == std::string_view::npos) {
-      (void)hot_append(result, tmpl.substr(pos));
+      out.copy(tmpl.substr(pos), pos);
       break;
     }
-    (void)hot_append(result, tmpl.substr(pos, tag - pos));
+    out.copy(tmpl.substr(pos, tag - pos), pos);
     auto end = tmpl.find("}}", tag + 2);
     if (end == std::string_view::npos) {
-      (void)hot_append(result, tmpl.substr(tag));
+      out.copy(tmpl.substr(tag), tag);
       break;
     }
+    auto const tag_len = end - tag + 2;
     auto inner = tmpl.substr(tag + 2, end - tag - 2);
     auto trimmed = trim_sv(inner);
     if (trimmed == "#exists" || trimmed.starts_with("#exists ")) {
@@ -758,103 +866,112 @@ template <class ConstMap>
       // exists は単一フィールド名のみを扱う。空/複数トークンは推定不能なため、
       // 埋め込み変換を行わず元のタグをそのまま保持する。
       if (rest.empty() || rest.find_first_of(" \t\r\n") != std::string_view::npos) {
-        (void)hot_append(result, tmpl.substr(tag, end - tag + 2));
+        out.copy(tmpl.substr(tag, tag_len), tag);
         pos = end + 2;
         continue;
       }
       exists_stack.push_back(rest);
-      result += "{{#";
-      result += rest;
-      result += " }}";
+      std::string rebuilt = "{{#";
+      rebuilt += rest;
+      rebuilt += " }}";
+      out.rewrite(rebuilt, tag, tag_len);
       pos = end + 2;
       continue;
     } else if (trimmed == "^exists" || trimmed.starts_with("^exists ")) {
       auto rest = trim_sv(trimmed.substr(8));
       if (rest.empty() || rest.find_first_of(" \t\r\n") != std::string_view::npos) {
-        (void)hot_append(result, tmpl.substr(tag, end - tag + 2));
+        out.copy(tmpl.substr(tag, tag_len), tag);
         pos = end + 2;
         continue;
       }
       exists_stack.push_back(rest);
-      result += "{{^";
-      result += rest;
-      result += " }}";
+      std::string rebuilt = "{{^";
+      rebuilt += rest;
+      rebuilt += " }}";
+      out.rewrite(rebuilt, tag, tag_len);
       pos = end + 2;
       continue;
     } else if (trimmed == "/exists" && !exists_stack.empty() && !exists_stack.back().empty()) {
       /** 閉じタグ {{/exists}} を対応する変数名で閉じる（閉じタグ名一致検証のため） */
       auto name = exists_stack.back();
       exists_stack.pop_back();
-      result += "{{/";
-      result += name;
-      result += "}}";
+      std::string rebuilt = "{{/";
+      rebuilt += name;
+      rebuilt += "}}";
+      out.rewrite(rebuilt, tag, tag_len);
       pos = end + 2;
       continue;
     } else {
-      (void)hot_append(result, tmpl.substr(tag, end - tag + 2));
+      out.copy(tmpl.substr(tag, tag_len), tag);
       pos = end + 2;
       continue;
     }
   }
-  return result;
+  return out;
 }
 
-[[nodiscard]] inline std::string strip_bang_comments(std::string_view tmpl) {
-  if (tmpl.find("{{!") == std::string_view::npos)
-    return std::string(tmpl);
-  std::string result;
-  result.reserve(tmpl.size());
+[[nodiscard]] inline mapped_text strip_bang_comments(std::string_view tmpl) {
+  mapped_text out;
+  if (tmpl.find("{{!") == std::string_view::npos) {
+    out.copy(tmpl, 0);
+    return out;
+  }
+  out.reserve(tmpl.size());
   std::size_t pos = 0;
   while (pos < tmpl.size()) {
     auto cs = tmpl.find("{{!", pos);
     if (cs == std::string_view::npos) {
-      (void)hot_append(result, tmpl.substr(pos));
+      out.copy(tmpl.substr(pos), pos);
       break;
     }
     if (cs > 0 && tmpl[cs - 1] == '{') {
-      (void)hot_append(result, tmpl.substr(pos, cs - pos + 1));
+      out.copy(tmpl.substr(pos, cs - pos + 1), pos);
       pos = cs + 1;
       continue;
     }
-    (void)hot_append(result, tmpl.substr(pos, cs - pos));
+    out.copy(tmpl.substr(pos, cs - pos), pos);
     auto ce = tmpl.find("}}", cs + 3);
     if (ce == std::string_view::npos) {
-      result += '{';
+      out.copy_char('{', cs);
       pos = cs + 1;
     } else {
+      out.remove(cs, ce + 2 - cs);
       pos = ce + 2;
     }
   }
-  return result;
+  return out;
 }
 
-[[nodiscard]] inline std::string strip_comments(std::string_view tmpl) {
-  if (tmpl.find("{#") == std::string_view::npos)
-    return std::string(tmpl);
-  std::string result;
-  result.reserve(tmpl.size());
+[[nodiscard]] inline mapped_text strip_comments(std::string_view tmpl) {
+  mapped_text out;
+  if (tmpl.find("{#") == std::string_view::npos) {
+    out.copy(tmpl, 0);
+    return out;
+  }
+  out.reserve(tmpl.size());
   std::size_t pos = 0;
   while (pos < tmpl.size()) {
     auto cs = tmpl.find("{#", pos);
     if (cs == std::string_view::npos) {
-      (void)hot_append(result, tmpl.substr(pos));
+      out.copy(tmpl.substr(pos), pos);
       break;
     }
     if (cs > 0 && tmpl[cs - 1] == '{') {
-      (void)hot_append(result, tmpl.substr(pos, cs - pos + 1));
+      out.copy(tmpl.substr(pos, cs - pos + 1), pos);
       pos = cs + 1;
       continue;
     }
-    (void)hot_append(result, tmpl.substr(pos, cs - pos));
+    out.copy(tmpl.substr(pos, cs - pos), pos);
     auto ce = tmpl.find("#}", cs + 2);
     if (ce == std::string_view::npos) {
-      result += '{';
+      out.copy_char('{', cs);
       pos = cs + 1;
     } else {
+      out.remove(cs, ce + 2 - cs);
       pos = ce + 2;
     }
   }
-  return result;
+  return out;
 }
 
 [[nodiscard]] constexpr std::string_view trim_tail_whitespace_for_lstrip(std::string_view sv) noexcept {
@@ -900,6 +1017,36 @@ constexpr std::size_t constexpr_find_close_partialdef(std::string_view sv, std::
     }
   }
   return std::string_view::npos;
+}
+
+/**
+ * @brief partial 参照（{{#partial}} / {{> }} / {{#partiallocal}}）を列挙する
+ *
+ * @details 空白の有無（{{>a}} と {{> a}}）を同一視し、コールバックに参照名と
+ *          参照タグの開始オフセットを渡す。
+ */
+template <class F>
+constexpr void for_each_partial_ref(std::string_view body, F&& f) {
+  std::size_t pos = 0;
+  while (pos < body.size()) {
+    auto at = constexpr_find(body, std::string_view("{{"), pos);
+    if (at == std::string_view::npos)
+      break;
+    auto end = constexpr_find(body, std::string_view("}}"), at + 2);
+    if (end == std::string_view::npos)
+      break;
+    auto inner = trim_sv(body.substr(at + 2, end - at - 2));
+    std::string_view ref{};
+    if (inner.starts_with("#partiallocal "))
+      ref = trim_sv(inner.substr(14));
+    else if (inner.starts_with("#partial "))
+      ref = trim_sv(inner.substr(9));
+    else if (inner.starts_with(">"))
+      ref = trim_sv(inner.substr(1));
+    if (!ref.empty())
+      f(ref, at);
+    pos = end + 2;
+  }
 }
 
 }  // namespace injamm::detail
