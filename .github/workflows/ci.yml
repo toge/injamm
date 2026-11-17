@@ -217,7 +217,9 @@ jobs:
             -DENABLE_THREADED_DISPATCH=OFF
 
       - name: Build
-        run: cmake --build build
+        # ASan/UBSan は tests/test_injamm.cpp だけで最大 12GB 使う。16GB のランナーで
+        # 並列ビルドすると OOM (exit 137) になるため直列でビルドする。
+        run: cmake --build build --parallel 1
 
       - name: Test
         run: ctest --test-dir build -V
@@ -689,7 +691,9 @@ jobs:
             -DENABLE_THREADED_DISPATCH=OFF
 
       - name: Build
-        run: cmake --build build
+        # ASan/UBSan は tests/test_injamm.cpp だけで最大 11GB、test_injamm_ct.cpp で 6GB 使う。
+        # 16GB のランナーで並列ビルドすると OOM (exit 137) になるため直列でビルドする。
+        run: cmake --build build --parallel 1
 
       - name: Test
         run: ctest --test-dir build -V

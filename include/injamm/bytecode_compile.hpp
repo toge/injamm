@@ -1572,6 +1572,14 @@ class bc_compiler {
         bc_.error = partial_bc.error;
         /** 子コンパイラの位置は本文先頭基準。メインテンプレート基準へ変換する */
         bc_.error.position += pp.body_start;
+        /** message は partial_bc（この関数を抜けると消える）の storage を指すため、
+         *  親の template_storage 内の同一内容へ再束縛する。見つからない場合は静的リテラル。 */
+        auto const msg = bc_.error.custom_error_message;
+        if (!msg.empty()) {
+          auto const at = bc_.template_storage.find(msg);
+          if (at != std::string::npos)
+            bc_.error.custom_error_message = std::string_view(bc_.template_storage.data() + at, msg.size());
+        }
         return;
       }
       // 同名のプレースホルダを探して bc を埋める（shared_ptr はコピー間で共有）

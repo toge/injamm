@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-11-18
+
+- `fix: partial 本文のコンパイルエラーで custom_error_message が解放済みスタックを指す` — 子コンパイラの `error_ctx` を親へ伝播する際、`message` が partial 側 `template_storage` を指したままで、`extract_partials_impl` を抜けると未定義動作になっていた（ASan の stack-use-after-return で検出）。伝播時に親の `template_storage` 内の同一内容へ再束縛する
+- `ci: sanitizer ジョブ（gcc/clang）を直列ビルドに` — ASan/UBSan では `tests/test_injamm.cpp` が 1 TU で 11–12GB 使うため、16GB ランナーの並列ビルドが OOM（exit 137）で落ちていた
+
 ## 2026-11-16
 
 - `fix: -fno-exceptions で出力が推定容量を超えると切り詰められる問題を修正` — `hot_append` / `html_escape_append` の容量ガードが実行時にも働き、推定容量（リテラル×4＋var_ref×32）を超える出力が `out_of_memory` になるか、`emit_var_value` の戻り値が破棄されて成功扱いのまま切り詰められていた。実行時は `append` で伸長し、容量ガードは定数評価時のみに限定。長い変数・大量セクションの出力を回帰テスト化
