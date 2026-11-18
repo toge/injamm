@@ -20,6 +20,9 @@ injamm は Mustache/inja サブセットですが、以下の点で挙動が異�
 
 - **存在しないキーはエラー**: `{{missing}}` のような未定義キーは空文字ではなく
   `unknown_key` エラーを返します（Mustache は空文字、inja は例外を送出）。
+- **未知のフィルタはエラー**: `{{name | nosuch}}` のような未定義フィルタは
+  VM (`engine<T>`)・NTTP (`render`) の両方で `unknown_filter` エラーを返します
+  （両 API の挙動は一致します）。
 - **親スタック解決はコンパイル時**: セクション内の変数は Mustache と同様に
   現在の要素 → 内側のセクション → ルートの順で解決されますが、この解決は
   コンパイル時（バイトコード生成時）に行われ、実行時コストはゼロです。
@@ -378,7 +381,8 @@ render_MyData(data, out);
 | `-o, --output <path>` | 出力ヘッダファイル（必須） |
 | `-h, --help` | ヘルプ表示 |
 
-対応機能: 変数展開（`{{var}}` / `{{{var}}}`）、HTML エスケープ、セクション、条件分岐（`{{#if}}`）、比較演算、フィルタ、ループ変数（`loop.*`）。詳細とパリティは `util/injamm_codegen.cpp` および `test_codegen/` を参照。
+対応機能: 変数展開（`{{var}}` / `{{{var}}}`）、HTML エスケープ、セクション（コンテナの反復に加え bool/数値/enum は「真なら 1 回」の条件ブロック）、条件分岐（`{{#if}}`）、比較演算、フィルタ、ループ変数（`loop.index`/`loop.is_first` 等）、partial（`local` 修飾子を含む）。
+未対応（生成時に明確なエラーで拒否）: `{{@key}}` / `{{loop.key}}`（マップ反復キー）。詳細とパリティは `util/injamm_codegen.cpp` および `test_codegen/` を参照。
 
 ## テンプレート構文
 
@@ -876,6 +880,7 @@ for (auto& t : threads) {
 - 文字列 `repeat`: 最大 10,000 回
 - `indent` 幅: 最大 1,000
 - `left` / `right` / `center` 幅: 最大 100,000
+- `format` の幅・精度: 最大 65,535（std::format 実装の上限。超過は `invalid_format` エラー）
 - `-fno-exceptions` ビルド (`WASI` 等) では中間 OOM が trap に劣化する
 - ARM platforms (including Apple Silicon) use the NEON HTML-escape path
 - OOM 時の diagnostics API は空文字を返す場合がある

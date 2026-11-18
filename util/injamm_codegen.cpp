@@ -24,6 +24,7 @@
 #include <cstdint>
 #include <cstring>
 #include <fstream>
+#include <functional>
 #include <iostream>
 #include <optional>
 #include <sstream>
@@ -509,6 +510,9 @@ class code_generator {
   std::unordered_set<const bc::instruction*> index_loops_;
   /**< stride ループ深度（ループ末尾で _srcN を進める） */
   std::unordered_set<int> stride_loops_;
+  /**< スカラーセクション（bool/数値/enum）の if constexpr ネスト（emit_end で二重に閉じる） */
+  std::vector<bool> scalar_cond_stack_;
+  std::string unsupported_feature_;  /**< generate() が対応不能な命令を検出した場合の説明 */
   std::ostringstream out_;     /**< 出力ストリーム */
 
   // フィルタの文字列引数は VM と同様 var_ref.filters に格納され、filter_string
@@ -749,10 +753,15 @@ class code_generator {
    *          該当ブランチ以外のコードは生成されない。
    */
   void emit_partial_dispatch(bc::bytecode const& bc) {
-    /* 非ローカル partial でかつ空でないバイトコードを持つものの数を数える */
+    /* レンダリング対象の partial でかつ空でないバイトコードを持つものの数を数える。
+       local partial も対象に含める: 旧実装は call_partial の emit 時に local を
+       見落としていたため、{{#partialdef x local}}...{{>x}} の本文が生成コードから
+       無音で欠落していた（VM は描画するのに codegen は描画しない）。
+       local は外部の render_partial<"x"> 呼び出しから隠す意図の名前だが、
+       main 本体の call_partial は同名 dispatch を経由すれば良い。 */
     std::size_t partial_count = 0;
     for (auto const& pe : bc.partial_entries) {
-      if (!pe.local && pe.bc && !pe.bc->instructions.empty())
+      if (pe.bc && !pe.bc->instructions.empty())
         ++partial_count;
     }
     /* partial が1つもなければ dispatch 関数を出力しない */
@@ -786,10 +795,12 @@ class code_generator {
     ++indent_;
 
     /* if constexpr チェーン: 各 partial 名を std::string_view で比較する。
-       コンパイル時解決なので実行時オーバーヘッドは一切ない。 */
+       コンパイル時解決なので実行時オーバーヘッドは一切ない。
+       local partial も含める（call_partial が参照するため。main 本体以外から
+       render_partial<"name"> で直接呼ぶことは文書上非推奨という扱いで許容）。 */
     bool first = true;
     for (auto const& pe : bc.partial_entries) {
-      if (pe.local || !pe.bc || pe.bc->instructions.empty()) continue;
+      if (!pe.bc || pe.bc->instructions.empty()) continue;
 
       auto name_lit = cpp_string(pe.name);
       if (first) {
@@ -955,7 +966,6 @@ class code_generator {
       ++loop_depth_;
       auto idx = std::to_string(loop_depth_);
       if (ref.section_op_count > 0) {
-        /* セクションフィルタがある場合はインデックス形式で生成 */
         emit("auto _size" + idx + " = " + access + ".size();");
         emit("std::size_t _lo" + idx + " = 0, _hi" + idx + " = _size" + idx + ";");
         emit("bool _bwd" + idx + " = false;");
@@ -1027,9 +1037,21 @@ class code_generator {
         ++indent_;
         emit("const auto& _item" + idx + " = " + access + "[_i" + idx + "];");
       } else {
-        /* インデックス変数を参照しないループは range-for に変換（境界チェック削減） */
-        emit("for (const auto& _item" + idx + " : " + access + ") {");
+        /* コンテナは range-for に変換（境界チェック削減）。
+           スカラー（bool/数値/enum）は VM (bytecode_exec.hpp do_section) と同じ
+           「真なら本体を 1 回だけ実行」の条件ブロックとして生成する
+           （cond_section_depth_ 経由で emit_end が閉じるためループ扱いにしない）。
+           旧実装は無条件に range-for を生成していたため bool/数値フィールドに対して
+           コンパイル不能なコードを出力していた（'begin' was not declared）。 */
+        emit("if constexpr (codegen_scalar_section_v<decltype(" + access + ")>) {");
         ++indent_;
+        emit("if (static_cast<bool>(" + access + ")) {");
+        ++indent_;
+        ++cond_section_depth_;
+        ++cond_section_depth_;
+        /* スカラーはループを形成しない: loop_depth_ を戻し、emit_end 側は cond として閉じる */
+        --loop_depth_;
+        scalar_cond_stack_.push_back(true);
       }
     }
     else if (op == bc::opcode::emit_at_section) {
@@ -1063,6 +1085,13 @@ class code_generator {
         --indent_;
         emit("}");
         --cond_section_depth_;
+        if (!scalar_cond_stack_.empty() && scalar_cond_stack_.back()) {
+          /** スカラー セクションの終端: if constexpr ブロックも閉じる（2 個の cond の内側 = if 文） */
+          --cond_section_depth_;
+          --indent_;
+          emit("}");
+          scalar_cond_stack_.pop_back();
+        }
       } else if (loop_depth_ > 0) {
         if (stride_loops_.count(loop_depth_) != 0) {
           auto sidx = std::to_string(loop_depth_);
@@ -1319,9 +1348,11 @@ class code_generator {
     else if (op == bc::opcode::call_partial) {
       /* partial 呼び出し: 従来はインライン展開していたが、emit_partial_dispatch で
          生成された render_partial<"name"> 関数を呼び出すことで外部からも個別に
-         呼び出せるようになった。(void) キャストは nodiscard 警告の抑制。 */
+         呼び出せるようになった。(void) キャストは nodiscard 警告の抑制。
+         local partial も dispatch に載っているため同じ経路で描画される
+         （旧実装は local を無条件にスキップし本文が無音で欠落していた）。 */
       auto& pe = bc.partial_entries[inst.operand];
-      if (!pe.local) {
+      if (pe.bc && !pe.bc->instructions.empty()) {
         emit("(void)render_partial<\"" + pe.name + "\">(data, out);");
       }
     }
@@ -1352,12 +1383,49 @@ public:
   code_generator(std::string type_name, std::string ns, std::string func_prefix = "", bool no_simd = false)
     : type_name_(std::move(type_name)), namespace_(std::move(ns)), func_prefix_(std::move(func_prefix)), no_simd_(no_simd) {}
 
+  /** @brief generate() が対応不能な命令を検出した場合の説明（成功時は空文字列） */
+  [[nodiscard]] std::string const& unsupported_feature() const noexcept { return unsupported_feature_; }
+
+  /**
+   * @brief codegen が対応していない命令がバイトコードに含まれるか検出する
+   * @return 対応不能な命令の名前。すべて対応可能なら空文字列
+   */
+  static std::string find_unsupported(bc::bytecode const& bc) {
+    std::function<std::string(bc::bytecode const&)> scan = [&](bc::bytecode const& b) -> std::string {
+      for (auto const& inst : b.instructions) {
+        if (inst.op == bc::opcode::emit_at_key) {
+          /** {{loop.key}}（マップ反復キー）: 生成コードに _keyN 変数の宣言が存在しないため
+           *  コンパイル不能なヘッダになる。 */
+          return "{{loop.key}} (map iteration key)";
+        }
+      }
+      for (auto const& ref : b.var_refs) {
+        /** {{@key}} 等の @ 変数: emit_var 経由で "data.@key" という不正なメンバアクセスに
+         *  なるため拒否する（旧実装はコンパイル不能なヘッダを書き出したまま exit 0 だった）。 */
+        if (!ref.key.empty() && ref.key[0] == '@') {
+          return "{{" + ref.key + "}} (@ 変数は codegen 未対応)";
+        }
+      }
+      for (auto const& pe : b.partial_entries) {
+        if (!pe.bc) continue;
+        auto nested = scan(*pe.bc);
+        if (!nested.empty()) return nested;
+      }
+      return {};
+    };
+    return scan(bc);
+  }
+
   /**
    * @brief バイトコードから C++ コードを生成
    * @param bc 入力バイトコード
-   * @return 生成された C++ ヘッダファイルの内容
+   * @return 生成された C++ ヘッダファイルの内容。対応不能な命令を含む場合は nullopt
    */
-  std::string generate(bc::bytecode const& bc) {
+  std::optional<std::string> generate(bc::bytecode const& bc) {
+    if (auto unsupported = find_unsupported(bc); !unsupported.empty()) {
+      unsupported_feature_ = unsupported;
+      return std::nullopt;
+    }
     // リテラルの合計サイズ + 補間値の推定サイズで reserve を過大見積もりする
     std::size_t total_literal_size = 0;
     for (auto const& lit : bc.literals) {
@@ -1552,6 +1620,11 @@ int main(int argc, char* argv[]) {
   /* C++ コード生成 */
   code_generator gen(type_name, ns, prefix, no_simd);
   auto code = gen.generate(*bc);
+  if (!code) {
+    std::cerr << "エラー: このテンプレートはコード生成に対応していない機能を含みます: "
+              << gen.unsupported_feature() << "\n";
+    return 1;
+  }
 
   /* 生成されたコードをファイルに書き出し */
   std::ofstream out(output_path);
@@ -1559,7 +1632,7 @@ int main(int argc, char* argv[]) {
     std::cerr << "エラー: " << output_path << " を開けません\n";
     return 1;
   }
-  out << code;
+  out << *code;
 
   std::cout << "Generated: " << output_path << "\n";
   return 0;

@@ -52,6 +52,7 @@ struct ct_parsed_template {
   std::array<std::array<bc_var_ref::section_op, bc_var_ref::max_section_ops>, N> section_ops{}; /**< @brief セクションフィルタパイプライン */
   std::array<std::uint8_t, N>                                           section_op_count{};    /**< @brief セクションフィルタオペコード数 */
   std::size_t                                                           size = 0;              /**< @brief 現在の有効チャンク数 */
+  error_ctx                                                             parse_error{};         /**< @brief パース中のエラー（未知フィルタ等。ec != none ならレンダリング時に関数がエラーを返す） */
 
   /**
    * @brief リテラルチャンクを追加する

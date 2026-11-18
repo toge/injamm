@@ -1,5 +1,20 @@
 # Changelog
 
+## 2026-11-19
+
+- `fix: -fno-exceptions で format の幅/精度 > 65535 が SIGABRT する問題を修正` — 自家バリデータ (`is_valid_format_spec`) は通すが libstdc++ の `vformat` が `format_error`（no-exceptions では abort）を投げる幅/精度を事前に `invalid_format` として拒否
+- `fix: numify / round の未検証 double→long long キャストによる UB と繰り上がり欠落` — `1e19 | numify` のゴミ出力・`1e19 | round` の符号消失を解消。numify は全体を `to_chars(fixed, prec)` で丸めてから整数部にカンマを挿入する方式に変更し、`1.9999999999` → `"2.000000"` のような繰り上がり欠落も修正（`codegen_helpers.hpp` の drift 実装も同期）
+- `fix: {{#if x == y}} の変数右辺が常に 0 と比較されていた問題` — `compare_rhs_field_index` / `compare_rhs_text` を実行時に解決（value_ → ルート → ループ束縛）。数値/文字列/大小比較すべてが機能し、README の「右辺は変数」という記載に実装が追いついた
+- `fix: {{^x}}（逆セクション）のみルートフォールバックが未実装だった問題` — `do_inverted` に `do_section` と同じ二段走査を追加。`{{#items}}{{^verbose}}...{{/verbose}}...{{/items}}` が `{{#if verbose}}` と同じ判定になる
+- `fix: {{#count}}（数値/enum セクション）が常に偽扱いだった問題` — `do_section` に算術型/enum 分岐を追加し、`{{^count}}`・`{{#if count}}` と「非ゼロ = 真」で統一（SYNTAX.md §5 の記載通りに）
+- `fix: {{#break}} 時に join の区切り文字が末尾に残る問題` — join 判定が break_flag を見る前に走っていたため `a, b, ` のようになる 것이 `a, b` に
+- `fix: NTTP render が未知フィルタを黙って無視していた問題` — CT パーサで `unknown_filter` を `ct_bc.error` に記録（VM の `bc_compile` とパリティ）。`render<"{{name | zzz}}">` が engine と同じ `unknown_filter` エラーを返す
+- `fix: 同一キー・フィルタ付きネストセクションで NTTP と VM のパースが食い違う問題` — CT 側の閉じタグ探索が `{{#key | filter}}` 形の同一キー開始タグを深さカウントに含めていなかった。`{{#items}}{{#items | reverse}}...` が両 API で一致
+- `fix: injamm_codegen が local partial を無音で欠落させる問題` — `{{#partialdef greet local}}...{{>greet}}` が VM では描画されるのに生成ヘッダから消えていた。dispatch に local も載せ同一経路で呼び出し
+- `fix: injamm_codegen が bool/数値フィールドのセクションでコンパイル不能なコードを生成する問題` — スカラー値には range-for が成立しないため、`codegen_scalar_section_v` による `if constexpr` 分岐で VM と同じ「真なら 1 回」の if を生成
+- `fix: injamm_codegen が {{@key}} / {{loop.key}} でコンパイル不能なヘッダを書き出す問題` — `data.@key` という不正メンバアクセスを生成したまま exit 0 だったのを、明確なエラーメッセージと非ゼロ終了で拒否
+- `test: 上記の回帰テストを追加` — 変数右辺比較・逆セクションのルートフォールバック・数値セクション・join+break・numify/round の範囲外値・NTTP 未知フィルタ・同一キー+フィルタのパリティ（VM↔NTTP）、codegen の local partial / スカラー セクション / @key 拒否（badbc 拡張）
+
 ## 2026-11-18
 
 - `fix: partial 本文のコンパイルエラーで custom_error_message が解放済みスタックを指す` — 子コンパイラの `error_ctx` を親へ伝播する際、`message` が partial 側 `template_storage` を指したままで、`extract_partials_impl` を抜けると未定義動作になっていた（ASan の stack-use-after-return で検出）。伝播時に親の `template_storage` 内の同一内容へ再束縛する

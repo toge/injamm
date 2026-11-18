@@ -425,27 +425,15 @@ namespace injamm::detail {
         bool negative = val < 0;
         if (negative)
           val = -val;
-        auto        int_part = static_cast<long long>(val);
-        std::string num      = std::to_string(int_part);
-        std::string result;
-        {
-          int digits = static_cast<int>(num.size());
-          int groups = (digits - 1) / 3;
-          result.resize(digits + groups, '\0');
-          int out_pos = static_cast<int>(result.size()) - 1;
-          int count   = 0;
-          for (int i = digits - 1; i >= 0; --i) {
-            result[out_pos--] = num[i];
-            count++;
-            if (count % 3 == 0 && i > 0) {
-              result[out_pos--] = ',';
-            }
-          }
-        }
-        auto frac = val - static_cast<double>(int_part);
-        if (frac != 0.0) {
-          auto        dot_pos = str.find('.');
-          std::size_t prec    = 6;
+        // 丸めは全体を to_chars(fixed, prec) に任せる:
+        // 1) 旧実装は端数部を独立フォーマットしていたため 0.9999999 → "0.000000" のような
+        //    繰り上がり桁の喪失があった
+        // 2) 整数部を long long にキャストしており |val| >= 2^63 で UB だった
+        auto        dot_pos = str.find('.');
+        bool        has_frac = (val - std::floor(val)) != 0.0;
+        std::size_t prec     = 0;
+        if (has_frac) {
+          prec = 6;  // ドットを含まない入力（指数表記等）の既定
           if (dot_pos != std::string::npos) {
             prec = str.size() - dot_pos - 1;
             if (prec > 6)
@@ -453,17 +441,32 @@ namespace injamm::detail {
             if (prec == 0)
               prec = 1;
           }
-          std::array<char, 64> buf;
-          auto [ptr, ec2] = std::to_chars(buf.data(), buf.data() + buf.size(), frac, std::chars_format::fixed, static_cast<int>(prec));
-          if (ec2 == std::errc()) {
-            auto frac_str = std::string_view(buf.data(), ptr - buf.data());
-            if (frac_str.size() > 2) {
-              frac_str = frac_str.substr(1);
-            }
-            result += frac_str;
-          }
         }
-        str = negative ? "-" + result : result;
+        std::array<char, 512> buf;
+        auto [ptr, ec2] = std::to_chars(buf.data(), buf.data() + buf.size(), val, std::chars_format::fixed, static_cast<int>(prec));
+        if (ec2 == std::errc()) {
+          std::string_view whole(buf.data(), static_cast<std::size_t>(ptr - buf.data()));
+          auto              dot    = whole.find('.');
+          auto              digits = whole.substr(0, dot);
+          std::string       result;
+          {
+            int int_digits = static_cast<int>(digits.size());
+            int groups     = (int_digits - 1) / 3;
+            result.resize(static_cast<std::size_t>(int_digits + groups), '\0');
+            int out_pos = static_cast<int>(result.size()) - 1;
+            int count   = 0;
+            for (int i = int_digits - 1; i >= 0; --i) {
+              result[static_cast<std::size_t>(out_pos--)] = digits[static_cast<std::size_t>(i)];
+              count++;
+              if (count % 3 == 0 && i > 0) {
+                result[static_cast<std::size_t>(out_pos--)] = ',';
+              }
+            }
+          }
+          if (dot != std::string_view::npos)
+            result += whole.substr(dot);
+          str = negative ? "-" + result : result;
+        }
       }
     } else {
       long long val{};
@@ -775,9 +778,17 @@ namespace injamm::detail {
     if (prec < 0) prec = 0;
     if (prec == 0) {
       val = std::round(val);
-      std::array<char, 32> buf;
-      auto [ptr, ec2] = std::to_chars(buf.data(), buf.data() + buf.size(), static_cast<long long>(val));
-      if (ec2 == std::errc()) str.assign(buf.data(), ptr - buf.data());
+      /** long long 範囲内のみ整数変換（範囲外の double→long long は UB のため固定小数出力にフォールバック） */
+      constexpr double k_ll_safe = 9.2e18;
+      if (val >= -k_ll_safe && val <= k_ll_safe) {
+        std::array<char, 32> buf;
+        auto [ptr, ec2] = std::to_chars(buf.data(), buf.data() + buf.size(), static_cast<long long>(val));
+        if (ec2 == std::errc()) str.assign(buf.data(), ptr - buf.data());
+      } else {
+        std::array<char, 512> buf;
+        auto [ptr, ec2] = std::to_chars(buf.data(), buf.data() + buf.size(), val, std::chars_format::fixed, 0);
+        if (ec2 == std::errc()) str.assign(buf.data(), ptr - buf.data());
+      }
     } else {
       double pow10 = 1.0;
       for (int i = 0; i < prec; ++i) pow10 *= 10.0;

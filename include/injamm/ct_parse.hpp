@@ -299,6 +299,9 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
           float_filter_list.push_back(*ffl);
           continue;
         }
+        /** 未知のフィルタは VM (bc_compile) と同じ unknown_filter エラーにする（旧実装は黙って無視していた） */
+        if (ctx.tmpl.parse_error.ec == error_code::none)
+          ctx.tmpl.parse_error = error_ctx{tag_start, error_code::unknown_filter, parts[fi]};
       }
       ctx.push_placeholder(actual_key, true, filter_list, int_filter_list, float_filter_list);
       pos = end + 3;
@@ -498,6 +501,9 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
             if_float_filters.push_back(*ffl);
             continue;
           }
+          /** 未知のフィルタは VM (bc_compile) と同じ unknown_filter エラーにする（旧実装は黙って無視していた） */
+          if (ctx.tmpl.parse_error.ec == error_code::none)
+            ctx.tmpl.parse_error = error_ctx{tag_start, error_code::unknown_filter, parts[fi]};
         }
 
         /** @brief ネスト対応のための深さカウンタ */
@@ -662,7 +668,9 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
           for (std::size_t fi = 1; fi < parts.size(); ++fi) {
             auto sf = parse_section_filter(parts[fi]);
             if (!sf) {
-              // CT パスでは未知フィルタを無視（constexpr に error_ctx 機構なし）
+              /** 未知のセクションフィルタは VM (bc_compile) と同じ unknown_filter エラーにする */
+              if (ctx.tmpl.parse_error.ec == error_code::none)
+                ctx.tmpl.parse_error = error_ctx{tag_start, error_code::unknown_filter, parts[fi]};
               continue;
             }
             if (sec_ops.size() < bc_var_ref::max_section_ops)
@@ -691,7 +699,7 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
         std::size_t close_pos = std::string_view::npos;
 
         while (search < tmpl.size()) {
-          auto next_open = constexpr_find_tag(tmpl, "{{#", close_key, "}}", search);
+          auto next_open = constexpr_find_section_open(tmpl, "{{#", close_key, search);
           auto next_close = constexpr_find_tag(tmpl, "{{/", close_key, "}}", search);
           if (next_close == std::string_view::npos) {
             break;
@@ -800,7 +808,7 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
         std::size_t close_pos = std::string_view::npos;
 
         while (search < tmpl.size()) {
-          auto next_open = constexpr_find_tag(tmpl, "{{^", close_key, "}}", search);
+          auto next_open = constexpr_find_section_open(tmpl, "{{^", close_key, search);
           auto next_close = constexpr_find_tag(tmpl, "{{/", close_key, "}}", search);
           if (next_close == std::string_view::npos) {
             break;
@@ -915,6 +923,9 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
           float_filter_list.push_back(*ffl);
           continue;
         }
+        /** 未知のフィルタは VM (bc_compile) と同じ unknown_filter エラーにする（旧実装は黙って無視していた） */
+        if (ctx.tmpl.parse_error.ec == error_code::none)
+          ctx.tmpl.parse_error = error_ctx{tag_start, error_code::unknown_filter, parts[fi]};
       }
       ctx.push_placeholder(key, raw_via_ampersand, filter_list, int_filter_list, float_filter_list);
     }

@@ -301,6 +301,16 @@ inline void serialize_chrono(Buffer& out, std::chrono::time_point<Clock, Duratio
  * 明らかに不正な指定子を事前に invalid_format として弾く。完全な文法検証ではなく、
  * 未知の型文字・波括弧・壊れた precision を拒否する保守的なチェック。
  */
+/** @brief 幅/精度の数字列 f[from,to) が std::format 実装の上限 65535 を超えるか
+ *  @details libstdc++ / libc++ の vformat は幅・精度 > 65535 で format_error を送出する。
+ *           -fno-exceptions ではそれが abort になるため、事前に invalid_format で弾く。 */
+constexpr bool format_digits_overflow(std::string_view f, std::size_t from, std::size_t to) noexcept {
+  if (to - from > 5) return true;  // 6 桁以上は必ず 65535 を超える
+  std::size_t v = 0;
+  for (std::size_t i = from; i < to; ++i) v = v * 10 + static_cast<std::size_t>(f[i] - '0');
+  return v > 65535;
+}
+
 constexpr bool is_valid_format_spec(std::string_view f, bool integral, bool string_value) noexcept {
   if (f.find('{') != std::string_view::npos || f.find('}') != std::string_view::npos) return false;
   std::size_t i = 0;
@@ -308,11 +318,15 @@ constexpr bool is_valid_format_spec(std::string_view f, bool integral, bool stri
   if (f.size() >= 2 && is_align(f[1])) i = 2;
   else if (!f.empty() && is_align(f[0])) i = 1;
   if (string_value) {
+    std::size_t width_begin = i;
     while (i < f.size() && f[i] >= '0' && f[i] <= '9') ++i;
+    if (format_digits_overflow(f, width_begin, i)) return false;
     if (i < f.size() && f[i] == '.') {
       ++i;
       if (i >= f.size() || f[i] < '0' || f[i] > '9') return false;
+      std::size_t prec_begin = i;
       while (i < f.size() && f[i] >= '0' && f[i] <= '9') ++i;
+      if (format_digits_overflow(f, prec_begin, i)) return false;
     }
     if (i < f.size() && f[i] == 'L') ++i;
     if (i < f.size() && f[i] == 's') ++i;
@@ -321,11 +335,17 @@ constexpr bool is_valid_format_spec(std::string_view f, bool integral, bool stri
   if (i < f.size() && (f[i] == '+' || f[i] == '-' || f[i] == ' ')) ++i;
   if (i < f.size() && f[i] == '#') ++i;
   if (i < f.size() && f[i] == '0') ++i;
-  while (i < f.size() && f[i] >= '0' && f[i] <= '9') ++i;
+  {
+    std::size_t width_begin = i;
+    while (i < f.size() && f[i] >= '0' && f[i] <= '9') ++i;
+    if (format_digits_overflow(f, width_begin, i)) return false;
+  }
   if (i < f.size() && f[i] == '.') {
     ++i;
     if (i >= f.size() || f[i] < '0' || f[i] > '9') return false;
+    std::size_t prec_begin = i;
     while (i < f.size() && f[i] >= '0' && f[i] <= '9') ++i;
+    if (format_digits_overflow(f, prec_begin, i)) return false;
   }
   if (i < f.size() && f[i] == 'L') ++i;
   if (i < f.size()) {

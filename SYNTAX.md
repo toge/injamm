@@ -232,6 +232,11 @@ auto bc2 = injamm::engine<User>("{{&name | upper}}"); // → "<B>ALICE</B>" 相�
 - 空配列/空マップ → 偽
 - `0` / `false` / 空文字列 → 偽
 
+> **注記**: `{{#x}}` / `{{^x}}` / `{{#if x}}` はすべてこの同じ判定に従います。
+> かつて `{{#count}}`（数値セクション）のみ常に偽扱いで `{{^count}}`・`{{#if count}}`
+> と食い違っていましたが、現在は「非ゼロ = 真」で統一されています。
+> セクション本体内の {{^x}} も、ルートのみに存在するキーを親スタック探索で解決します。
+
 ```cpp
 // 配列ループ
 auto r = injamm::render<injamm::fixed_string(
@@ -1060,7 +1065,7 @@ auto side = injamm::render_partial<
 | 4   | `syntax_error`     | 構文エラー                 |
 | 5   | `type_mismatch`    | 型不一致                   |
 | 6   | `invalid_utf8`     | 不正な UTF-8（予約: 現行実装では未使用） |
-| 7   | `unknown_filter`   | 不明なフィルター名         |
+| 7   | `unknown_filter`   | 不明なフィルター名（VM・NTTP 両方でエラー。未定義フィルタは無視されません）         |
 | 8   | `division_by_zero` | 除数ゼロエラー             |
 | 9   | `out_of_memory`    | メモリ不足                 |
 | 10  | `invalid_format`   | 不正なフォーマット文字列   |
@@ -1099,4 +1104,5 @@ auto bc3 = injamm::engine<User>("a\n{{name}}\nb", true, false);
 - 文字列 `repeat`: 最大 10,000 回
 - `indent` 幅: 最大 1,000
 - `left` / `right` / `center` 幅: 最大 100,000
+- `format` の幅・精度: 最大 65,535（std::format 実装の上限。超過は `invalid_format` エラー）
 - `-fno-exceptions` ビルドでは中間 OOM が trap に劣化する

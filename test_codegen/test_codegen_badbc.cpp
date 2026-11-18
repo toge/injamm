@@ -5,6 +5,8 @@
  * @details 巨大な命令数や改竄された literal_total_size など、
  *          library loader では拒否されるが CLI の独立リーダで検証漏れがあると
  *          abort していた入力を作り、非ゼロ終了することを確認する。
+ *          あわせて codegen の機能回帰（local partial の描画・スカラー セクションの
+ *          if 生成・{{@key}} の明確な拒否）も検証する。
  */
 
 #include <cstdint>
@@ -12,6 +14,7 @@
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
+#include <iterator>
 #include <string>
 
 namespace {
@@ -48,6 +51,40 @@ int run_case(std::string const& cli, std::string const& name, std::string const&
   }
   return 0;
 }
+
+/** @brief {{@key}} を含むテンプレートが非ゼロ終了で拒否されることを確認する
+ *  @details 旧実装は "_itemN.@key" というコンパイル不能なメンバアクセスを
+ *           生成したまま exit 0 で終了していた。 */
+int run_atkey_rejection(std::string const& cli) {
+  std::string const out_path = "codegen_reject_fixture.hpp";
+  std::string const cmd      = "\"" + cli + "\" -e \"{{#items}}{{@key}}{{/items}}\" -t Ok -o " + out_path + " 2>codegen_err2.txt";
+  int const         rc       = std::system(cmd.c_str());
+  if (rc == 0) {
+    std::cerr << "FAIL: {{@key}} template was accepted by codegen (compiles to broken header)\n";
+    return 1;
+  }
+  std::remove(out_path.c_str());
+  return 0;
+}
+
+/** @brief テンプレートを -e で codegen し、生成ヘッダに期待パターンが含まれるか検証する */
+int run_ok_case(std::string const& cli, std::string const& expr, std::string const& name, std::string const& expect) {
+  std::string const out_path = "codegen_ok_fixture.hpp";
+  std::string const cmd      = "\"" + cli + "\" -e \"" + expr + "\" -t Ok -o " + out_path + " 2>codegen_err.txt";
+  int const         rc       = std::system(cmd.c_str());
+  if (rc != 0) {
+    std::cerr << "FAIL: codegen failed for " << name << "\n";
+    return 1;
+  }
+  std::ifstream f(out_path);
+  std::string   content((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+  std::remove(out_path.c_str());
+  if (content.find(expect) == std::string::npos) {
+    std::cerr << "FAIL: expected pattern missing in generated code for " << name << "\n";
+    return 1;
+  }
+  return 0;
+}
 } // namespace
 
 int main(int argc, char** argv) {
@@ -74,6 +111,17 @@ int main(int argc, char** argv) {
     put_u64(data, 0);  // partials
     failures += run_case(cli, "literal_total_size mismatch", data);
   }
+
+  // 3. {{@key}}（マップ反復キー）を含むテンプレートは明確に拒否されること
+  failures += run_atkey_rejection(cli);
+
+  // 4. local partial が生成コードに含まれること（旧実装は無音で欠落していた）
+  failures += run_ok_case(cli, "A{{#partialdef greet local}}Hi {{name}}{{/partialdef}}B{{>greet}}C",
+                          "local partial rendered", "Hi ");
+
+  // 5. スカラー セクションが if 文として生成されること（旧実装は range-for で壊れていた）
+  failures += run_ok_case(cli, "{{#active}}on{{/active}}", "scalar section if",
+                          "codegen_scalar_section_v");
 
   if (failures == 0) {
     std::cout << "codegen bad .bc rejected\n";

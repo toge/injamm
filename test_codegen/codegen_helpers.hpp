@@ -494,6 +494,15 @@ inline void append_value(Buffer& out, V const& v) {
   }
 }
 
+/** @brief スカラー（bool/算術型/enum）のセクション本体を 1 回だけ実行するか判定
+ *  @details VM (bytecode_exec.hpp do_section) の「非ゼロ = 真」セマンティクスと対応。
+ *           codegen はこの trait で if constexpr 分岐を生成し、スカラー値に対して
+ *           range-for を出力しないようにする。optional は false（VM 側は
+ *           has_value で分岐するため別経路）。 */
+template <class V>
+inline constexpr bool codegen_scalar_section_v =
+    std::is_same_v<V, bool> || std::is_arithmetic_v<V> || std::is_enum_v<V>;
+
 template <typename V>
 constexpr bool value_empty(V const& v) {
   if constexpr (std::is_same_v<V, const char*>) {
@@ -737,27 +746,30 @@ inline void filter_int_numify(std::string& s) {
     if (auto [p, ec] = std::from_chars(s.data(), s.data() + s.size(), val); ec == std::errc{}) {
       bool negative = val < 0;
       if (negative) val = -val;
-      auto int_part = static_cast<long long>(val);
-      std::string num = std::to_string(int_part);
-      std::string grouped;
-      group_digits(grouped, num);
-      auto frac = val - static_cast<double>(int_part);
-      if (frac != 0.0) {
-        auto dot_pos = s.find('.');
-        std::size_t prec = 6;
+      // VM (filters.hpp) と同一ロジック: 全体を to_chars(fixed, prec) で丸めてから
+      // 整数部にのみカンマを挿入する（端数の独立フォーマットは繰り上がりを失い、
+      // long long キャストは |val| >= 2^63 で UB になるため廃止）
+      auto dot_pos = s.find('.');
+      bool frac_nonzero = (val - std::floor(val)) != 0.0;
+      std::size_t prec = 0;
+      if (frac_nonzero) {
+        prec = 6;
         if (dot_pos != std::string::npos) {
           prec = s.size() - dot_pos - 1;
           if (prec > 6) prec = 6;
           if (prec == 0) prec = 1;
         }
-        char buf[64];
-        if (auto [ptr, ec2] = std::to_chars(buf, buf + sizeof(buf), frac, std::chars_format::fixed, static_cast<int>(prec)); ec2 == std::errc{}) {
-          std::string_view frac_str(buf, static_cast<std::size_t>(ptr - buf));
-          if (frac_str.size() > 2) frac_str = frac_str.substr(1);  // "0.x" → ".x"
-          grouped += frac_str;
-        }
       }
-      s = negative ? "-" + grouped : grouped;
+      char buf[512];
+      if (auto [ptr, ec2] = std::to_chars(buf, buf + sizeof(buf), val, std::chars_format::fixed, static_cast<int>(prec)); ec2 == std::errc{}) {
+        std::string_view whole(buf, static_cast<std::size_t>(ptr - buf));
+        auto dot = whole.find('.');
+        auto digits = whole.substr(0, dot);
+        std::string grouped;
+        group_digits(grouped, digits);
+        if (dot != std::string_view::npos) grouped += whole.substr(dot);
+        s = negative ? "-" + grouped : grouped;
+      }
     }
   } else {
     long long val = 0;

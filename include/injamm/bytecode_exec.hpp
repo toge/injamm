@@ -833,8 +833,8 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
           bc_executor<elem_t, RootT, Sink> child_exec(ex.bc_, elem, ex.root_value_, &ls, ex.out_, ex.filtered_shared_ ? ex.filtered_shared_ : &ex.filtered_scratch_);
           auto r2 = child_exec.execute_impl(pc + 1, body_end - 1);
           if (!r2) return r2;
-          // join: 最初のイテレーション以外で区切り文字を出力
-          if (!w.join_sep.empty() && ls.index + 1 < count && !ls.continue_flag) {
+          // join: 最初のイテレーション以外で区切り文字を出力（break 時は出力しない）
+          if (!w.join_sep.empty() && ls.index + 1 < count && !ls.continue_flag && !ls.break_flag) {
             if (!hot_append(ex.out_, w.join_sep)) return std::unexpected(error_ctx{.position = pc, .ec = error_code::out_of_memory});
           }
           if (w.bwd) --src; else ++src;
@@ -844,6 +844,16 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
       } else if constexpr (std::same_as<FT, bool>) {
         is_falsy = !field;
         if (field) { auto r2 = ex.execute_impl(pc + 1, body_end - 1); if (!r2) return r2; }
+      } else if constexpr (std::is_arithmetic_v<FT> || std::is_enum_v<FT>) {
+        /** 数値/enum セクション: {{^x}} と {{#if x}} は非ゼロを真として扱うため、
+         *  {{#x}} も同じセマンティクスに揃える（非ゼロなら本体を 1 回だけ実行）。
+         *  旧実装は算術型ブランチがなく常に偽扱いで三方不一致だった。 */
+        bool truthy = [&] {
+          if constexpr (std::is_enum_v<FT>) return static_cast<std::underlying_type_t<FT>>(field) != 0;
+          else return field != 0;
+        }();
+        is_falsy = !truthy;
+        if (truthy) { auto r2 = ex.execute_impl(pc + 1, body_end - 1); if (!r2) return r2; }
       } else if constexpr (is_std_optional_v<FT>) {
         is_falsy = !field.has_value();
         if (field.has_value()) {
@@ -1183,7 +1193,10 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
     auto const& ref   = ex.bc_.var_refs[instr.operand2];
     auto        else_pc = instr.operand3;
     bool empty = true;
-    (void)for_each_field_ref(ex.value_, ref,[&](auto const& field) {
+    /** 現在コンテキストでキーが解決できたか。未解決ならルート型で再試行する（do_section と同じ二段走査） */
+    bool entered = false;
+    auto eval_empty = [&](auto const& field) {
+      entered = true;
       using FT = std::remove_cvref_t<decltype(field)>;
       if constexpr (ct_is_vector_like<FT>) { empty = field.empty(); }
       else if constexpr (std::same_as<FT, bool>) { empty = !field; }
@@ -1194,7 +1207,12 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
       else if constexpr (std::is_arithmetic_v<FT>) { empty = (field == 0); }
       else if constexpr (std::is_enum_v<FT>) { empty = (static_cast<std::underlying_type_t<FT>>(field) == 0); }
       else if constexpr (ct_glz_reflectable<FT>) { empty = false; }
-    });
+    };
+    (void)for_each_field_ref(ex.value_, ref, eval_empty);
+    if (!entered) {
+      /** ルートのみに存在するキーの逆セクション（{{#items}}{{^verbose}}... 等）を do_section と同じ挙動に揃える */
+      (void)for_each_field_ref(ex.root_value_, ref, eval_empty);
+    }
     auto body_end = instr.operand;
     if (body_end <= pc + 1 || body_end > ex.bc_.instructions.size())
       return std::unexpected(error_ctx{.position = pc, .ec = error_code::syntax_error});
@@ -1618,10 +1636,101 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
     auto const& ref   = ex.bc_.var_refs[instr.operand2];
     int rhs = ref.int_filters.empty() ? 0 : ref.int_filters[0].arg;
     bool cond = false;
+
+    /** 変数右辺 ({{#if x == y}}): 右辺 y を実行時に解決する。
+     *  旧実装は compare_rhs_field_index / compare_rhs_text を無視して常に 0 と比較していた。 */
+    bool const rhs_is_var = (ref.compare_rhs_kind == compare_operand_kind::variable);
+    long long      rhs_num = 0;
+    double         rhs_dbl = 0.0;
+    bool           rhs_is_float = false;
+    bool           rhs_num_ok = false;
+    std::string_view rhs_str{};
+    bool           rhs_str_ok = false;
+    std::string    rhs_scratch{};  /**< ループ束縛由来の文字列右辺の保持領域（rhs_str の寿命確保） */
+    if (rhs_is_var) {
+      auto visit_rhs = [&](auto const& f) {
+        using RT = std::remove_cvref_t<decltype(f)>;
+        if constexpr (std::is_arithmetic_v<RT> || std::is_enum_v<RT>) {
+          if constexpr (std::is_enum_v<RT>) {
+            rhs_num = static_cast<long long>(static_cast<std::underlying_type_t<RT>>(f));
+          } else if constexpr (std::floating_point<RT>) {
+            rhs_dbl = static_cast<double>(f);
+            rhs_is_float = true;
+          } else {
+            rhs_num = static_cast<long long>(f);
+          }
+          rhs_num_ok = true;
+        } else if constexpr (std::same_as<RT, std::string> || std::same_as<RT, std::string_view> || char_pointer_v<RT>) {
+          rhs_str = to_sv(f);
+          rhs_str_ok = true;
+        } else if constexpr (is_std_optional_v<RT>) {
+          if (f.has_value()) {
+            using inner_t = std::remove_cvref_t<decltype(*f)>;
+            if constexpr (std::is_arithmetic_v<inner_t> || std::is_enum_v<inner_t>) {
+              if constexpr (std::floating_point<inner_t>) { rhs_dbl = static_cast<double>(*f); rhs_is_float = true; }
+              else { rhs_num = static_cast<long long>(*f); }
+              rhs_num_ok = true;
+            } else if constexpr (std::same_as<inner_t, std::string> || std::same_as<inner_t, std::string_view> || char_pointer_v<inner_t>) {
+              rhs_str = to_sv(*f);
+              rhs_str_ok = true;
+            }
+          }
+        }
+      };
+      bool rhs_found = false;
+      auto visit_rhs_found = [&](auto const& f) { rhs_found = true; visit_rhs(f); };
+      /** コンパイル時の解決コンテキストは現在値型なので value_ を先頭に、未解決ならルート型で再試行 */
+      (void)for_each_field(ex.value_, ref.compare_rhs_text, ref.compare_rhs_field_index, ref.compare_rhs_has_dot, visit_rhs_found, {});
+      if (!rhs_found) {
+        (void)for_each_field(ex.root_value_, ref.compare_rhs_text, ref.compare_rhs_field_index, ref.compare_rhs_has_dot, visit_rhs_found, {});
+      }
+      if (!rhs_found) {
+        /** 変数右辺がループ束縛（内包セクションの要素）の場合: 親スタックから数値/文字列を取り出して比較 */
+        for (auto* lp = ex.loop_; lp; lp = lp->parent) {
+          if (!lp->binding_resolve) continue;
+          if (ref.compare_rhs_text == lp->binding_name ||
+              (ref.compare_rhs_text.starts_with(lp->binding_name) && ref.compare_rhs_text.size() > lp->binding_name.size() &&
+               ref.compare_rhs_text[lp->binding_name.size()] == '.')) {
+            std::string_view sub = (ref.compare_rhs_text == lp->binding_name)
+                                       ? std::string_view{}
+                                       : std::string_view{ref.compare_rhs_text.data() + lp->binding_name.size() + 1,
+                                                          ref.compare_rhs_text.size() - lp->binding_name.size() - 1};
+            std::string scratch;
+            if (lp->binding_resolve(scratch, sub, false, lp->binding_elem, lp->binding_name, UINT32_MAX)) {
+              long long lv{};
+              auto [p, ec3] = std::from_chars(scratch.data(), scratch.data() + scratch.size(), lv);
+              if (ec3 == std::errc{} && p == scratch.data() + scratch.size()) {
+                rhs_num = lv;
+                rhs_num_ok = true;
+              } else {
+                /** 文字列値: scratch はブロック内でのみ有効なので std::string にコピーしてから比較に回す */
+                rhs_scratch.assign(scratch);
+                rhs_str = rhs_scratch;
+                rhs_str_ok = true;
+                rhs_num_ok = false;
+              }
+              break;
+            }
+          }
+        }
+      }
+    }
+
     auto do_cmp = [&](auto const& field) {
       using FT = std::remove_cvref_t<decltype(field)>;
       if constexpr (std::is_arithmetic_v<FT>) {
-        if constexpr (std::floating_point<FT>) {
+        if (rhs_is_var) {
+          /** 変数右辺: いずれかが浮動小数なら double、それ以外は整数値で比較 */
+          if (rhs_is_float) {
+            cond = compare_vals<double>(instr.op, static_cast<double>(field), rhs_dbl);
+          } else if (rhs_num_ok) {
+            if constexpr (std::floating_point<FT>) {
+              cond = compare_vals<double>(instr.op, static_cast<double>(field), static_cast<double>(rhs_num));
+            } else {
+              cond = compare_vals<long long>(instr.op, static_cast<long long>(field), rhs_num);
+            }
+          }
+        } else if constexpr (std::floating_point<FT>) {
           /** 実数フィールド: double で比較（long long への切り捨てを回避） */
           cond = compare_vals<double>(instr.op, static_cast<double>(field), static_cast<double>(rhs));
         } else {
@@ -1629,10 +1738,32 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
         }
       } else if constexpr (std::is_enum_v<FT>) {
         /** enum LHS: underlying 整数に変換して算術比較と同じロジックで評価 */
-        cond = compare_vals<long long>(instr.op, static_cast<long long>(static_cast<std::underlying_type_t<FT>>(field)), static_cast<long long>(rhs));
+        if (rhs_is_var) {
+          if (rhs_num_ok) {
+            cond = compare_vals<long long>(instr.op, static_cast<long long>(static_cast<std::underlying_type_t<FT>>(field)), rhs_num);
+          }
+        } else {
+          cond = compare_vals<long long>(instr.op, static_cast<long long>(static_cast<std::underlying_type_t<FT>>(field)), static_cast<long long>(rhs));
+        }
       } else if constexpr (std::same_as<FT, std::string> || std::same_as<FT, std::string_view> || char_pointer_v<FT>) {
         auto sv = to_sv(field);
-        if (ref.compare_rhs_kind == compare_operand_kind::string_literal) {
+        if (rhs_is_var) {
+          if (rhs_str_ok) {
+            /** 変数右辺が文字列: 文字列として等値/不等値比較 */
+            switch (instr.op) {
+            case bc_opcode::emit_if_eq: cond = (sv == rhs_str); break;
+            case bc_opcode::emit_if_ne: cond = (sv != rhs_str); break;
+            default: break;
+            }
+          } else if (rhs_num_ok) {
+            /** 変数右辺が数値: 文字列が数値として解釈できるなら数値比較 */
+            long long lv{};
+            auto [p, ec2] = std::from_chars(sv.data(), sv.data() + sv.size(), lv);
+            if (ec2 == std::errc{} && p == sv.data() + sv.size()) {
+              cond = compare_vals<long long>(instr.op, lv, rhs_num);
+            }
+          }
+        } else if (ref.compare_rhs_kind == compare_operand_kind::string_literal) {
           switch (instr.op) {
           case bc_opcode::emit_if_eq: cond = (sv == ref.compare_rhs_text); break;
           case bc_opcode::emit_if_ne: cond = (sv != ref.compare_rhs_text); break;
@@ -1662,7 +1793,13 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
       case special_var_kind::loop_size:   lv = ex.loop_->count; break;
       default: ok = false; break;
       }
-      if (ok) { cond = compare_vals<long long>(instr.op, lv, static_cast<long long>(rhs)); }
+      if (ok) {
+        if (rhs_is_var) {
+          if (rhs_num_ok) cond = compare_vals<long long>(instr.op, lv, rhs_num);
+        } else {
+          cond = compare_vals<long long>(instr.op, lv, static_cast<long long>(rhs));
+        }
+      }
     } else {
       bool lhs_found = false;
       if (ref.root_fallback == root_fb_proven) {

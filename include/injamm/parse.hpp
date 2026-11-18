@@ -197,6 +197,36 @@ constexpr std::size_t constexpr_find_tag(std::string_view haystack, std::string_
 }
 
 /**
+ * @brief セクション開始タグ（フィルタ付きを含む）を探索する
+ * @param haystack 探索対象のテンプレート
+ * @param marker   開始タグのマーカー（"{{#" または "{{^"）
+ * @param key      セクションキー
+ * @param pos      探索開始位置
+ * @return タグの開始位置。見つからなければ npos
+ * @details "{{#key}}" に加えて "{{#key | filter}}" 形も同一キーの開始タグとして扱う。
+ *          VM 側 (bytecode_compile.hpp) の閉じタグ探索はフィルタ付き開始タグも
+ *          深さカウントに含めるため、CT 側も同じ一致規則に揃えないと
+ *          同一キーのネストでパース結果が両者で食い違う。
+ */
+constexpr std::size_t constexpr_find_section_open(std::string_view haystack, std::string_view marker,
+                                                  std::string_view key, std::size_t pos) noexcept {
+  std::size_t i = pos;
+  for (;;) {
+    auto at = constexpr_find_tag(haystack, marker, key, std::string_view{}, i);
+    if (at == std::string_view::npos) return std::string_view::npos;
+    auto after = at + marker.size() + key.size();
+    /** 直後が '}' なら "{{#key}}"、空白類なら "{{#key | filter}}"（いずれも開始タグ）。
+     *  それ以外（例えば "{{#key2}}"）は別キーなのでスキップする。 */
+    if (after < haystack.size()) {
+      auto c = haystack[after];
+      if (c == '}' || c == ' ' || c == '\t' || c == '~')
+        return at;
+    }
+    i = at + 1;
+  }
+}
+
+/**
  * @brief loop.X 予約語の有無を判定する
  * @param key プレースホルダーキー ("loop.index" / "loop.is_first" 等)
  * @return 該当する場合は対応する at_var_kind 列挙値、該当しない場合は std::nullopt

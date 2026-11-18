@@ -346,6 +346,8 @@ consteval ct_bytecode<N> ct_chunks_to_bytecode(ct_parsed_template<N> const& chun
   ct_bytecode_builder<N> b{bc};
   compile_chunk_range(b, chunks, 0, chunks.size);
   b.emit(bc_opcode::halt);
+  /** パース時のエラー（未知フィルタ等）をバイトコードのエラーとして伝播させる */
+  if (bc.error.ec == error_code::none) bc.error = chunks.parse_error;
   return bc;
 }
 

@@ -87,6 +87,15 @@ struct glz::meta<BcLlData> {
   static constexpr auto value = glz::object("val", &BcLlData::val);
 };
 
+struct BcDblData {
+  double val{};
+};
+
+template <>
+struct glz::meta<BcDblData> {
+  static constexpr auto value = glz::object("val", &BcDblData::val);
+};
+
 // （以降の構造体定義が続く）
 
 /**
@@ -283,6 +292,32 @@ TEST_CASE("bc_section_bool_false", "[injamm]") {
   REQUIRE(*r == "");
 }
 
+/**
+ * @brief 数値セクションの真理値判定
+ * @details 旧実装は do_section に算術型/enum 分岐がなく {{#count}} が常に偽扱いで、
+ *          {{^count}}（非ゼロを真）や {{#if count}} と三方不一致だった。
+ *          非ゼロなら本体を 1 回だけ実行する挙動に統一した。
+ */
+TEST_CASE("bc_section_numeric_truthy", "[injamm]") {
+  BcUser nonzero{"Alice", 30};
+  auto r1 = injamm::engine<BcUser>("{{#age}}adult{{/age}}").render(nonzero);
+  REQUIRE(r1.has_value());
+  CHECK(*r1 == "adult");
+
+  BcUser zero{"Alice", 0};
+  auto r2 = injamm::engine<BcUser>("{{#age}}adult{{/age}}").render(zero);
+  REQUIRE(r2.has_value());
+  CHECK(*r2 == "");
+
+  /** {{^count}}・{{#if count}} との一致 */
+  auto r3 = injamm::engine<BcUser>("{{^age}}zero{{/age}}").render(zero);
+  REQUIRE(r3.has_value());
+  CHECK(*r3 == "zero");
+  auto r4 = injamm::engine<BcUser>("{{#if age}}T{{/if}}").render(nonzero);
+  REQUIRE(r4.has_value());
+  CHECK(*r4 == "T");
+}
+
 TEST_CASE("bc_section_else_truthy", "[injamm][else]") {
   BcBoolData data{true};
   auto       bc = injamm::engine<BcBoolData>("{{#flag}}yes{{else}}no{{/flag}}");
@@ -421,6 +456,41 @@ TEST_CASE("bc_inverted_string_empty", "[injamm]") {
   auto   r  = bc.render(data);
   REQUIRE(r.has_value());
   REQUIRE(*r == "empty");
+}
+
+/**
+ * @brief 逆セクションのルートフォールバック
+ * @details セクション本体内の {{^root_only_field}} はルートのみに存在するキーを
+ *          ルート型から解決する。旧実装は do_inverted のみルート再試験がなく、
+ *          {{#if}} と {{^x}} で挙動が食い違っていた（verbose=true なのに
+ *          [quiet] が描画される）。
+ */
+/** @brief 逆セクションのルートフォールバックテスト用データ型（セクション本体内から
+ *  ルートのみに存在するキーを {{^x}} で参照する） */
+struct InvertFbData {
+  std::vector<std::string> guests{"a", "b"};
+  bool verbose{true};
+};
+
+template <>
+struct glz::meta<InvertFbData> {
+  static constexpr auto value = glz::object("guests", &InvertFbData::guests, "verbose", &InvertFbData::verbose);
+};
+
+TEST_CASE("bc_inverted_root_fallback", "[injamm]") {
+  /** テンプレート: セクション {{#guests}} の本体内で、ルートのみに存在する
+   *  {{^verbose}} を参照する。要素型 std::string には verbose がないため
+   *  ルート型フォールバックが必要（旧実装は偽判定で [quiet] が常時描画されていた）。 */
+  InvertFbData data;
+  auto bc = injamm::engine<InvertFbData>("{{#guests}}{{^verbose}}[quiet]{{/verbose}}{{.}};{{/guests}}");
+  auto r  = bc.render(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "a;b;");
+
+  data.verbose = false;
+  auto r2 = bc.render(data);
+  REQUIRE(r2.has_value());
+  CHECK(*r2 == "[quiet]a;[quiet]b;");
 }
 
 /**
@@ -1843,6 +1913,27 @@ TEST_CASE("int_filter: numify negative", "[int_filter]") {
   REQUIRE(*result == "-9,876");
 }
 
+TEST_CASE("int_filter: numify double 繰り上がりと範囲外 double", "[int_filter]") {
+  /** 旧実装の回帰: 端数部を独立フォーマットしていたため 0.9999995 → "0.000000" のような
+   *  繰り上がり桁の喪失、および |val| >= 2^63 の long long キャスト UB（ゴミ出力）があった */
+  BcDblData carry{0.9999995};
+  auto r1 = injamm::engine<BcDblData>("{{val | numify}}").render(carry);
+  REQUIRE(r1);
+  CHECK(*r1 == "1.000000");
+
+  BcDblData big{1e19};
+  auto r2 = injamm::engine<BcDblData>("{{val | numify}}").render(big);
+  REQUIRE(r2);
+  CHECK(*r2 == "10,000,000,000,000,000,000");
+}
+
+TEST_CASE("int_filter: round 範囲外 double", "[int_filter]") {
+  BcDblData big{-1e19};
+  auto r = injamm::engine<BcDblData>("{{val | round}}").render(big);
+  REQUIRE(r);
+  CHECK(*r == "-10000000000000000000");
+}
+
 TEST_CASE("int_filter: zerofill", "[int_filter]") {
   BcIfData data{"test", 42};
   auto     bc     = injamm::engine<BcIfData>("{{age | zerofill(5)}}");
@@ -2968,6 +3059,33 @@ TEST_CASE("error: unknown_filter on if", "[error]") {
   CHECK(result.error().ec == injamm::error_code::unknown_filter);
 }
 
+TEST_CASE("error: unknown_filter on NTTP render (VM とのパリティ)", "[error]") {
+  /** 旧実装の回帰: CT パーサは未知フィルタを黙って無視し、VM (bc_compile) の
+   *  unknown_filter エラーと挙動が食い違っていた（NTTP はフィルタなしで描画した）。 */
+  BcUser data{"test", 25};
+  auto result = injamm::render<"{{name | bogus_filter_xyz}}">(data);
+  REQUIRE(!result.has_value());
+  CHECK(result.error().ec == injamm::error_code::unknown_filter);
+
+  /** if 節のフィルタも同様にエラー化する */
+  auto result2 = injamm::render<"{{#if age | bogus_xyz}}yes{{/if}}">(data);
+  REQUIRE(!result2.has_value());
+  CHECK(result2.error().ec == injamm::error_code::unknown_filter);
+}
+
+TEST_CASE("CT/VM パリティ: 同一キー・フィルタ付きネストセクション", "[parity]") {
+  /** 旧実装の回帰: CT パーサの閉じタグ探索が {{#key | filter}} 形の同一キー開始タグを
+   *  深さカウントに含めなかったため、VM とパース結果が食い違っていた。
+   *  NTTP: [b][a][b][a]- / VM: [b][a]-[b][a]- だった。 */
+  BcParty data;
+  data.guests = {"a", "b"};
+  auto ct = injamm::render<"{{#guests}}{{#guests | reverse}}[{{this}}]{{/guests}}-{{/guests}}">(data);
+  auto vm = injamm::engine<BcParty>("{{#guests}}{{#guests | reverse}}[{{this}}]{{/guests}}-{{/guests}}").render(data);
+  REQUIRE(ct.has_value());
+  REQUIRE(vm.has_value());
+  CHECK(*ct == *vm);
+}
+
 TEST_CASE("error: @var circular reference detected", "[error][atvar]") {
   AtVarUser                                       ctx{"Alice", 30};
   std::map<std::string, std::string, std::less<>> consts{{"a", "@var(b)"}, {"b", "@var(a)"}};
@@ -3273,6 +3391,49 @@ TEST_CASE("if_eq_true", "[injamm][compare]") {
   auto   r  = bc.render(data);
   REQUIRE(r.has_value());
   CHECK(*r == "match");
+}
+
+/** @brief 変数右辺の比較テスト用データ型 */
+struct BcVarRhsData {
+  int count{};
+  int total{};
+  std::string a;
+  std::string b;
+};
+
+template <>
+struct glz::meta<BcVarRhsData> {
+  static constexpr auto value = glz::object("count", &BcVarRhsData::count, "total", &BcVarRhsData::total, "a", &BcVarRhsData::a, "b", &BcVarRhsData::b);
+};
+
+TEST_CASE("if_eq_variable_rhs", "[injamm][compare]") {
+  /** 旧実装の回帰: 変数右辺 ({{#if count == total}}) を常に 0 と比較していたため
+   *  値が等しくても false になっていた。compare_rhs_field_index / compare_rhs_text を
+   *  実行時に解決するよう修正した。 */
+  BcVarRhsData eq{3, 3, "x", "x"};
+  auto r1 = injamm::engine<BcVarRhsData>("{{#if count == total}}EQ{{else}}NE{{/if}}").render(eq);
+  REQUIRE(r1.has_value());
+  CHECK(*r1 == "EQ");
+
+  BcVarRhsData ne{5, 1, "x", "x"};
+  auto r2 = injamm::engine<BcVarRhsData>("{{#if count == total}}EQ{{else}}NE{{/if}}").render(ne);
+  REQUIRE(r2.has_value());
+  CHECK(*r2 == "NE");
+
+  /** 文字列どうしの変数右辺比較 */
+  auto r3 = injamm::engine<BcVarRhsData>("{{#if a == b}}EQ{{else}}NE{{/if}}").render(eq);
+  REQUIRE(r3.has_value());
+  CHECK(*r3 == "EQ");
+
+  BcVarRhsData str_ne{1, 1, "x", "y"};
+  auto r4 = injamm::engine<BcVarRhsData>("{{#if a == b}}EQ{{else}}NE{{/if}}").render(str_ne);
+  REQUIRE(r4.has_value());
+  CHECK(*r4 == "NE");
+
+  /** 不等号（数値の大小）も変数右辺で機能する */
+  auto r5 = injamm::engine<BcVarRhsData>("{{#if count >= total}}GE{{else}}LT{{/if}}").render(ne);
+  REQUIRE(r5.has_value());
+  CHECK(*r5 == "GE");
 }
 
 /** @brief 文字列フィールドの数値比較テスト用データ型（値が数字の文字列） */
@@ -5129,6 +5290,27 @@ TEST_CASE("section join empty list", "[section][filter]") {
   auto out = injamm::engine<JoinEmptyData>(R"({{#items | join(", ")}}{{this}}{{/items}})").render(d);
   REQUIRE(out);
   CHECK(*out == "");
+}
+
+/** @brief join + break テスト用データ型 */
+struct JoinBreakData {
+  std::vector<std::string> items{"a", "b", "c"};
+};
+
+template <>
+struct glz::meta<JoinBreakData> {
+  static constexpr auto value = glz::object("items", &JoinBreakData::items);
+};
+
+TEST_CASE("section join with break", "[section][filter]") {
+  /** 旧実装の回帰: {{#break}} でループを抜けた際に区切り文字が余分に出力されていた
+   *  （join 判定が break_flag を見る前に走るため）。a,b,c で b で break → "a, b" が正しい。 */
+  JoinBreakData d;
+  auto out = injamm::engine<JoinBreakData>(
+                 R"({{#items | join(", ")}}{{this}}{{#if this == "b"}}{{#break}}{{/if}}{{/items}})")
+                 .render(d);
+  REQUIRE(out);
+  CHECK(*out == "a, b");
 }
 
 TEST_CASE("section take loop.size", "[section][filter]") {
