@@ -123,6 +123,15 @@ int main(int argc, char** argv) {
   failures += run_ok_case(cli, "{{#active}}on{{/active}}", "scalar section if",
                           "codegen_scalar_section_v");
 
+  // 6. コンテナ セクションが range-for として生成されること
+  //    （スカラー分岐だけを出してコンテナ側の for を落とし、何も描画しなくなった回帰の検出）
+  failures += run_ok_case(cli, "{{#items}}{{name}}{{/items}}", "container section range-for",
+                          "for (const auto& _v1 : data.items)");
+
+  // 7. 同一スコープの兄弟セクションで本体ラムダ名が衝突しないこと
+  failures += run_ok_case(cli, "{{#items}}{{name}}{{/items}}{{#name}}x{{/name}}", "sibling sections",
+                          "_body2");
+
   if (failures == 0) {
     std::cout << "codegen bad .bc rejected\n";
     return 0;

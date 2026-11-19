@@ -422,6 +422,7 @@ namespace injamm::detail {
     if (str.find('.') != std::string::npos || str.find('e') != std::string::npos || str.find('E') != std::string::npos) {
       double val{};
       if (auto [p, ec] = glz::fast_float::from_chars(data, data + size, val); ec == std::errc()) {
+        if (val == 0.0 && std::signbit(val)) val = 0.0;  // -0.0 の符号ビットが to_chars の出力に残るため正規化する
         bool negative = val < 0;
         if (negative)
           val = -val;

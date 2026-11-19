@@ -744,6 +744,7 @@ inline void filter_int_numify(std::string& s) {
   if (has_frac) {
     double val = 0.0;
     if (auto [p, ec] = std::from_chars(s.data(), s.data() + s.size(), val); ec == std::errc{}) {
+      if (val == 0.0 && std::signbit(val)) val = 0.0;  // -0.0 の符号ビットが to_chars の出力に残るため正規化する
       bool negative = val < 0;
       if (negative) val = -val;
       // VM (filters.hpp) と同一ロジック: 全体を to_chars(fixed, prec) で丸めてから

@@ -215,11 +215,11 @@ constexpr std::size_t constexpr_find_section_open(std::string_view haystack, std
     auto at = constexpr_find_tag(haystack, marker, key, std::string_view{}, i);
     if (at == std::string_view::npos) return std::string_view::npos;
     auto after = at + marker.size() + key.size();
-    /** 直後が '}' なら "{{#key}}"、空白類なら "{{#key | filter}}"（いずれも開始タグ）。
-     *  それ以外（例えば "{{#key2}}"）は別キーなのでスキップする。 */
+    /** 直後が '}' なら "{{#key}}"、'|' か空白類なら "{{#key|filter}}" / "{{#key | filter}}"
+     *  （いずれも開始タグ）。それ以外（例えば "{{#key2}}"）は別キーなのでスキップする。 */
     if (after < haystack.size()) {
       auto c = haystack[after];
-      if (c == '}' || c == ' ' || c == '\t' || c == '~')
+      if (c == '}' || c == '|' || c == ' ' || c == '\t' || c == '~')
         return at;
     }
     i = at + 1;

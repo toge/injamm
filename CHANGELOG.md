@@ -7,11 +7,13 @@
 - `fix: {{#if x == y}} の変数右辺が常に 0 と比較されていた問題` — `compare_rhs_field_index` / `compare_rhs_text` を実行時に解決（value_ → ルート → ループ束縛）。数値/文字列/大小比較すべてが機能し、README の「右辺は変数」という記載に実装が追いついた
 - `fix: {{^x}}（逆セクション）のみルートフォールバックが未実装だった問題` — `do_inverted` に `do_section` と同じ二段走査を追加。`{{#items}}{{^verbose}}...{{/verbose}}...{{/items}}` が `{{#if verbose}}` と同じ判定になる
 - `fix: {{#count}}（数値/enum セクション）が常に偽扱いだった問題` — `do_section` に算術型/enum 分岐を追加し、`{{^count}}`・`{{#if count}}` と「非ゼロ = 真」で統一（SYNTAX.md §5 の記載通りに）
-- `fix: {{#break}} 時に join の区切り文字が末尾に残る問題` — join 判定が break_flag を見る前に走っていたため `a, b, ` のようになる 것이 `a, b` に
+- `fix: {{#break}} 時に join の区切り文字が末尾に残る問題` — join 判定が break_flag を見る前に走っていたため `a, b, ` のようになるのが `a, b` に
 - `fix: NTTP render が未知フィルタを黙って無視していた問題` — CT パーサで `unknown_filter` を `ct_bc.error` に記録（VM の `bc_compile` とパリティ）。`render<"{{name | zzz}}">` が engine と同じ `unknown_filter` エラーを返す
-- `fix: 同一キー・フィルタ付きネストセクションで NTTP と VM のパースが食い違う問題` — CT 側の閉じタグ探索が `{{#key | filter}}` 形の同一キー開始タグを深さカウントに含めていなかった。`{{#items}}{{#items | reverse}}...` が両 API で一致
+- `fix: 同一キー・フィルタ付きネストセクションで NTTP と VM のパースが食い違う問題` — CT 側の閉じタグ探索が `{{#key | filter}}` 形の同一キー開始タグを深さカウントに含めていなかった。`{{#items}}{{#items | reverse}}...` が両 API で一致。空白なしの `{{#key|filter}}` 形も開始タグとして扱うよう修正
 - `fix: injamm_codegen が local partial を無音で欠落させる問題` — `{{#partialdef greet local}}...{{>greet}}` が VM では描画されるのに生成ヘッダから消えていた。dispatch に local も載せ同一経路で呼び出し
-- `fix: injamm_codegen が bool/数値フィールドのセクションでコンパイル不能なコードを生成する問題` — スカラー値には range-for が成立しないため、`codegen_scalar_section_v` による `if constexpr` 分岐で VM と同じ「真なら 1 回」の if を生成
+- `fix: injamm_codegen が bool/数値フィールドのセクションでコンパイル不能なコードを生成する問題` — スカラー値には range-for が成立しないため、`codegen_scalar_section_v` による `if constexpr` 分岐で VM と同じ「真なら 1 回」の if を生成。コンテナは従来どおり range-for（本体はセクションごとのラムダに 1 回だけ書き、両分岐から呼ぶ）
+- `fix: injamm_codegen がセクション内の local partial をルート型で解決していた問題` — `{{#items}}{{#partialdef row local}}[{{n}}]{{/partialdef}}{{>row}}{{/items}}` がルート型に `n` を要求してコンパイル不能だった。ループ内の `local` partial には現在の要素を渡し、VM と同じ解決に（グローバル partial は従来どおりルート型）
+- `fix: numify が文字列 "-0.0" を "-0" にしていた問題` — `-0.0` の符号ビットが `to_chars` の出力に残っていたため、0 を正規化（`codegen_helpers.hpp` の drift 実装も同期）
 - `fix: injamm_codegen が {{@key}} / {{loop.key}} でコンパイル不能なヘッダを書き出す問題` — `data.@key` という不正メンバアクセスを生成したまま exit 0 だったのを、明確なエラーメッセージと非ゼロ終了で拒否
 - `test: 上記の回帰テストを追加` — 変数右辺比較・逆セクションのルートフォールバック・数値セクション・join+break・numify/round の範囲外値・NTTP 未知フィルタ・同一キー+フィルタのパリティ（VM↔NTTP）、codegen の local partial / スカラー セクション / @key 拒否（badbc 拡張）
 

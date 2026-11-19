@@ -383,6 +383,7 @@ render_MyData(data, out);
 
 対応機能: 変数展開（`{{var}}` / `{{{var}}}`）、HTML エスケープ、セクション（コンテナの反復に加え bool/数値/enum は「真なら 1 回」の条件ブロック）、条件分岐（`{{#if}}`）、比較演算、フィルタ、ループ変数（`loop.index`/`loop.is_first` 等）、partial（`local` 修飾子を含む）。
 未対応（生成時に明確なエラーで拒否）: `{{@key}}` / `{{loop.key}}`（マップ反復キー）。詳細とパリティは `util/injamm_codegen.cpp` および `test_codegen/` を参照。
+`local` partial は定義箇所のスコープで解決します（ループ内なら現在の要素）。グローバル partial はルート型で解決するため、ループ内から呼ぶとルートのフィールドを参照します（VM は要素を優先）。
 
 ## テンプレート構文
 

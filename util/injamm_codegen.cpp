@@ -505,13 +505,22 @@ class code_generator {
   bool no_simd_ = false;       /**< SIMD命令を生成しない */
   int indent_ = 0;             /**現在のインデントレベル */
   int loop_depth_ = 0;         /**< 現在のループ深度 */
-  int cond_section_depth_ = 0; /**< emit_at_section/inverted のネスト深度 */
   /**< インデックス形式（_iN/_sizeN）が必要な emit_section 命令 */
   std::unordered_set<const bc::instruction*> index_loops_;
   /**< stride ループ深度（ループ末尾で _srcN を進める） */
   std::unordered_set<int> stride_loops_;
-  /**< スカラーセクション（bool/数値/enum）の if constexpr ネスト（emit_end で二重に閉じる） */
-  std::vector<bool> scalar_cond_stack_;
+
+  /** @brief emit_end で閉じるブロックの種類 */
+  enum class end_kind { loop, scalar_section, cond };
+  /** @brief emit_end で閉じるブロックの情報（開始命令ごとに積む） */
+  struct open_block {
+    end_kind    kind;     /**< 閉じ方の種類 */
+    std::string access;   /**< scalar_section: セクション対象のアクセス式 */
+    std::string idx;      /**< scalar_section: 本体の _itemN の N（スコープ解決に使うループ深度） */
+    int         seq = 0;  /**< scalar_section: 本体ラムダ名の連番（兄弟セクションで衝突させない） */
+  };
+  int lambda_seq_ = 0; /**< 本体ラムダ名の連番 */
+  std::vector<open_block> open_blocks_;
   std::string unsupported_feature_;  /**< generate() が対応不能な命令を検出した場合の説明 */
   std::ostringstream out_;     /**< 出力ストリーム */
 
@@ -812,10 +821,10 @@ class code_generator {
       ++indent_;
 
       /* loop_depth_ などの状態を退避: 各 partial は独立した関数内部と同じ扱い */
-      auto saved_loop = loop_depth_;
-      auto saved_cond = cond_section_depth_;
+      auto saved_loop   = loop_depth_;
+      auto saved_blocks = std::move(open_blocks_);
       loop_depth_ = 0;
-      cond_section_depth_ = 0;
+      open_blocks_.clear();
 
       /* _filtered を使う partial はブロック先頭で宣言する（ループ内フィルタの再アロケーション回避） */
       if (uses_filtered(*pe.bc)) {
@@ -831,7 +840,7 @@ class code_generator {
       emit("return {};");
 
       loop_depth_ = saved_loop;
-      cond_section_depth_ = saved_cond;
+      open_blocks_ = std::move(saved_blocks);
 
       --indent_;
       emit_raw("}");
@@ -1030,28 +1039,24 @@ class code_generator {
           --indent_;
           emit("}");
         }
+        open_blocks_.push_back({end_kind::loop});
       } else if (index_loops_.count(&inst) != 0) {
         /* @index/@first/@last/@size 等を参照するループはインデックス形式を維持 */
         emit("auto _size" + idx + " = " + access + ".size();");
         emit("for (std::size_t _i" + idx + " = 0; _i" + idx + " < _size" + idx + "; ++_i" + idx + ") {");
         ++indent_;
         emit("const auto& _item" + idx + " = " + access + "[_i" + idx + "];");
+        open_blocks_.push_back({end_kind::loop});
       } else {
-        /* コンテナは range-for に変換（境界チェック削減）。
-           スカラー（bool/数値/enum）は VM (bytecode_exec.hpp do_section) と同じ
-           「真なら本体を 1 回だけ実行」の条件ブロックとして生成する
-           （cond_section_depth_ 経由で emit_end が閉じるためループ扱いにしない）。
-           旧実装は無条件に range-for を生成していたため bool/数値フィールドに対して
-           コンパイル不能なコードを出力していた（'begin' was not declared）。 */
-        emit("if constexpr (codegen_scalar_section_v<decltype(" + access + ")>) {");
+        /* コンテナは range-for、スカラー（bool/数値/enum）は VM (bytecode_exec.hpp do_section)
+           と同じ「真なら本体を 1 回だけ実行」。本体はどちらも _itemN 経由で現在スコープを
+           参照するので、本体をラムダに 1 回だけ書いて両分岐から呼ぶ（emit_end 側で分岐を出す）。
+           旧実装は range-for のみで bool/数値がコンパイル不能、逆にスカラー分岐だけにした版は
+           コンテナの for が消えて何も出力しなかった。 */
+        auto seq = ++lambda_seq_;
+        emit("auto _body" + std::to_string(seq) + " = [&](const auto& _item" + idx + ") {");
         ++indent_;
-        emit("if (static_cast<bool>(" + access + ")) {");
-        ++indent_;
-        ++cond_section_depth_;
-        ++cond_section_depth_;
-        /* スカラーはループを形成しない: loop_depth_ を戻し、emit_end 側は cond として閉じる */
-        --loop_depth_;
-        scalar_cond_stack_.push_back(true);
+        open_blocks_.push_back({end_kind::scalar_section, access, idx, seq});
       }
     }
     else if (op == bc::opcode::emit_at_section) {
@@ -1065,7 +1070,7 @@ class code_generator {
         emit("if (_i" + d + " + 1 == _size" + d + ") {");
       }
       ++indent_;
-      ++cond_section_depth_;
+      open_blocks_.push_back({end_kind::cond});
     }
     else if (op == bc::opcode::emit_at_inverted) {
       auto kind = inst.operand2;
@@ -1078,21 +1083,14 @@ class code_generator {
         emit("if (_i" + d + " + 1 < _size" + d + ") {");
       }
       ++indent_;
-      ++cond_section_depth_;
+      open_blocks_.push_back({end_kind::cond});
     }
     else if (op == bc::opcode::emit_end) {
-      if (cond_section_depth_ > 0) {
-        --indent_;
-        emit("}");
-        --cond_section_depth_;
-        if (!scalar_cond_stack_.empty() && scalar_cond_stack_.back()) {
-          /** スカラー セクションの終端: if constexpr ブロックも閉じる（2 個の cond の内側 = if 文） */
-          --cond_section_depth_;
-          --indent_;
-          emit("}");
-          scalar_cond_stack_.pop_back();
-        }
-      } else if (loop_depth_ > 0) {
+      if (open_blocks_.empty()) return;
+      auto block = std::move(open_blocks_.back());
+      open_blocks_.pop_back();
+      switch (block.kind) {
+      case end_kind::loop:
         if (stride_loops_.count(loop_depth_) != 0) {
           auto sidx = std::to_string(loop_depth_);
           emit("if (_bwd" + sidx + ") --_src" + sidx + "; else ++_src" + sidx + ";");
@@ -1101,12 +1099,37 @@ class code_generator {
         --indent_;
         emit("}");
         --loop_depth_;
+        break;
+      case end_kind::scalar_section: {
+        /* 本体ラムダを閉じ、スカラー（1 回実行）とコンテナ（range-for）に振り分ける */
+        auto scope = (loop_depth_ > 1) ? "_item" + std::to_string(loop_depth_ - 1) : "data";
+        auto body = "_body" + std::to_string(block.seq);
+        auto velem = "_v" + std::to_string(block.seq);
+        --indent_;
+        emit("};");
+        emit("if constexpr (codegen_scalar_section_v<decltype(" + block.access + ")>) {");
+        ++indent_;
+        emit("if (static_cast<bool>(" + block.access + ")) " + body + "(" + scope + ");");
+        --indent_;
+        emit("} else {");
+        ++indent_;
+        emit("for (const auto& " + velem + " : " + block.access + ") " + body + "(" + velem + ");");
+        --indent_;
+        emit("}");
+        --loop_depth_;
+        break;
+      }
+      case end_kind::cond:
+        --indent_;
+        emit("}");
+        break;
       }
     }
     else if (op == bc::opcode::emit_inverted) {
       auto access = resolve_access(bc.var_refs[inst.operand2]);
       emit("if (value_empty(" + access + ")) {");
       ++indent_;
+      open_blocks_.push_back({end_kind::cond});
     }
     else if (op == bc::opcode::emit_at_index) {
       emit("append_number(out, _i" + std::to_string(loop_depth_) + ");");
@@ -1353,7 +1376,11 @@ class code_generator {
          （旧実装は local を無条件にスキップし本文が無音で欠落していた）。 */
       auto& pe = bc.partial_entries[inst.operand];
       if (pe.bc && !pe.bc->instructions.empty()) {
-        emit("(void)render_partial<\"" + pe.name + "\">(data, out);");
+        /* local partial は定義箇所のスコープで解決される（VM と同じ）。
+           dispatch 側は引数 data を基点に生成しているため、ループ内では現在の要素を渡す。
+           グローバル partial は従来どおりルートを渡す（@root 参照を保つ）。 */
+        auto scope = (pe.local && loop_depth_ > 0) ? "_item" + std::to_string(loop_depth_) : "data";
+        emit("(void)render_partial<\"" + pe.name + "\">(" + scope + ", out);");
       }
     }
     else if (op == bc::opcode::emit_var_size) {
