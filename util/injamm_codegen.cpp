@@ -30,6 +30,7 @@
 #include <sstream>
 #include <string>
 #include <string_view>
+#include <set>
 #include <unordered_set>
 #include <vector>
 
@@ -521,10 +522,23 @@ class code_generator {
     int         seq = 0;  /**< scalar_section/inverted: 本体ラムダ名の連番（兄弟セクションで衝突させない） */
     int         else_seq = 0;  /**< {{else}} 本体ラムダ名の連番（else なしは 0） */
     bool        has_else = false; /**< loop 種別: セクションに {{else}} が付いている（事前ガードを閉じる） */
-    std::string root_access; /**< scalar_section/inverted: 要素相対参照のルートフォールバック式（空なら二段解決なし） */
+    std::string two_stage_key; /**< 二段解決の対象キー（空なら二段解決なし。ディスパッチのガードに使う） */
+    bool        root_param = false;    /**< 本体ラムダがルート引数（_rtN）を持つ */
+    bool        else_root_param = false; /**< else ラムダがルート引数（_rtN）を持つ */
+    std::string call_root;  /**< ラムダに入る前のルート式（呼び出し引数と復元に使う） */
+    const bc::instruction* inst = nullptr; /**< 開始命令（マーキング参照用） */
   };
   int lambda_seq_ = 0; /**< 本体ラムダ名の連番 */
   std::vector<open_block> open_blocks_;
+  std::set<std::string> two_stage_keys_; /**< 二段解決ヘルパを生成するキー一覧（昇順） */
+  std::set<const bc::instruction*> root_param_main_;   /**< 本体ラムダにルート引数が必要なセクション */
+  std::set<const bc::instruction*> root_param_else_;   /**< else ラムダにルート引数が必要なセクション */
+  std::set<const bc::instruction*> root_param_inv_;    /**< 本体ラムダにルート引数が必要な逆セクション */
+  std::string cur_root_; /**< 現在のラムダ階層でのルート式（空なら root_expr()） */
+
+  /** @brief 現在の生成位置でルートを参照する式を返す
+   *  @details ルート引数付きラムダ内ではその引数（_rtN）、それ以外は data / root。 */
+  std::string root_for_emit() const { return cur_root_.empty() ? root_expr() : cur_root_; }
   std::string unsupported_feature_;  /**< generate() が対応不能な命令を検出した場合の説明 */
   std::ostringstream out_;     /**< 出力ストリーム */
 
@@ -620,51 +634,55 @@ class code_generator {
   }
 
   /**
-   * @brief 変数参照が要素スコープの相対参照（_itemN.key）か判定
-   * @details resolve_access が要素相対式を返す条件と同じ。
-   *          要素型にキーが無い場合にルートへフォールバックする二段解決
-   *          （VM の value → root 走査と同一）の要否判定に使う。
-   */
-  bool is_elem_relative(bc::var_ref const& ref) const {
-    return !ref.is_loop_parent && !ref.root_fallback && loop_depth_ > 0 && !ref.has_dot;
-  }
-
-  /**
    * @brief 変数参照が「値スコープ相対参照」で要素/値側にキーが無い可能性があるか判定
    * @details resolve_access が要素相対式（_itemN.key / value.key）を返す条件。
    *          要素型・値型にキーが無い場合にルートへフォールバックする二段解決
    *          （VM の value → root 走査と同一）の要否判定に使う。
    */
   bool is_value_relative(bc::var_ref const& ref) const {
-    if (is_elem_relative(ref)) return true;
-    return in_partial_ && loop_depth_ == 0 && !ref.has_dot && !ref.is_loop_parent && !ref.root_fallback;
+    return !ref.is_loop_parent && !ref.root_fallback && !ref.has_dot &&
+           (loop_depth_ > 0 || in_partial_);
+  }
+
+  /**
+   * @brief 二段解決ヘルパの呼び出し式を返す
+   * @details 値側にキーが無い場合にルートへフォールバックするヘルパ関数テンプレート
+   *          （emit_header でキーごとに生成）を呼び出す式を組み立てる。
+   *          ジェネリックラムダ内に `if constexpr (requires { _item1.key; })`
+   *          を直接出力すると、Clang / MSVC がラムダ式の実体化時に破棄側
+   *          （data.key）を検証してしまい、ルート型にキーが無いとコンパイル
+   *          エラーになる。関数テンプレート内の if constexpr は破棄側が
+   *          遅延実体化されるため、ヘルパ経由なら全コンパイラで動作する。
+   */
+  std::string two_stage_access(std::string const& key) const {
+    return cgns_name() + "::cg_get_" + sanitize_key(key) + "(" + value_expr() + ", " + root_expr() + ")";
+  }
+
+  /** @brief 二段解決ヘルパを格納する名前空間名（関数名プレフィックス由来でヘッダごとに一意） */
+  std::string cgns_name() const { return "cgns_" + (func_prefix_.empty() ? std::string("render") : func_prefix_); }
+
+  /** @brief キーを C++ 識別子として安全な名前に変換 */
+  static std::string sanitize_key(std::string const& key) {
+    std::string s;
+    for (char c : key) {
+      s += (std::isalnum(static_cast<unsigned char>(c)) || c == '_') ? c : '_';
+    }
+    return s;
   }
 
   /**
    * @brief 値参照を使った文を出力する
-   * @details partial 本体のトップレベル（value スコープ）では、キーが値側に無ければ
-   *          ルートへフォールバックする二段解決を requires 式で生成する
+   * @details 値スコープ相対参照（ループ内の _itemN.key / partial 本体トップレベルの
+   *          value.key）では、キーが値側に無ければルートへフォールバックする二段解決
+   *          ヘルパ（two_stage_access）経由で出力する
    *          （VM handle_call_partial の value → root と同一）。
    * @param prefix 文の前半（アクセス式の直前まで）
    * @param suffix 文の後半（アクセス式の直後から）
    * @param ref 対象の変数参照
    */
   void emit_value_ref(std::string const& prefix, std::string const& suffix, bc::var_ref const& ref) {
-    auto acc = resolve_access(ref);
-    if (is_value_relative(ref)) {
-      auto root_acc = root_expr() + "." + ref.key;
-      emit("if constexpr (requires { " + acc + "; }) {");
-      ++indent_;
-      emit(prefix + acc + suffix);
-      --indent_;
-      emit("} else {");
-      ++indent_;
-      emit(prefix + root_acc + suffix);
-      --indent_;
-      emit("}");
-    } else {
-      emit(prefix + acc + suffix);
-    }
+    auto acc = is_value_relative(ref) ? two_stage_access(ref.key) : resolve_access(ref);
+    emit(prefix + acc + suffix);
   }
 
   /**
@@ -720,7 +738,38 @@ class code_generator {
     emit_raw("");
     emit_raw("namespace " + namespace_ + " {");
     emit_raw("#include \"codegen_helpers.hpp\"");
+    emit_helpers();
     emit_raw("");
+  }
+
+  /**
+   * @brief 二段解決ヘルパ（キーごとの関数テンプレート）を生成
+   * @details 値側にキーが無い場合にルートへフォールバックする。関数テンプレート内の
+   *          if constexpr は破棄側が遅延実体化されるため、ジェネリックラムダ内に
+   *          requires ガードを直接出力した場合と異なり Clang / MSVC でも動作する。
+   *          関数名プレフィックス由来の名前空間に格納し、同一名前空間に複数の
+   *          生成ヘッダをインクルードしても衝突しない。
+   */
+  void emit_helpers() {
+    if (two_stage_keys_.empty()) return;
+    emit_raw("");
+    emit_raw("namespace " + cgns_name() + " {");
+    for (auto const& key : two_stage_keys_) {
+      auto const fname = "cg_get_" + sanitize_key(key);
+      emit_raw("/**");
+      emit_raw(" * @brief 値側に @p key が無ければルート側へフォールバックする二段解決ヘルパ");
+      emit_raw(" * @details VM (bytecode_exec.hpp) の value → root 二段走査と同一の解決順。");
+      emit_raw(" */");
+      emit_raw("template <class V, class R>");
+      emit_raw("inline decltype(auto) " + fname + "(V const& v, R const& r) {");
+      emit_raw("  if constexpr (requires { v." + key + "; }) {");
+      emit_raw("    return (v." + key + ");");
+      emit_raw("  } else {");
+      emit_raw("    return (r." + key + ");");
+      emit_raw("  }");
+      emit_raw("}");
+    }
+    emit_raw("} // namespace " + cgns_name());
   }
 
   /** @brief ヘルパ関数の生成（共通ヘッダを使用するため不要） */
@@ -1052,6 +1101,117 @@ class code_generator {
   }
 
   /**
+   * @brief 二段解決ヘルパの生成に必要なキーの収集と、ルート引数が必要なラムダの特定を行う
+   * @details emit_header は render 関数本体の出力前に呼ばれるため、二段解決が
+   *          必要なキーを出力前に確定させておく必要がある。エミッタと同じ規則で
+   *          命令列を走査し（ブロック種別スタックでループ深度を追跡）、
+   *          値スコープ相対参照になるキーを収集する。
+   *
+   *          あわせて、二段解決セクションのディスパッチ（if constexpr requires
+   *          ガード）がジェネリックラムダ内に出力される場合、その else 側
+   *          （ルート式.キー）がクロージャ構築時に検証されてコンパイルエラーに
+   *          なる（Clang / MSVC）のを防ぐため、当該ディスパッチを含むラムダに
+   *          ルート引数（_rtN）を持たせることをマーキングする。
+   * @param bc 解析対象のバイトコード（partial 本体は再帰的に走査する）
+   * @param in_partial partial 本体の走査か
+   * @param depth 現在のループ深度
+   */
+  void collect_two_stage_keys(bc::bytecode const& bc, bool in_partial, int depth) {
+    struct pc_block {
+      bool is_section;              /**< セクション（ラムダ + ループ深度を持つ）か */
+      bool is_inv;                  /**< 逆セクション（ラムダを持つ）か */
+      const bc::instruction* inst;  /**< 開始命令（マーキングのキー） */
+      bool has_else;                /**< {{else}} に入った（深度を親に戻済み）か */
+    };
+    std::vector<pc_block> blocks;
+    auto value_relative = [&](bc::var_ref const& ref) {
+      return !ref.is_loop_parent && !ref.root_fallback && !ref.has_dot &&
+             (depth > 0 || in_partial);
+    };
+    /** 二段解決ディスパッチが属するラムダ（スタック上を外側へ探して最初のラムダ持ちブロック）にルート引数をマーキング */
+    auto mark_enclosing_lambda = [&]() {
+      for (auto it = blocks.rbegin(); it != blocks.rend(); ++it) {
+        if (it->is_section) {
+          if (it->has_else) root_param_else_.insert(it->inst);
+          else              root_param_main_.insert(it->inst);
+          return;
+        }
+        if (it->is_inv) {
+          root_param_inv_.insert(it->inst);
+          return;
+        }
+      }
+    };
+    for (auto const& inst : bc.instructions) {
+      switch (inst.op) {
+        case bc::opcode::emit_section: {
+          auto const& ref = bc.var_refs[inst.operand2];
+          if (value_relative(ref)) {
+            two_stage_keys_.insert(ref.key);
+            mark_enclosing_lambda();  // ディスパッチはこの命令の emit_end に出力される
+          }
+          blocks.push_back({true, false, &inst, false});
+          ++depth;
+          break;
+        }
+        case bc::opcode::emit_inverted: {
+          auto const& ref = bc.var_refs[inst.operand2];
+          if (value_relative(ref)) two_stage_keys_.insert(ref.key);  // ヘルパ呼び出しのみ（マーキング不要）
+          blocks.push_back({false, true, &inst, false});
+          break;
+        }
+        case bc::opcode::emit_at_section:
+        case bc::opcode::emit_at_inverted:
+        case bc::opcode::emit_if:
+        case bc::opcode::emit_if_eq:
+        case bc::opcode::emit_if_ne:
+        case bc::opcode::emit_if_gt:
+        case bc::opcode::emit_if_gte:
+        case bc::opcode::emit_if_lt:
+        case bc::opcode::emit_if_lte:
+        case bc::opcode::emit_if_or:
+        case bc::opcode::emit_if_and:
+        case bc::opcode::emit_if_not:
+        case bc::opcode::emit_if_filtered:
+          blocks.push_back({false, false, nullptr, false});
+          break;
+        case bc::opcode::emit_else:
+          if (!blocks.empty() && blocks.back().is_section) {
+            blocks.back().has_else = true;
+            --depth;  // else 本体は親コンテキスト（bytecode_compile.hpp と同一）
+            if (depth < 0) depth = 0;
+          }
+          break;
+        case bc::opcode::emit_end:
+          if (!blocks.empty()) {
+            auto blk = blocks.back();
+            blocks.pop_back();
+            if (blk.is_section && !blk.has_else) --depth;
+            if (depth < 0) depth = 0;
+          }
+          break;
+        case bc::opcode::emit_endif:
+          if (!blocks.empty() && !blocks.back().is_section && !blocks.back().is_inv) blocks.pop_back();
+          break;
+        case bc::opcode::emit_var:
+        case bc::opcode::emit_var_raw:
+        case bc::opcode::emit_var_size:
+          if (value_relative(bc.var_refs[inst.operand])) two_stage_keys_.insert(bc.var_refs[inst.operand].key);
+          break;
+        case bc::opcode::emit_litvar:
+        case bc::opcode::emit_litvar_raw:
+          if (value_relative(bc.var_refs[inst.operand2])) two_stage_keys_.insert(bc.var_refs[inst.operand2].key);
+          break;
+        default:
+          break;
+      }
+    }
+    for (auto const& pe : bc.partial_entries) {
+      if (pe.bc) collect_two_stage_keys(*pe.bc, true, 0);
+    }
+  }
+
+  /**
    * @brief 個々のバイトコード命令を C++ コードに変換
    * @param inst 変換する命令
    * @param bc 含まれるバイトコード（リテラル・変数参照テーブルへのアクセス用）
@@ -1074,9 +1234,11 @@ class code_generator {
       /** {{else}} 付きセクション: コンパイラ (bytecode_compile.hpp) が else 本体の
        *  先頭アドレスを operand3 にパッチする（else なしは 0）。 */
       bool has_else = inst.operand3 > 0;
-      /** 二段解決の要否はループ深度を進める前に判定する（access の解決と同じ深さ）。
-       *  partial 本体トップレベルのセクション（value.key）も値側にキーが無い可能性がある。 */
-      bool elem_rel = is_value_relative(ref);
+      /** 二段解決: 値スコープ相対参照（_itemN.key / value.key）で値側にキーが無い場合は
+       *  ルートへフォールバックする（VM の value → root 走査と同一）。判定はループ深度を
+       *  進める前に行う（access の解決と同じ深さ）。 */
+      std::string two_stage_key;
+      if (is_value_relative(ref)) two_stage_key = ref.key;
       ++loop_depth_;
       auto idx = std::to_string(loop_depth_);
       if (ref.section_op_count > 0) {
@@ -1167,15 +1329,17 @@ class code_generator {
            旧実装は range-for のみで bool/数値がコンパイル不能、逆にスカラー分岐だけにした版は
            コンテナの for が消えて何も出力しなかった。 */
         auto seq = ++lambda_seq_;
-        emit("auto _body" + std::to_string(seq) + " = [&](const auto& _item" + idx + ") {");
-        ++indent_;
-        open_block blk{.kind = end_kind::scalar_section, .access = access, .idx = loop_depth_, .seq = seq};
-        /** 二段解決: 値スコープ相対参照（_itemN.key / value.key）で値側にキーが無い場合は
-         *  ルートへフォールバックする（VM の value → root 走査と同一）。requires 式で
-         *  実体化時に判定するため、コード生成時点で型は不要。 */
-        if (elem_rel) {
-          blk.root_access = root_expr() + "." + ref.key;
+        bool rpm = root_param_main_.count(&inst) != 0;
+        std::string params = "(const auto& _item" + idx;
+        std::string call_root = root_for_emit();
+        if (rpm) {
+          params += ", const auto& _rt" + std::to_string(seq);
+          cur_root_ = "_rt" + std::to_string(seq);
         }
+        emit("auto _body" + std::to_string(seq) + " = [&]" + params + ") {");
+        ++indent_;
+        open_block blk{.kind = end_kind::scalar_section, .access = access, .idx = loop_depth_, .seq = seq,
+                       .two_stage_key = two_stage_key, .root_param = rpm, .call_root = call_root, .inst = &inst};
         open_blocks_.push_back(std::move(blk));
       }
     }
@@ -1228,46 +1392,57 @@ class code_generator {
         break;
       case end_kind::scalar_section: {
         /* 本体（または else）ラムダを閉じ、optional / スカラー / コンテナに振り分ける
-           （VM bytecode_exec.hpp do_section と同一の判定） */
+           （VM bytecode_exec.hpp do_section と同一の判定）。二段解決キーがある場合は
+           requires ガードで要素/ルートのアクセスに振り分ける。else 側のルート式は
+           クロージャ構築時に検証される（Clang / MSVC）ため、ラムダ内ではルート引数
+           （_rtN：依存式）経由にする（mark_enclosing_lambda で事前マーキング）。 */
+        cur_root_ = block.call_root;  // ディスパッチはラムダの外側スコープに出力される
         --indent_;
         emit("};");
         auto scope = (block.idx > 1) ? "_item" + std::to_string(block.idx - 1)
                                      : (in_partial_ ? "value" : "data");
         auto body = "_body" + std::to_string(block.seq);
         auto velem = "_v" + std::to_string(block.seq);
+        auto root_args = block.root_param ? (", " + block.call_root) : std::string{};
+        auto body_call_scope = body + "(" + scope + root_args + ")";   // スカラー: 親スコープを要素として 1 回
+        auto body_call_elem = body + "(" + velem + root_args + ")";    // コンテナ: 各要素
         auto els = block.else_seq ? "_else" + std::to_string(block.else_seq) : std::string{};
-        auto then_else = block.else_seq ? (" else " + els + "();") : std::string{};
+        auto els_stmt = block.else_seq
+                            ? ((block.else_root_param ? (els + "(" + block.call_root + ")") : (els + "()")) + ";")
+                            : std::string{};
+        auto then_else = block.else_seq ? (" else " + els_stmt) : std::string{};
         auto dispatch_of = [&](std::string const& acc) {
           emit("if constexpr (codegen_optional_section_v<decltype(" + acc + ")>) {");
           ++indent_;
-          emit("if (" + acc + ".has_value()) " + body + "(*" + acc + ");" + then_else);
+          emit("if (" + acc + ".has_value()) " + body + "(*" + acc + root_args + ");" + then_else);
           --indent_;
           emit("} else if constexpr (codegen_scalar_section_v<decltype(" + acc + ")>) {");
           ++indent_;
-          emit("if (static_cast<bool>(" + acc + ")) " + body + "(" + scope + ");" + then_else);
+          emit("if (static_cast<bool>(" + acc + ")) " + body_call_scope + ";" + then_else);
           --indent_;
           emit("} else {");
           ++indent_;
           if (block.else_seq) {
             // VM はコンテナが空のとき else 節を描画する
-            emit("if (value_empty(" + acc + ")) " + els + "(); else for (const auto& " + velem + " : " + acc + ") " + body + "(" + velem + ");");
+            emit("if (value_empty(" + acc + ")) " + els_stmt + " else for (const auto& " + velem + " : " + acc + ") " + body_call_elem + ";");
           } else {
-            emit("for (const auto& " + velem + " : " + acc + ") " + body + "(" + velem + ");");
+            emit("for (const auto& " + velem + " : " + acc + ") " + body_call_elem + ";");
           }
           --indent_;
           emit("}");
         };
-        if (block.root_access.empty()) {
+        if (block.two_stage_key.empty()) {
           dispatch_of(block.access);
         } else {
-          /** 二段解決: 要素型にキーが無ければルート式へフォールバック */
           emit("if constexpr (requires { " + block.access + "; }) {");
           ++indent_;
           dispatch_of(block.access);
           --indent_;
           emit("} else {");
           ++indent_;
-          dispatch_of(block.root_access);
+          /** else 側のルート式は「セクション突入時のルート式」— ディスパッチが
+           *  出力されるスコープ（ラムダ内ならそのラムダのルート引数 _rtN）と同じ。 */
+          dispatch_of(block.call_root + "." + block.two_stage_key);
           --indent_;
           emit("}");
         }
@@ -1280,46 +1455,43 @@ class code_generator {
         break;
       case end_kind::inverted: {
         /* 逆セクション: 本体（または else）ラムダを閉じ、value_empty で分岐する
-           （VM bytecode_exec.hpp do_inverted と同一の判定）。要素相対参照は
-           requires で要素型にキーが無い場合ルートへフォールバックする。 */
+           （VM bytecode_exec.hpp do_inverted と同一の判定）。 */
+        cur_root_ = block.call_root;  // ディスパッチはラムダの外側スコープに出力される
         --indent_;
         emit("};");
         auto body = "_body" + std::to_string(block.seq);
+        auto body_call = block.root_param ? (body + "(" + block.call_root + ")") : (body + "()");
         auto els = block.else_seq ? "_else" + std::to_string(block.else_seq) : std::string{};
-        auto stmt_of = [&](std::string const& acc) {
-          auto s = "if (value_empty(" + acc + ")) " + body + "();";
-          if (block.else_seq) s += " else " + els + "();";
-          return s;
-        };
-        if (block.root_access.empty()) {
-          emit(stmt_of(block.access));
-        } else {
-          emit("if constexpr (requires { " + block.access + "; }) {");
-          ++indent_;
-          emit(stmt_of(block.access));
-          --indent_;
-          emit("} else {");
-          ++indent_;
-          emit(stmt_of(block.root_access));
-          --indent_;
-          emit("}");
-        }
+        auto els_call = block.else_seq
+                            ? ((block.root_param ? (els + "(" + block.call_root + ")") : (els + "()")) + ";")
+                            : std::string{};
+        auto s = "if (value_empty(" + block.access + ")) " + body_call + ";";
+        if (block.else_seq) s += " else " + els_call;
+        emit(s);
         break;
       }
       }
     }
     else if (op == bc::opcode::emit_inverted) {
       /** 逆セクション: 本体をラムダに 1 回だけ書き、emit_end で value_empty 分岐を
-       *  出す（セクションと同じ構造）。{{else}} は emit_else で else ラムダにする。 */
+       *  出す（セクションと同じ構造）。{{else}} は emit_else で else ラムダにする。
+       *  アクセスが値スコープ相対の場合は二段解決ヘルパ経由（文なので安全）。 */
       auto const& ref = bc.var_refs[inst.operand2];
       auto access = resolve_access(ref);
+      if (is_value_relative(ref)) access = two_stage_access(ref.key);
       auto seq = ++lambda_seq_;
-      emit("auto _body" + std::to_string(seq) + " = [&]() {");
-      ++indent_;
-      open_block blk{.kind = end_kind::inverted, .access = access, .idx = loop_depth_, .seq = seq};
-      if (is_value_relative(ref)) {
-        blk.root_access = root_expr() + "." + ref.key;
+      bool rpm = root_param_inv_.count(&inst) != 0;
+      std::string call_root = root_for_emit();
+      if (rpm) {
+        emit("auto _body" + std::to_string(seq) + " = [&](const auto& _rt" + std::to_string(seq) + ") {");
+        ++indent_;
+        cur_root_ = "_rt" + std::to_string(seq);
+      } else {
+        emit("auto _body" + std::to_string(seq) + " = [&]() {");
+        ++indent_;
       }
+      open_block blk{.kind = end_kind::inverted, .access = access, .idx = loop_depth_, .seq = seq,
+                     .root_param = rpm, .call_root = call_root, .inst = &inst};
       open_blocks_.push_back(std::move(blk));
     }
     else if (op == bc::opcode::emit_at_index) {
@@ -1369,20 +1541,33 @@ class code_generator {
            else 本体は親コンテキストでコンパイルされている（bytecode_compile.hpp）ため
            loop_depth_ を親に戻す。 */
         auto& blk = open_blocks_.back();
+        if (blk.root_param) cur_root_ = blk.call_root;  // 本体ラムダのルート式を復元
         --indent_;
         emit("};");
         --loop_depth_;
         blk.else_seq = ++lambda_seq_;
-        emit("auto _else" + std::to_string(blk.else_seq) + " = [&]() {");
+        blk.else_root_param = blk.inst && root_param_else_.count(blk.inst) != 0;
+        if (blk.else_root_param) {
+          cur_root_ = "_rt" + std::to_string(blk.else_seq);
+          emit("auto _else" + std::to_string(blk.else_seq) + " = [&](const auto& _rt" + std::to_string(blk.else_seq) + ") {");
+        } else {
+          emit("auto _else" + std::to_string(blk.else_seq) + " = [&]() {");
+        }
         ++indent_;
       } else if (!open_blocks_.empty() && open_blocks_.back().kind == end_kind::inverted) {
         /* 逆セクションの {{else}}: 本体ラムダを閉じて else 本体ラムダへ
            （逆セクション本体と同一スコープ） */
         auto& blk = open_blocks_.back();
+        if (blk.root_param) cur_root_ = blk.call_root;  // 本体ラムダのルート式を復元
         --indent_;
         emit("};");
         blk.else_seq = ++lambda_seq_;
-        emit("auto _else" + std::to_string(blk.else_seq) + " = [&]() {");
+        if (blk.root_param) {  // 逆セクションは本体/else で共通のマーキングを使う
+          cur_root_ = "_rt" + std::to_string(blk.else_seq);
+          emit("auto _else" + std::to_string(blk.else_seq) + " = [&](const auto& _rt" + std::to_string(blk.else_seq) + ") {");
+        } else {
+          emit("auto _else" + std::to_string(blk.else_seq) + " = [&]() {");
+        }
         ++indent_;
       } else if (!open_blocks_.empty() && open_blocks_.back().kind == end_kind::loop &&
                  open_blocks_.back().has_else) {
@@ -1686,6 +1871,9 @@ public:
       unsupported_feature_ = unsupported;
       return std::nullopt;
     }
+    /** 二段解決ヘルパのキーを出力前に確定する（ヘルパは使用箇所より前に生成が必要） */
+    two_stage_keys_.clear();
+    collect_two_stage_keys(bc, false, 0);
     // リテラルの合計サイズ + 補間値の推定サイズで reserve を過大見積もりする
     std::size_t total_literal_size = 0;
     for (auto const& lit : bc.literals) {

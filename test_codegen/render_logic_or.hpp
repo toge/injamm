@@ -38,13 +38,13 @@ render_logic_or(const T& data, Sink& out) {
   if constexpr (std::is_same_v<Sink, std::string>) {
     out.clear();
   }
-
+  
   if ((static_cast<bool>(data.active)) || (static_cast<bool>(data.age))) {
     out.append("YES");
   } else {
     out.append("NO");
   }
-
+  
   return {};
 }
 

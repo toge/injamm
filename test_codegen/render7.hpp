@@ -39,7 +39,7 @@ render7(const T& data, Sink& out) {
     out.clear();
     out.reserve(34);
   }
-
+  
   auto _body1 = [&](const auto& _item1) {
     out.append("[");
     html_escape_append_value(out, _item1);
@@ -52,7 +52,7 @@ render7(const T& data, Sink& out) {
   } else {
     for (const auto& _v1 : data.nums) _body1(_v1);
   }
-
+  
   return {};
 }
 

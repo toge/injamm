@@ -16,6 +16,21 @@
 namespace generated {
 #include "codegen_helpers.hpp"
 
+namespace cgns_render_d {
+/**
+ * @brief 値側に @p key が無ければルート側へフォールバックする二段解決ヘルパ
+ * @details VM (bytecode_exec.hpp) の value → root 二段走査と同一の解決順。
+ */
+template <class V, class R>
+inline decltype(auto) cg_get_note(V const& v, R const& r) {
+  if constexpr (requires { v.note; }) {
+    return (v.note);
+  } else {
+    return (r.note);
+  }
+}
+} // namespace cgns_render_d
+
 
 /**
  * @brief テンプレート文字列から生成されたレンダリング関数（バッファ再利用版）
@@ -38,16 +53,12 @@ render_d(const T& data, Sink& out) {
   if constexpr (std::is_same_v<Sink, std::string>) {
     out.clear();
   }
-
+  
   auto _body1 = [&](const auto& _item1) {
     auto _body2 = [&]() {
       out.append("x");
     };
-    if constexpr (requires { _item1.note; }) {
-      if (value_empty(_item1.note)) _body2();
-    } else {
-      if (value_empty(data.note)) _body2();
-    }
+    if (value_empty(cgns_render_d::cg_get_note(_item1, data))) _body2();
   };
   if constexpr (codegen_optional_section_v<decltype(data.items)>) {
     if (data.items.has_value()) _body1(*data.items);
@@ -56,7 +67,7 @@ render_d(const T& data, Sink& out) {
   } else {
     for (const auto& _v1 : data.items) _body1(_v1);
   }
-
+  
   return {};
 }
 

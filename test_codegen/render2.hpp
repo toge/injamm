@@ -41,7 +41,7 @@ render2(const T& data, Sink& out) {
   }
   std::string _filtered;
   _filtered.reserve(64);
-
+  
   out.append("Name: ");
   if constexpr (::injamm::detail::serializable_v<decltype(data.name)>) {
     _filtered.clear(); ::injamm::detail::serialize_value(_filtered, data.name);
@@ -62,7 +62,7 @@ render2(const T& data, Sink& out) {
   }
   filter_to_lower(_filtered);
   html_escape_append(out, _filtered);
-
+  
   return {};
 }
 

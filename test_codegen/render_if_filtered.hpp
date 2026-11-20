@@ -40,7 +40,7 @@ render_if_filtered(const T& data, Sink& out) {
   }
   std::string _filtered;
   _filtered.reserve(64);
-
+  
   if constexpr (::injamm::detail::serializable_v<decltype(data.age)>) {
     _filtered.clear(); ::injamm::detail::serialize_value(_filtered, data.age);
   } else if constexpr (::injamm::detail::ct_glz_reflectable<decltype(data.age)>) {
@@ -54,7 +54,7 @@ render_if_filtered(const T& data, Sink& out) {
   } else {
     out.append("NO");
   }
-
+  
   return {};
 }
 

@@ -16,6 +16,21 @@
 namespace generated {
 #include "codegen_helpers.hpp"
 
+namespace cgns_render_e {
+/**
+ * @brief 値側に @p key が無ければルート側へフォールバックする二段解決ヘルパ
+ * @details VM (bytecode_exec.hpp) の value → root 二段走査と同一の解決順。
+ */
+template <class V, class R>
+inline decltype(auto) cg_get_active(V const& v, R const& r) {
+  if constexpr (requires { v.active; }) {
+    return (v.active);
+  } else {
+    return (r.active);
+  }
+}
+} // namespace cgns_render_e
+
 
 /**
  * @brief テンプレート文字列から生成されたレンダリング関数（バッファ再利用版）
@@ -38,8 +53,8 @@ render_e(const T& data, Sink& out) {
   if constexpr (std::is_same_v<Sink, std::string>) {
     out.clear();
   }
-
-  auto _body1 = [&](const auto& _item1) {
+  
+  auto _body1 = [&](const auto& _item1, const auto& _rt1) {
     auto _body2 = [&](const auto& _item2) {
       out.append("Y");
     };
@@ -55,23 +70,23 @@ render_e(const T& data, Sink& out) {
         if (value_empty(_item1.active)) _else3(); else for (const auto& _v2 : _item1.active) _body2(_v2);
       }
     } else {
-      if constexpr (codegen_optional_section_v<decltype(data.active)>) {
-        if (data.active.has_value()) _body2(*data.active); else _else3();
-      } else if constexpr (codegen_scalar_section_v<decltype(data.active)>) {
-        if (static_cast<bool>(data.active)) _body2(_item1); else _else3();
+      if constexpr (codegen_optional_section_v<decltype(_rt1.active)>) {
+        if (_rt1.active.has_value()) _body2(*_rt1.active); else _else3();
+      } else if constexpr (codegen_scalar_section_v<decltype(_rt1.active)>) {
+        if (static_cast<bool>(_rt1.active)) _body2(_item1); else _else3();
       } else {
-        if (value_empty(data.active)) _else3(); else for (const auto& _v2 : data.active) _body2(_v2);
+        if (value_empty(_rt1.active)) _else3(); else for (const auto& _v2 : _rt1.active) _body2(_v2);
       }
     }
   };
   if constexpr (codegen_optional_section_v<decltype(data.items)>) {
-    if (data.items.has_value()) _body1(*data.items);
+    if (data.items.has_value()) _body1(*data.items, data);
   } else if constexpr (codegen_scalar_section_v<decltype(data.items)>) {
-    if (static_cast<bool>(data.items)) _body1(data);
+    if (static_cast<bool>(data.items)) _body1(data, data);
   } else {
-    for (const auto& _v1 : data.items) _body1(_v1);
+    for (const auto& _v1 : data.items) _body1(_v1, data);
   }
-
+  
   return {};
 }
 

@@ -8,6 +8,7 @@
 - `fix: injamm_codegen がループ内のグローバル partial をルート固定で解決する問題` — `render_partial_impl<P>(value, root, sink)` 内部オーバーロードを生成し、本体は「値 → ルート」の二段解決（`requires` 式）に。公開 `render_partial<P>(data, out)` のシグネチャは変更なし。ループ内の要素に無いキーのセクション/逆セクション/変数参照も同じ二段解決でルートへフォールバック
 - `fix: injamm_codegen が -n オプションを無視する問題` — 名前空間が `generated` 固定だったのを `-n` 指定を反映するように修正（既定値は従来どおり `generated`）
 - `test: codegen ライブテスト（生成 → コンパイル → 実行 → VM 比較）を追加` — `test_codegen_live` がビルド時に各ケースのヘッダを `injamm_codegen` で生成するため、生成ヘッダが壊れているとビルドが失敗する。同梱 `render*.hpp` は `test_codegen/regenerate.sh` で再生成
+- `fix: 生成コードの二段解決（値 → ルート フォールバック）が Clang / MSVC でコンパイルできない問題` — ジェネリックラムダ内の `if constexpr (requires { _item1.key; })` の破棄側（`data.key`）は、クロージャ構築時に実体化されて検証されるため、ルート型にキーが無いとコンパイルエラーになっていた（GCC は検証しないため検出漏れ）。キーごとの二段解決ヘルパ関数テンプレート（`cg_get_*`）を名前空間スコープに生成し（関数テンプレートの if constexpr は破棄側が遅延実体化される）、セクション ディスパッチの else 側はラムダのルート引数（`_rtN`）経由の依存式に変更
 - `bench: codegen_bench に逆セクション / セクション else / optional セクション / ループ内 partial のワークロードを追加` — `render_d`〜`render_g`（`gen.sh` で再生成）。#10 対応の新旧コードジェネレーターでスループットを比較し、既存ケース（セクション/フィルタ/bool 出力）は誤差範囲、逆セクション・partial も ns/byte 正規化で劣化なしを確認
 
 ## 2026-11-19

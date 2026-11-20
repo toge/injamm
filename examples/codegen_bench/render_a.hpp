@@ -16,6 +16,45 @@
 namespace generated {
 #include "codegen_helpers.hpp"
 
+namespace cgns_render_a {
+/**
+ * @brief 値側に @p key が無ければルート側へフォールバックする二段解決ヘルパ
+ * @details VM (bytecode_exec.hpp) の value → root 二段走査と同一の解決順。
+ */
+template <class V, class R>
+inline decltype(auto) cg_get_name(V const& v, R const& r) {
+  if constexpr (requires { v.name; }) {
+    return (v.name);
+  } else {
+    return (r.name);
+  }
+}
+/**
+ * @brief 値側に @p key が無ければルート側へフォールバックする二段解決ヘルパ
+ * @details VM (bytecode_exec.hpp) の value → root 二段走査と同一の解決順。
+ */
+template <class V, class R>
+inline decltype(auto) cg_get_price(V const& v, R const& r) {
+  if constexpr (requires { v.price; }) {
+    return (v.price);
+  } else {
+    return (r.price);
+  }
+}
+/**
+ * @brief 値側に @p key が無ければルート側へフォールバックする二段解決ヘルパ
+ * @details VM (bytecode_exec.hpp) の value → root 二段走査と同一の解決順。
+ */
+template <class V, class R>
+inline decltype(auto) cg_get_quantity(V const& v, R const& r) {
+  if constexpr (requires { v.quantity; }) {
+    return (v.quantity);
+  } else {
+    return (r.quantity);
+  }
+}
+} // namespace cgns_render_a
+
 
 /**
  * @brief テンプレート文字列から生成されたレンダリング関数（バッファ再利用版）
@@ -42,23 +81,11 @@ render_a(const T& data, Sink& out) {
   
   auto _body1 = [&](const auto& _item1) {
     out.append("[");
-    if constexpr (requires { _item1.name; }) {
-      html_escape_append_value(out, _item1.name);
-    } else {
-      html_escape_append_value(out, data.name);
-    }
+    html_escape_append_value(out, cgns_render_a::cg_get_name(_item1, data));
     out.append("/");
-    if constexpr (requires { _item1.quantity; }) {
-      html_escape_append_value(out, _item1.quantity);
-    } else {
-      html_escape_append_value(out, data.quantity);
-    }
+    html_escape_append_value(out, cgns_render_a::cg_get_quantity(_item1, data));
     out.append("/");
-    if constexpr (requires { _item1.price; }) {
-      html_escape_append_value(out, _item1.price);
-    } else {
-      html_escape_append_value(out, data.price);
-    }
+    html_escape_append_value(out, cgns_render_a::cg_get_price(_item1, data));
     out.append("]\n");
   };
   if constexpr (codegen_optional_section_v<decltype(data.items)>) {

@@ -16,6 +16,21 @@
 namespace generated {
 #include "codegen_helpers.hpp"
 
+namespace cgns_render_g {
+/**
+ * @brief 値側に @p key が無ければルート側へフォールバックする二段解決ヘルパ
+ * @details VM (bytecode_exec.hpp) の value → root 二段走査と同一の解決順。
+ */
+template <class V, class R>
+inline decltype(auto) cg_get_name(V const& v, R const& r) {
+  if constexpr (requires { v.name; }) {
+    return (v.name);
+  } else {
+    return (r.name);
+  }
+}
+} // namespace cgns_render_g
+
 
 /**
  * @brief 名前付き partial をレンダリングする内部実装
@@ -34,11 +49,7 @@ template <injamm::fixed_string PartialName, typename V, typename R, typename Sin
 [[nodiscard]] std::expected<void, injamm::error_ctx>
 render_partial_impl(const V& value, const R& root, Sink& out) {
   if constexpr (std::string_view(PartialName.data) == "g") {
-    if constexpr (requires { value.name; }) {
-      html_escape_append_value(out, value.name);
-    } else {
-      html_escape_append_value(out, root.name);
-    }
+    html_escape_append_value(out, cgns_render_g::cg_get_name(value, root));
     out.append(";");
     return {};
 }
@@ -96,7 +107,7 @@ render_g(const T& data, Sink& out) {
   if constexpr (std::is_same_v<Sink, std::string>) {
     out.clear();
   }
-
+  
   auto _body1 = [&](const auto& _item1) {
     (void)render_partial_impl<"g">(_item1, data, out);
   };
@@ -107,7 +118,7 @@ render_g(const T& data, Sink& out) {
   } else {
     for (const auto& _v1 : data.items) _body1(_v1);
   }
-
+  
   return {};
 }
 
