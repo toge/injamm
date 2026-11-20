@@ -46,7 +46,7 @@ render_drift_fadd(const T& data, Sink& out) {
   } else if constexpr (::injamm::detail::ct_glz_reflectable<decltype(data.score)>) {
     (void)::glz::write_json(data.score, _filtered);
   } else {
-    _filtered.assign(data.score);
+    _filtered.assign((data.score).data(), (data.score).size());
   }
   filter_int_add(_filtered, 1);
   html_escape_append(out, _filtered);

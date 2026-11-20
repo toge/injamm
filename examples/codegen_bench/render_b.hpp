@@ -41,7 +41,7 @@ render_b(const T& data, Sink& out) {
   std::string _filtered;
   _filtered.reserve(64);
   
-  for (const auto& _item1 : data.items) {
+  auto _body1 = [&](const auto& _item1) {
     if constexpr (::injamm::detail::serializable_v<decltype(_item1.name)>) {
       _filtered.clear(); ::injamm::detail::serialize_value(_filtered, _item1.name);
     } else if constexpr (::injamm::detail::ct_glz_reflectable<decltype(_item1.name)>) {
@@ -51,6 +51,13 @@ render_b(const T& data, Sink& out) {
     }
     filter_to_upper(_filtered);
     html_escape_append(out, _filtered);
+  };
+  if constexpr (codegen_optional_section_v<decltype(data.items)>) {
+    if (data.items.has_value()) _body1(*data.items);
+  } else if constexpr (codegen_scalar_section_v<decltype(data.items)>) {
+    if (static_cast<bool>(data.items)) _body1(data);
+  } else {
+    for (const auto& _v1 : data.items) _body1(_v1);
   }
   
   return {};

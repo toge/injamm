@@ -39,8 +39,15 @@ render_c(const T& data, Sink& out) {
     out.clear();
   }
   
-  for (const auto& _item1 : data.items) {
+  auto _body1 = [&](const auto& _item1) {
     html_escape_append_value(out, data.active);
+  };
+  if constexpr (codegen_optional_section_v<decltype(data.items)>) {
+    if (data.items.has_value()) _body1(*data.items);
+  } else if constexpr (codegen_scalar_section_v<decltype(data.items)>) {
+    if (static_cast<bool>(data.items)) _body1(data);
+  } else {
+    for (const auto& _v1 : data.items) _body1(_v1);
   }
   
   return {};

@@ -48,7 +48,7 @@ render2(const T& data, Sink& out) {
   } else if constexpr (::injamm::detail::ct_glz_reflectable<decltype(data.name)>) {
     (void)::glz::write_json(data.name, _filtered);
   } else {
-    _filtered.assign(data.name);
+    _filtered.assign((data.name).data(), (data.name).size());
   }
   filter_to_upper(_filtered);
   html_escape_append(out, _filtered);
@@ -58,7 +58,7 @@ render2(const T& data, Sink& out) {
   } else if constexpr (::injamm::detail::ct_glz_reflectable<decltype(data.name)>) {
     (void)::glz::write_json(data.name, _filtered);
   } else {
-    _filtered.assign(data.name);
+    _filtered.assign((data.name).data(), (data.name).size());
   }
   filter_to_lower(_filtered);
   html_escape_append(out, _filtered);

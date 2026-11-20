@@ -16,6 +16,33 @@
 namespace generated {
 #include "codegen_helpers.hpp"
 
+namespace cgns_render5 {
+/**
+ * @brief 値側に @p key が無ければルート側へフォールバックする二段解決ヘルパ
+ * @details VM (bytecode_exec.hpp) の value → root 二段走査と同一の解決順。
+ */
+template <class V, class R>
+inline decltype(auto) cg_get_name(V const& v, R const& r) {
+  if constexpr (requires { v.name; }) {
+    return (v.name);
+  } else {
+    return (r.name);
+  }
+}
+/**
+ * @brief 値側に @p key が無ければルート側へフォールバックする二段解決ヘルパ
+ * @details VM (bytecode_exec.hpp) の value → root 二段走査と同一の解決順。
+ */
+template <class V, class R>
+inline decltype(auto) cg_get_price(V const& v, R const& r) {
+  if constexpr (requires { v.price; }) {
+    return (v.price);
+  } else {
+    return (r.price);
+  }
+}
+} // namespace cgns_render5
+
 
 /**
  * @brief テンプレート文字列から生成されたレンダリング関数（バッファ再利用版）
@@ -47,12 +74,19 @@ render5(const T& data, Sink& out) {
     out.append("[VIP]");
   }
   out.append("\n");
-  for (const auto& _item1 : data.items) {
+  auto _body1 = [&](const auto& _item1) {
     out.append("\n  ");
-    html_escape_append_value(out, _item1.name);
+    html_escape_append_value(out, cgns_render5::cg_get_name(_item1, data));
     out.append(": $");
-    html_escape_append_value(out, _item1.price);
+    html_escape_append_value(out, cgns_render5::cg_get_price(_item1, data));
     out.append("\n");
+  };
+  if constexpr (codegen_optional_section_v<decltype(data.items)>) {
+    if (data.items.has_value()) _body1(*data.items);
+  } else if constexpr (codegen_scalar_section_v<decltype(data.items)>) {
+    if (static_cast<bool>(data.items)) _body1(data);
+  } else {
+    for (const auto& _v1 : data.items) _body1(_v1);
   }
   out.append("\nTotal: $");
   html_escape_append_value(out, data.total);

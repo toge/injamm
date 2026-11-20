@@ -6,6 +6,7 @@
 #include <cmath>
 #include <injamm/glz_dispatch.hpp>
 #include <limits>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -450,6 +451,8 @@ inline void filter_float_precision(std::string& s, int n) {
 }
 
 // round: VM (filters.hpp) と同一の half-away-from-zero 丸め
+// precision < 0 → std::round で整数丸め（小数部除去）
+// precision >= 0 → pow10 倍して std::round → pow10 で割って固定小数点表示
 inline void filter_float_round(std::string& s, int precision) {
   double val = 0.0;
   auto [ptr, ec] = std::from_chars(s.data(), s.data() + s.size(), val);
@@ -492,12 +495,39 @@ inline void append_value(Buffer& out, V const& v) {
   }
 }
 
+/** @brief スカラー（bool/算術型/enum）のセクション本体を 1 回だけ実行するか判定
+ *  @details VM (bytecode_exec.hpp do_section) の「非ゼロ = 真」セマンティクスと対応。
+ *           codegen はこの trait で if constexpr 分岐を生成し、スカラー値に対して
+ *           range-for を出力しないようにする。optional は false（VM 側は
+ *           has_value で分岐するため別経路）。 */
+template <class V>
+inline constexpr bool codegen_scalar_section_v =
+    std::is_same_v<V, bool> || std::is_arithmetic_v<V> || std::is_enum_v<V>;
+
+/** @brief std::optional のセクション本体を 1 回だけ実行するか判定（VM の has_value 分岐に対応）
+ *  @details VM (bytecode_exec.hpp do_section) は optional を has_value() で判定し、
+ *           有値時は *opt を要素スコープとして本体を 1 回実行する。 */
+template <class V>
+inline constexpr bool codegen_optional_section_v = injamm::detail::is_std_optional_v<V>;
+
 template <typename V>
 constexpr bool value_empty(V const& v) {
   if constexpr (std::is_same_v<V, const char*>) {
     return !v || v[0] == '\0';
   } else if constexpr (std::is_same_v<V, std::string> || std::is_same_v<V, std::string_view>) {
     return v.empty();
+  } else if constexpr (std::is_same_v<V, bool>) {
+    // VM (bytecode_exec.hpp do_inverted) と同一: bool は !v、数値は 0 との比較
+    return !v;
+  } else if constexpr (std::is_enum_v<V>) {
+    return static_cast<std::underlying_type_t<V>>(v) == 0;
+  } else if constexpr (std::is_arithmetic_v<V>) {
+    return v == 0;
+  } else if constexpr (injamm::detail::is_std_optional_v<V>) {
+    return !v.has_value();
+  } else if constexpr (injamm::detail::ct_glz_reflectable<V>) {
+    // VM と同一: 構造体は空とみなさない（本体は実行されない）
+    return false;
   } else {
     return v.empty();
   }
@@ -733,29 +763,33 @@ inline void filter_int_numify(std::string& s) {
   if (has_frac) {
     double val = 0.0;
     if (auto [p, ec] = std::from_chars(s.data(), s.data() + s.size(), val); ec == std::errc{}) {
+      if (val == 0.0 && std::signbit(val)) val = 0.0;  // -0.0 の符号ビットが to_chars の出力に残るため正規化する
       bool negative = val < 0;
       if (negative) val = -val;
-      auto int_part = static_cast<long long>(val);
-      std::string num = std::to_string(int_part);
-      std::string grouped;
-      group_digits(grouped, num);
-      auto frac = val - static_cast<double>(int_part);
-      if (frac != 0.0) {
-        auto dot_pos = s.find('.');
-        std::size_t prec = 6;
+      // VM (filters.hpp) と同一ロジック: 全体を to_chars(fixed, prec) で丸めてから
+      // 整数部にのみカンマを挿入する（端数の独立フォーマットは繰り上がりを失い、
+      // long long キャストは |val| >= 2^63 で UB になるため廃止）
+      auto dot_pos = s.find('.');
+      bool frac_nonzero = (val - std::floor(val)) != 0.0;
+      std::size_t prec = 0;
+      if (frac_nonzero) {
+        prec = 6;
         if (dot_pos != std::string::npos) {
           prec = s.size() - dot_pos - 1;
           if (prec > 6) prec = 6;
           if (prec == 0) prec = 1;
         }
-        char buf[64];
-        if (auto [ptr, ec2] = std::to_chars(buf, buf + sizeof(buf), frac, std::chars_format::fixed, static_cast<int>(prec)); ec2 == std::errc{}) {
-          std::string_view frac_str(buf, static_cast<std::size_t>(ptr - buf));
-          if (frac_str.size() > 2) frac_str = frac_str.substr(1);  // "0.x" → ".x"
-          grouped += frac_str;
-        }
       }
-      s = negative ? "-" + grouped : grouped;
+      char buf[512];
+      if (auto [ptr, ec2] = std::to_chars(buf, buf + sizeof(buf), val, std::chars_format::fixed, static_cast<int>(prec)); ec2 == std::errc{}) {
+        std::string_view whole(buf, static_cast<std::size_t>(ptr - buf));
+        auto dot = whole.find('.');
+        auto digits = whole.substr(0, dot);
+        std::string grouped;
+        group_digits(grouped, digits);
+        if (dot != std::string_view::npos) grouped += whole.substr(dot);
+        s = negative ? "-" + grouped : grouped;
+      }
     }
   } else {
     long long val = 0;

@@ -30,6 +30,7 @@
 #include <sstream>
 #include <string>
 #include <string_view>
+#include <set>
 #include <unordered_set>
 #include <vector>
 
@@ -505,22 +506,39 @@ class code_generator {
   bool no_simd_ = false;       /**< SIMD命令を生成しない */
   int indent_ = 0;             /**現在のインデントレベル */
   int loop_depth_ = 0;         /**< 現在のループ深度 */
+  bool in_partial_ = false;    /**< partial 本体の生成中（値スコープ式が value、ルート式が root） */
   /**< インデックス形式（_iN/_sizeN）が必要な emit_section 命令 */
   std::unordered_set<const bc::instruction*> index_loops_;
   /**< stride ループ深度（ループ末尾で _srcN を進める） */
   std::unordered_set<int> stride_loops_;
 
   /** @brief emit_end で閉じるブロックの種類 */
-  enum class end_kind { loop, scalar_section, cond };
+  enum class end_kind { loop, scalar_section, cond, inverted };
   /** @brief emit_end で閉じるブロックの情報（開始命令ごとに積む） */
   struct open_block {
     end_kind    kind;     /**< 閉じ方の種類 */
-    std::string access;   /**< scalar_section: セクション対象のアクセス式 */
-    std::string idx;      /**< scalar_section: 本体の _itemN の N（スコープ解決に使うループ深度） */
-    int         seq = 0;  /**< scalar_section: 本体ラムダ名の連番（兄弟セクションで衝突させない） */
+    std::string access;   /**< scalar_section/inverted: セクション対象のアクセス式 */
+    int         idx = 0;  /**< scalar_section: 本体の _itemN の N（スコープ解決に使うループ深度） */
+    int         seq = 0;  /**< scalar_section/inverted: 本体ラムダ名の連番（兄弟セクションで衝突させない） */
+    int         else_seq = 0;  /**< {{else}} 本体ラムダ名の連番（else なしは 0） */
+    bool        has_else = false; /**< loop 種別: セクションに {{else}} が付いている（事前ガードを閉じる） */
+    std::string two_stage_key; /**< 二段解決の対象キー（空なら二段解決なし。ディスパッチのガードに使う） */
+    bool        root_param = false;    /**< 本体ラムダがルート引数（_rtN）を持つ */
+    bool        else_root_param = false; /**< else ラムダがルート引数（_rtN）を持つ */
+    std::string call_root;  /**< ラムダに入る前のルート式（呼び出し引数と復元に使う） */
+    const bc::instruction* inst = nullptr; /**< 開始命令（マーキング参照用） */
   };
   int lambda_seq_ = 0; /**< 本体ラムダ名の連番 */
   std::vector<open_block> open_blocks_;
+  std::set<std::string> two_stage_keys_; /**< 二段解決ヘルパを生成するキー一覧（昇順） */
+  std::set<const bc::instruction*> root_param_main_;   /**< 本体ラムダにルート引数が必要なセクション */
+  std::set<const bc::instruction*> root_param_else_;   /**< else ラムダにルート引数が必要なセクション */
+  std::set<const bc::instruction*> root_param_inv_;    /**< 本体ラムダにルート引数が必要な逆セクション */
+  std::string cur_root_; /**< 現在のラムダ階層でのルート式（空なら root_expr()） */
+
+  /** @brief 現在の生成位置でルートを参照する式を返す
+   *  @details ルート引数付きラムダ内ではその引数（_rtN）、それ以外は data / root。 */
+  std::string root_for_emit() const { return cur_root_.empty() ? root_expr() : cur_root_; }
   std::string unsupported_feature_;  /**< generate() が対応不能な命令を検出した場合の説明 */
   std::ostringstream out_;     /**< 出力ストリーム */
 
@@ -564,23 +582,40 @@ class code_generator {
   }
 
   /**
+   * @brief 現在の生成コンテキストでの「ルート」式を返す
+   * @details メイン関数では data、partial 本体では render_partial_impl の root 引数。
+   */
+  std::string root_expr() const { return in_partial_ ? "root" : "data"; }
+
+  /**
+   * @brief 現在の生成コンテキストでの「現在値」式を返す
+   * @details ループ内は要素ラムダ引数 _itemN、メイン関数トップレベルでは data、
+   *          partial 本体トップレベルでは render_partial_impl の value 引数。
+   */
+  std::string value_expr() const {
+    if (loop_depth_ > 0) return "_item" + std::to_string(loop_depth_);
+    return in_partial_ ? "value" : "data";
+  }
+
+  /**
    * @brief 変数参照を C++ のフィールドアクセス式に変換
    * @details ループ内では _item{depth}.field、ルートでは data.field を返す。
    *          ネストパス（ドット区切り）は data.path.to.field に展開する。
+   *          partial 本体では値スコープが value、ルートが root になる。
    */
   std::string resolve_access(bc::var_ref const& ref) {
     if (ref.is_loop_parent) {
       if (ref.has_dot) {
         auto pos = ref.key.find("loop.parent.");
         auto path = (pos != std::string::npos) ? ref.key.substr(pos + 12) : ref.key;
-        return "data." + path;
+        return root_expr() + "." + path;
       }
-      return "data";
+      return root_expr();
     }
 
     /** ルート型フォールバック参照: ルートデータのフィールドを直接アクセスする */
     if (ref.root_fallback) {
-      return "data." + ref.key;
+      return root_expr() + "." + ref.key;
     }
 
     if (loop_depth_ > 0 && !ref.has_dot) {
@@ -588,10 +623,66 @@ class code_generator {
     }
 
     if (ref.has_dot) {
-      return "data." + ref.key;
+      return root_expr() + "." + ref.key;
     }
 
-    return "data." + ref.key;
+    if (in_partial_) {
+      return "value." + ref.key;
+    }
+
+    return root_expr() + "." + ref.key;
+  }
+
+  /**
+   * @brief 変数参照が「値スコープ相対参照」で要素/値側にキーが無い可能性があるか判定
+   * @details resolve_access が要素相対式（_itemN.key / value.key）を返す条件。
+   *          要素型・値型にキーが無い場合にルートへフォールバックする二段解決
+   *          （VM の value → root 走査と同一）の要否判定に使う。
+   */
+  bool is_value_relative(bc::var_ref const& ref) const {
+    return !ref.is_loop_parent && !ref.root_fallback && !ref.has_dot &&
+           (loop_depth_ > 0 || in_partial_);
+  }
+
+  /**
+   * @brief 二段解決ヘルパの呼び出し式を返す
+   * @details 値側にキーが無い場合にルートへフォールバックするヘルパ関数テンプレート
+   *          （emit_header でキーごとに生成）を呼び出す式を組み立てる。
+   *          ジェネリックラムダ内に `if constexpr (requires { _item1.key; })`
+   *          を直接出力すると、Clang / MSVC がラムダ式の実体化時に破棄側
+   *          （data.key）を検証してしまい、ルート型にキーが無いとコンパイル
+   *          エラーになる。関数テンプレート内の if constexpr は破棄側が
+   *          遅延実体化されるため、ヘルパ経由なら全コンパイラで動作する。
+   */
+  std::string two_stage_access(std::string const& key) const {
+    return cgns_name() + "::cg_get_" + sanitize_key(key) + "(" + value_expr() + ", " + root_expr() + ")";
+  }
+
+  /** @brief 二段解決ヘルパを格納する名前空間名（関数名プレフィックス由来でヘッダごとに一意） */
+  std::string cgns_name() const { return "cgns_" + (func_prefix_.empty() ? std::string("render") : func_prefix_); }
+
+  /** @brief キーを C++ 識別子として安全な名前に変換 */
+  static std::string sanitize_key(std::string const& key) {
+    std::string s;
+    for (char c : key) {
+      s += (std::isalnum(static_cast<unsigned char>(c)) || c == '_') ? c : '_';
+    }
+    return s;
+  }
+
+  /**
+   * @brief 値参照を使った文を出力する
+   * @details 値スコープ相対参照（ループ内の _itemN.key / partial 本体トップレベルの
+   *          value.key）では、キーが値側に無ければルートへフォールバックする二段解決
+   *          ヘルパ（two_stage_access）経由で出力する
+   *          （VM handle_call_partial の value → root と同一）。
+   * @param prefix 文の前半（アクセス式の直前まで）
+   * @param suffix 文の後半（アクセス式の直後から）
+   * @param ref 対象の変数参照
+   */
+  void emit_value_ref(std::string const& prefix, std::string const& suffix, bc::var_ref const& ref) {
+    auto acc = is_value_relative(ref) ? two_stage_access(ref.key) : resolve_access(ref);
+    emit(prefix + acc + suffix);
   }
 
   /**
@@ -645,9 +736,40 @@ class code_generator {
       emit_raw("#include <injamm/escape.hpp>");
     }
     emit_raw("");
-    emit_raw("namespace generated {");
+    emit_raw("namespace " + namespace_ + " {");
     emit_raw("#include \"codegen_helpers.hpp\"");
+    emit_helpers();
     emit_raw("");
+  }
+
+  /**
+   * @brief 二段解決ヘルパ（キーごとの関数テンプレート）を生成
+   * @details 値側にキーが無い場合にルートへフォールバックする。関数テンプレート内の
+   *          if constexpr は破棄側が遅延実体化されるため、ジェネリックラムダ内に
+   *          requires ガードを直接出力した場合と異なり Clang / MSVC でも動作する。
+   *          関数名プレフィックス由来の名前空間に格納し、同一名前空間に複数の
+   *          生成ヘッダをインクルードしても衝突しない。
+   */
+  void emit_helpers() {
+    if (two_stage_keys_.empty()) return;
+    emit_raw("");
+    emit_raw("namespace " + cgns_name() + " {");
+    for (auto const& key : two_stage_keys_) {
+      auto const fname = "cg_get_" + sanitize_key(key);
+      emit_raw("/**");
+      emit_raw(" * @brief 値側に @p key が無ければルート側へフォールバックする二段解決ヘルパ");
+      emit_raw(" * @details VM (bytecode_exec.hpp) の value → root 二段走査と同一の解決順。");
+      emit_raw(" */");
+      emit_raw("template <class V, class R>");
+      emit_raw("inline decltype(auto) " + fname + "(V const& v, R const& r) {");
+      emit_raw("  if constexpr (requires { v." + key + "; }) {");
+      emit_raw("    return (v." + key + ");");
+      emit_raw("  } else {");
+      emit_raw("    return (r." + key + ");");
+      emit_raw("  }");
+      emit_raw("}");
+    }
+    emit_raw("} // namespace " + cgns_name());
   }
 
   /** @brief ヘルパ関数の生成（共通ヘッダを使用するため不要） */
@@ -778,6 +900,84 @@ class code_generator {
 
     emit_raw("");
     emit_raw("/**");
+    emit_raw(" * @brief 名前付き partial をレンダリングする内部実装");
+    emit_raw(" *");
+    emit_raw(" * @details 値 (value) とルート (root) を分けて受け取り、本体は");
+    emit_raw(" *          「値 → ルート」の二段解決で生成される（VM handle_call_partial と同一）。");
+    emit_raw(" *          ループ内から呼ばれたグローバル partial も現在の要素を優先して解決する。");
+    emit_raw(" */");
+    /* partial 間の相互参照・ネスト呼び出しのために前方宣言しておく */
+    emit_raw("template <injamm::fixed_string PartialName, typename V, typename R, typename Sink>");
+    emit_raw("  requires injamm::detail::output_sink<Sink>");
+    emit_raw("[[nodiscard]] std::expected<void, injamm::error_ctx>");
+    emit_raw("render_partial_impl(const V& value, const R& root, Sink& out);");
+    emit_raw("");
+    emit_raw("template <injamm::fixed_string PartialName, typename V, typename R, typename Sink>");
+    emit_raw("  requires injamm::detail::output_sink<Sink>");
+    emit_raw("[[nodiscard]] std::expected<void, injamm::error_ctx>");
+    emit_raw("render_partial_impl(const V& value, const R& root, Sink& out) {");
+    ++indent_;
+
+    /* if constexpr チェーン: 各 partial 名を std::string_view で比較する。
+       コンパイル時解決なので実行時オーバーヘッドは一切ない。
+       local partial も含める（call_partial が参照するため。main 本体以外から
+       render_partial<"name"> で直接呼ぶことは文書上非推奨という扱いで許容）。 */
+    bool first = true;
+    for (auto const& pe : bc.partial_entries) {
+      if (!pe.bc || pe.bc->instructions.empty()) continue;
+
+      auto name_lit = cpp_string(pe.name);
+      if (first) {
+        emit("if constexpr (std::string_view(PartialName.data) == " + name_lit + ") {");
+        first = false;
+      } else {
+        emit("else if constexpr (std::string_view(PartialName.data) == " + name_lit + ") {");
+      }
+      ++indent_;
+
+      /* loop_depth_ などの状態を退避: 各 partial は独立した関数内部と同じ扱い。
+         値スコープは value、ルートは root 引数になる。 */
+      auto saved_loop    = loop_depth_;
+      auto saved_blocks  = std::move(open_blocks_);
+      auto saved_partial = in_partial_;
+      loop_depth_ = 0;
+      open_blocks_.clear();
+      in_partial_ = true;
+
+      /* _filtered を使う partial はブロック先頭で宣言する（ループ内フィルタの再アロケーション回避） */
+      if (uses_filtered(*pe.bc)) {
+        emit("std::string _filtered;");
+        emit("_filtered.reserve(64);");
+      }
+      precompute_index_loops(*pe.bc);
+
+      for (auto const& pi : pe.bc->instructions) {
+        emit_instruction(pi, *pe.bc);
+      }
+
+      emit("return {};");
+
+      loop_depth_  = saved_loop;
+      open_blocks_ = std::move(saved_blocks);
+      in_partial_  = saved_partial;
+
+      --indent_;
+      emit_raw("}");
+    }
+
+    /* どの partial 名にも一致しなかった場合はエラーを返す */
+    emit("else {");
+    ++indent_;
+    emit("return std::unexpected(injamm::error_ctx{.ec = injamm::error_code::unknown_key, .custom_error_message = \"unknown partial: \" + std::string(PartialName.data)});");
+    --indent_;
+    emit_raw("}");
+
+    --indent_;
+    emit_raw("}");
+
+    /* 公開ラッパ（シグネチャ維持）: トップレベル呼び出しは値 = ルート = data */
+    emit_raw("");
+    emit_raw("/**");
     emit_raw(" * @brief 名前付き partial を NTTP で指定してレンダリングする");
     emit_raw(" *");
     emit_raw(" * @details injamm_codegen によって自動生成された関数。");
@@ -802,57 +1002,7 @@ class code_generator {
     emit_raw("[[nodiscard]] std::expected<void, injamm::error_ctx>");
     emit_raw("render_partial(const T& data, Sink& out) {");
     ++indent_;
-
-    /* if constexpr チェーン: 各 partial 名を std::string_view で比較する。
-       コンパイル時解決なので実行時オーバーヘッドは一切ない。
-       local partial も含める（call_partial が参照するため。main 本体以外から
-       render_partial<"name"> で直接呼ぶことは文書上非推奨という扱いで許容）。 */
-    bool first = true;
-    for (auto const& pe : bc.partial_entries) {
-      if (!pe.bc || pe.bc->instructions.empty()) continue;
-
-      auto name_lit = cpp_string(pe.name);
-      if (first) {
-        emit("if constexpr (std::string_view(PartialName.data) == " + name_lit + ") {");
-        first = false;
-      } else {
-        emit("else if constexpr (std::string_view(PartialName.data) == " + name_lit + ") {");
-      }
-      ++indent_;
-
-      /* loop_depth_ などの状態を退避: 各 partial は独立した関数内部と同じ扱い */
-      auto saved_loop   = loop_depth_;
-      auto saved_blocks = std::move(open_blocks_);
-      loop_depth_ = 0;
-      open_blocks_.clear();
-
-      /* _filtered を使う partial はブロック先頭で宣言する（ループ内フィルタの再アロケーション回避） */
-      if (uses_filtered(*pe.bc)) {
-        emit("std::string _filtered;");
-        emit("_filtered.reserve(64);");
-      }
-      precompute_index_loops(*pe.bc);
-
-      for (auto const& pi : pe.bc->instructions) {
-        emit_instruction(pi, *pe.bc);
-      }
-
-      emit("return {};");
-
-      loop_depth_ = saved_loop;
-      open_blocks_ = std::move(saved_blocks);
-
-      --indent_;
-      emit_raw("}");
-    }
-
-    /* どの partial 名にも一致しなかった場合はエラーを返す */
-    emit("else {");
-    ++indent_;
-    emit("return std::unexpected(injamm::error_ctx{.ec = injamm::error_code::unknown_key, .custom_error_message = \"unknown partial: \" + std::string(PartialName.data)});");
-    --indent_;
-    emit_raw("}");
-
+    emit("return render_partial_impl<PartialName>(data, data, out);");
     --indent_;
     emit_raw("}");
     emit_raw("");
@@ -860,7 +1010,7 @@ class code_generator {
 
   /** @brief フッタ（名前空間クローズ + インクルードガード終了）を生成 */
   void emit_footer() {
-    emit_raw("} // namespace generated");
+    emit_raw("} // namespace " + namespace_);
     auto guard = func_prefix_.empty() ? "RENDER_HPP" : "RENDER_" + func_prefix_ + "_HPP";
     for (auto& c : guard) c = static_cast<char>(std::toupper(static_cast<unsigned char>(c)));
     emit_raw("");
@@ -951,6 +1101,117 @@ class code_generator {
   }
 
   /**
+   * @brief 二段解決ヘルパの生成に必要なキーの収集と、ルート引数が必要なラムダの特定を行う
+   * @details emit_header は render 関数本体の出力前に呼ばれるため、二段解決が
+   *          必要なキーを出力前に確定させておく必要がある。エミッタと同じ規則で
+   *          命令列を走査し（ブロック種別スタックでループ深度を追跡）、
+   *          値スコープ相対参照になるキーを収集する。
+   *
+   *          あわせて、二段解決セクションのディスパッチ（if constexpr requires
+   *          ガード）がジェネリックラムダ内に出力される場合、その else 側
+   *          （ルート式.キー）がクロージャ構築時に検証されてコンパイルエラーに
+   *          なる（Clang / MSVC）のを防ぐため、当該ディスパッチを含むラムダに
+   *          ルート引数（_rtN）を持たせることをマーキングする。
+   * @param bc 解析対象のバイトコード（partial 本体は再帰的に走査する）
+   * @param in_partial partial 本体の走査か
+   * @param depth 現在のループ深度
+   */
+  void collect_two_stage_keys(bc::bytecode const& bc, bool in_partial, int depth) {
+    struct pc_block {
+      bool is_section;              /**< セクション（ラムダ + ループ深度を持つ）か */
+      bool is_inv;                  /**< 逆セクション（ラムダを持つ）か */
+      const bc::instruction* inst;  /**< 開始命令（マーキングのキー） */
+      bool has_else;                /**< {{else}} に入った（深度を親に戻済み）か */
+    };
+    std::vector<pc_block> blocks;
+    auto value_relative = [&](bc::var_ref const& ref) {
+      return !ref.is_loop_parent && !ref.root_fallback && !ref.has_dot &&
+             (depth > 0 || in_partial);
+    };
+    /** 二段解決ディスパッチが属するラムダ（スタック上を外側へ探して最初のラムダ持ちブロック）にルート引数をマーキング */
+    auto mark_enclosing_lambda = [&]() {
+      for (auto it = blocks.rbegin(); it != blocks.rend(); ++it) {
+        if (it->is_section) {
+          if (it->has_else) root_param_else_.insert(it->inst);
+          else              root_param_main_.insert(it->inst);
+          return;
+        }
+        if (it->is_inv) {
+          root_param_inv_.insert(it->inst);
+          return;
+        }
+      }
+    };
+    for (auto const& inst : bc.instructions) {
+      switch (inst.op) {
+        case bc::opcode::emit_section: {
+          auto const& ref = bc.var_refs[inst.operand2];
+          if (value_relative(ref)) {
+            two_stage_keys_.insert(ref.key);
+            mark_enclosing_lambda();  // ディスパッチはこの命令の emit_end に出力される
+          }
+          blocks.push_back({true, false, &inst, false});
+          ++depth;
+          break;
+        }
+        case bc::opcode::emit_inverted: {
+          auto const& ref = bc.var_refs[inst.operand2];
+          if (value_relative(ref)) two_stage_keys_.insert(ref.key);  // ヘルパ呼び出しのみ（マーキング不要）
+          blocks.push_back({false, true, &inst, false});
+          break;
+        }
+        case bc::opcode::emit_at_section:
+        case bc::opcode::emit_at_inverted:
+        case bc::opcode::emit_if:
+        case bc::opcode::emit_if_eq:
+        case bc::opcode::emit_if_ne:
+        case bc::opcode::emit_if_gt:
+        case bc::opcode::emit_if_gte:
+        case bc::opcode::emit_if_lt:
+        case bc::opcode::emit_if_lte:
+        case bc::opcode::emit_if_or:
+        case bc::opcode::emit_if_and:
+        case bc::opcode::emit_if_not:
+        case bc::opcode::emit_if_filtered:
+          blocks.push_back({false, false, nullptr, false});
+          break;
+        case bc::opcode::emit_else:
+          if (!blocks.empty() && blocks.back().is_section) {
+            blocks.back().has_else = true;
+            --depth;  // else 本体は親コンテキスト（bytecode_compile.hpp と同一）
+            if (depth < 0) depth = 0;
+          }
+          break;
+        case bc::opcode::emit_end:
+          if (!blocks.empty()) {
+            auto blk = blocks.back();
+            blocks.pop_back();
+            if (blk.is_section && !blk.has_else) --depth;
+            if (depth < 0) depth = 0;
+          }
+          break;
+        case bc::opcode::emit_endif:
+          if (!blocks.empty() && !blocks.back().is_section && !blocks.back().is_inv) blocks.pop_back();
+          break;
+        case bc::opcode::emit_var:
+        case bc::opcode::emit_var_raw:
+        case bc::opcode::emit_var_size:
+          if (value_relative(bc.var_refs[inst.operand])) two_stage_keys_.insert(bc.var_refs[inst.operand].key);
+          break;
+        case bc::opcode::emit_litvar:
+        case bc::opcode::emit_litvar_raw:
+          if (value_relative(bc.var_refs[inst.operand2])) two_stage_keys_.insert(bc.var_refs[inst.operand2].key);
+          break;
+        default:
+          break;
+      }
+    }
+    for (auto const& pe : bc.partial_entries) {
+      if (pe.bc) collect_two_stage_keys(*pe.bc, true, 0);
+    }
+  }
+
+  /**
    * @brief 個々のバイトコード命令を C++ コードに変換
    * @param inst 変換する命令
    * @param bc 含まれるバイトコード（リテラル・変数参照テーブルへのアクセス用）
@@ -962,19 +1223,30 @@ class code_generator {
       emit("out.append(" + cpp_string(bc.literals[inst.operand]) + ");");
     }
     else if (op == bc::opcode::emit_var) {
-      auto access = resolve_access(bc.var_refs[inst.operand]);
-      emit("html_escape_append_value(out, " + access + ");");
+      emit_value_ref("html_escape_append_value(out, ", ");", bc.var_refs[inst.operand]);
     }
     else if (op == bc::opcode::emit_var_raw) {
-      auto access = resolve_access(bc.var_refs[inst.operand]);
-      emit("append_value(out, " + access + ");");
+      emit_value_ref("append_value(out, ", ");", bc.var_refs[inst.operand]);
     }
     else if (op == bc::opcode::emit_section) {
       auto const& ref = bc.var_refs[inst.operand2];
       auto access = resolve_access(ref);
+      /** {{else}} 付きセクション: コンパイラ (bytecode_compile.hpp) が else 本体の
+       *  先頭アドレスを operand3 にパッチする（else なしは 0）。 */
+      bool has_else = inst.operand3 > 0;
+      /** 二段解決: 値スコープ相対参照（_itemN.key / value.key）で値側にキーが無い場合は
+       *  ルートへフォールバックする（VM の value → root 走査と同一）。判定はループ深度を
+       *  進める前に行う（access の解決と同じ深さ）。 */
+      std::string two_stage_key;
+      if (is_value_relative(ref)) two_stage_key = ref.key;
       ++loop_depth_;
       auto idx = std::to_string(loop_depth_);
       if (ref.section_op_count > 0) {
+        if (has_else) {
+          // VM (bytecode_exec.hpp do_section) はコンテナが空のとき else 節へ分岐する。
+          // for ヘッダを先に書き出すため、空判定はループの前に出力する。
+          emit("if (!value_empty(" + access + ")) {");
+        }
         emit("auto _size" + idx + " = " + access + ".size();");
         emit("std::size_t _lo" + idx + " = 0, _hi" + idx + " = _size" + idx + ";");
         emit("bool _bwd" + idx + " = false;");
@@ -1039,14 +1311,17 @@ class code_generator {
           --indent_;
           emit("}");
         }
-        open_blocks_.push_back({end_kind::loop});
+        open_blocks_.push_back({.kind = end_kind::loop, .has_else = has_else});
       } else if (index_loops_.count(&inst) != 0) {
         /* @index/@first/@last/@size 等を参照するループはインデックス形式を維持 */
+        if (has_else) {
+          emit("if (!value_empty(" + access + ")) {");
+        }
         emit("auto _size" + idx + " = " + access + ".size();");
         emit("for (std::size_t _i" + idx + " = 0; _i" + idx + " < _size" + idx + "; ++_i" + idx + ") {");
         ++indent_;
         emit("const auto& _item" + idx + " = " + access + "[_i" + idx + "];");
-        open_blocks_.push_back({end_kind::loop});
+        open_blocks_.push_back({.kind = end_kind::loop, .has_else = has_else});
       } else {
         /* コンテナは range-for、スカラー（bool/数値/enum）は VM (bytecode_exec.hpp do_section)
            と同じ「真なら本体を 1 回だけ実行」。本体はどちらも _itemN 経由で現在スコープを
@@ -1054,9 +1329,18 @@ class code_generator {
            旧実装は range-for のみで bool/数値がコンパイル不能、逆にスカラー分岐だけにした版は
            コンテナの for が消えて何も出力しなかった。 */
         auto seq = ++lambda_seq_;
-        emit("auto _body" + std::to_string(seq) + " = [&](const auto& _item" + idx + ") {");
+        bool rpm = root_param_main_.count(&inst) != 0;
+        std::string params = "(const auto& _item" + idx;
+        std::string call_root = root_for_emit();
+        if (rpm) {
+          params += ", const auto& _rt" + std::to_string(seq);
+          cur_root_ = "_rt" + std::to_string(seq);
+        }
+        emit("auto _body" + std::to_string(seq) + " = [&]" + params + ") {");
         ++indent_;
-        open_blocks_.push_back({end_kind::scalar_section, access, idx, seq});
+        open_block blk{.kind = end_kind::scalar_section, .access = access, .idx = loop_depth_, .seq = seq,
+                       .two_stage_key = two_stage_key, .root_param = rpm, .call_root = call_root, .inst = &inst};
+        open_blocks_.push_back(std::move(blk));
       }
     }
     else if (op == bc::opcode::emit_at_section) {
@@ -1091,45 +1375,124 @@ class code_generator {
       open_blocks_.pop_back();
       switch (block.kind) {
       case end_kind::loop:
-        if (stride_loops_.count(loop_depth_) != 0) {
-          auto sidx = std::to_string(loop_depth_);
-          emit("if (_bwd" + sidx + ") --_src" + sidx + "; else ++_src" + sidx + ";");
-          stride_loops_.erase(loop_depth_);
+        if (block.has_else) {
+          /* else 本体の終端: ガード if を閉じる（loop_depth_ は emit_else で減済） */
+          --indent_;
+          emit("}");
+        } else {
+          if (stride_loops_.count(loop_depth_) != 0) {
+            auto sidx = std::to_string(loop_depth_);
+            emit("if (_bwd" + sidx + ") --_src" + sidx + "; else ++_src" + sidx + ";");
+            stride_loops_.erase(loop_depth_);
+          }
+          --indent_;
+          emit("}");
+          --loop_depth_;
         }
-        --indent_;
-        emit("}");
-        --loop_depth_;
         break;
       case end_kind::scalar_section: {
-        /* 本体ラムダを閉じ、スカラー（1 回実行）とコンテナ（range-for）に振り分ける */
-        auto scope = (loop_depth_ > 1) ? "_item" + std::to_string(loop_depth_ - 1) : "data";
-        auto body = "_body" + std::to_string(block.seq);
-        auto velem = "_v" + std::to_string(block.seq);
+        /* 本体（または else）ラムダを閉じ、optional / スカラー / コンテナに振り分ける
+           （VM bytecode_exec.hpp do_section と同一の判定）。二段解決キーがある場合は
+           requires ガードで要素/ルートのアクセスに振り分ける。else 側のルート式は
+           クロージャ構築時に検証される（Clang / MSVC）ため、ラムダ内ではルート引数
+           （_rtN：依存式）経由にする（mark_enclosing_lambda で事前マーキング）。 */
+        cur_root_ = block.call_root;  // ディスパッチはラムダの外側スコープに出力される
         --indent_;
         emit("};");
-        emit("if constexpr (codegen_scalar_section_v<decltype(" + block.access + ")>) {");
-        ++indent_;
-        emit("if (static_cast<bool>(" + block.access + ")) " + body + "(" + scope + ");");
-        --indent_;
-        emit("} else {");
-        ++indent_;
-        emit("for (const auto& " + velem + " : " + block.access + ") " + body + "(" + velem + ");");
-        --indent_;
-        emit("}");
-        --loop_depth_;
+        auto scope = (block.idx > 1) ? "_item" + std::to_string(block.idx - 1)
+                                     : (in_partial_ ? "value" : "data");
+        auto body = "_body" + std::to_string(block.seq);
+        auto velem = "_v" + std::to_string(block.seq);
+        auto root_args = block.root_param ? (", " + block.call_root) : std::string{};
+        auto body_call_scope = body + "(" + scope + root_args + ")";   // スカラー: 親スコープを要素として 1 回
+        auto body_call_elem = body + "(" + velem + root_args + ")";    // コンテナ: 各要素
+        auto els = block.else_seq ? "_else" + std::to_string(block.else_seq) : std::string{};
+        auto els_stmt = block.else_seq
+                            ? ((block.else_root_param ? (els + "(" + block.call_root + ")") : (els + "()")) + ";")
+                            : std::string{};
+        auto then_else = block.else_seq ? (" else " + els_stmt) : std::string{};
+        auto dispatch_of = [&](std::string const& acc) {
+          emit("if constexpr (codegen_optional_section_v<decltype(" + acc + ")>) {");
+          ++indent_;
+          emit("if (" + acc + ".has_value()) " + body + "(*" + acc + root_args + ");" + then_else);
+          --indent_;
+          emit("} else if constexpr (codegen_scalar_section_v<decltype(" + acc + ")>) {");
+          ++indent_;
+          emit("if (static_cast<bool>(" + acc + ")) " + body_call_scope + ";" + then_else);
+          --indent_;
+          emit("} else {");
+          ++indent_;
+          if (block.else_seq) {
+            // VM はコンテナが空のとき else 節を描画する
+            emit("if (value_empty(" + acc + ")) " + els_stmt + " else for (const auto& " + velem + " : " + acc + ") " + body_call_elem + ";");
+          } else {
+            emit("for (const auto& " + velem + " : " + acc + ") " + body_call_elem + ";");
+          }
+          --indent_;
+          emit("}");
+        };
+        if (block.two_stage_key.empty()) {
+          dispatch_of(block.access);
+        } else {
+          emit("if constexpr (requires { " + block.access + "; }) {");
+          ++indent_;
+          dispatch_of(block.access);
+          --indent_;
+          emit("} else {");
+          ++indent_;
+          /** else 側のルート式は「セクション突入時のルート式」— ディスパッチが
+           *  出力されるスコープ（ラムダ内ならそのラムダのルート引数 _rtN）と同じ。 */
+          dispatch_of(block.call_root + "." + block.two_stage_key);
+          --indent_;
+          emit("}");
+        }
+        if (!block.else_seq) --loop_depth_;
         break;
       }
       case end_kind::cond:
         --indent_;
         emit("}");
         break;
+      case end_kind::inverted: {
+        /* 逆セクション: 本体（または else）ラムダを閉じ、value_empty で分岐する
+           （VM bytecode_exec.hpp do_inverted と同一の判定）。 */
+        cur_root_ = block.call_root;  // ディスパッチはラムダの外側スコープに出力される
+        --indent_;
+        emit("};");
+        auto body = "_body" + std::to_string(block.seq);
+        auto body_call = block.root_param ? (body + "(" + block.call_root + ")") : (body + "()");
+        auto els = block.else_seq ? "_else" + std::to_string(block.else_seq) : std::string{};
+        auto els_call = block.else_seq
+                            ? ((block.root_param ? (els + "(" + block.call_root + ")") : (els + "()")) + ";")
+                            : std::string{};
+        auto s = "if (value_empty(" + block.access + ")) " + body_call + ";";
+        if (block.else_seq) s += " else " + els_call;
+        emit(s);
+        break;
+      }
       }
     }
     else if (op == bc::opcode::emit_inverted) {
-      auto access = resolve_access(bc.var_refs[inst.operand2]);
-      emit("if (value_empty(" + access + ")) {");
-      ++indent_;
-      open_blocks_.push_back({end_kind::cond});
+      /** 逆セクション: 本体をラムダに 1 回だけ書き、emit_end で value_empty 分岐を
+       *  出す（セクションと同じ構造）。{{else}} は emit_else で else ラムダにする。
+       *  アクセスが値スコープ相対の場合は二段解決ヘルパ経由（文なので安全）。 */
+      auto const& ref = bc.var_refs[inst.operand2];
+      auto access = resolve_access(ref);
+      if (is_value_relative(ref)) access = two_stage_access(ref.key);
+      auto seq = ++lambda_seq_;
+      bool rpm = root_param_inv_.count(&inst) != 0;
+      std::string call_root = root_for_emit();
+      if (rpm) {
+        emit("auto _body" + std::to_string(seq) + " = [&](const auto& _rt" + std::to_string(seq) + ") {");
+        ++indent_;
+        cur_root_ = "_rt" + std::to_string(seq);
+      } else {
+        emit("auto _body" + std::to_string(seq) + " = [&]() {");
+        ++indent_;
+      }
+      open_block blk{.kind = end_kind::inverted, .access = access, .idx = loop_depth_, .seq = seq,
+                     .root_param = rpm, .call_root = call_root, .inst = &inst};
+      open_blocks_.push_back(std::move(blk));
     }
     else if (op == bc::opcode::emit_at_index) {
       emit("append_number(out, _i" + std::to_string(loop_depth_) + ");");
@@ -1151,6 +1514,7 @@ class code_generator {
       auto access = resolve_if_access(bc.var_refs[inst.operand2]);
       emit("if (static_cast<bool>(" + access + ")) {");
       ++indent_;
+      open_blocks_.push_back({.kind = end_kind::cond});
     }
     else if (op == bc::opcode::emit_if_eq || op == bc::opcode::emit_if_ne ||
              op == bc::opcode::emit_if_gt || op == bc::opcode::emit_if_gte ||
@@ -1169,32 +1533,87 @@ class code_generator {
       }
       emit("if (" + access + " " + op_str + " " + cmp_val + ") {");
       ++indent_;
+      open_blocks_.push_back({.kind = end_kind::cond});
     }
     else if (op == bc::opcode::emit_else) {
-      --indent_;
-      emit("} else {");
-      ++indent_;
+      if (!open_blocks_.empty() && open_blocks_.back().kind == end_kind::scalar_section) {
+        /* セクションの {{else}} トランポリン: 本体ラムダを閉じて else 本体ラムダへ。
+           else 本体は親コンテキストでコンパイルされている（bytecode_compile.hpp）ため
+           loop_depth_ を親に戻す。 */
+        auto& blk = open_blocks_.back();
+        if (blk.root_param) cur_root_ = blk.call_root;  // 本体ラムダのルート式を復元
+        --indent_;
+        emit("};");
+        --loop_depth_;
+        blk.else_seq = ++lambda_seq_;
+        blk.else_root_param = blk.inst && root_param_else_.count(blk.inst) != 0;
+        if (blk.else_root_param) {
+          cur_root_ = "_rt" + std::to_string(blk.else_seq);
+          emit("auto _else" + std::to_string(blk.else_seq) + " = [&](const auto& _rt" + std::to_string(blk.else_seq) + ") {");
+        } else {
+          emit("auto _else" + std::to_string(blk.else_seq) + " = [&]() {");
+        }
+        ++indent_;
+      } else if (!open_blocks_.empty() && open_blocks_.back().kind == end_kind::inverted) {
+        /* 逆セクションの {{else}}: 本体ラムダを閉じて else 本体ラムダへ
+           （逆セクション本体と同一スコープ） */
+        auto& blk = open_blocks_.back();
+        if (blk.root_param) cur_root_ = blk.call_root;  // 本体ラムダのルート式を復元
+        --indent_;
+        emit("};");
+        blk.else_seq = ++lambda_seq_;
+        if (blk.root_param) {  // 逆セクションは本体/else で共通のマーキングを使う
+          cur_root_ = "_rt" + std::to_string(blk.else_seq);
+          emit("auto _else" + std::to_string(blk.else_seq) + " = [&](const auto& _rt" + std::to_string(blk.else_seq) + ") {");
+        } else {
+          emit("auto _else" + std::to_string(blk.else_seq) + " = [&]() {");
+        }
+        ++indent_;
+      } else if (!open_blocks_.empty() && open_blocks_.back().kind == end_kind::loop &&
+                 open_blocks_.back().has_else) {
+        /* ループ種別セクションの {{else}}: for を閉じ、事前ガードを else へ切り替える
+           （else 本体は親コンテキストなので loop_depth_ を戻す） */
+        if (stride_loops_.count(loop_depth_) != 0) {
+          auto sidx = std::to_string(loop_depth_);
+          emit("if (_bwd" + sidx + ") --_src" + sidx + "; else ++_src" + sidx + ";");
+          stride_loops_.erase(loop_depth_);
+        }
+        --indent_;
+        emit("}");
+        --loop_depth_;
+        --indent_;
+        emit("} else {");
+        ++indent_;
+      } else {
+        /* {{#if}} 系の else（従来どおり if 文の else 節） */
+        --indent_;
+        emit("} else {");
+        ++indent_;
+      }
     }
     else if (op == bc::opcode::emit_endif) {
+      if (!open_blocks_.empty() && open_blocks_.back().kind == end_kind::cond) {
+        open_blocks_.pop_back();
+      }
       --indent_;
       emit("}");
     }
     else if (op == bc::opcode::emit_litvar) {
       emit("out.append(" + cpp_string(bc.literals[inst.operand]) + ");");
-      emit("html_escape_append_value(out, " + resolve_access(bc.var_refs[inst.operand2]) + ");");
+      emit_value_ref("html_escape_append_value(out, ", ");", bc.var_refs[inst.operand2]);
     }
     else if (op == bc::opcode::emit_litvar_raw) {
       emit("out.append(" + cpp_string(bc.literals[inst.operand]) + ");");
-      emit("append_value(out, " + resolve_access(bc.var_refs[inst.operand2]) + ");");
+      emit_value_ref("append_value(out, ", ");", bc.var_refs[inst.operand2]);
     }
     else if (op == bc::opcode::emit_at_root) {
-      emit("html_escape_append_value(out, data);");
+      emit("html_escape_append_value(out, " + root_expr() + ");");
     }
     else if (op == bc::opcode::emit_at_root_field) {
-      emit("html_escape_append_value(out, data." + bc.var_refs[inst.operand].key + ");");
+      emit("html_escape_append_value(out, " + root_expr() + "." + bc.var_refs[inst.operand].key + ");");
     }
     else if (op == bc::opcode::emit_at_root_field_raw) {
-      emit("append_value(out, data." + bc.var_refs[inst.operand].key + ");");
+      emit("append_value(out, " + root_expr() + "." + bc.var_refs[inst.operand].key + ");");
     }
     else if (op == bc::opcode::emit_at_key) {
       emit("out.append(_key" + std::to_string(loop_depth_) + ");");
@@ -1203,7 +1622,7 @@ class code_generator {
       if (loop_depth_ > 0) {
         emit("html_escape_append_value(out, _item" + std::to_string(loop_depth_) + ");");
       } else {
-        emit("html_escape_append_value(out, data);");
+        emit("html_escape_append_value(out, " + value_expr() + ");");
       }
     }
     else if (op == bc::opcode::emit_filtered) {
@@ -1356,35 +1775,34 @@ class code_generator {
       // VM (bytecode_exec.hpp handle_emit_if_filtered) と同じ真偽判定
       emit("if (!_filtered.empty() && _filtered != \"false\" && _filtered != \"0\") {");
       ++indent_;
+      open_blocks_.push_back({.kind = end_kind::cond});
     }
     else if (op == bc::opcode::emit_if_or || op == bc::opcode::emit_if_and) {
       auto lhs = resolve_if_access(bc.var_refs[inst.operand2]);
       auto rhs = resolve_if_access(bc.var_refs[inst.operand3]);
       emit("if ((static_cast<bool>(" + lhs + ")) " + (op == bc::opcode::emit_if_or ? "||" : "&&") + " (static_cast<bool>(" + rhs + "))) {");
       ++indent_;
+      open_blocks_.push_back({.kind = end_kind::cond});
     }
     else if (op == bc::opcode::emit_if_not) {
       auto access = resolve_if_access(bc.var_refs[inst.operand2]);
       emit("if (!static_cast<bool>(" + access + ")) {");
       ++indent_;
+      open_blocks_.push_back({.kind = end_kind::cond});
     }
     else if (op == bc::opcode::call_partial) {
-      /* partial 呼び出し: 従来はインライン展開していたが、emit_partial_dispatch で
-         生成された render_partial<"name"> 関数を呼び出すことで外部からも個別に
-         呼び出せるようになった。(void) キャストは nodiscard 警告の抑制。
-         local partial も dispatch に載っているため同じ経路で描画される
-         （旧実装は local を無条件にスキップし本文が無音で欠落していた）。 */
+      /* partial 呼び出し: emit_partial_dispatch で生成された render_partial_impl に
+         現在値とルートを渡す（VM handle_call_partial と同一）。
+         partial 本体は値 → ルートの二段解決で生成されているため、ループ内から呼んだ
+         グローバル partial も現在の要素を優先して解決される（従来はルート固定で
+         VM と結果が不一致だった）。local partial も同じ経路で描画される。 */
       auto& pe = bc.partial_entries[inst.operand];
       if (pe.bc && !pe.bc->instructions.empty()) {
-        /* local partial は定義箇所のスコープで解決される（VM と同じ）。
-           dispatch 側は引数 data を基点に生成しているため、ループ内では現在の要素を渡す。
-           グローバル partial は従来どおりルートを渡す（@root 参照を保つ）。 */
-        auto scope = (pe.local && loop_depth_ > 0) ? "_item" + std::to_string(loop_depth_) : "data";
-        emit("(void)render_partial<\"" + pe.name + "\">(" + scope + ", out);");
+        emit("(void)render_partial_impl<\"" + pe.name + "\">(" + value_expr() + ", " + root_expr() + ", out);");
       }
     }
     else if (op == bc::opcode::emit_var_size) {
-      emit("append_number(out, value_size(" + resolve_access(bc.var_refs[inst.operand2]) + "));");
+      emit_value_ref("append_number(out, value_size(", "));", bc.var_refs[inst.operand2]);
     }
     else if (op == bc::opcode::emit_break) {
       emit("break;");
@@ -1453,6 +1871,9 @@ public:
       unsupported_feature_ = unsupported;
       return std::nullopt;
     }
+    /** 二段解決ヘルパのキーを出力前に確定する（ヘルパは使用箇所より前に生成が必要） */
+    two_stage_keys_.clear();
+    collect_two_stage_keys(bc, false, 0);
     // リテラルの合計サイズ + 補間値の推定サイズで reserve を過大見積もりする
     std::size_t total_literal_size = 0;
     for (auto const& lit : bc.literals) {
@@ -1499,13 +1920,13 @@ public:
         // 蓄積リテラル + 変数の融合命令
         accumulated_literals += bc.literals[inst.operand];
         flush_literals();
-        emit("html_escape_append_value(out, " + resolve_access(bc.var_refs[inst.operand2]) + ");");
+        emit_value_ref("html_escape_append_value(out, ", ");", bc.var_refs[inst.operand2]);
         continue;
       }
       if (op == bc::opcode::emit_litvar_raw) {
         accumulated_literals += bc.literals[inst.operand];
         flush_literals();
-        emit("append_value(out, " + resolve_access(bc.var_refs[inst.operand2]) + ");");
+        emit_value_ref("append_value(out, ", ");", bc.var_refs[inst.operand2]);
         continue;
       }
       // 他の命令の前に蓄積リテラルをフラッシュ
