@@ -1,5 +1,15 @@
 # Changelog
 
+## 2026-11-20
+
+- `fix: injamm_codegen がスカラー/optional の逆セクション（{{^bool}} 等）でコンパイル不能なコードを生成する問題` — `value_empty` に bool/算術型/enum/optional/reflectable の分岐を追加し、VM (`do_inverted`) と同一の「空/偽のとき本体 1 回」判定を生成
+- `fix: injamm_codegen がセクションの {{else}} で構文エラーになるコードを生成する問題` — `{{#section}}A{{else}}B{{/section}}` を本体ラムダ + else ラムダ + 空判定ディスパッチとして生成。ループ種別（フィルタ/インデックス参照）は `if (!value_empty(...))` 事前ガードで対応。逆セクションの `{{else}}` もラムダ構造に統一
+- `fix: injamm_codegen が std::optional のセクションをコンテナ扱いしてコンパイル不能になる問題` — `codegen_optional_section_v` 分岐を追加し、VM と同じ `has_value()` → `*opt` をスコープに本体 1 回を生成
+- `fix: injamm_codegen がループ内のグローバル partial をルート固定で解決する問題` — `render_partial_impl<P>(value, root, sink)` 内部オーバーロードを生成し、本体は「値 → ルート」の二段解決（`requires` 式）に。公開 `render_partial<P>(data, out)` のシグネチャは変更なし。ループ内の要素に無いキーのセクション/逆セクション/変数参照も同じ二段解決でルートへフォールバック
+- `fix: injamm_codegen が -n オプションを無視する問題` — 名前空間が `generated` 固定だったのを `-n` 指定を反映するように修正（既定値は従来どおり `generated`）
+- `test: codegen ライブテスト（生成 → コンパイル → 実行 → VM 比較）を追加` — `test_codegen_live` がビルド時に各ケースのヘッダを `injamm_codegen` で生成するため、生成ヘッダが壊れているとビルドが失敗する。同梱 `render*.hpp` は `test_codegen/regenerate.sh` で再生成
+- `bench: codegen_bench に逆セクション / セクション else / optional セクション / ループ内 partial のワークロードを追加` — `render_d`〜`render_g`（`gen.sh` で再生成）。#10 対応の新旧コードジェネレーターでスループットを比較し、既存ケース（セクション/フィルタ/bool 出力）は誤差範囲、逆セクション・partial も ns/byte 正規化で劣化なしを確認
+
 ## 2026-11-19
 
 - `fix: -fno-exceptions で format の幅/精度 > 65535 が SIGABRT する問題を修正` — 自家バリデータ (`is_valid_format_spec`) は通すが libstdc++ の `vformat` が `format_error`（no-exceptions では abort）を投げる幅/精度を事前に `invalid_format` として拒否
