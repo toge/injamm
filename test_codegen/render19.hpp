@@ -11,7 +11,7 @@
 
 #include <injamm/types.hpp>
 #include <glaze/glaze.hpp>
-#define INJAMM_CODEGEN_DISABLE_SIMD 1
+#include <injamm/escape.hpp>
 
 namespace generated {
 #include "codegen_helpers.hpp"
@@ -39,7 +39,7 @@ render19(const T& data, Sink& out) {
     out.clear();
     out.reserve(33);
   }
-  
+
   auto _size1 = data.items.size();
   std::size_t _lo1 = 0, _hi1 = _size1;
   bool _bwd1 = false;
@@ -51,11 +51,15 @@ render19(const T& data, Sink& out) {
   for (std::size_t _i1 = 0; _i1 < _count1; ++_i1) {
     while (!(_src1 >= _lo1 && _src1 < _hi1 && ((_bwd1 ? (_hi1 - 1 - _src1) : (_src1 - _lo1)) % _block1) < _st_take1)) { if (_bwd1) --_src1; else ++_src1; }
     const auto& _item1 = data.items[_src1];
-    html_escape_append_value(out, _item1.name);
+    if constexpr (requires { _item1.name; }) {
+      html_escape_append_value(out, _item1.name);
+    } else {
+      html_escape_append_value(out, data.name);
+    }
     out.append(";");
     if (_bwd1) --_src1; else ++_src1;
   }
-  
+
   return {};
 }
 

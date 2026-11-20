@@ -39,13 +39,20 @@ render7(const T& data, Sink& out) {
     out.clear();
     out.reserve(34);
   }
-  
-  for (const auto& _item1 : data.nums) {
+
+  auto _body1 = [&](const auto& _item1) {
     out.append("[");
     html_escape_append_value(out, _item1);
     out.append("]");
+  };
+  if constexpr (codegen_optional_section_v<decltype(data.nums)>) {
+    if (data.nums.has_value()) _body1(*data.nums);
+  } else if constexpr (codegen_scalar_section_v<decltype(data.nums)>) {
+    if (static_cast<bool>(data.nums)) _body1(data);
+  } else {
+    for (const auto& _v1 : data.nums) _body1(_v1);
   }
-  
+
   return {};
 }
 

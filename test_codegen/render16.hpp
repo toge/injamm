@@ -39,7 +39,7 @@ render16(const T& data, Sink& out) {
     out.clear();
     out.reserve(33);
   }
-  
+
   auto _size1 = data.items.size();
   std::size_t _lo1 = 0, _hi1 = _size1;
   bool _bwd1 = false;
@@ -50,10 +50,14 @@ render16(const T& data, Sink& out) {
   for (std::size_t _i1 = 0; _i1 < _count1; ++_i1) {
     auto _idx1 = _bwd1 ? (_hi1 - 1 - _i1) : (_lo1 + _i1);
     const auto& _item1 = data.items[_idx1];
-    html_escape_append_value(out, _item1.name);
+    if constexpr (requires { _item1.name; }) {
+      html_escape_append_value(out, _item1.name);
+    } else {
+      html_escape_append_value(out, data.name);
+    }
     out.append(";");
   }
-  
+
   return {};
 }
 

@@ -46,7 +46,7 @@ render_drift_hex(const T& data, Sink& out) {
   } else if constexpr (::injamm::detail::ct_glz_reflectable<decltype(data.age)>) {
     (void)::glz::write_json(data.age, _filtered);
   } else {
-    _filtered.assign(data.age);
+    _filtered.assign((data.age).data(), (data.age).size());
   }
   filter_int_hex(_filtered);
   html_escape_append(out, _filtered);

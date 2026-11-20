@@ -41,14 +41,14 @@ render2(const T& data, Sink& out) {
   }
   std::string _filtered;
   _filtered.reserve(64);
-  
+
   out.append("Name: ");
   if constexpr (::injamm::detail::serializable_v<decltype(data.name)>) {
     _filtered.clear(); ::injamm::detail::serialize_value(_filtered, data.name);
   } else if constexpr (::injamm::detail::ct_glz_reflectable<decltype(data.name)>) {
     (void)::glz::write_json(data.name, _filtered);
   } else {
-    _filtered.assign(data.name);
+    _filtered.assign((data.name).data(), (data.name).size());
   }
   filter_to_upper(_filtered);
   html_escape_append(out, _filtered);
@@ -58,11 +58,11 @@ render2(const T& data, Sink& out) {
   } else if constexpr (::injamm::detail::ct_glz_reflectable<decltype(data.name)>) {
     (void)::glz::write_json(data.name, _filtered);
   } else {
-    _filtered.assign(data.name);
+    _filtered.assign((data.name).data(), (data.name).size());
   }
   filter_to_lower(_filtered);
   html_escape_append(out, _filtered);
-  
+
   return {};
 }
 

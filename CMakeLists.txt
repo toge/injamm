@@ -328,6 +328,58 @@ if(BUILD_UTIL)
     target_include_directories(test_codegen_badbc PRIVATE include)
     target_compile_features(test_codegen_badbc PRIVATE cxx_std_23)
     add_test(NAME codegen_badbc_test COMMAND test_codegen_badbc $<TARGET_FILE:injamm_codegen>)
+
+    # codegen ライブテスト: 各ケースのヘッダをビルド時に injamm_codegen で生成し、
+    # コンパイル（生成ヘッダが壊れていればビルドが失敗する）・実行して VM と比較する。
+    # 同梱 render*.hpp をリンクするだけの test_codegen では検出できない回帰を拾う。
+    set(CG_LIVE_DIR ${CMAKE_CURRENT_BINARY_DIR}/codegen_cases)
+    file(MAKE_DIRECTORY ${CG_LIVE_DIR})
+    function(add_codegen_case name tmpl)
+      set(out ${CG_LIVE_DIR}/case_${name}.hpp)
+      add_custom_command(OUTPUT ${out}
+        COMMAND $<TARGET_FILE:injamm_codegen> -e "${tmpl}" -t CaseData -p case_${name} -n generated -o ${out}
+        DEPENDS injamm_codegen
+        VERBATIM)
+      set(CG_LIVE_HEADERS ${CG_LIVE_HEADERS} ${out} PARENT_SCOPE)
+    endfunction()
+    add_codegen_case(inv_bool            "{{^active}}x{{/active}}")
+    add_codegen_case(inv_int             "{{^age}}zero{{/age}}")
+    add_codegen_case(inv_opt             "{{^opt}}none{{/opt}}")
+    add_codegen_case(inv_container       "{{^items}}E{{/items}}")
+    add_codegen_case(inv_loop_rootkey    "{{#items}}{{^active}}x{{/active}}{{/items}}")
+    add_codegen_case(inv_loop_elemkey    "{{#items}}{{^on}}y{{/on}}{{/items}}")
+    add_codegen_case(inv_else            "{{^active}}off{{else}}on{{/active}}")
+    add_codegen_case(sec_else_container  "{{#items}}{{name}}{{else}}empty{{/items}}")
+    add_codegen_case(sec_else_scalar     "{{#active}}Y{{else}}N{{/active}}")
+    add_codegen_case(sec_else_int        "{{#age}}N{{else}}Z{{/age}}")
+    add_codegen_case(sec_else_in_loop    "{{#items}}{{#on}}T{{else}}F{{/on}}{{/items}}")
+    add_codegen_case(opt_section         "{{#opt}}[{{this}}]{{/opt}}")
+    add_codegen_case(opt_else            "{{#opt}}[{{this}}]{{else}}none{{/opt}}")
+    add_codegen_case(at_else             "{{#items}}{{#loop.is_first}}F{{/loop.is_first}}{{else}}E{{/items}}")
+    add_codegen_case(take_else           "{{#items | take(1)}}{{name}}{{else}}E{{/items}}")
+    # partial を含むケースは render_partial 定義の衝突を避けるため名前空間を分けて
+    # test_codegen_live_partials.cpp（別 TU）で検証する
+    function(add_codegen_case_partial name tmpl)
+      set(out ${CG_LIVE_DIR}/case_${name}.hpp)
+      add_custom_command(OUTPUT ${out}
+        COMMAND $<TARGET_FILE:injamm_codegen> -e "${tmpl}" -t CaseData -p case_${name} -n case_${name} -o ${out}
+        DEPENDS injamm_codegen
+        VERBATIM)
+      set(CG_LIVE_HEADERS ${CG_LIVE_HEADERS} ${out} PARENT_SCOPE)
+    endfunction()
+    add_codegen_case_partial(partial_loop      "{{#partialdef g}}{{name}}{{/partialdef}}{{#items}}{{>g}}{{/items}}")
+    add_codegen_case_partial(partial_root      "{{#partialdef h}}{{root.name}}-{{name}}{{/partialdef}}{{#items}}{{>h}}{{/items}}")
+    add_codegen_case_partial(partial_toplevel  "{{#partialdef t}}{{name}}{{/partialdef}}{{>t}}")
+
+    add_executable(test_codegen_live
+      test_codegen/test_codegen_live.cpp
+      test_codegen/test_codegen_live_partials.cpp
+      ${CG_LIVE_HEADERS}
+    )
+    target_link_libraries(test_codegen_live PRIVATE injamm)
+    target_include_directories(test_codegen_live PRIVATE include test_codegen ${CG_LIVE_DIR})
+    target_compile_features(test_codegen_live PRIVATE cxx_std_23)
+    add_test(NAME codegen_live_test COMMAND test_codegen_live)
   endif()
 
   install(

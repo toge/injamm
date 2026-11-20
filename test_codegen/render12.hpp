@@ -39,18 +39,22 @@ render12(const T& data, Sink& out) {
     out.clear();
     out.reserve(36);
   }
-  
+
   auto _size1 = data.items.size();
   for (std::size_t _i1 = 0; _i1 < _size1; ++_i1) {
     const auto& _item1 = data.items[_i1];
     out.append("[");
     if (_i1 + 1 == _size1) {
       out.append("L:");
-      html_escape_append_value(out, _item1.name);
+      if constexpr (requires { _item1.name; }) {
+        html_escape_append_value(out, _item1.name);
+      } else {
+        html_escape_append_value(out, data.name);
+      }
     }
     out.append("]");
   }
-  
+
   return {};
 }
 
