@@ -6,6 +6,7 @@
 #include <cmath>
 #include <injamm/glz_dispatch.hpp>
 #include <limits>
+#include <optional>
 #include <string>
 #include <string_view>
 #include <type_traits>
@@ -503,12 +504,30 @@ template <class V>
 inline constexpr bool codegen_scalar_section_v =
     std::is_same_v<V, bool> || std::is_arithmetic_v<V> || std::is_enum_v<V>;
 
+/** @brief std::optional のセクション本体を 1 回だけ実行するか判定（VM の has_value 分岐に対応）
+ *  @details VM (bytecode_exec.hpp do_section) は optional を has_value() で判定し、
+ *           有値時は *opt を要素スコープとして本体を 1 回実行する。 */
+template <class V>
+inline constexpr bool codegen_optional_section_v = injamm::detail::is_std_optional_v<V>;
+
 template <typename V>
 constexpr bool value_empty(V const& v) {
   if constexpr (std::is_same_v<V, const char*>) {
     return !v || v[0] == '\0';
   } else if constexpr (std::is_same_v<V, std::string> || std::is_same_v<V, std::string_view>) {
     return v.empty();
+  } else if constexpr (std::is_same_v<V, bool>) {
+    // VM (bytecode_exec.hpp do_inverted) と同一: bool は !v、数値は 0 との比較
+    return !v;
+  } else if constexpr (std::is_enum_v<V>) {
+    return static_cast<std::underlying_type_t<V>>(v) == 0;
+  } else if constexpr (std::is_arithmetic_v<V>) {
+    return v == 0;
+  } else if constexpr (injamm::detail::is_std_optional_v<V>) {
+    return !v.has_value();
+  } else if constexpr (injamm::detail::ct_glz_reflectable<V>) {
+    // VM と同一: 構造体は空とみなさない（本体は実行されない）
+    return false;
   } else {
     return v.empty();
   }
