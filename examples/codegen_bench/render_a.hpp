@@ -40,14 +40,33 @@ render_a(const T& data, Sink& out) {
     out.reserve(101);
   }
   
-  for (const auto& _item1 : data.items) {
+  auto _body1 = [&](const auto& _item1) {
     out.append("[");
-    html_escape_append_value(out, _item1.name);
+    if constexpr (requires { _item1.name; }) {
+      html_escape_append_value(out, _item1.name);
+    } else {
+      html_escape_append_value(out, data.name);
+    }
     out.append("/");
-    html_escape_append_value(out, _item1.quantity);
+    if constexpr (requires { _item1.quantity; }) {
+      html_escape_append_value(out, _item1.quantity);
+    } else {
+      html_escape_append_value(out, data.quantity);
+    }
     out.append("/");
-    html_escape_append_value(out, _item1.price);
+    if constexpr (requires { _item1.price; }) {
+      html_escape_append_value(out, _item1.price);
+    } else {
+      html_escape_append_value(out, data.price);
+    }
     out.append("]\n");
+  };
+  if constexpr (codegen_optional_section_v<decltype(data.items)>) {
+    if (data.items.has_value()) _body1(*data.items);
+  } else if constexpr (codegen_scalar_section_v<decltype(data.items)>) {
+    if (static_cast<bool>(data.items)) _body1(data);
+  } else {
+    for (const auto& _v1 : data.items) _body1(_v1);
   }
   
   return {};

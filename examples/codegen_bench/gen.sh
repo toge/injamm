@@ -26,10 +26,14 @@ fi
 # codegen_helpers.hpp は test_codegen/ が管理する単一ソース。ベンチにはコピーを同期する。
 cp "$ROOT/test_codegen/codegen_helpers.hpp" "$DIR/codegen_helpers.hpp"
 
-# bench_codegen.cpp の T_A/T_B/T_C と同一のテンプレートで生成すること。
+# bench_codegen.cpp の T_A〜T_G と同一のテンプレートで生成すること。
 "$CG" -e '{{#items}}[{{name}}/{{quantity}}/{{price}}]
 {{/items}}' -t Item -p render_a -o "$DIR/render_a.hpp"
 "$CG" -e '{{#items}}{{name|upper}}{{/items}}' -t Item -p render_b -o "$DIR/render_b.hpp"
 "$CG" -e '{{#items}}{{root.active}}{{/items}}' -t Item -p render_c -o "$DIR/render_c.hpp"
+"$CG" -e '{{#items}}{{^note}}x{{/note}}{{/items}}' -t Item -p render_d -o "$DIR/render_d.hpp"
+"$CG" -e '{{#items}}{{#active}}Y{{else}}N{{/active}}{{/items}}' -t Item -p render_e -o "$DIR/render_e.hpp"
+"$CG" -e '{{#opt}}[{{this}}]{{/opt}}' -t Item -p render_f -o "$DIR/render_f.hpp"
+"$CG" -e '{{#partialdef g}}{{name}};{{/partialdef}}{{#items}}{{>g}}{{/items}}' -t Item -p render_g -o "$DIR/render_g.hpp"
 
-echo "regenerated render_{a,b,c}.hpp with $CG"
+echo "regenerated render_{a..g}.hpp with $CG"
