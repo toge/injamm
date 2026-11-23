@@ -12,6 +12,7 @@
 - `fix: README 記載の injamm_codegen 長形式オプション` — `--input` / `--expr` / `--type` / `--output` / `--namespace` / `--prefix` / `--help` を CLI で受理
 - `test: codegen ライブテスト（生成 → コンパイル → 実行 → VM 比較）を追加` — `test_codegen_live` がビルド時に各ケースのヘッダを `injamm_codegen` で生成するため、生成ヘッダが壊れているとビルドが失敗する。同梱 `render*.hpp` は `test_codegen/regenerate.sh` で再生成
 - `fix: 生成コードの二段解決（値 → ルート フォールバック）が Clang / MSVC でコンパイルできない問題` — ジェネリックラムダ内の `if constexpr (requires { _item1.key; })` の破棄側（`data.key`）は、クロージャ構築時に実体化されて検証されるため、ルート型にキーが無いとコンパイルエラーになっていた（GCC は検証しないため検出漏れ）。キーごとの二段解決ヘルパ関数テンプレート（`cg_get_*`）を名前空間スコープに生成し（関数テンプレートの if constexpr は破棄側が遅延実体化される）、セクション ディスパッチの else 側はラムダのルート引数（`_rtN`）経由の依存式に変更
+- `fix: MSVC 19.52 で NTTP render がコンパイルできない問題` — `ct_exec.hpp` の `ct_emit_var` が即時実行ラムダ内から外側関数の `constexpr` ローカル参照（`ref`）を参照していた。MSVC 19.52 はこれを定数評価で拒否する（19.51 は受理）。IIFE を constexpr 関数テンプレート `ct_key_has_dot` に置き換え
 - `bench: codegen_bench に逆セクション / セクション else / optional セクション / ループ内 partial のワークロードを追加` — `render_d`〜`render_g`（`gen.sh` で再生成）。#10 対応の新旧コードジェネレーターでスループットを比較し、既存ケース（セクション/フィルタ/bool 出力）は誤差範囲、逆セクション・partial も ns/byte 正規化で劣化なしを確認
 
 ## 2026-11-19

@@ -141,15 +141,19 @@ constexpr std::string_view ct_literal() {
   return {Data::ct_bc.string_pool.data() + e.offset, e.size};
 }
 
+/** @brief キーにドットが含まれるか（MSVC 19.52 は constexpr ローカル参照をラムダ内から参照できないため関数化） */
+template <typename Key>
+constexpr bool ct_key_has_dot(Key const& key) {
+  for (std::size_t k = 0; k < key.size; ++k)
+    if (key.data[k] == '.') return true;
+  return false;
+}
+
 /** @brief 変数値を出力する（フィールドインデックスはコンパイル時定数） */
 template <typename Data, typename T, std::uint32_t VarRefIdx>
 void ct_emit_var(T const& value, std::string& out, bool raw) {
-  constexpr auto& ref = Data::ct_bc.var_refs[VarRefIdx];
-  constexpr bool has_dot = [] {
-    for (std::size_t k = 0; k < ref.key.size; ++k)
-      if (ref.key.data[k] == '.') return true;
-    return false;
-  }();
+  constexpr auto&  ref     = Data::ct_bc.var_refs[VarRefIdx];
+  constexpr bool   has_dot = ct_key_has_dot(Data::ct_bc.var_refs[VarRefIdx].key);
   if constexpr (has_dot) {
     std::string_view key{ref.key.data, ref.key.size};
     (void)bc_executor<T>::ct_for_each_field(value, key,
