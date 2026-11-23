@@ -47,6 +47,22 @@ struct glz::meta<CtUsersData> {
   static constexpr auto value = glz::object("users", &CtUsersData::users);
 };
 
+struct CtPartialProfile {
+  std::string name;
+};
+
+struct CtPartialScopeItem {
+  CtPartialProfile profile;
+};
+
+struct CtPartialScopeData {
+  std::string                     root_only;
+  bool                            active{};
+  int                             age{};
+  CtPartialProfile                profile;
+  std::vector<CtPartialScopeItem> items;
+};
+
 struct CtBoolData {
   bool flag{};
 };
@@ -2532,6 +2548,33 @@ TEST_CASE("ct_partial_with_loop", "[injamm][ct][partial]") {
   auto r              = injamm::render<tmpl>(data);
   REQUIRE(r.has_value());
   CHECK(*r == "Bob(25)/Charlie(35)/");
+}
+
+TEST_CASE("ct_partial_with_loop_resolves_all_reference_forms", "[injamm][ct][partial]") {
+  CtPartialScopeData data{"root", true, 30, {"ROOT"}, {{{"ITEM-A"}}, {{"ITEM-B"}}}};
+  auto constexpr tmpl =
+    injamm::fixed_string("{{#partialdef scope}}{{root_only}}|{{profile.name}}|{{root_only | upper}}|"
+                         "{{#if active}}T{{else}}F{{/if}}|{{#if age > 18}}G{{else}}S{{/if}}|"
+                         "{{#if active && age}}A{{else}}B{{/if}}{{/partialdef}}"
+                         "{{#items}}[{{>scope}}]{{/items}}");
+  auto r = injamm::render<tmpl>(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "[root|ITEM-A|ROOT|T|G|A][root|ITEM-B|ROOT|T|G|A]");
+
+  data.active = false;
+  r = injamm::render<tmpl>(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "[root|ITEM-A|ROOT|F|G|B][root|ITEM-B|ROOT|F|G|B]");
+}
+
+TEST_CASE("ct_simple_partial_with_loop_uses_value_then_root", "[injamm][ct][partial]") {
+  CtPartialScopeData data{"root", true, 30, {"ROOT"}, {{{"ITEM-A"}}, {{"ITEM-B"}}}};
+  auto constexpr tmpl =
+    injamm::fixed_string("{{#partialdef scope}}{{root_only}}|{{profile.name}}{{/partialdef}}"
+                         "{{#items}}[{{>scope}}]{{/items}}");
+  auto r = injamm::render<tmpl>(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "[root|ITEM-A][root|ITEM-B]");
 }
 
 TEST_CASE("ct_partial_render_by_name", "[injamm][ct][partial]") {

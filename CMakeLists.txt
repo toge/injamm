@@ -357,8 +357,8 @@ if(BUILD_UTIL)
     add_codegen_case(opt_else            "{{#opt}}[{{this}}]{{else}}none{{/opt}}")
     add_codegen_case(at_else             "{{#items}}{{#loop.is_first}}F{{/loop.is_first}}{{else}}E{{/items}}")
     add_codegen_case(take_else           "{{#items | take(1)}}{{name}}{{else}}E{{/items}}")
-    # partial を含むケースは render_partial 定義の衝突を避けるため名前空間を分けて
-    # test_codegen_live_partials.cpp（別 TU）で検証する
+    # partial の通常ケースはスコープごとに個別名前空間へ生成し、
+    # test_codegen_live_partials.cpp で VM と比較する。
     function(add_codegen_case_partial name tmpl)
       set(out ${CG_LIVE_DIR}/case_${name}.hpp)
       add_custom_command(OUTPUT ${out}
@@ -370,10 +370,36 @@ if(BUILD_UTIL)
     add_codegen_case_partial(partial_loop      "{{#partialdef g}}{{name}}{{/partialdef}}{{#items}}{{>g}}{{/items}}")
     add_codegen_case_partial(partial_root      "{{#partialdef h}}{{root.name}}-{{name}}{{/partialdef}}{{#items}}{{>h}}{{/items}}")
     add_codegen_case_partial(partial_toplevel  "{{#partialdef t}}{{name}}{{/partialdef}}{{>t}}")
+    add_codegen_case_partial(partial_scope_refs
+      "{{#partialdef s}}{{root_only}}|{{profile.name}}|{{profile_2E_name}}|{{root_only | upper}}|{{#if active}}T{{else}}F{{/if}}|{{#if age > 18}}G{{else}}S{{/if}}|{{#if active && age}}A{{else}}B{{/if}}|{{#items | take(1)}}S:{{name}}{{/items}}|{{#items}}I:{{loop.index}}{{/items}}{{/partialdef}}{{#items}}[{{>s}}]{{/items}}")
+
+    function(add_codegen_namespaced_case name tmpl ns prefix)
+      set(out ${CG_LIVE_DIR}/case_${name}.hpp)
+      add_custom_command(OUTPUT ${out}
+        COMMAND $<TARGET_FILE:injamm_codegen> -e "${tmpl}" -t CaseData -p "${prefix}" -n "${ns}" -o ${out}
+        DEPENDS injamm_codegen
+        VERBATIM)
+      set(CG_LIVE_HEADERS ${CG_LIVE_HEADERS} ${out} PARENT_SCOPE)
+    endfunction()
+    add_codegen_namespaced_case(ns_alpha "{{name}}" codegen_ns_alpha case_ns_alpha)
+    add_codegen_namespaced_case(ns_beta  "{{name}}" codegen_ns_beta  case_ns_beta)
+    add_codegen_namespaced_case(ns_guard_alpha "{{name}}" codegen_ns_guard_alpha case_ns_guard)
+    add_codegen_namespaced_case(ns_guard_beta  "{{name}}" codegen_ns_guard_beta  case_ns_guard)
+    add_codegen_namespaced_case(ns_case_lower "{{name}}" codegen_ns_case case_ns_case)
+    add_codegen_namespaced_case(ns_case_upper "{{name}}" CODEGEN_NS_CASE case_ns_case)
+    add_codegen_namespaced_case(ns_tuple_a "{{name}}" a_b c)
+    add_codegen_namespaced_case(ns_tuple_b "{{name}}" a b_c)
+    add_codegen_namespaced_case(partial_shared_alpha
+      "{{#partialdef shared}}A:{{name}}{{/partialdef}}{{#partialdef alpha}}X:{{name}}{{/partialdef}}{{>shared}}"
+      codegen_shared_partial codegen_partial_shared_alpha)
+    add_codegen_namespaced_case(partial_shared_beta
+      "{{#partialdef shared}}B:{{name}}{{/partialdef}}{{#partialdef beta}}Y:{{name}}{{/partialdef}}{{>shared}}"
+      codegen_shared_partial codegen_partial_shared_beta)
 
     add_executable(test_codegen_live
       test_codegen/test_codegen_live.cpp
       test_codegen/test_codegen_live_partials.cpp
+      test_codegen/test_codegen_live_namespaces.cpp
       ${CG_LIVE_HEADERS}
     )
     target_link_libraries(test_codegen_live PRIVATE injamm)

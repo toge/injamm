@@ -59,6 +59,7 @@ int run_atkey_rejection(std::string const& cli) {
   std::string const out_path = "codegen_reject_fixture.hpp";
   std::string const cmd      = "\"" + cli + "\" -e \"{{#items}}{{@key}}{{/items}}\" -t Ok -o " + out_path + " 2>codegen_err2.txt";
   int const         rc       = std::system(cmd.c_str());
+  std::remove("codegen_err2.txt");
   if (rc == 0) {
     std::cerr << "FAIL: {{@key}} template was accepted by codegen (compiles to broken header)\n";
     return 1;
@@ -72,6 +73,7 @@ int run_ok_case(std::string const& cli, std::string const& expr, std::string con
   std::string const out_path = "codegen_ok_fixture.hpp";
   std::string const cmd      = "\"" + cli + "\" -e \"" + expr + "\" -t Ok -o " + out_path + " 2>codegen_err.txt";
   int const         rc       = std::system(cmd.c_str());
+  std::remove("codegen_err.txt");
   if (rc != 0) {
     std::cerr << "FAIL: codegen failed for " << name << "\n";
     return 1;
@@ -81,6 +83,28 @@ int run_ok_case(std::string const& cli, std::string const& expr, std::string con
   std::remove(out_path.c_str());
   if (content.find(expect) == std::string::npos) {
     std::cerr << "FAIL: expected pattern missing in generated code for " << name << "\n";
+    return 1;
+  }
+  return 0;
+}
+
+/** @brief README 記載の長い CLI オプションが短縮形と同様に受理されることを確認する */
+int run_long_options_case(std::string const& cli) {
+  std::string const out_path = "codegen_long_options_fixture.hpp";
+  std::string const cmd = "\"" + cli + "\" --expr \"{{name}}\" --type Ok --output " + out_path +
+                          " --namespace long_generated --prefix long_render";
+  int const rc = std::system(cmd.c_str());
+  if (rc != 0) {
+    std::cerr << "FAIL: documented long options were rejected\n";
+    std::remove(out_path.c_str());
+    return 1;
+  }
+  std::ifstream f(out_path);
+  std::string content((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+  std::remove(out_path.c_str());
+  if (content.find("namespace long_generated") == std::string::npos ||
+      content.find("long_render(const T& data)") == std::string::npos) {
+    std::cerr << "FAIL: long option values were not reflected in generated code\n";
     return 1;
   }
   return 0;
@@ -131,6 +155,9 @@ int main(int argc, char** argv) {
   // 7. 同一スコープの兄弟セクションで本体ラムダ名が衝突しないこと
   failures += run_ok_case(cli, "{{#items}}{{name}}{{/items}}{{#name}}x{{/name}}", "sibling sections",
                           "_body2");
+
+  // 8. README 記載の長いオプション名
+  failures += run_long_options_case(cli);
 
   if (failures == 0) {
     std::cout << "codegen bad .bc rejected\n";

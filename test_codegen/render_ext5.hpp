@@ -1,6 +1,6 @@
 #pragma once
-#ifndef RENDER_RENDER_EXT5_HPP
-#define RENDER_RENDER_EXT5_HPP
+#ifndef INJAMM_CODEGEN_NS_67656E657261746564_FN_72656E6465725F65787435_HPP
+#define INJAMM_CODEGEN_NS_67656E657261746564_FN_72656E6465725F65787435_HPP
 /**
  * @file render.hpp
  * @brief injamm_codegen によって自動生成されたレンダリング関数
@@ -12,9 +12,9 @@
 #include <injamm/types.hpp>
 #include <glaze/glaze.hpp>
 #include <injamm/escape.hpp>
+#include "codegen_helpers.hpp"
 
 namespace generated {
-#include "codegen_helpers.hpp"
 
 
 /**
@@ -40,7 +40,7 @@ render_ext5(const T& data, Sink& out) {
   }
   std::string _filtered;
   _filtered.reserve(64);
-  
+
   if constexpr (::injamm::detail::serializable_v<decltype(data.name)>) {
     _filtered.clear(); ::injamm::detail::serialize_value(_filtered, data.name);
   } else if constexpr (::injamm::detail::ct_glz_reflectable<decltype(data.name)>) {
@@ -51,7 +51,7 @@ render_ext5(const T& data, Sink& out) {
   filter_to_upper(_filtered);
   filter_to_lower(_filtered);
   html_escape_append(out, _filtered);
-  
+
   return {};
 }
 
@@ -86,4 +86,4 @@ render_ext5(const T& data) {
 
 } // namespace generated
 
-#endif // RENDER_RENDER_EXT5_HPP
+#endif // INJAMM_CODEGEN_NS_67656E657261746564_FN_72656E6465725F65787435_HPP

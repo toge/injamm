@@ -10,9 +10,15 @@
 #include <string>
 #include <vector>
 
+struct CaseProfile {
+  std::string name = "ITEM";
+};
+
 struct CaseItem {
   std::string name;
-  bool on = false;
+  bool        on = false;
+  CaseProfile profile;
+  std::string profile_2E_name = "FLAT";
 };
 
 struct CaseData {
@@ -20,21 +26,7 @@ struct CaseData {
   bool                       active = true;
   int                        age    = 30;
   std::optional<std::string> opt    = std::string{"x"};
+  std::string                root_only = "root";
+  CaseProfile                profile{"ROOT"};
   std::vector<CaseItem>      items  = {{"a", true}, {"b", false}};
-};
-
-template <>
-struct glz::meta<CaseItem> {
-  static constexpr auto value = glz::object("name", &CaseItem::name, "on", &CaseItem::on);
-};
-
-template <>
-struct glz::meta<CaseData> {
-  static constexpr auto value = glz::object(
-    "name", &CaseData::name,
-    "active", &CaseData::active,
-    "age", &CaseData::age,
-    "opt", &CaseData::opt,
-    "items", &CaseData::items
-  );
 };

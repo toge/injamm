@@ -1,6 +1,6 @@
 #pragma once
-#ifndef RENDER_RENDER12_HPP
-#define RENDER_RENDER12_HPP
+#ifndef INJAMM_CODEGEN_NS_67656E657261746564_FN_72656E6465723132_HPP
+#define INJAMM_CODEGEN_NS_67656E657261746564_FN_72656E6465723132_HPP
 /**
  * @file render.hpp
  * @brief injamm_codegen によって自動生成されたレンダリング関数
@@ -12,9 +12,9 @@
 #include <injamm/types.hpp>
 #include <glaze/glaze.hpp>
 #include <injamm/escape.hpp>
+#include "codegen_helpers.hpp"
 
 namespace generated {
-#include "codegen_helpers.hpp"
 
 namespace cgns_render12 {
 /**
@@ -22,7 +22,7 @@ namespace cgns_render12 {
  * @details VM (bytecode_exec.hpp) の value → root 二段走査と同一の解決順。
  */
 template <class V, class R>
-inline decltype(auto) cg_get_name(V const& v, R const& r) {
+inline decltype(auto) cg_get_6E616D65(V const& v, R const& r) {
   if constexpr (requires { v.name; }) {
     return (v.name);
   } else {
@@ -54,18 +54,20 @@ render12(const T& data, Sink& out) {
     out.clear();
     out.reserve(36);
   }
-  
-  auto _size1 = data.items.size();
-  for (std::size_t _i1 = 0; _i1 < _size1; ++_i1) {
-    const auto& _item1 = data.items[_i1];
-    out.append("[");
-    if (_i1 + 1 == _size1) {
-      out.append("L:");
-      html_escape_append_value(out, cgns_render12::cg_get_name(_item1, data));
+
+  {
+    auto _size1 = data.items.size();
+    for (std::size_t _i1 = 0; _i1 < _size1; ++_i1) {
+      const auto& _item1 = data.items[_i1];
+      out.append("[");
+      if (_i1 + 1 == _size1) {
+        out.append("L:");
+        html_escape_append_value(out, cgns_render12::cg_get_6E616D65(_item1, data));
+      }
+      out.append("]");
     }
-    out.append("]");
   }
-  
+
   return {};
 }
 
@@ -100,4 +102,4 @@ render12(const T& data) {
 
 } // namespace generated
 
-#endif // RENDER_RENDER12_HPP
+#endif // INJAMM_CODEGEN_NS_67656E657261746564_FN_72656E6465723132_HPP

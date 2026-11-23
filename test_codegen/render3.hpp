@@ -1,6 +1,6 @@
 #pragma once
-#ifndef RENDER_RENDER3_HPP
-#define RENDER_RENDER3_HPP
+#ifndef INJAMM_CODEGEN_NS_67656E657261746564_FN_72656E64657233_HPP
+#define INJAMM_CODEGEN_NS_67656E657261746564_FN_72656E64657233_HPP
 /**
  * @file render.hpp
  * @brief injamm_codegen によって自動生成されたレンダリング関数
@@ -12,9 +12,9 @@
 #include <injamm/types.hpp>
 #include <glaze/glaze.hpp>
 #include <injamm/escape.hpp>
+#include "codegen_helpers.hpp"
 
 namespace generated {
-#include "codegen_helpers.hpp"
 
 namespace cgns_render3 {
 /**
@@ -22,7 +22,7 @@ namespace cgns_render3 {
  * @details VM (bytecode_exec.hpp) の value → root 二段走査と同一の解決順。
  */
 template <class V, class R>
-inline decltype(auto) cg_get_name(V const& v, R const& r) {
+inline decltype(auto) cg_get_6E616D65(V const& v, R const& r) {
   if constexpr (requires { v.name; }) {
     return (v.name);
   } else {
@@ -34,7 +34,7 @@ inline decltype(auto) cg_get_name(V const& v, R const& r) {
  * @details VM (bytecode_exec.hpp) の value → root 二段走査と同一の解決順。
  */
 template <class V, class R>
-inline decltype(auto) cg_get_quantity(V const& v, R const& r) {
+inline decltype(auto) cg_get_7175616E74697479(V const& v, R const& r) {
   if constexpr (requires { v.quantity; }) {
     return (v.quantity);
   } else {
@@ -66,13 +66,13 @@ render3(const T& data, Sink& out) {
     out.clear();
     out.reserve(77);
   }
-  
+
   out.append("Items:\n");
   auto _body1 = [&](const auto& _item1) {
     out.append("\n- ");
-    html_escape_append_value(out, cgns_render3::cg_get_name(_item1, data));
+    html_escape_append_value(out, cgns_render3::cg_get_6E616D65(_item1, data));
     out.append(" x");
-    html_escape_append_value(out, cgns_render3::cg_get_quantity(_item1, data));
+    html_escape_append_value(out, cgns_render3::cg_get_7175616E74697479(_item1, data));
     out.append("\n");
   };
   if constexpr (codegen_optional_section_v<decltype(data.items)>) {
@@ -82,7 +82,7 @@ render3(const T& data, Sink& out) {
   } else {
     for (const auto& _v1 : data.items) _body1(_v1);
   }
-  
+
   return {};
 }
 
@@ -117,4 +117,4 @@ render3(const T& data) {
 
 } // namespace generated
 
-#endif // RENDER_RENDER3_HPP
+#endif // INJAMM_CODEGEN_NS_67656E657261746564_FN_72656E64657233_HPP

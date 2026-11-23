@@ -1567,7 +1567,7 @@ class bc_compiler {
       auto const& pp = pending[idx];
       bc_compiler<T> partial_compiler;
       partial_compiler.set_partial_entries(bc_.partial_entries);
-      auto partial_bc = partial_compiler.compile(pp.body, trim_blocks_, lstrip_blocks_);
+      auto partial_bc = partial_compiler.compile_partial(pp.body, trim_blocks_, lstrip_blocks_);
       if (partial_bc.error.ec != error_code::none) {
         bc_.error = partial_bc.error;
         /** 子コンパイラの位置は本文先頭基準。メインテンプレート基準へ変換する */
@@ -1621,11 +1621,21 @@ class bc_compiler {
 #if INJAMM_HAS_EXCEPTIONS
     try {
       bc_.partial_entries = entries;
+      for (auto const& entry : bc_.partial_entries) {
+        if (entry.bc) {
+          entry.bc->mark_partial_scope();
+        }
+      }
     } catch (...) {
       bc_.error = error_ctx{0, error_code::out_of_memory, "Out of memory"};
     }
 #else
     bc_.partial_entries = entries;
+    for (auto const& entry : bc_.partial_entries) {
+      if (entry.bc) {
+        entry.bc->mark_partial_scope();
+      }
+    }
 #endif
   }
 
@@ -1649,6 +1659,13 @@ class bc_compiler {
 #else
     return compile_impl(tmpl, trim_blocks, lstrip_blocks);
 #endif
+  }
+
+  /** @brief partial 本体としてテンプレートをコンパイルする */
+  bytecode compile_partial(std::string_view tmpl, bool trim_blocks = false, bool lstrip_blocks = false) noexcept {
+    auto bc = compile(tmpl, trim_blocks, lstrip_blocks);
+    bc.mark_partial_scope();
+    return bc;
   }
 
   bytecode compile_impl(std::string_view tmpl, bool trim_blocks = false, bool lstrip_blocks = false) {

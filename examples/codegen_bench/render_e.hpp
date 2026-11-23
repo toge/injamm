@@ -1,6 +1,6 @@
 #pragma once
-#ifndef RENDER_RENDER_E_HPP
-#define RENDER_RENDER_E_HPP
+#ifndef INJAMM_CODEGEN_NS_67656E657261746564_FN_72656E6465725F65_HPP
+#define INJAMM_CODEGEN_NS_67656E657261746564_FN_72656E6465725F65_HPP
 /**
  * @file render.hpp
  * @brief injamm_codegen によって自動生成されたレンダリング関数
@@ -12,9 +12,9 @@
 #include <injamm/types.hpp>
 #include <glaze/glaze.hpp>
 #include <injamm/escape.hpp>
+#include "codegen_helpers.hpp"
 
 namespace generated {
-#include "codegen_helpers.hpp"
 
 namespace cgns_render_e {
 /**
@@ -22,7 +22,7 @@ namespace cgns_render_e {
  * @details VM (bytecode_exec.hpp) の value → root 二段走査と同一の解決順。
  */
 template <class V, class R>
-inline decltype(auto) cg_get_active(V const& v, R const& r) {
+inline decltype(auto) cg_get_616374697665(V const& v, R const& r) {
   if constexpr (requires { v.active; }) {
     return (v.active);
   } else {
@@ -53,7 +53,7 @@ render_e(const T& data, Sink& out) {
   if constexpr (std::is_same_v<Sink, std::string>) {
     out.clear();
   }
-  
+
   auto _body1 = [&](const auto& _item1, const auto& _rt1) {
     auto _body2 = [&](const auto& _item2) {
       out.append("Y");
@@ -86,7 +86,7 @@ render_e(const T& data, Sink& out) {
   } else {
     for (const auto& _v1 : data.items) _body1(_v1, data);
   }
-  
+
   return {};
 }
 
@@ -121,4 +121,4 @@ render_e(const T& data) {
 
 } // namespace generated
 
-#endif // RENDER_RENDER_E_HPP
+#endif // INJAMM_CODEGEN_NS_67656E657261746564_FN_72656E6465725F65_HPP

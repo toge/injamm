@@ -1,6 +1,6 @@
 #pragma once
-#ifndef RENDER_RENDER_IF_FILTERED_HPP
-#define RENDER_RENDER_IF_FILTERED_HPP
+#ifndef INJAMM_CODEGEN_NS_67656E657261746564_FN_72656E6465725F69665F66696C7465726564_HPP
+#define INJAMM_CODEGEN_NS_67656E657261746564_FN_72656E6465725F69665F66696C7465726564_HPP
 /**
  * @file render.hpp
  * @brief injamm_codegen によって自動生成されたレンダリング関数
@@ -12,9 +12,9 @@
 #include <injamm/types.hpp>
 #include <glaze/glaze.hpp>
 #include <injamm/escape.hpp>
+#include "codegen_helpers.hpp"
 
 namespace generated {
-#include "codegen_helpers.hpp"
 
 
 /**
@@ -40,7 +40,7 @@ render_if_filtered(const T& data, Sink& out) {
   }
   std::string _filtered;
   _filtered.reserve(64);
-  
+
   if constexpr (::injamm::detail::serializable_v<decltype(data.age)>) {
     _filtered.clear(); ::injamm::detail::serialize_value(_filtered, data.age);
   } else if constexpr (::injamm::detail::ct_glz_reflectable<decltype(data.age)>) {
@@ -54,7 +54,7 @@ render_if_filtered(const T& data, Sink& out) {
   } else {
     out.append("NO");
   }
-  
+
   return {};
 }
 
@@ -89,4 +89,4 @@ render_if_filtered(const T& data) {
 
 } // namespace generated
 
-#endif // RENDER_RENDER_IF_FILTERED_HPP
+#endif // INJAMM_CODEGEN_NS_67656E657261746564_FN_72656E6465725F69665F66696C7465726564_HPP

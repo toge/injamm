@@ -1,6 +1,6 @@
 #pragma once
-#ifndef RENDER_RENDER_C_HPP
-#define RENDER_RENDER_C_HPP
+#ifndef INJAMM_CODEGEN_NS_67656E657261746564_FN_72656E6465725F63_HPP
+#define INJAMM_CODEGEN_NS_67656E657261746564_FN_72656E6465725F63_HPP
 /**
  * @file render.hpp
  * @brief injamm_codegen によって自動生成されたレンダリング関数
@@ -12,9 +12,9 @@
 #include <injamm/types.hpp>
 #include <glaze/glaze.hpp>
 #include <injamm/escape.hpp>
+#include "codegen_helpers.hpp"
 
 namespace generated {
-#include "codegen_helpers.hpp"
 
 
 /**
@@ -38,7 +38,7 @@ render_c(const T& data, Sink& out) {
   if constexpr (std::is_same_v<Sink, std::string>) {
     out.clear();
   }
-  
+
   auto _body1 = [&](const auto& _item1) {
     html_escape_append_value(out, data.active);
   };
@@ -49,7 +49,7 @@ render_c(const T& data, Sink& out) {
   } else {
     for (const auto& _v1 : data.items) _body1(_v1);
   }
-  
+
   return {};
 }
 
@@ -84,4 +84,4 @@ render_c(const T& data) {
 
 } // namespace generated
 
-#endif // RENDER_RENDER_C_HPP
+#endif // INJAMM_CODEGEN_NS_67656E657261746564_FN_72656E6465725F63_HPP

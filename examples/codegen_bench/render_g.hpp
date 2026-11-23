@@ -1,6 +1,6 @@
 #pragma once
-#ifndef RENDER_RENDER_G_HPP
-#define RENDER_RENDER_G_HPP
+#ifndef INJAMM_CODEGEN_NS_67656E657261746564_FN_72656E6465725F67_HPP
+#define INJAMM_CODEGEN_NS_67656E657261746564_FN_72656E6465725F67_HPP
 /**
  * @file render.hpp
  * @brief injamm_codegen によって自動生成されたレンダリング関数
@@ -12,9 +12,9 @@
 #include <injamm/types.hpp>
 #include <glaze/glaze.hpp>
 #include <injamm/escape.hpp>
+#include "codegen_helpers.hpp"
 
 namespace generated {
-#include "codegen_helpers.hpp"
 
 namespace cgns_render_g {
 /**
@@ -22,7 +22,7 @@ namespace cgns_render_g {
  * @details VM (bytecode_exec.hpp) の value → root 二段走査と同一の解決順。
  */
 template <class V, class R>
-inline decltype(auto) cg_get_name(V const& v, R const& r) {
+inline decltype(auto) cg_get_6E616D65(V const& v, R const& r) {
   if constexpr (requires { v.name; }) {
     return (v.name);
   } else {
@@ -42,14 +42,14 @@ inline decltype(auto) cg_get_name(V const& v, R const& r) {
 template <injamm::fixed_string PartialName, typename V, typename R, typename Sink>
   requires injamm::detail::output_sink<Sink>
 [[nodiscard]] std::expected<void, injamm::error_ctx>
-render_partial_impl(const V& value, const R& root, Sink& out);
+render_g_partial_impl(const V& value, const R& root, Sink& out);
 
 template <injamm::fixed_string PartialName, typename V, typename R, typename Sink>
   requires injamm::detail::output_sink<Sink>
 [[nodiscard]] std::expected<void, injamm::error_ctx>
-render_partial_impl(const V& value, const R& root, Sink& out) {
+render_g_partial_impl(const V& value, const R& root, Sink& out) {
   if constexpr (std::string_view(PartialName.data) == "g") {
-    html_escape_append_value(out, cgns_render_g::cg_get_name(value, root));
+    html_escape_append_value(out, cgns_render_g::cg_get_6E616D65(value, root));
     out.append(";");
     return {};
 }
@@ -57,6 +57,8 @@ render_partial_impl(const V& value, const R& root, Sink& out) {
     return std::unexpected(injamm::error_ctx{.ec = injamm::error_code::unknown_key, .custom_error_message = "unknown partial: " + std::string(PartialName.data)});
 }
 }
+
+struct render_g_partial_tag {};
 
 /**
  * @brief 名前付き partial を NTTP で指定してレンダリングする
@@ -79,11 +81,29 @@ render_partial_impl(const V& value, const R& root, Sink& out) {
  * @endcode
  */
 template <injamm::fixed_string PartialName, typename T, typename Sink = std::string>
-  requires injamm::detail::output_sink<Sink>
+  requires injamm::detail::output_sink<Sink> && (std::string_view(PartialName.data) == "g")
+        && std::same_as<render_g_partial_tag, render_g_partial_tag>
 [[nodiscard]] std::expected<void, injamm::error_ctx>
 render_partial(const T& data, Sink& out) {
-  return render_partial_impl<PartialName>(data, data, out);
+  return render_g_partial_impl<PartialName>(data, data, out);
 }
+
+template <injamm::fixed_string PartialName, typename T, typename Sink = std::string>
+  requires injamm::detail::output_sink<Sink>
+[[nodiscard]] std::expected<void, injamm::error_ctx>
+render_g_partial(const T& data, Sink& out) {
+  return render_g_partial_impl<PartialName>(data, data, out);
+}
+
+#ifndef INJAMM_CODEGEN_PARTIAL_FALLBACK_NS_67656E657261746564_HPP
+#define INJAMM_CODEGEN_PARTIAL_FALLBACK_NS_67656E657261746564_HPP
+template <injamm::fixed_string PartialName, typename T, typename Sink = std::string>
+  requires injamm::detail::output_sink<Sink>
+[[nodiscard]] std::expected<void, injamm::error_ctx>
+render_partial(const T&, Sink&) {
+  return std::unexpected(injamm::error_ctx{.ec = injamm::error_code::unknown_key, .custom_error_message = "unknown partial: " + std::string(PartialName.data)});
+}
+#endif // INJAMM_CODEGEN_PARTIAL_FALLBACK_NS_67656E657261746564_HPP
 
 
 /**
@@ -107,9 +127,9 @@ render_g(const T& data, Sink& out) {
   if constexpr (std::is_same_v<Sink, std::string>) {
     out.clear();
   }
-  
+
   auto _body1 = [&](const auto& _item1) {
-    (void)render_partial_impl<"g">(_item1, data, out);
+    (void)render_g_partial_impl<"g">(_item1, data, out);
   };
   if constexpr (codegen_optional_section_v<decltype(data.items)>) {
     if (data.items.has_value()) _body1(*data.items);
@@ -118,7 +138,7 @@ render_g(const T& data, Sink& out) {
   } else {
     for (const auto& _v1 : data.items) _body1(_v1);
   }
-  
+
   return {};
 }
 
@@ -153,4 +173,4 @@ render_g(const T& data) {
 
 } // namespace generated
 
-#endif // RENDER_RENDER_G_HPP
+#endif // INJAMM_CODEGEN_NS_67656E657261746564_FN_72656E6465725F67_HPP

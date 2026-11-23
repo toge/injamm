@@ -39,6 +39,8 @@
 int run_partial_loop_checks(CaseData const& d, CaseData const& d2);
 int run_partial_root_checks(CaseData const& d, CaseData const& d2);
 int run_partial_toplevel_checks(CaseData const& d, CaseData const& d2);
+int run_partial_scope_ref_checks(CaseData const& d, CaseData const& d2);
+int run_namespace_composition_checks(CaseData const& d);
 
 int main() {
   // truthy 側データセット
@@ -49,6 +51,8 @@ int main() {
   d2.age    = 0;
   d2.opt.reset();
   d2.items.clear();
+  CaseData d_partial_falsy = d;
+  d_partial_falsy.active   = false;
 
   std::cout << "=== injamm_codegen ライブテスト（生成→コンパイル→実行→VM 比較） ===\n\n";
 
@@ -94,6 +98,8 @@ int main() {
   live_test_count += run_partial_loop_checks(d, d2);
   live_test_count += run_partial_root_checks(d, d2);
   live_test_count += run_partial_toplevel_checks(d, d2);
+  live_test_count += run_partial_scope_ref_checks(d, d_partial_falsy);
+  live_test_count += run_namespace_composition_checks(d);
 
   std::cout << "\n=== 結果: " << live_pass_count << "/" << live_test_count << " passed ===\n";
   return (live_pass_count == live_test_count) ? 0 : 1;

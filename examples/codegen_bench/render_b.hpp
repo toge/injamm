@@ -1,6 +1,6 @@
 #pragma once
-#ifndef RENDER_RENDER_B_HPP
-#define RENDER_RENDER_B_HPP
+#ifndef INJAMM_CODEGEN_NS_67656E657261746564_FN_72656E6465725F62_HPP
+#define INJAMM_CODEGEN_NS_67656E657261746564_FN_72656E6465725F62_HPP
 /**
  * @file render.hpp
  * @brief injamm_codegen によって自動生成されたレンダリング関数
@@ -12,9 +12,24 @@
 #include <injamm/types.hpp>
 #include <glaze/glaze.hpp>
 #include <injamm/escape.hpp>
+#include "codegen_helpers.hpp"
 
 namespace generated {
-#include "codegen_helpers.hpp"
+
+namespace cgns_render_b {
+/**
+ * @brief 値側に @p key が無ければルート側へフォールバックする二段解決ヘルパ
+ * @details VM (bytecode_exec.hpp) の value → root 二段走査と同一の解決順。
+ */
+template <class V, class R>
+inline decltype(auto) cg_get_6E616D65(V const& v, R const& r) {
+  if constexpr (requires { v.name; }) {
+    return (v.name);
+  } else {
+    return (r.name);
+  }
+}
+} // namespace cgns_render_b
 
 
 /**
@@ -40,14 +55,14 @@ render_b(const T& data, Sink& out) {
   }
   std::string _filtered;
   _filtered.reserve(64);
-  
+
   auto _body1 = [&](const auto& _item1) {
-    if constexpr (::injamm::detail::serializable_v<decltype(_item1.name)>) {
-      _filtered.clear(); ::injamm::detail::serialize_value(_filtered, _item1.name);
-    } else if constexpr (::injamm::detail::ct_glz_reflectable<decltype(_item1.name)>) {
-      (void)::glz::write_json(_item1.name, _filtered);
+    if constexpr (::injamm::detail::serializable_v<decltype(cgns_render_b::cg_get_6E616D65(_item1, data))>) {
+      _filtered.clear(); ::injamm::detail::serialize_value(_filtered, cgns_render_b::cg_get_6E616D65(_item1, data));
+    } else if constexpr (::injamm::detail::ct_glz_reflectable<decltype(cgns_render_b::cg_get_6E616D65(_item1, data))>) {
+      (void)::glz::write_json(cgns_render_b::cg_get_6E616D65(_item1, data), _filtered);
     } else {
-      _filtered.assign((_item1.name).data(), (_item1.name).size());
+      _filtered.assign((cgns_render_b::cg_get_6E616D65(_item1, data)).data(), (cgns_render_b::cg_get_6E616D65(_item1, data)).size());
     }
     filter_to_upper(_filtered);
     html_escape_append(out, _filtered);
@@ -59,7 +74,7 @@ render_b(const T& data, Sink& out) {
   } else {
     for (const auto& _v1 : data.items) _body1(_v1);
   }
-  
+
   return {};
 }
 
@@ -94,4 +109,4 @@ render_b(const T& data) {
 
 } // namespace generated
 
-#endif // RENDER_RENDER_B_HPP
+#endif // INJAMM_CODEGEN_NS_67656E657261746564_FN_72656E6465725F62_HPP

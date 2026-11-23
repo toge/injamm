@@ -1,6 +1,6 @@
 #pragma once
-#ifndef RENDER_RENDER5_HPP
-#define RENDER_RENDER5_HPP
+#ifndef INJAMM_CODEGEN_NS_67656E657261746564_FN_72656E64657235_HPP
+#define INJAMM_CODEGEN_NS_67656E657261746564_FN_72656E64657235_HPP
 /**
  * @file render.hpp
  * @brief injamm_codegen によって自動生成されたレンダリング関数
@@ -12,9 +12,9 @@
 #include <injamm/types.hpp>
 #include <glaze/glaze.hpp>
 #include <injamm/escape.hpp>
+#include "codegen_helpers.hpp"
 
 namespace generated {
-#include "codegen_helpers.hpp"
 
 namespace cgns_render5 {
 /**
@@ -22,7 +22,7 @@ namespace cgns_render5 {
  * @details VM (bytecode_exec.hpp) の value → root 二段走査と同一の解決順。
  */
 template <class V, class R>
-inline decltype(auto) cg_get_name(V const& v, R const& r) {
+inline decltype(auto) cg_get_6E616D65(V const& v, R const& r) {
   if constexpr (requires { v.name; }) {
     return (v.name);
   } else {
@@ -34,7 +34,7 @@ inline decltype(auto) cg_get_name(V const& v, R const& r) {
  * @details VM (bytecode_exec.hpp) の value → root 二段走査と同一の解決順。
  */
 template <class V, class R>
-inline decltype(auto) cg_get_price(V const& v, R const& r) {
+inline decltype(auto) cg_get_7072696365(V const& v, R const& r) {
   if constexpr (requires { v.price; }) {
     return (v.price);
   } else {
@@ -66,7 +66,7 @@ render5(const T& data, Sink& out) {
     out.clear();
     out.reserve(159);
   }
-  
+
   out.append("Order #");
   html_escape_append_value(out, data.order_id);
   out.append(":\n");
@@ -76,9 +76,9 @@ render5(const T& data, Sink& out) {
   out.append("\n");
   auto _body1 = [&](const auto& _item1) {
     out.append("\n  ");
-    html_escape_append_value(out, cgns_render5::cg_get_name(_item1, data));
+    html_escape_append_value(out, cgns_render5::cg_get_6E616D65(_item1, data));
     out.append(": $");
-    html_escape_append_value(out, cgns_render5::cg_get_price(_item1, data));
+    html_escape_append_value(out, cgns_render5::cg_get_7072696365(_item1, data));
     out.append("\n");
   };
   if constexpr (codegen_optional_section_v<decltype(data.items)>) {
@@ -90,7 +90,7 @@ render5(const T& data, Sink& out) {
   }
   out.append("\nTotal: $");
   html_escape_append_value(out, data.total);
-  
+
   return {};
 }
 
@@ -125,4 +125,4 @@ render5(const T& data) {
 
 } // namespace generated
 
-#endif // RENDER_RENDER5_HPP
+#endif // INJAMM_CODEGEN_NS_67656E657261746564_FN_72656E64657235_HPP

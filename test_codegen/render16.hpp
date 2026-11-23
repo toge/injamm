@@ -1,6 +1,6 @@
 #pragma once
-#ifndef RENDER_RENDER16_HPP
-#define RENDER_RENDER16_HPP
+#ifndef INJAMM_CODEGEN_NS_67656E657261746564_FN_72656E6465723136_HPP
+#define INJAMM_CODEGEN_NS_67656E657261746564_FN_72656E6465723136_HPP
 /**
  * @file render.hpp
  * @brief injamm_codegen によって自動生成されたレンダリング関数
@@ -12,9 +12,9 @@
 #include <injamm/types.hpp>
 #include <glaze/glaze.hpp>
 #include <injamm/escape.hpp>
+#include "codegen_helpers.hpp"
 
 namespace generated {
-#include "codegen_helpers.hpp"
 
 namespace cgns_render16 {
 /**
@@ -22,7 +22,7 @@ namespace cgns_render16 {
  * @details VM (bytecode_exec.hpp) の value → root 二段走査と同一の解決順。
  */
 template <class V, class R>
-inline decltype(auto) cg_get_name(V const& v, R const& r) {
+inline decltype(auto) cg_get_6E616D65(V const& v, R const& r) {
   if constexpr (requires { v.name; }) {
     return (v.name);
   } else {
@@ -54,21 +54,23 @@ render16(const T& data, Sink& out) {
     out.clear();
     out.reserve(33);
   }
-  
-  auto _size1 = data.items.size();
-  std::size_t _lo1 = 0, _hi1 = _size1;
-  bool _bwd1 = false;
-  _bwd1 = !_bwd1;
-  if (_bwd1) _lo1 = (_hi1 > 100u ? std::max(_lo1, _hi1 - 100u) : _lo1);
-  else _hi1 = std::min(_hi1, _lo1 + 100u);
-  auto _count1 = _hi1 - _lo1;
-  for (std::size_t _i1 = 0; _i1 < _count1; ++_i1) {
-    auto _idx1 = _bwd1 ? (_hi1 - 1 - _i1) : (_lo1 + _i1);
-    const auto& _item1 = data.items[_idx1];
-    html_escape_append_value(out, cgns_render16::cg_get_name(_item1, data));
-    out.append(";");
+
+  {
+    auto _size1 = data.items.size();
+    std::size_t _lo1 = 0, _hi1 = _size1;
+    bool _bwd1 = false;
+    _bwd1 = !_bwd1;
+    if (_bwd1) _lo1 = (_hi1 > 100u ? std::max(_lo1, _hi1 - 100u) : _lo1);
+    else _hi1 = std::min(_hi1, _lo1 + 100u);
+    auto _count1 = _hi1 - _lo1;
+    for (std::size_t _i1 = 0; _i1 < _count1; ++_i1) {
+      auto _idx1 = _bwd1 ? (_hi1 - 1 - _i1) : (_lo1 + _i1);
+      const auto& _item1 = data.items[_idx1];
+      html_escape_append_value(out, cgns_render16::cg_get_6E616D65(_item1, data));
+      out.append(";");
+    }
   }
-  
+
   return {};
 }
 
@@ -103,4 +105,4 @@ render16(const T& data) {
 
 } // namespace generated
 
-#endif // RENDER_RENDER16_HPP
+#endif // INJAMM_CODEGEN_NS_67656E657261746564_FN_72656E6465723136_HPP

@@ -5,8 +5,11 @@
 - `fix: injamm_codegen がスカラー/optional の逆セクション（{{^bool}} 等）でコンパイル不能なコードを生成する問題` — `value_empty` に bool/算術型/enum/optional/reflectable の分岐を追加し、VM (`do_inverted`) と同一の「空/偽のとき本体 1 回」判定を生成
 - `fix: injamm_codegen がセクションの {{else}} で構文エラーになるコードを生成する問題` — `{{#section}}A{{else}}B{{/section}}` を本体ラムダ + else ラムダ + 空判定ディスパッチとして生成。ループ種別（フィルタ/インデックス参照）は `if (!value_empty(...))` 事前ガードで対応。逆セクションの `{{else}}` もラムダ構造に統一
 - `fix: injamm_codegen が std::optional のセクションをコンテナ扱いしてコンパイル不能になる問題` — `codegen_optional_section_v` 分岐を追加し、VM と同じ `has_value()` → `*opt` をスコープに本体 1 回を生成
-- `fix: injamm_codegen がループ内のグローバル partial をルート固定で解決する問題` — `render_partial_impl<P>(value, root, sink)` 内部オーバーロードを生成し、本体は「値 → ルート」の二段解決（`requires` 式）に。公開 `render_partial<P>(data, out)` のシグネチャは変更なし。ループ内の要素に無いキーのセクション/逆セクション/変数参照も同じ二段解決でルートへフォールバック
+- `fix: injamm_codegen がループ内のグローバル partial をルート固定で解決する問題` — prefix 固有の内部 partial dispatcher `(<value>, <root>, <sink>)` を生成し、本体は「値 → ルート」の二段解決（`requires` 式）に。公開 `render_partial<P>(data, out)` のシグネチャは変更なし。ループ内の要素に無いキーのセクション/逆セクション/変数参照も同じ二段解決でルートへフォールバック
 - `fix: injamm_codegen が -n オプションを無視する問題` — 名前空間が `generated` 固定だったのを `-n` 指定を反映するように修正（既定値は従来どおり `generated`）
+- `fix: codegen partial の通常参照・ドットパス・フィルタ・条件が「現在値 → ルート」で統一されない問題` — partial バイトコードを二段解決メタデータ付きで保持し、simple VM/NTTP 高速パスも無効化。AOT の全参照 opcode、section filter/index fast path、VM の filtered 解決を同じ順序へ修正
+- `fix: 生成ヘッダを同一 TU で使うと共通ヘルパ・partial dispatcher・include guard が衝突する問題` — 共通ヘルパを生成名前空間の外へ移し、ガードとキー名を一意な16進エンコードに変更。partial dispatcher は prefix 固有にし、公開 `render_partial` に未知名 fallback、同名 partial 選択用の `<prefix>_partial` を追加
+- `fix: README 記載の injamm_codegen 長形式オプション` — `--input` / `--expr` / `--type` / `--output` / `--namespace` / `--prefix` / `--help` を CLI で受理
 - `test: codegen ライブテスト（生成 → コンパイル → 実行 → VM 比較）を追加` — `test_codegen_live` がビルド時に各ケースのヘッダを `injamm_codegen` で生成するため、生成ヘッダが壊れているとビルドが失敗する。同梱 `render*.hpp` は `test_codegen/regenerate.sh` で再生成
 - `fix: 生成コードの二段解決（値 → ルート フォールバック）が Clang / MSVC でコンパイルできない問題` — ジェネリックラムダ内の `if constexpr (requires { _item1.key; })` の破棄側（`data.key`）は、クロージャ構築時に実体化されて検証されるため、ルート型にキーが無いとコンパイルエラーになっていた（GCC は検証しないため検出漏れ）。キーごとの二段解決ヘルパ関数テンプレート（`cg_get_*`）を名前空間スコープに生成し（関数テンプレートの if constexpr は破棄側が遅延実体化される）、セクション ディスパッチの else 側はラムダのルート引数（`_rtN`）経由の依存式に変更
 - `bench: codegen_bench に逆セクション / セクション else / optional セクション / ループ内 partial のワークロードを追加` — `render_d`〜`render_g`（`gen.sh` で再生成）。#10 対応の新旧コードジェネレーターでスループットを比較し、既存ケース（セクション/フィルタ/bool 出力）は誤差範囲、逆セクション・partial も ns/byte 正規化で劣化なしを確認
