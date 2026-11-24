@@ -1,6 +1,6 @@
 #pragma once
-#ifndef RENDER_RENDER_DRIFT_FCMP_HPP
-#define RENDER_RENDER_DRIFT_FCMP_HPP
+#ifndef INJAMM_CODEGEN_NS_67656E657261746564_FN_72656E6465725F64726966745F66636D70_HPP
+#define INJAMM_CODEGEN_NS_67656E657261746564_FN_72656E6465725F64726966745F66636D70_HPP
 /**
  * @file render.hpp
  * @brief injamm_codegen によって自動生成されたレンダリング関数
@@ -12,9 +12,9 @@
 #include <injamm/types.hpp>
 #include <glaze/glaze.hpp>
 #include <injamm/escape.hpp>
+#include "codegen_helpers.hpp"
 
 namespace generated {
-#include "codegen_helpers.hpp"
 
 
 /**
@@ -40,17 +40,17 @@ render_drift_fcmp(const T& data, Sink& out) {
   }
   std::string _filtered;
   _filtered.reserve(64);
-  
+
   if constexpr (::injamm::detail::serializable_v<decltype(data.score)>) {
     _filtered.clear(); ::injamm::detail::serialize_value(_filtered, data.score);
   } else if constexpr (::injamm::detail::ct_glz_reflectable<decltype(data.score)>) {
     (void)::glz::write_json(data.score, _filtered);
   } else {
-    _filtered.assign(data.score);
+    _filtered.assign((data.score).data(), (data.score).size());
   }
   filter_int_gt(_filtered, 90);
   html_escape_append(out, _filtered);
-  
+
   return {};
 }
 
@@ -85,4 +85,4 @@ render_drift_fcmp(const T& data) {
 
 } // namespace generated
 
-#endif // RENDER_RENDER_DRIFT_FCMP_HPP
+#endif // INJAMM_CODEGEN_NS_67656E657261746564_FN_72656E6465725F64726966745F66636D70_HPP

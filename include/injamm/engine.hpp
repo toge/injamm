@@ -148,7 +148,9 @@ class engine {
    *
    * @param bc プリコンパイル済みバイトコード
    */
-  explicit engine(detail::bytecode bc) : bc_(std::move(bc)) {}
+  explicit engine(detail::bytecode bc) : bc_(std::move(bc)) {
+    bc_.mark_partial_scopes();
+  }
 
   /**
    * @brief レンダリングを実行する
@@ -273,8 +275,10 @@ class engine {
 template <class T>
 [[nodiscard]] detail::partial_entry make_partial(std::string name, std::string_view body,
                                                  bool trim_blocks = false, bool lstrip_blocks = false) {
+  auto bc = detail::bc_compile<T>(body, trim_blocks, lstrip_blocks);
+  bc.mark_partial_scope();
   return detail::partial_entry{std::move(name),
-                                std::make_shared<detail::bytecode>(detail::bc_compile<T>(body, trim_blocks, lstrip_blocks))};
+                                std::make_shared<detail::bytecode>(std::move(bc))};
 }
 
 // CT 用 partial レジストリ（型パック）を公開 API として露出

@@ -1,6 +1,6 @@
 #pragma once
-#ifndef RENDER_RENDER_IF_FILTERED_HPP
-#define RENDER_RENDER_IF_FILTERED_HPP
+#ifndef INJAMM_CODEGEN_NS_67656E657261746564_FN_72656E6465725F69665F66696C7465726564_HPP
+#define INJAMM_CODEGEN_NS_67656E657261746564_FN_72656E6465725F69665F66696C7465726564_HPP
 /**
  * @file render.hpp
  * @brief injamm_codegen によって自動生成されたレンダリング関数
@@ -12,9 +12,9 @@
 #include <injamm/types.hpp>
 #include <glaze/glaze.hpp>
 #include <injamm/escape.hpp>
+#include "codegen_helpers.hpp"
 
 namespace generated {
-#include "codegen_helpers.hpp"
 
 
 /**
@@ -89,4 +89,4 @@ render_if_filtered(const T& data) {
 
 } // namespace generated
 
-#endif // RENDER_RENDER_IF_FILTERED_HPP
+#endif // INJAMM_CODEGEN_NS_67656E657261746564_FN_72656E6465725F69665F66696C7465726564_HPP

@@ -1,6 +1,6 @@
 #pragma once
-#ifndef RENDER_RENDER_JOIN_HPP
-#define RENDER_RENDER_JOIN_HPP
+#ifndef INJAMM_CODEGEN_NS_67656E657261746564_FN_72656E6465725F6A6F696E_HPP
+#define INJAMM_CODEGEN_NS_67656E657261746564_FN_72656E6465725F6A6F696E_HPP
 /**
  * @file render.hpp
  * @brief injamm_codegen によって自動生成されたレンダリング関数
@@ -12,9 +12,9 @@
 #include <injamm/types.hpp>
 #include <glaze/glaze.hpp>
 #include <injamm/escape.hpp>
+#include "codegen_helpers.hpp"
 
 namespace generated {
-#include "codegen_helpers.hpp"
 
 
 /**
@@ -39,20 +39,22 @@ render_join(const T& data, Sink& out) {
     out.clear();
     out.reserve(34);
   }
-  
-  auto _size1 = data.sitems.size();
-  std::size_t _lo1 = 0, _hi1 = _size1;
-  bool _bwd1 = false;
-  auto _count1 = _hi1 - _lo1;
-  for (std::size_t _i1 = 0; _i1 < _count1; ++_i1) {
-    auto _idx1 = _bwd1 ? (_hi1 - 1 - _i1) : (_lo1 + _i1);
-    const auto& _item1 = data.sitems[_idx1];
-    if (_i1 > 0) {
-      out.append(", ");
+
+  {
+    auto _size1 = data.sitems.size();
+    std::size_t _lo1 = 0, _hi1 = _size1;
+    bool _bwd1 = false;
+    auto _count1 = _hi1 - _lo1;
+    for (std::size_t _i1 = 0; _i1 < _count1; ++_i1) {
+      auto _idx1 = _bwd1 ? (_hi1 - 1 - _i1) : (_lo1 + _i1);
+      const auto& _item1 = data.sitems[_idx1];
+      if (_i1 > 0) {
+        out.append(", ");
+      }
+      html_escape_append_value(out, _item1);
     }
-    html_escape_append_value(out, _item1);
   }
-  
+
   return {};
 }
 
@@ -87,4 +89,4 @@ render_join(const T& data) {
 
 } // namespace generated
 
-#endif // RENDER_RENDER_JOIN_HPP
+#endif // INJAMM_CODEGEN_NS_67656E657261746564_FN_72656E6465725F6A6F696E_HPP

@@ -1,6 +1,6 @@
 #pragma once
-#ifndef RENDER_RENDER_ROUND_HPP
-#define RENDER_RENDER_ROUND_HPP
+#ifndef INJAMM_CODEGEN_NS_67656E657261746564_FN_72656E6465725F726F756E64_HPP
+#define INJAMM_CODEGEN_NS_67656E657261746564_FN_72656E6465725F726F756E64_HPP
 /**
  * @file render.hpp
  * @brief injamm_codegen によって自動生成されたレンダリング関数
@@ -12,9 +12,9 @@
 #include <injamm/types.hpp>
 #include <glaze/glaze.hpp>
 #include <injamm/escape.hpp>
+#include "codegen_helpers.hpp"
 
 namespace generated {
-#include "codegen_helpers.hpp"
 
 
 /**
@@ -40,7 +40,7 @@ render_round(const T& data, Sink& out) {
   }
   std::string _filtered;
   _filtered.reserve(64);
-  
+
   if constexpr (::injamm::detail::serializable_v<decltype(data.total)>) {
     _filtered.clear(); ::injamm::detail::serialize_value(_filtered, data.total);
   } else if constexpr (::injamm::detail::ct_glz_reflectable<decltype(data.total)>) {
@@ -50,7 +50,7 @@ render_round(const T& data, Sink& out) {
   }
   filter_float_round(_filtered, 2);
   html_escape_append(out, _filtered);
-  
+
   return {};
 }
 
@@ -85,4 +85,4 @@ render_round(const T& data) {
 
 } // namespace generated
 
-#endif // RENDER_RENDER_ROUND_HPP
+#endif // INJAMM_CODEGEN_NS_67656E657261746564_FN_72656E6465725F726F756E64_HPP

@@ -281,6 +281,33 @@ struct bytecode {
   }
 
   /**
+   * @brief partial の参照を呼び出し時の現在値 → ルートの二段解決に切り替える
+   * @details partial はルート型でコンパイルされるが、実行時にはループ要素など
+   *          別の型を現在値として受け取り得るため、通常参照は常に未実証として扱う。
+   */
+  void mark_partial_scope() noexcept {
+    bool needs_fallback = false;
+    for (auto& ref : var_refs) {
+      if (ref.special == special_var_kind::none && !ref.is_loop_parent) {
+        ref.root_fallback = root_fb_unproven;
+        needs_fallback = true;
+      }
+    }
+    if (needs_fallback) {
+      is_simple = false;
+    }
+  }
+
+  /** @brief デシリアライズ済みバイトコードの全 partial を実行時スコープへ正規化する */
+  void mark_partial_scopes() noexcept {
+    for (auto const& entry : partial_entries) {
+      if (entry.bc) {
+        entry.bc->mark_partial_scope();
+      }
+    }
+  }
+
+  /**
    * @brief 現在の命令数を取得する
    * @return 命令列のサイズ
    */

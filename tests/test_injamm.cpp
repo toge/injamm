@@ -4233,6 +4233,22 @@ struct BcPartialUsers {
   std::vector<BcPartialUser> users;
 };
 
+struct BcPartialProfile {
+  std::string name;
+};
+
+struct BcPartialScopeItem {
+  BcPartialProfile profile;
+};
+
+struct BcPartialScopeData {
+  std::string                  root_only;
+  bool                         active;
+  int                          age;
+  BcPartialProfile             profile;
+  std::vector<BcPartialScopeItem> items;
+};
+
 template <>
 struct glz::meta<BcPartialUser> {
   using T                     = BcPartialUser;
@@ -4324,6 +4340,53 @@ TEST_CASE("partial_with_loop", "[injamm][partial]") {
   auto           r   = eng.render(data);
   REQUIRE(r.has_value());
   CHECK(*r == "Bob(25)/Charlie(35)/");
+}
+
+TEST_CASE("partial_with_loop_resolves_all_reference_forms", "[injamm][partial]") {
+  BcPartialScopeData data{"root", true, 30, {"ROOT"}, {{{"ITEM-A"}}, {{"ITEM-B"}}}};
+  auto eng = injamm::engine<BcPartialScopeData>{
+    "{{#partialdef scope}}{{root_only}}|{{profile.name}}|{{root_only | upper}}|"
+    "{{#if active}}T{{else}}F{{/if}}|{{#if age > 18}}G{{else}}S{{/if}}|"
+    "{{#if active && age}}A{{else}}B{{/if}}{{/partialdef}}"
+    "{{#items}}[{{>scope}}]{{/items}}"};
+  auto r = eng.render(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "[root|ITEM-A|ROOT|T|G|A][root|ITEM-B|ROOT|T|G|A]");
+
+  data.active = false;
+  r = eng.render(data);
+  REQUIRE(r.has_value());
+  CHECK(*r == "[root|ITEM-A|ROOT|F|G|B][root|ITEM-B|ROOT|F|G|B]");
+}
+
+TEST_CASE("simple_partial_with_loop_uses_value_then_root", "[injamm][partial]") {
+  BcPartialScopeData data{"root", true, 30, {"ROOT"}, {{{"ITEM-A"}}, {{"ITEM-B"}}}};
+  auto inline_partial = injamm::engine<BcPartialScopeData>{
+    "{{#partialdef scope}}{{root_only}}|{{profile.name}}{{/partialdef}}"
+    "{{#items}}[{{>scope}}]{{/items}}"};
+  auto inline_result = inline_partial.render(data);
+  REQUIRE(inline_result.has_value());
+  CHECK(*inline_result == "[root|ITEM-A][root|ITEM-B]");
+
+  auto external_partial = injamm::engine<BcPartialScopeData>{
+    "{{#items}}{{>scope}}{{/items}}",
+    {injamm::make_partial<BcPartialScopeData>("scope", "{{root_only}}|{{profile.name}};")}};
+  auto external_result = external_partial.render(data);
+  REQUIRE(external_result.has_value());
+  CHECK(*external_result == "root|ITEM-A;root|ITEM-B;");
+
+  auto legacy_bc = inline_partial.get_bytecode();
+  for (auto const& entry : legacy_bc.partial_entries) {
+    if (!entry.bc) continue;
+    entry.bc->is_simple = true;
+    for (auto& ref : entry.bc->var_refs) {
+      ref.root_fallback = injamm::detail::root_fb_none;
+    }
+  }
+  auto legacy_partial = injamm::engine<BcPartialScopeData>{std::move(legacy_bc)};
+  auto legacy_result  = legacy_partial.render(data);
+  REQUIRE(legacy_result.has_value());
+  CHECK(*legacy_result == "[root|ITEM-A][root|ITEM-B]");
 }
 
 TEST_CASE("partial_render_by_name", "[injamm][partial]") {

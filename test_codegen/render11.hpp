@@ -1,6 +1,6 @@
 #pragma once
-#ifndef RENDER_RENDER11_HPP
-#define RENDER_RENDER11_HPP
+#ifndef INJAMM_CODEGEN_NS_67656E657261746564_FN_72656E6465723131_HPP
+#define INJAMM_CODEGEN_NS_67656E657261746564_FN_72656E6465723131_HPP
 /**
  * @file render.hpp
  * @brief injamm_codegen によって自動生成されたレンダリング関数
@@ -12,9 +12,24 @@
 #include <injamm/types.hpp>
 #include <glaze/glaze.hpp>
 #include <injamm/escape.hpp>
+#include "codegen_helpers.hpp"
 
 namespace generated {
-#include "codegen_helpers.hpp"
+
+namespace cgns_render11 {
+/**
+ * @brief 値側に @p key が無ければルート側へフォールバックする二段解決ヘルパ
+ * @details VM (bytecode_exec.hpp) の value → root 二段走査と同一の解決順。
+ */
+template <class V, class R>
+inline decltype(auto) cg_get_6E616D65(V const& v, R const& r) {
+  if constexpr (requires { v.name; }) {
+    return (v.name);
+  } else {
+    return (r.name);
+  }
+}
+} // namespace cgns_render11
 
 
 /**
@@ -39,23 +54,25 @@ render11(const T& data, Sink& out) {
     out.clear();
     out.reserve(72);
   }
-  
-  auto _size1 = data.items.size();
-  for (std::size_t _i1 = 0; _i1 < _size1; ++_i1) {
-    const auto& _item1 = data.items[_i1];
-    out.append("[");
-    if (_i1 == 0) {
-      out.append("F:");
-      html_escape_append_value(out, _item1.name);
+
+  {
+    auto _size1 = data.items.size();
+    for (std::size_t _i1 = 0; _i1 < _size1; ++_i1) {
+      const auto& _item1 = data.items[_i1];
+      out.append("[");
+      if (_i1 == 0) {
+        out.append("F:");
+        html_escape_append_value(out, cgns_render11::cg_get_6E616D65(_item1, data));
+      }
+      out.append("][");
+      if (_i1 > 0) {
+        out.append("N:");
+        html_escape_append_value(out, cgns_render11::cg_get_6E616D65(_item1, data));
+      }
+      out.append("]");
     }
-    out.append("][");
-    if (_i1 > 0) {
-      out.append("N:");
-      html_escape_append_value(out, _item1.name);
-    }
-    out.append("]");
   }
-  
+
   return {};
 }
 
@@ -90,4 +107,4 @@ render11(const T& data) {
 
 } // namespace generated
 
-#endif // RENDER_RENDER11_HPP
+#endif // INJAMM_CODEGEN_NS_67656E657261746564_FN_72656E6465723131_HPP

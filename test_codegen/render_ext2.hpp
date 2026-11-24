@@ -1,6 +1,6 @@
 #pragma once
-#ifndef RENDER_RENDER_EXT2_HPP
-#define RENDER_RENDER_EXT2_HPP
+#ifndef INJAMM_CODEGEN_NS_67656E657261746564_FN_72656E6465725F65787432_HPP
+#define INJAMM_CODEGEN_NS_67656E657261746564_FN_72656E6465725F65787432_HPP
 /**
  * @file render.hpp
  * @brief injamm_codegen によって自動生成されたレンダリング関数
@@ -12,9 +12,9 @@
 #include <injamm/types.hpp>
 #include <glaze/glaze.hpp>
 #include <injamm/escape.hpp>
+#include "codegen_helpers.hpp"
 
 namespace generated {
-#include "codegen_helpers.hpp"
 
 
 /**
@@ -38,13 +38,13 @@ render_ext2(const T& data, Sink& out) {
   if constexpr (std::is_same_v<Sink, std::string>) {
     out.clear();
   }
-  
+
   if (data.age == 30) {
     out.append("match");
   } else {
     out.append("no match");
   }
-  
+
   return {};
 }
 
@@ -79,4 +79,4 @@ render_ext2(const T& data) {
 
 } // namespace generated
 
-#endif // RENDER_RENDER_EXT2_HPP
+#endif // INJAMM_CODEGEN_NS_67656E657261746564_FN_72656E6465725F65787432_HPP

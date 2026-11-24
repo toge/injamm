@@ -1,6 +1,6 @@
 #pragma once
-#ifndef RENDER_RENDER_LOGIC_OR_HPP
-#define RENDER_RENDER_LOGIC_OR_HPP
+#ifndef INJAMM_CODEGEN_NS_67656E657261746564_FN_72656E6465725F6C6F6769635F6F72_HPP
+#define INJAMM_CODEGEN_NS_67656E657261746564_FN_72656E6465725F6C6F6769635F6F72_HPP
 /**
  * @file render.hpp
  * @brief injamm_codegen によって自動生成されたレンダリング関数
@@ -12,9 +12,9 @@
 #include <injamm/types.hpp>
 #include <glaze/glaze.hpp>
 #include <injamm/escape.hpp>
+#include "codegen_helpers.hpp"
 
 namespace generated {
-#include "codegen_helpers.hpp"
 
 
 /**
@@ -79,4 +79,4 @@ render_logic_or(const T& data) {
 
 } // namespace generated
 
-#endif // RENDER_RENDER_LOGIC_OR_HPP
+#endif // INJAMM_CODEGEN_NS_67656E657261746564_FN_72656E6465725F6C6F6769635F6F72_HPP

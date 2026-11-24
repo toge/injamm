@@ -1,6 +1,6 @@
 #pragma once
-#ifndef RENDER_RENDER4_HPP
-#define RENDER_RENDER4_HPP
+#ifndef INJAMM_CODEGEN_NS_67656E657261746564_FN_72656E64657234_HPP
+#define INJAMM_CODEGEN_NS_67656E657261746564_FN_72656E64657234_HPP
 /**
  * @file render.hpp
  * @brief injamm_codegen によって自動生成されたレンダリング関数
@@ -12,9 +12,9 @@
 #include <injamm/types.hpp>
 #include <glaze/glaze.hpp>
 #include <injamm/escape.hpp>
+#include "codegen_helpers.hpp"
 
 namespace generated {
-#include "codegen_helpers.hpp"
 
 
 /**
@@ -38,13 +38,13 @@ render4(const T& data, Sink& out) {
   if constexpr (std::is_same_v<Sink, std::string>) {
     out.clear();
   }
-  
+
   if (static_cast<bool>(data.active)) {
     out.append("Active");
   } else {
     out.append("Inactive");
   }
-  
+
   return {};
 }
 
@@ -79,4 +79,4 @@ render4(const T& data) {
 
 } // namespace generated
 
-#endif // RENDER_RENDER4_HPP
+#endif // INJAMM_CODEGEN_NS_67656E657261746564_FN_72656E64657234_HPP

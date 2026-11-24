@@ -457,7 +457,7 @@ namespace detail {
         } else {
           bc_compiler<T> compiler;
           compiler.set_partial_entries(v);
-          auto pbc = compiler.compile(s);
+          auto pbc = compiler.compile_partial(s);
           v.push_back({pending_name, std::make_shared<bytecode>(std::move(pbc))});
           pending_name.clear();
         }
@@ -525,7 +525,7 @@ namespace detail {
           auto body = tmpl_sv.substr(Data::parsed.partial_body_starts[i], Data::parsed.partial_body_ends[i] - Data::parsed.partial_body_starts[i]);
           detail::bc_compiler<T> compiler;
           compiler.set_partial_entries(bc.partial_entries);
-          auto partial_bc = compiler.compile(std::string(body));
+          auto partial_bc = compiler.compile_partial(std::string(body));
           if (partial_bc.error.ec != error_code::none) {
             bc.error = partial_bc.error;
             break;
@@ -664,7 +664,7 @@ namespace detail {
         // ネストした partial（トップレベル partial_names に含まれない）
         auto body = tmpl_sv.substr(closure.nested_body_start, closure.nested_body_end - closure.nested_body_start);
         detail::bc_compiler<T> compiler;
-        auto partial_bc = compiler.compile(std::string(body));
+        auto partial_bc = compiler.compile_partial(std::string(body));
         if (partial_bc.error.ec != error_code::none) {
           bc.error = partial_bc.error;
           return bc;
@@ -677,7 +677,7 @@ namespace detail {
         auto body = tmpl_sv.substr(Data::parsed.partial_body_starts[i], Data::parsed.partial_body_ends[i] - Data::parsed.partial_body_starts[i]);
         detail::bc_compiler<T> compiler;
         compiler.set_partial_entries(bc.partial_entries);  // 既コンパイル済み依存先を渡す
-        auto partial_bc = compiler.compile(std::string(body));
+        auto partial_bc = compiler.compile_partial(std::string(body));
         if (partial_bc.error.ec != error_code::none) {
           bc.error = partial_bc.error;
           break;

@@ -1243,7 +1243,9 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
         if (f.filter == string_filter::format) { chrono_fmt = f.str_arg1; break; }
       }
     }
+    bool found = false;
     auto serialize_field = [&](auto const& field) -> std::expected<void, error_ctx> {
+      found = true;
       using FT = std::remove_cvref_t<decltype(field)>;
       if (use_json) {
         json_serialize_value(filtered, field);
@@ -1296,21 +1298,27 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
     bool resolved = false;
     if (var_ref.root_fallback == root_fb_none) {
       r = for_each_field_ref(ex.value_, var_ref, serialize_field);
-      resolved = static_cast<bool>(r);
-      if (!resolved) return std::unexpected(r.error());
+      if (!r) return std::unexpected(r.error());
+      resolved = found;
+      if (!resolved) {
+        return std::unexpected(error_ctx{.position = pc, .ec = error_code::unknown_key});
+      }
     } else {
       if (var_ref.root_fallback == root_fb_unproven) {
         r = for_each_field_ref(ex.value_, var_ref, serialize_field);
         if (!r && r.error().ec != error_code::unknown_key) return std::unexpected(r.error());
-        resolved = static_cast<bool>(r);
+        resolved = found;
       }
       if (!resolved) {
         if (var_ref.root_fallback != root_fb_none) {
+          found = false;
           auto rr = for_each_field_ref(ex.root_value_, var_ref, serialize_field);
           if (!rr && rr.error().ec != error_code::unknown_key) return std::unexpected(rr.error());
-          resolved = static_cast<bool>(rr);
+          resolved = found;
         }
-        if (!resolved) return std::unexpected(r.error());
+        if (!resolved) {
+          return std::unexpected(error_ctx{.position = pc, .ec = error_code::unknown_key});
+        }
       }
     }
     for (auto const& f : var_ref.filters) { auto r = apply_string_filter(filtered, f); if (!r) return std::unexpected(r.error()); }
@@ -1451,7 +1459,11 @@ static auto for_each_field(V const& v, std::string_view key, std::uint32_t field
         (void)hot_append(ex.out_, buf.data(), static_cast<std::size_t>(ptr - buf.data()));
       }
     };
-    if (for_each_root_field_ref(ex, ref, emit_size)) { ++pc; return {}; }
+    if (ref.root_fallback == root_fb_proven &&
+        for_each_root_field_ref(ex, ref, emit_size)) {
+      ++pc;
+      return {};
+    }
     auto r = for_each_field_ref(ex.value_, ref, emit_size);
     if (!r && r.error().ec != error_code::unknown_key) return std::unexpected(r.error());
     if (!r && ref.root_fallback != root_fb_none &&
