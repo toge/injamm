@@ -34,6 +34,38 @@
 #include "case_opt_else.hpp"
 #include "case_at_else.hpp"
 #include "case_take_else.hpp"
+#include "case_cmp_eq_var.hpp"
+#include "case_cmp_ne_var.hpp"
+#include "case_cmp_gt_literal.hpp"
+#include "case_cmp_gte_literal.hpp"
+#include "case_cmp_lt_literal.hpp"
+#include "case_cmp_lte_literal.hpp"
+#include "case_cmp_string_var.hpp"
+#include "case_cmp_string_literal.hpp"
+#include "case_cmp_empty_string.hpp"
+#include "case_cmp_this_string.hpp"
+#include "case_cmp_loop_index.hpp"
+#include "case_cmp_loop_index1.hpp"
+#include "case_cmp_loop_size.hpp"
+#include "case_cmp_loop_roots.hpp"
+#include "case_cmp_loop_value_rhs.hpp"
+#include "case_cmp_loop_bool.hpp"
+#include "case_cmp_string_int.hpp"
+#include "case_cmp_invalid_string.hpp"
+#include "case_cmp_string_float.hpp"
+#include "case_cmp_int_string.hpp"
+#include "case_cmp_float_vars.hpp"
+#include "case_cmp_optional_rhs.hpp"
+#include "case_cmp_optional_lhs.hpp"
+#include "case_cmp_enum_literal.hpp"
+#include "case_cmp_enum_var.hpp"
+#include "case_two_stage_nested_take.hpp"
+#include "case_two_stage_nested_index.hpp"
+#include "case_if_loop_active.hpp"
+#include "case_if_loop_not_active.hpp"
+#include "case_if_loop_and.hpp"
+#include "case_if_loop_or.hpp"
+#include "case_if_loop_filtered.hpp"
 
 /** test_codegen_live_partials.cpp（別 TU）で検証する partial ケースの数 */
 int run_partial_loop_checks(CaseData const& d, CaseData const& d2);
@@ -51,8 +83,39 @@ int main() {
   d2.age    = 0;
   d2.opt.reset();
   d2.items.clear();
+  d2.qty = 4;
+  d2.limit = 3;
+  d2.ratio = 3.0;
+  d2.ceiling = 2.5;
+  d2.name = "S";
+  d2.alias = "4";
+  d2.numeric = "31";
+  d2.invalid_numeric = "0";
+  d2.opt_limit.reset();
+  d2.level = none;
+  d2.other_level = ready;
+
   CaseData d_partial_falsy = d;
   d_partial_falsy.active   = false;
+  CaseData d_empty = d;
+  d_empty.name.clear();
+  CaseData d_low = d;
+  d_low.qty = 2;
+  CaseData d_high = d;
+  d_high.qty = 4;
+  CaseData d_loop_false = d;
+  d_loop_false.limit = 4;
+  d_loop_false.items[0].count = 4;
+  d_loop_false.items[1].count = 4;
+  CaseData d_loop_size_false = d;
+  d_loop_size_false.items.resize(1);
+  CaseData d_numeric_zero = d;
+  d_numeric_zero.numeric = "0";
+  CaseData d_partial_numeric = d;
+  d_partial_numeric.invalid_numeric = "30x";
+  CaseData d_root_false = d;
+  d_root_false.active = false;
+  d_root_false.age = 0;
 
   std::cout << "=== injamm_codegen ライブテスト（生成→コンパイル→実行→VM 比較） ===\n\n";
 
@@ -93,6 +156,74 @@ int main() {
     [](auto const& data) { return generated::case_opt_section(data); });
   live_check("optional section with else", "{{#opt}}[{{this}}]{{else}}none{{/opt}}", d, d2,
     [](auto const& data) { return generated::case_opt_else(data); });
+
+  // --- 比較演算: VM の型付き比較、特殊変数、値→ルート二段解決 ---
+  live_check("compare eq variable", "{{#if qty == limit}}Y{{else}}N{{/if}}", d, d_high,
+    [](auto const& data) { return generated::case_cmp_eq_var(data); });
+  live_check("compare ne variable", "{{#if qty != limit}}Y{{else}}N{{/if}}", d, d_high,
+    [](auto const& data) { return generated::case_cmp_ne_var(data); });
+  live_check("compare gt literal", "{{#if qty > 2}}Y{{else}}N{{/if}}", d, d_low,
+    [](auto const& data) { return generated::case_cmp_gt_literal(data); });
+  live_check("compare gte literal", "{{#if qty >= 3}}Y{{else}}N{{/if}}", d, d_low,
+    [](auto const& data) { return generated::case_cmp_gte_literal(data); });
+  live_check("compare lt literal", "{{#if qty < 4}}Y{{else}}N{{/if}}", d, d_high,
+    [](auto const& data) { return generated::case_cmp_lt_literal(data); });
+  live_check("compare lte literal", "{{#if qty <= 3}}Y{{else}}N{{/if}}", d, d_high,
+    [](auto const& data) { return generated::case_cmp_lte_literal(data); });
+  live_check("compare string variable", "{{#if name == alias}}Y{{else}}N{{/if}}", d, d2,
+    [](auto const& data) { return generated::case_cmp_string_var(data); });
+  live_check("compare string literal", "{{#if name == \"R\"}}Y{{else}}N{{/if}}", d, d2,
+    [](auto const& data) { return generated::case_cmp_string_literal(data); });
+  live_check("compare empty string", "{{#if name == \"\"}}Y{{else}}N{{/if}}", d, d_empty,
+    [](auto const& data) { return generated::case_cmp_empty_string(data); });
+  live_check("compare this string", "{{#tags}}{{#if this == \"t1\"}}Y{{else}}N{{/if}}{{/tags}}", d, d2,
+    [](auto const& data) { return generated::case_cmp_this_string(data); });
+  live_check("compare loop index", "{{#items}}{{#if loop.index == 0}}F{{else}}N{{/if}}{{/items}}", d, d2,
+    [](auto const& data) { return generated::case_cmp_loop_index(data); });
+  live_check("compare loop index1", "{{#items}}{{#if loop.index1 == 1}}F{{else}}N{{/if}}{{/items}}", d, d2,
+    [](auto const& data) { return generated::case_cmp_loop_index1(data); });
+  live_check("compare loop size", "{{#items}}{{#if loop.size == 2}}S{{else}}N{{/if}}{{/items}}", d, d_loop_size_false,
+    [](auto const& data) { return generated::case_cmp_loop_size(data); });
+  live_check("compare loop roots", "{{#items}}{{#if qty == limit}}Y{{else}}N{{/if}}{{/items}}", d, d_loop_false,
+    [](auto const& data) { return generated::case_cmp_loop_roots(data); });
+  live_check("compare loop value rhs", "{{#items}}{{#if qty == count}}Y{{else}}N{{/if}}{{/items}}", d, d_loop_false,
+    [](auto const& data) { return generated::case_cmp_loop_value_rhs(data); });
+  live_check("compare loop bool", "{{#items}}{{#if on == active}}Y{{else}}N{{/if}}{{/items}}", d, d_root_false,
+    [](auto const& data) { return generated::case_cmp_loop_bool(data); });
+  live_check("compare string and integer variable", "{{#if numeric == age}}Y{{else}}N{{/if}}", d, d2,
+    [](auto const& data) { return generated::case_cmp_string_int(data); });
+  live_check("compare invalid numeric string", "{{#if invalid_numeric == age}}Y{{else}}N{{/if}}", d, d2,
+    [](auto const& data) { return generated::case_cmp_invalid_string(data); });
+  live_check("compare partial numeric string", "{{#if invalid_numeric == age}}Y{{else}}N{{/if}}", d2, d_partial_numeric,
+    [](auto const& data) { return generated::case_cmp_invalid_string(data); });
+  live_check("compare string and floating variable", "{{#if numeric == ratio}}Y{{else}}N{{/if}}", d, d_numeric_zero,
+    [](auto const& data) { return generated::case_cmp_string_float(data); });
+  live_check("compare integer and string variable", "{{#if qty == alias}}Y{{else}}N{{/if}}", d, d2,
+    [](auto const& data) { return generated::case_cmp_int_string(data); });
+  live_check("compare floating variables", "{{#if ratio >= ceiling}}Y{{else}}N{{/if}}", d, d2,
+    [](auto const& data) { return generated::case_cmp_float_vars(data); });
+  live_check("compare optional rhs", "{{#if qty == opt_limit}}Y{{else}}N{{/if}}", d, d2,
+    [](auto const& data) { return generated::case_cmp_optional_rhs(data); });
+  live_check("compare optional lhs", "{{#if opt_limit == qty}}Y{{else}}N{{/if}}", d, d2,
+    [](auto const& data) { return generated::case_cmp_optional_lhs(data); });
+  live_check("compare enum literal", "{{#if level == 1}}Y{{else}}N{{/if}}", d, d2,
+    [](auto const& data) { return generated::case_cmp_enum_literal(data); });
+  live_check("compare enum variable", "{{#if level == other_level}}Y{{else}}N{{/if}}", d, d2,
+    [](auto const& data) { return generated::case_cmp_enum_var(data); });
+  live_check("nested two-stage take", "{{#tags}}{{#items | take(1)}}{{name}}{{/items}}{{/tags}}", d, d2,
+    [](auto const& data) { return generated::case_two_stage_nested_take(data); });
+  live_check("nested two-stage index", "{{#tags}}{{#items}}{{loop.index}}{{name}}{{/items}}{{/tags}}", d, d2,
+    [](auto const& data) { return generated::case_two_stage_nested_index(data); });
+  live_check("if root active in loop", "{{#items}}{{#if active}}T{{else}}F{{/if}}{{/items}}", d, d_root_false,
+    [](auto const& data) { return generated::case_if_loop_active(data); });
+  live_check("if root not active in loop", "{{#items}}{{#if !active}}F{{else}}T{{/if}}{{/items}}", d, d_root_false,
+    [](auto const& data) { return generated::case_if_loop_not_active(data); });
+  live_check("if root and in loop", "{{#items}}{{#if active && age}}A{{else}}B{{/if}}{{/items}}", d, d_root_false,
+    [](auto const& data) { return generated::case_if_loop_and(data); });
+  live_check("if root or in loop", "{{#items}}{{#if active || age}}A{{else}}B{{/if}}{{/items}}", d, d_root_false,
+    [](auto const& data) { return generated::case_if_loop_or(data); });
+  live_check("if root filtered in loop", "{{#items}}{{#if age | gt(18)}}A{{else}}B{{/if}}{{/items}}", d, d_root_false,
+    [](auto const& data) { return generated::case_if_loop_filtered(data); });
 
   // --- partial スコープ: ループ内のグローバル partial は value→root の二段解決 ---
   live_test_count += run_partial_loop_checks(d, d2);

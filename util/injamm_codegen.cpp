@@ -376,6 +376,27 @@ public:
   }
 
   /** @brief opcode と operand の境界を検証する（library の bytecode_io と同基準） */
+  static bool validate_compare_ref(bc::var_ref const& ref) {
+    if (ref.key.empty() || ref.section_op_count != 0 ||
+        ref.filter_flags != 0 || !ref.filters.empty() || !ref.float_filters.empty()) {
+      return false;
+    }
+    auto const kind = static_cast<injamm::detail::compare_operand_kind>(ref.compare_rhs_kind);
+    auto const eq_kind = static_cast<std::uint8_t>(injamm::detail::int_filter::eq);
+    switch (kind) {
+      case injamm::detail::compare_operand_kind::none:
+      case injamm::detail::compare_operand_kind::int_literal:
+        return ref.compare_rhs_text.empty() && !ref.compare_rhs_has_dot &&
+               ref.int_filters.size() == 1 && ref.int_filters[0].filter == eq_kind;
+      case injamm::detail::compare_operand_kind::string_literal:
+        return ref.int_filters.empty() && !ref.compare_rhs_has_dot;
+      case injamm::detail::compare_operand_kind::variable:
+        return !ref.compare_rhs_text.empty() && ref.int_filters.empty();
+      default:
+        return false;
+    }
+  }
+
   bool validate_bytecode(bc::bytecode const& bc) {
     auto const n_lit = bc.literals.size();
     auto const n_var = bc.var_refs.size();
@@ -406,12 +427,6 @@ public:
         else if (inst.operand3 != 0 && inst.operand3 > n_ins) bad = true;
         break;
       case bc::opcode::emit_if:
-      case bc::opcode::emit_if_eq:
-      case bc::opcode::emit_if_ne:
-      case bc::opcode::emit_if_gt:
-      case bc::opcode::emit_if_gte:
-      case bc::opcode::emit_if_lt:
-      case bc::opcode::emit_if_lte:
       case bc::opcode::emit_if_or:
       case bc::opcode::emit_if_and:
       case bc::opcode::emit_if_not:
@@ -419,6 +434,16 @@ public:
         if (inst.operand2 >= n_var) bad = true;
         else if (inst.operand == 0 || inst.operand > n_ins) bad = true;
         else if ((inst.op == bc::opcode::emit_if_or || inst.op == bc::opcode::emit_if_and) && inst.operand3 >= n_var) bad = true;
+        break;
+      case bc::opcode::emit_if_eq:
+      case bc::opcode::emit_if_ne:
+      case bc::opcode::emit_if_gt:
+      case bc::opcode::emit_if_gte:
+      case bc::opcode::emit_if_lt:
+      case bc::opcode::emit_if_lte:
+        if (inst.operand2 >= n_var) bad = true;
+        else if (inst.operand == 0 || inst.operand > n_ins) bad = true;
+        else if (!validate_compare_ref(bc.var_refs[inst.operand2])) bad = true;
         break;
       case bc::opcode::resolve_filtered:
         bad = inst.operand2 >= n_var;
@@ -509,6 +534,8 @@ class code_generator {
   bool in_partial_ = false;    /**< partial 本体の生成中（値スコープ式が value、ルート式が root） */
   /**< インデックス形式（_iN/_sizeN）が必要な emit_section 命令 */
   std::unordered_set<const bc::instruction*> index_loops_;
+  /**< collect_two_stage_keys のメタデータ走査で発見したインデックス形式ループ */
+  std::unordered_set<const bc::instruction*> metadata_index_loops_;
   /**< stride ループ深度（ループ末尾で _srcN を進める） */
   std::unordered_set<int> stride_loops_;
 
@@ -567,7 +594,7 @@ class code_generator {
    * @brief 文字列を C++ の文字列リテラルに変換
    * @details バックスラッシュ、ダブルクォート、改行、タブをエスケープする
    */
-  std::string cpp_string(std::string_view s) {
+  std::string cpp_string(std::string_view s) const {
     std::string result = "\"";
     for (char c : s) {
       switch (c) {
@@ -747,14 +774,113 @@ class code_generator {
     return resolve_value_access(ref);
   }
 
-  /**
-   * @brief 比較値を取得
-   * @details 整数比較の右辺値は var_ref.int_filters[0].arg に格納されている
-   */
-  std::string get_compare_value(bc::var_ref const& ref) {
-    if (!ref.int_filters.empty())
-      return std::to_string(ref.int_filters[0].arg);
-    return "0";
+  /** @brief 比較命令の LHS が現在ループのインデックス値を使うか */
+  static bool comparison_uses_loop_index(bc::var_ref const& ref) {
+    return ref.key == "loop.index" || ref.key == "loop.index1" || ref.key == "loop.size";
+  }
+
+  /** @brief 比較命令の左辺を C++ 式へ変換する */
+  std::string resolve_compare_lhs(bc::var_ref const& ref) const {
+    auto const special = injamm::detail::classify_special_var(ref.key);
+    switch (special) {
+      case injamm::detail::special_var_kind::none:
+        return resolve_value_access(ref);
+      case injamm::detail::special_var_kind::this_:
+        return loop_depth_ > 0 ? value_expr() : std::string{"std::optional<int>{}"};
+      case injamm::detail::special_var_kind::loop_index:
+        return loop_depth_ > 0 ? ("_i" + std::to_string(loop_depth_)) : std::string{"std::optional<int>{}"};
+      case injamm::detail::special_var_kind::loop_index1:
+        return loop_depth_ > 0 ? ("_i" + std::to_string(loop_depth_) + " + 1")
+                              : std::string{"std::optional<int>{}"};
+      case injamm::detail::special_var_kind::loop_size:
+        return loop_depth_ > 0 ? ("_size" + std::to_string(loop_depth_)) : std::string{"std::optional<int>{}"};
+      default:
+        return "std::optional<int>{}";
+    }
+  }
+
+  /** @brief 比較 RHS の変数参照を通常の value → root 解決規則へ写す */
+  static bc::var_ref make_compare_rhs_ref(bc::var_ref const& ref) {
+    bc::var_ref rhs_ref;
+    rhs_ref.key = ref.compare_rhs_text;
+    rhs_ref.has_dot = ref.compare_rhs_has_dot;
+    rhs_ref.root_fallback = injamm::detail::root_fb_unproven;
+    return rhs_ref;
+  }
+
+  /** @brief compare_rhs_kind に応じた比較 RHS の C++ 式を返す */
+  std::string get_compare_rhs_expression(bc::var_ref const& ref) const {
+    auto const kind = static_cast<injamm::detail::compare_operand_kind>(ref.compare_rhs_kind);
+    switch (kind) {
+      case injamm::detail::compare_operand_kind::int_literal: {
+        return std::to_string(ref.int_filters[0].arg);
+      }
+      case injamm::detail::compare_operand_kind::string_literal: {
+        return cpp_string(ref.compare_rhs_text);
+      }
+      case injamm::detail::compare_operand_kind::variable: {
+        auto const rhs_ref = make_compare_rhs_ref(ref);
+        if (injamm::detail::classify_special_var(rhs_ref.key) != injamm::detail::special_var_kind::none) {
+          return "std::optional<int>{}";
+        }
+        return resolve_value_access(rhs_ref);
+      }
+      case injamm::detail::compare_operand_kind::none: {
+        return std::to_string(ref.int_filters[0].arg);
+      }
+      default: {
+        return "std::optional<int>{}";
+      }
+    }
+  }
+
+  /** @brief 比較オペコードを生成ヘッダ側の enum 式へ変換する */
+  static std::string compare_opcode_expression(bc::opcode op) {
+    switch (op) {
+      case bc::opcode::emit_if_eq: {
+        return "bc_opcode::emit_if_eq";
+      }
+      case bc::opcode::emit_if_ne: {
+        return "bc_opcode::emit_if_ne";
+      }
+      case bc::opcode::emit_if_gt: {
+        return "bc_opcode::emit_if_gt";
+      }
+      case bc::opcode::emit_if_gte: {
+        return "bc_opcode::emit_if_gte";
+      }
+      case bc::opcode::emit_if_lt: {
+        return "bc_opcode::emit_if_lt";
+      }
+      case bc::opcode::emit_if_lte: {
+        return "bc_opcode::emit_if_lte";
+      }
+      default: {
+        return "bc_opcode::emit_if_eq";
+      }
+    }
+  }
+
+  /** @brief 比較 RHS 種別を生成ヘッダ側の enum 式へ変換する */
+  static std::string compare_rhs_kind_expression(bc::var_ref const& ref) {
+    auto const kind = static_cast<injamm::detail::compare_operand_kind>(ref.compare_rhs_kind);
+    switch (kind) {
+      case injamm::detail::compare_operand_kind::int_literal: {
+        return "compare_operand_kind::int_literal";
+      }
+      case injamm::detail::compare_operand_kind::string_literal: {
+        return "compare_operand_kind::string_literal";
+      }
+      case injamm::detail::compare_operand_kind::variable: {
+        return "compare_operand_kind::variable";
+      }
+      case injamm::detail::compare_operand_kind::none: {
+        return "compare_operand_kind::none";
+      }
+      default: {
+        return "compare_operand_kind::none";
+      }
+    }
   }
 
   /** @brief ヘッダファイルの先頭（インクルードガード + include）を生成 */
@@ -1113,7 +1239,7 @@ class code_generator {
    * @param bc 解析対象のバイトコード
    */
   void precompute_index_loops(bc::bytecode const& bc) {
-    index_loops_.clear();
+    index_loops_ = metadata_index_loops_;
     std::vector<const bc::instruction*> stack;
     for (auto const& inst : bc.instructions) {
       auto op = inst.op;
@@ -1130,6 +1256,14 @@ class code_generator {
                op == bc::opcode::emit_if_or || op == bc::opcode::emit_if_and) {
         auto const& ref = bc.var_refs[inst.operand2];
         if (!stack.empty() && (ref.key == "loop.is_last" || ref.key == "loop.is_first")) {
+          index_loops_.insert(stack.back());
+        }
+      }
+      else if (op == bc::opcode::emit_if_eq || op == bc::opcode::emit_if_ne ||
+               op == bc::opcode::emit_if_gt || op == bc::opcode::emit_if_gte ||
+               op == bc::opcode::emit_if_lt || op == bc::opcode::emit_if_lte) {
+        auto const& ref = bc.var_refs[inst.operand2];
+        if (!stack.empty() && comparison_uses_loop_index(ref)) {
           index_loops_.insert(stack.back());
         }
       }
@@ -1232,6 +1366,14 @@ class code_generator {
         }
       }
     };
+    auto mark_enclosing_index_loop = [&]() {
+      for (auto it = blocks.rbegin(); it != blocks.rend(); ++it) {
+        if (it->is_section) {
+          metadata_index_loops_.insert(it->inst);
+          return;
+        }
+      }
+    };
     for (auto const& inst : bc.instructions) {
       switch (inst.op) {
         case bc::opcode::emit_section: {
@@ -1261,15 +1403,26 @@ class code_generator {
           blocks.push_back({false, false, nullptr, false});
           break;
         case bc::opcode::emit_if:
+        case bc::opcode::emit_if_not: {
+          auto const& ref = bc.var_refs[inst.operand2];
+          if (value_relative(ref)) two_stage_keys_.insert(ref.key);
+          blocks.push_back({false, false, nullptr, false});
+          break;
+        }
         case bc::opcode::emit_if_eq:
         case bc::opcode::emit_if_ne:
         case bc::opcode::emit_if_gt:
         case bc::opcode::emit_if_gte:
         case bc::opcode::emit_if_lt:
-        case bc::opcode::emit_if_lte:
-        case bc::opcode::emit_if_not: {
+        case bc::opcode::emit_if_lte: {
           auto const& ref = bc.var_refs[inst.operand2];
           if (value_relative(ref)) two_stage_keys_.insert(ref.key);
+          if (static_cast<injamm::detail::compare_operand_kind>(ref.compare_rhs_kind) ==
+              injamm::detail::compare_operand_kind::variable) {
+            auto const rhs_ref = make_compare_rhs_ref(ref);
+            if (value_relative(rhs_ref)) two_stage_keys_.insert(rhs_ref.key);
+          }
+          if (comparison_uses_loop_index(ref)) mark_enclosing_index_loop();
           blocks.push_back({false, false, nullptr, false});
           break;
         }
@@ -1635,19 +1788,11 @@ class code_generator {
     else if (op == bc::opcode::emit_if_eq || op == bc::opcode::emit_if_ne ||
              op == bc::opcode::emit_if_gt || op == bc::opcode::emit_if_gte ||
              op == bc::opcode::emit_if_lt || op == bc::opcode::emit_if_lte) {
-      auto access = resolve_if_access(bc.var_refs[inst.operand2]);
-      auto cmp_val = get_compare_value(bc.var_refs[inst.operand2]);
-      std::string op_str;
-      switch (op) {
-        case bc::opcode::emit_if_eq:  op_str = "=="; break;
-        case bc::opcode::emit_if_ne:  op_str = "!="; break;
-        case bc::opcode::emit_if_gt:  op_str = ">";  break;
-        case bc::opcode::emit_if_gte: op_str = ">="; break;
-        case bc::opcode::emit_if_lt:  op_str = "<";  break;
-        case bc::opcode::emit_if_lte: op_str = "<="; break;
-        default: break;
-      }
-      emit("if (" + access + " " + op_str + " " + cmp_val + ") {");
+      auto const& ref = bc.var_refs[inst.operand2];
+      auto const lhs = resolve_compare_lhs(ref);
+      auto const rhs = get_compare_rhs_expression(ref);
+      emit("if (codegen_compare(" + compare_opcode_expression(op) + ", " +
+           compare_rhs_kind_expression(ref) + ", " + lhs + ", " + rhs + ")) {");
       ++indent_;
       open_blocks_.push_back({.kind = end_kind::cond});
     }
@@ -1763,11 +1908,11 @@ class code_generator {
       }
       if (use_json) {
         // serializable な型は serialize_value、reflectable な型は glz::write_json を使う
-        emit("if constexpr (::injamm::detail::serializable_v<decltype(" + access + ")>) {");
+        emit("if constexpr (::injamm::detail::serializable_v<std::remove_cvref_t<decltype(" + access + ")>>) {");
         ++indent_;
         emit("_filtered.clear(); ::injamm::detail::serialize_value(_filtered, " + access + ");");
         --indent_;
-        emit("} else if constexpr (::injamm::detail::ct_glz_reflectable<decltype(" + access + ")>) {");
+        emit("} else if constexpr (::injamm::detail::ct_glz_reflectable<std::remove_cvref_t<decltype(" + access + ")>>) {");
         ++indent_;
         emit("(void)::glz::write_json(" + access + ", _filtered);");
         --indent_;
@@ -1780,11 +1925,11 @@ class code_generator {
         emit("}");
       } else {
         if (use_format) {
-          emit("if constexpr (::injamm::detail::is_chrono_time_point_v<decltype(" + access + ")>) {");
+          emit("if constexpr (::injamm::detail::is_chrono_time_point_v<std::remove_cvref_t<decltype(" + access + ")>>) {");
           ++indent_;
           emit("_filtered.clear(); ::injamm::detail::serialize_chrono(_filtered, " + access + ", " + cpp_string(fmt_str) + ");");
           --indent_;
-          emit("} else if constexpr (std::is_arithmetic_v<decltype(" + access + ")> && !std::is_same_v<std::remove_cvref_t<decltype(" + access + ")>, bool>) {");
+          emit("} else if constexpr (std::is_arithmetic_v<std::remove_cvref_t<decltype(" + access + ")>> && !std::is_same_v<std::remove_cvref_t<decltype(" + access + ")>, bool>) {");
           ++indent_;
           emit("_filtered.clear(); (void)::injamm::detail::serialize_formatted(_filtered, " + access + ", " + cpp_string(fmt_str) + ");");
           --indent_;
@@ -1796,11 +1941,11 @@ class code_generator {
         }
         // serializable な型は serialize_value、reflectable な型は glz::write_json、
         // それ以外は assign にフォールバック
-        emit("if constexpr (::injamm::detail::serializable_v<decltype(" + access + ")>) {");
+        emit("if constexpr (::injamm::detail::serializable_v<std::remove_cvref_t<decltype(" + access + ")>>) {");
         ++indent_;
         emit("_filtered.clear(); ::injamm::detail::serialize_value(_filtered, " + access + ");");
         --indent_;
-        emit("} else if constexpr (::injamm::detail::ct_glz_reflectable<decltype(" + access + ")>) {");
+        emit("} else if constexpr (::injamm::detail::ct_glz_reflectable<std::remove_cvref_t<decltype(" + access + ")>>) {");
         ++indent_;
         emit("(void)::glz::write_json(" + access + ", _filtered);");
         --indent_;
@@ -1989,6 +2134,7 @@ public:
     }
     /** 二段解決ヘルパのキーを出力前に確定する（ヘルパは使用箇所より前に生成が必要） */
     two_stage_keys_.clear();
+    metadata_index_loops_.clear();
     collect_two_stage_keys(bc, false, 0);
     // リテラルの合計サイズ + 補間値の推定サイズで reserve を過大見積もりする
     std::size_t total_literal_size = 0;

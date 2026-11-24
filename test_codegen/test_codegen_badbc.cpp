@@ -16,6 +16,7 @@
 #include <iostream>
 #include <iterator>
 #include <string>
+#include <string_view>
 
 namespace {
 void put_u32(std::string& s, std::uint32_t v) {
@@ -24,6 +25,13 @@ void put_u32(std::string& s, std::uint32_t v) {
 void put_u64(std::string& s, std::uint64_t v) {
   for (int i = 0; i < 8; ++i) s.push_back(static_cast<char>((v >> (8 * i)) & 0xff));
 }
+void put_i32(std::string& s, std::int32_t v) {
+  put_u32(s, static_cast<std::uint32_t>(v));
+}
+void put_string(std::string& s, std::string_view v) {
+  put_u64(s, v.size());
+  s.append(v);
+}
 
 /** @brief ヘッダ + 本体の先頭を組み立てる */
 std::string make_header(std::uint64_t literal_total_size) {
@@ -31,6 +39,42 @@ std::string make_header(std::uint64_t literal_total_size) {
   put_u32(data, 6);  // version
   data.push_back(0); // is_simple
   put_u64(data, literal_total_size);
+  return data;
+}
+
+/** @brief 比較命令1件だけを含む v6 バイトコード fixture を組み立てる */
+std::string make_compare_fixture(std::uint8_t compare_kind, std::string_view rhs_text,
+                                 std::uint64_t int_filter_count, std::uint8_t int_filter = 8,
+                                 std::int32_t int_arg = 0) {
+  std::string data = make_header(0);
+  put_u64(data, 2);
+  data.push_back(10); // emit_if_eq
+  put_u32(data, 2);
+  put_u32(data, 0);
+  put_u32(data, 0);
+  data.push_back(17); // emit_endif
+  put_u32(data, 0);
+  put_u32(data, 0);
+  put_u32(data, 0);
+  put_u64(data, 0);
+  put_u64(data, 1);
+  put_string(data, "age");
+  data.push_back(0);
+  data.push_back(0);
+  data.push_back(static_cast<char>(compare_kind));
+  put_string(data, rhs_text);
+  data.push_back(0);
+  data.push_back(0);
+  data.push_back(0);
+  put_u64(data, 0);
+  put_u64(data, int_filter_count);
+  for (std::uint64_t i = 0; i < int_filter_count; ++i) {
+    data.push_back(static_cast<char>(int_filter));
+    put_i32(data, int_arg);
+  }
+  put_u64(data, 0);
+  data.push_back(0);
+  put_u64(data, 0);
   return data;
 }
 
@@ -49,6 +93,25 @@ int run_case(std::string const& cli, std::string const& name, std::string const&
     std::cerr << "FAIL: malformed .bc accepted (" << name << ")\n";
     return 1;
   }
+  return 0;
+}
+
+int run_ok_bytecode_case(std::string const& cli, std::string const& name, std::string const& data) {
+  std::string const path = "codegen_valid_fixture.bc";
+  std::string const out_path = "codegen_valid_fixture.hpp";
+  {
+    std::ofstream out(path, std::ios::binary);
+    out.write(data.data(), static_cast<std::streamsize>(data.size()));
+  }
+  std::string const cmd = "\"" + cli + "\" -i " + path + " -t Valid -o " + out_path;
+  int const rc = std::system(cmd.c_str());
+  std::remove(path.c_str());
+  if (rc != 0) {
+    std::cerr << "FAIL: valid .bc rejected (" << name << ")\n";
+    std::remove(out_path.c_str());
+    return 1;
+  }
+  std::remove(out_path.c_str());
   return 0;
 }
 
@@ -83,6 +146,28 @@ int run_ok_case(std::string const& cli, std::string const& expr, std::string con
   std::remove(out_path.c_str());
   if (content.find(expect) == std::string::npos) {
     std::cerr << "FAIL: expected pattern missing in generated code for " << name << "\n";
+    return 1;
+  }
+  return 0;
+}
+
+/** @brief 生成コードに旧比較実装由来の壊れた式が残らないことを検証する */
+int run_forbidden_case(std::string const& cli, std::string const& expr,
+                       std::string const& name, std::string const& forbidden) {
+  std::string const out_path = "codegen_forbidden_fixture.hpp";
+  std::string const cmd      = "\"" + cli + "\" -e \"" + expr + "\" -t Ok -o " + out_path + " 2>codegen_err.txt";
+  int const         rc       = std::system(cmd.c_str());
+  std::remove("codegen_err.txt");
+  if (rc != 0) {
+    std::cerr << "FAIL: codegen failed for " << name << "\n";
+    std::remove(out_path.c_str());
+    return 1;
+  }
+  std::ifstream f(out_path);
+  std::string   content((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+  std::remove(out_path.c_str());
+  if (content.find(forbidden) != std::string::npos) {
+    std::cerr << "FAIL: forbidden generated pattern remains for " << name << ": " << forbidden << "\n";
     return 1;
   }
   return 0;
@@ -158,6 +243,31 @@ int main(int argc, char** argv) {
 
   // 8. README 記載の長いオプション名
   failures += run_long_options_case(cli);
+
+  // 9. 比較 RHS・this の旧 0/メンバ化が生成されないこと
+  failures += run_forbidden_case(cli, "{{#if qty == limit}}Y{{else}}N{{/if}}",
+                                 "variable comparison rhs", "data.qty == 0");
+  failures += run_forbidden_case(cli, "{{#if name == alias}}Y{{else}}N{{/if}}",
+                                 "string variable comparison rhs", "data.name == 0");
+  failures += run_forbidden_case(cli, "{{#tags}}{{#if this == \\\"t1\\\"}}Y{{else}}N{{/if}}{{/tags}}",
+                                 "this comparison lhs", "_item1.this");
+
+  // 10. 空文字列リテラルは有効で、引用符を保持した式として生成されること
+  failures += run_ok_case(cli, "{{#if name == \\\"\\\"}}Y{{else}}N{{/if}}",
+                          "empty string comparison literal",
+                          "compare_operand_kind::string_literal, data.name, \"\"))");
+
+  // 11. 比較 metadata の欠落・未知値はヘッダ生成前に拒否されること
+  failures += run_case(cli, "int literal comparison without payload",
+                       make_compare_fixture(1, "", 0));
+  failures += run_case(cli, "variable comparison with empty rhs",
+                       make_compare_fixture(3, "", 0));
+  failures += run_case(cli, "unknown comparison rhs kind",
+                       make_compare_fixture(255, "", 0));
+  failures += run_case(cli, "comparison without rhs metadata",
+                       make_compare_fixture(0, "", 0));
+  failures += run_ok_bytecode_case(cli, "legacy integer comparison payload",
+                                  make_compare_fixture(0, "", 1, 8, 3));
 
   if (failures == 0) {
     std::cout << "codegen bad .bc rejected\n";

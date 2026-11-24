@@ -4,6 +4,7 @@
 
 #include <charconv>
 #include <cmath>
+#include <injamm/bytecode_fwd.hpp>
 #include <injamm/glz_dispatch.hpp>
 #include <limits>
 #include <optional>
@@ -470,6 +471,245 @@ inline void filter_float_round(std::string& s, int precision) {
   char buf[128];
   auto [p, e] = std::to_chars(buf, buf + sizeof(buf), val, std::chars_format::fixed, precision);
   if (e == std::errc{}) s.assign(buf, p);
+}
+
+using bc_opcode = injamm::detail::bc_opcode;
+using compare_operand_kind = injamm::detail::compare_operand_kind;
+
+namespace codegen_compare_detail {
+
+template <class V>
+inline constexpr bool string_value_v =
+  std::same_as<std::remove_cvref_t<V>, std::string> ||
+  std::same_as<std::remove_cvref_t<V>, std::string_view> ||
+  injamm::detail::char_pointer_v<V> ||
+  (std::is_array_v<std::remove_cvref_t<V>> &&
+   std::same_as<std::remove_cv_t<std::remove_extent_t<std::remove_cvref_t<V>>>, char>);
+
+template <class V>
+constexpr std::string_view string_view_of(V const& value) noexcept {
+  using value_type = std::remove_cvref_t<V>;
+  if constexpr (injamm::detail::char_pointer_v<value_type>) {
+    return value ? std::string_view{value} : std::string_view{};
+  } else if constexpr (std::is_array_v<value_type>) {
+    return std::string_view{value};
+  } else {
+    return injamm::detail::to_sv(value);
+  }
+}
+
+template <class V>
+constexpr bool compare_values(bc_opcode op, V lhs, V rhs) noexcept {
+  switch (op) {
+    case bc_opcode::emit_if_eq: {
+      return lhs == rhs;
+    }
+    case bc_opcode::emit_if_ne: {
+      return lhs != rhs;
+    }
+    case bc_opcode::emit_if_gt: {
+      return lhs > rhs;
+    }
+    case bc_opcode::emit_if_gte: {
+      return lhs >= rhs;
+    }
+    case bc_opcode::emit_if_lt: {
+      return lhs < rhs;
+    }
+    case bc_opcode::emit_if_lte: {
+      return lhs <= rhs;
+    }
+    default: {
+      return false;
+    }
+  }
+}
+
+template <class R>
+constexpr bool compareStringVariable(bc_opcode op, std::string_view lhs, R const& rhs) noexcept {
+  using rhs_type = std::remove_cvref_t<R>;
+  if constexpr (injamm::detail::is_std_optional_v<rhs_type>) {
+    if (!rhs.has_value()) {
+      return false;
+    }
+    return compareStringVariable(op, lhs, *rhs);
+  } else if constexpr (string_value_v<rhs_type>) {
+    switch (op) {
+      case bc_opcode::emit_if_eq: {
+        return lhs == string_view_of(rhs);
+      }
+      case bc_opcode::emit_if_ne: {
+        return lhs != string_view_of(rhs);
+      }
+      default: {
+        return false;
+      }
+    }
+  } else if constexpr (std::is_enum_v<rhs_type>) {
+    auto const rhs_value = static_cast<long long>(static_cast<std::underlying_type_t<rhs_type>>(rhs));
+    auto parsed = 0LL;
+    auto const result = std::from_chars(lhs.data(), lhs.data() + lhs.size(), parsed);
+    return result.ec == std::errc{} && result.ptr == lhs.data() + lhs.size() &&
+           compare_values(op, parsed, rhs_value);
+  } else if constexpr (std::floating_point<rhs_type>) {
+    (void)rhs;
+    auto parsed = 0LL;
+    auto const result = std::from_chars(lhs.data(), lhs.data() + lhs.size(), parsed);
+    return result.ec == std::errc{} && result.ptr == lhs.data() + lhs.size() &&
+           compare_values(op, parsed, 0LL);
+  } else if constexpr (std::is_arithmetic_v<rhs_type>) {
+    auto parsed = 0LL;
+    auto const result = std::from_chars(lhs.data(), lhs.data() + lhs.size(), parsed);
+    return result.ec == std::errc{} && result.ptr == lhs.data() + lhs.size() &&
+           compare_values(op, parsed, static_cast<long long>(rhs));
+  } else {
+    return false;
+  }
+}
+
+template <class L, class R>
+constexpr bool compareString(bc_opcode op, compare_operand_kind rhs_kind, L const& lhs, R const& rhs) noexcept {
+  auto const lhs_view = string_view_of(lhs);
+  if (rhs_kind == compare_operand_kind::variable) {
+    return compareStringVariable(op, lhs_view, rhs);
+  }
+  if (rhs_kind == compare_operand_kind::string_literal) {
+    if constexpr (string_value_v<std::remove_cvref_t<R>>) {
+      switch (op) {
+        case bc_opcode::emit_if_eq: {
+          return lhs_view == string_view_of(rhs);
+        }
+        case bc_opcode::emit_if_ne: {
+          return lhs_view != string_view_of(rhs);
+        }
+        default: {
+          return false;
+        }
+      }
+    } else {
+      return false;
+    }
+  }
+  if (rhs_kind == compare_operand_kind::int_literal || rhs_kind == compare_operand_kind::none) {
+    if constexpr (std::is_arithmetic_v<std::remove_cvref_t<R>> || std::is_enum_v<std::remove_cvref_t<R>>) {
+      auto parsed = 0LL;
+      auto const result = std::from_chars(lhs_view.data(), lhs_view.data() + lhs_view.size(), parsed);
+      auto const rhs_value = static_cast<long long>(rhs);
+      return result.ec == std::errc{} && result.ptr == lhs_view.data() + lhs_view.size() &&
+             compare_values(op, parsed, rhs_value);
+    } else {
+      return false;
+    }
+  }
+  return false;
+}
+
+template <class L, class R>
+constexpr bool compareArithmeticVariable(bc_opcode op, L lhs, R const& rhs) noexcept {
+  using rhs_type = std::remove_cvref_t<R>;
+  if constexpr (injamm::detail::is_std_optional_v<rhs_type>) {
+    if (!rhs.has_value()) {
+      return false;
+    }
+    return compareArithmeticVariable(op, lhs, *rhs);
+  } else if constexpr (std::is_enum_v<rhs_type>) {
+    auto const rhs_value = static_cast<long long>(static_cast<std::underlying_type_t<rhs_type>>(rhs));
+    if constexpr (std::floating_point<L>) {
+      return compare_values(op, static_cast<double>(lhs), static_cast<double>(rhs_value));
+    } else {
+      return compare_values(op, static_cast<long long>(lhs), rhs_value);
+    }
+  } else if constexpr (std::floating_point<rhs_type>) {
+    return compare_values(op, static_cast<double>(lhs), static_cast<double>(rhs));
+  } else if constexpr (std::is_arithmetic_v<rhs_type>) {
+    auto const rhs_value = static_cast<long long>(rhs);
+    if constexpr (std::floating_point<L>) {
+      return compare_values(op, static_cast<double>(lhs), static_cast<double>(rhs_value));
+    } else {
+      return compare_values(op, static_cast<long long>(lhs), rhs_value);
+    }
+  } else {
+    return false;
+  }
+}
+
+template <class L, class R>
+constexpr bool compareEnumVariable(bc_opcode op, L lhs, R const& rhs) noexcept {
+  using lhs_type = std::remove_cvref_t<L>;
+  using rhs_type = std::remove_cvref_t<R>;
+  auto const lhs_value = static_cast<long long>(static_cast<std::underlying_type_t<lhs_type>>(lhs));
+  if constexpr (injamm::detail::is_std_optional_v<rhs_type>) {
+    if (!rhs.has_value()) {
+      return false;
+    }
+    return compareEnumVariable(op, lhs, *rhs);
+  } else if constexpr (std::is_enum_v<rhs_type>) {
+    auto const rhs_value = static_cast<long long>(static_cast<std::underlying_type_t<rhs_type>>(rhs));
+    return compare_values(op, lhs_value, rhs_value);
+  } else if constexpr (std::floating_point<rhs_type>) {
+    (void)rhs;
+    return compare_values(op, lhs_value, 0LL);
+  } else if constexpr (std::is_arithmetic_v<rhs_type>) {
+    return compare_values(op, lhs_value, static_cast<long long>(rhs));
+  } else {
+    return false;
+  }
+}
+
+} // namespace codegen_compare_detail
+
+template <class L, class R>
+constexpr bool codegen_compare(bc_opcode op, compare_operand_kind rhs_kind, L const& lhs, R const& rhs) noexcept {
+  using lhs_type = std::remove_cvref_t<L>;
+  using rhs_type = std::remove_cvref_t<R>;
+  if constexpr (injamm::detail::is_std_optional_v<lhs_type>) {
+    (void)lhs;
+    (void)rhs;
+    return false;
+  } else if constexpr (codegen_compare_detail::string_value_v<lhs_type>) {
+    return codegen_compare_detail::compareString(op, rhs_kind, lhs, rhs);
+  } else if constexpr (std::is_enum_v<lhs_type>) {
+    if (rhs_kind == compare_operand_kind::variable) {
+      return codegen_compare_detail::compareEnumVariable(op, lhs, rhs);
+    }
+    if (rhs_kind == compare_operand_kind::string_literal) {
+      return codegen_compare_detail::compare_values(
+        op, static_cast<long long>(static_cast<std::underlying_type_t<lhs_type>>(lhs)), 0LL);
+    }
+    if constexpr (std::is_arithmetic_v<rhs_type> || std::is_enum_v<rhs_type>) {
+      if (rhs_kind == compare_operand_kind::int_literal || rhs_kind == compare_operand_kind::none) {
+        return codegen_compare_detail::compare_values(
+          op, static_cast<long long>(static_cast<std::underlying_type_t<lhs_type>>(lhs)),
+          static_cast<long long>(rhs));
+      }
+    }
+    return false;
+  } else if constexpr (std::is_arithmetic_v<lhs_type>) {
+    if (rhs_kind == compare_operand_kind::variable) {
+      return codegen_compare_detail::compareArithmeticVariable(op, lhs, rhs);
+    }
+    if (rhs_kind == compare_operand_kind::string_literal) {
+      if constexpr (std::floating_point<lhs_type>) {
+        return codegen_compare_detail::compare_values(op, static_cast<double>(lhs), 0.0);
+      } else {
+        return codegen_compare_detail::compare_values(op, static_cast<long long>(lhs), 0LL);
+      }
+    }
+    if constexpr (std::is_arithmetic_v<rhs_type> || std::is_enum_v<rhs_type>) {
+      if (rhs_kind == compare_operand_kind::int_literal || rhs_kind == compare_operand_kind::none) {
+        if constexpr (std::floating_point<lhs_type>) {
+          return codegen_compare_detail::compare_values(op, static_cast<double>(lhs), static_cast<double>(rhs));
+        } else {
+          return codegen_compare_detail::compare_values(op, static_cast<long long>(lhs), static_cast<long long>(rhs));
+        }
+      }
+    }
+    return false;
+  } else {
+    (void)lhs;
+    (void)rhs;
+    return false;
+  }
 }
 
 template <class Buffer, typename V>
