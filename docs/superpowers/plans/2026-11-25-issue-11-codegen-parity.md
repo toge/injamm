@@ -56,6 +56,11 @@ Keep the existing fields and append only test data needed by the generated cases
 ```cpp
 enum class CaseLevel : int { none, ready };
 
+struct CaseItem {
+  // existing fields...
+  int count = 3;
+};
+
 struct CaseData {
   // existing fields...
   int                       qty       = 3;
@@ -64,10 +69,12 @@ struct CaseData {
   double                    ceiling   = 2.5;
   std::string               alias     = "R";
   std::string               numeric   = "30";
+  std::string               invalid_numeric = "not-a-number";
   std::string               empty;
   std::optional<int>        opt_limit = 3;
   CaseLevel                 level     = CaseLevel::ready;
-  std::vector<std::string>  tags      = {"t1", "t2"};
+  CaseLevel                 other_level = CaseLevel::ready;
+  std::vector<std::string>  tags      = {"t1", "t2", "t3"};
 };
 ```
 
@@ -79,16 +86,30 @@ Add `add_codegen_case(...)` entries beside the existing section cases:
 
 ```cmake
 add_codegen_case(if_cmp_variable      "{{#if qty == limit}}Y{{else}}N{{/if}}")
+add_codegen_case(if_cmp_ne            "{{#if qty != limit}}Y{{else}}N{{/if}}")
+add_codegen_case(if_cmp_gt            "{{#if qty > 2}}Y{{else}}N{{/if}}")
+add_codegen_case(if_cmp_gte           "{{#if qty >= 3}}Y{{else}}N{{/if}}")
+add_codegen_case(if_cmp_lt            "{{#if qty < 4}}Y{{else}}N{{/if}}")
+add_codegen_case(if_cmp_lte           "{{#if qty <= 3}}Y{{else}}N{{/if}}")
 add_codegen_case(if_cmp_string_var    "{{#if name == alias}}Y{{else}}N{{/if}}")
 add_codegen_case(if_cmp_string        "{{#if name == \"R\"}}Y{{else}}N{{/if}}")
 add_codegen_case(if_cmp_empty_string  "{{#if name == \"\"}}Y{{else}}N{{/if}}")
 add_codegen_case(if_cmp_this          "{{#tags}}{{#if this == \"t1\"}}Y{{else}}N{{/if}}{{/tags}}")
 add_codegen_case(if_cmp_loop_index    "{{#items}}{{#if loop.index == 0}}F{{else}}N{{/if}}{{/items}}")
+add_codegen_case(if_cmp_loop_index1   "{{#items}}{{#if loop.index1 == 1}}F{{else}}N{{/if}}{{/items}}")
+add_codegen_case(if_cmp_loop_size     "{{#items}}{{#if loop.size == 2}}S{{else}}N{{/if}}{{/items}}")
 add_codegen_case(if_cmp_root_fallback "{{#items}}{{#if qty == limit}}Y{{else}}N{{/if}}{{/items}}")
+add_codegen_case(if_cmp_lhs_root_rhs_value "{{#items}}{{#if qty == count}}Y{{else}}N{{/if}}{{/items}}")
+add_codegen_case(if_cmp_lhs_value_rhs_root "{{#items}}{{#if on == active}}Y{{else}}N{{/if}}{{/items}}")
 add_codegen_case(if_cmp_numeric       "{{#if numeric == age}}Y{{else}}N{{/if}}")
+add_codegen_case(if_cmp_invalid_numeric "{{#if invalid_numeric == age}}Y{{else}}N{{/if}}")
+add_codegen_case(if_cmp_numeric_float "{{#if numeric == ratio}}Y{{else}}N{{/if}}")
+add_codegen_case(if_cmp_arithmetic_string "{{#if qty == alias}}Y{{else}}N{{/if}}")
 add_codegen_case(if_cmp_float         "{{#if ratio >= ceiling}}Y{{else}}N{{/if}}")
 add_codegen_case(if_cmp_optional_rhs  "{{#if qty == opt_limit}}Y{{else}}N{{/if}}")
+add_codegen_case(if_cmp_optional_lhs  "{{#if opt_limit == qty}}Y{{else}}N{{/if}}")
 add_codegen_case(if_cmp_enum          "{{#if level == 1}}Y{{else}}N{{/if}}")
+add_codegen_case(if_cmp_enum_var      "{{#if level == other_level}}Y{{else}}N{{/if}}")
 add_codegen_case(loop_filter_fallback "{{#tags}}{{#items | take(1)}}{{name}}{{/items}}{{/tags}}")
 add_codegen_case(loop_index_fallback  "{{#tags}}{{#items}}{{loop.index}}{{name}}{{/items}}{{/tags}}")
 add_codegen_case(if_root_fallback     "{{#items}}{{#if active}}T{{else}}F{{/if}}{{/items}}")
@@ -98,7 +119,7 @@ add_codegen_case(if_or_root_fallback  "{{#items}}{{#if active || age}}A{{else}}B
 add_codegen_case(if_filtered_fallback "{{#items}}{{#if age | gt(18)}}A{{else}}B{{/if}}{{/items}}")
 ```
 
-In `test_codegen_live.cpp`, include every generated `case_*.hpp`, create `d2`/small derived datasets with the required true/false values, and call `live_check` for every template. Use a separate `d_empty` for the empty-string literal case so existing `items.empty()` assumptions remain unchanged.
+In `test_codegen_live.cpp`, include every generated `case_*.hpp`, create `d2`/small derived datasets with the required true/false values, and call `live_check` for every template. Use a separate `d_empty` for the empty-string literal case so existing `items.empty()` assumptions remain unchanged. For `CaseItem::count`, use a derived dataset whose count differs from root `qty` to exercise the false side of value/root resolution.
 
 - [ ] **Step 3: Add generator-output and malformed-bytecode assertions**
 
@@ -106,12 +127,17 @@ In `test_codegen_badbc.cpp`, add:
 
 1. a `run_forbidden_case` helper that requires `injamm_codegen -e` to succeed and asserts a forbidden substring is absent;
 2. valid cases proving the generated headers no longer contain `data.qty == 0`, `data.name == 0`, or `_item1.this`;
-3. a compact v6 `.bc` builder (`put_string`, one compare instruction, one `var_ref`, zero partials);
+3. a compact v6 `.bc` builder with the complete layout:
+   - `IJBC`, `u32(6)`, body `is_simple=u8(0)`, `literal_total_size=u64(0)`;
+   - instruction count `u64(1)`, then `emit_if_eq=u8(10)`, jump `u32(1)`, var-ref `u32(0)`, operand3 `u32(0)`;
+   - literal count `u64(0)`;
+   - var-ref count `u64(1)`, followed by string `key="age"`, `has_dot=u8(0)`, `is_loop_parent=u8(0)`, compare kind `u8`, RHS string, `rhs_has_dot=u8(0)`, `filter_flags=u8(0)`, `section_op_count=u8(0)`, string-filter count `u64(0)`, integer-filter count `u64(n)`, optional integer-filter entries (`u8 kind`, `i32 arg`), float-filter count `u64(0)`, `root_fallback=u8(0)`;
+   - partial count `u64(0)`;
 4. rejection cases for:
    - `compare_operand_kind::int_literal` with no integer filter,
    - `compare_operand_kind::variable` with an empty RHS key.
 
-Do not reject `compare_operand_kind::string_literal` with empty `compare_rhs_text`; add a valid `{{#if name == ""}}` generation case to prove it remains accepted.
+Do not reject `compare_operand_kind::string_literal` with empty `compare_rhs_text`. Because `run_ok_case` interpolates the expression into a double-quoted shell argument, pass the empty-literal expression from C++ as `{{#if name == \\\"\\\"}}` (runtime backslash-escaped quotes) or replace that helper with argv-safe invocation. Add a successful generation assertion so the empty literal reaches codegen as `""`, not as a stripped shell token.
 
 - [ ] **Step 4: Run the comparison build and verify the pre-fix failure**
 
@@ -149,7 +175,9 @@ Extend `precompute_index_loops` to inspect all six comparison opcodes as well as
 Replace direct `lhs <op> rhs` output for the six compare opcodes with:
 
 ```cpp
-if (codegen_compare(injamm::detail::bc_opcode::emit_if_eq, lhs, rhs)) {
+if (codegen_compare(injamm::detail::bc_opcode::emit_if_eq,
+                    injamm::detail::compare_operand_kind::variable,
+                    lhs, rhs)) {
 ```
 
 Use the actual opcode for each operator. Keep `{{#if a}}`, `!`, `&&`, and `||` truthiness generation separate.
@@ -160,7 +188,11 @@ In `test_codegen/codegen_helpers.hpp`, add:
 
 ```cpp
 template <class L, class R>
-constexpr bool codegen_compare(injamm::detail::bc_opcode op, const L& lhs, const R& rhs);
+constexpr bool codegen_compare(
+  injamm::detail::bc_opcode op,
+  injamm::detail::compare_operand_kind rhs_kind,
+  const L& lhs,
+  const R& rhs);
 ```
 
 Implement it with `if constexpr` and these exact rules:
@@ -168,13 +200,16 @@ Implement it with `if constexpr` and these exact rules:
 1. optional RHS unwraps only when it has a value;
 2. optional LHS evaluates false;
 3. enum values compare through their underlying type;
-4. arithmetic values preserve floating comparison when either resolved operand is floating;
-5. string LHS and arithmetic RHS parse the complete string as an integer before comparing;
-6. string/string and char-pointer/string-like pairs support only `==` / `!=`;
-7. a string variable RHS does not convert an arithmetic LHS to numeric;
-8. invalid conversion, unresolved value, unsupported order comparison, or missing optional value evaluates false.
+4. for arithmetic LHS and variable RHS, integral RHS uses integer comparison and floating RHS uses double comparison;
+5. enum LHS follows VM behavior: variable integral/enum RHS compares underlying integers, while a variable floating RHS uses the VM's resolved integer payload;
+6. string LHS plus integer literal or variable numeric RHS parses the complete LHS with `from_chars`; partial input/trailing characters evaluate false;
+7. string LHS plus variable floating RHS follows the VM's current `rhs_num` path exactly; do not silently substitute `static_cast<long long>(rhs)` in a way that changes this behavior;
+8. string/string and char-pointer/string-like pairs support only `==` / `!=`;
+9. a string variable RHS does not convert an arithmetic/enum LHS to numeric;
+10. string-literal RHS keeps the literal kind in the helper call; never infer “literal vs variable” only from C++ type;
+11. invalid conversion, unresolved value, unsupported order comparison, or missing optional value evaluates false.
 
-Use `std::string_view`, `char_pointer_v`, and `from_chars` facilities already available in the helper. Do not allocate for ordinary numeric/string comparisons.
+Use `std::string_view`, `char_pointer_v`, and `from_chars` facilities already available in the helper. Do not allocate for ordinary numeric/string comparisons. Add explicit comments only where VM's asymmetric integer/floating behavior would otherwise be “simplified” incorrectly.
 
 - [ ] **Step 8: Run targeted comparison/access tests**
 
@@ -223,14 +258,30 @@ add_codegen_case(control_inverted_continue
   "{{#items}}{{^on}}{{#continue}}{{/on}}{{name}}{{/items}}")
 add_codegen_case(control_if_break
   "{{#items}}{{name}}{{#if on}}{{#break}}{{/if}}{{/items}}")
+add_codegen_case(control_indexed_continue
+  "{{#tags}}{{loop.index}}{{#if this == \"t2\"}}{{#continue}}{{/if}}{{this}}{{/tags}}")
 add_codegen_case(control_join_break
   "{{#tags | join(\",\")}}{{this}}{{#if this == \"t2\"}}{{#break}}{{/if}}{{/tags}}")
+add_codegen_case(control_join_continue
+  "{{#tags | join(\",\")}}{{this}}{{#if this == \"t2\"}}{{#continue}}{{/if}}{{/tags}}")
 add_codegen_case(control_take_continue
   "{{#tags | take(2)}}{{#if this == \"t1\"}}{{#continue}}{{/if}}{{this}}{{/tags}}")
+add_codegen_case(control_reverse_break
+  "{{#tags | reverse}}{{this}}{{#if this == \"t2\"}}{{#break}}{{/if}}{{/tags}}")
+add_codegen_case(control_stride_continue
+  "{{#tags | stride(1,1)}}{{#if this == \"t1\"}}{{#continue}}{{/if}}{{this}}{{/tags}}")
 add_codegen_case(control_nested
   "{{#items}}{{#active}}{{#continue}}{{/active}}{{name}}{{/items}}")
 add_codegen_case(control_optional_break
   "{{#items}}{{#opt}}{{#break}}{{/opt}}{{name}}{{/items}}")
+add_codegen_case(control_number_continue
+  "{{#tags}}{{#age}}{{#continue}}{{/age}}{{this}}{{/tags}}")
+add_codegen_case(control_enum_break
+  "{{#tags}}{{#level}}{{#break}}{{/level}}{{this}}{{/tags}}")
+add_codegen_case(control_section_else_continue
+  "{{#items}}{{#on}}{{name}}{{else}}{{#continue}}{{/on}}X{{/items}}")
+add_codegen_case(control_inverted_break
+  "{{#items}}{{^on}}{{#break}}{{/on}}{{name}}{{/items}}")
 add_codegen_case(control_syntax_example
   "{{#tags}}{{this}}{{#if loop.is_last}}.{{else}}{{#break}}{{/if}}{{/tags}}")
 ```
@@ -247,13 +298,22 @@ cmake --build build --target test_codegen_live -j2
 
 Expected: direct `break` / `continue` appears inside a generated lambda and GCC reports that it is outside a loop. Stop if the failure is instead from an unrelated case.
 
-- [ ] **Step 3: Precompute control ownership**
+- [ ] **Step 3: Precompute opcode-to-loop-state control ownership**
 
-Add a block-aware prepass in `code_generator` that records, for every `emit_section` / `emit_inverted`:
+Add a block-aware prepass in `code_generator`. Model the VM `bc_loop_state` rules explicitly instead of attaching each opcode to “the nearest lambda”:
 
-- whether its main body contains `emit_break` or `emit_continue`;
+- an ordinary `emit_section` main body has a potential new loop state only when the runtime field is a container or a string guard; bool/number/enum/optional do not create a new state;
+- `emit_inverted`, `if`, logical `if`, and `if_filtered` do not create loop state;
+- a section `else` runs after the section state is absent, so its controls target the enclosing state;
+- string sections create an isolated guard state;
+- a nested section may run multiple runtime categories, so the body receives local flags and the section dispatch decides whether to consume or propagate them.
+
+For every control opcode, emit a stable control ID and record:
+
+- the syntactic owner section;
+- the caller/lambda boundary whose `return` stops the remaining body;
 - whether control occurs in a main body, `else`, or nested body;
-- the active section's control target;
+- the enclosing potential VM state to receive propagated flags;
 - whether the section is emitted through a lambda or the filtered/index inline loop path.
 
 Extend `open_block` with control identifiers/flags rather than using global flags shared by all loops.
@@ -276,12 +336,15 @@ Do not add flags or wrapper lambdas to templates with no control opcodes.
 At each section dispatch:
 
 - container branch: reset flags per iteration, invoke body, consume `continue` first, then `break`;
-- bool/number/enum/optional branch: propagate flags to the enclosing section after the body returns;
+- bool/number/enum/optional branch: propagate flags to the enclosing section after the body returns, because VM executes with the same `bc_loop_state`;
 - inverted branch: propagate flags to the enclosing section;
 - `else` branch: target the enclosing loop state, not the false section that did not execute;
+- nested `if` / `if_filtered` / logical blocks do not consume flags; only the section caller at their enclosing boundary performs propagation;
 - top-level with no loop state: stop the current generated lambda/body but never emit a bare invalid `break`/`continue`.
 
 For filtered loops with `join`, move separator emission after the successful body and after control checks. Advance stride source positions exactly once even on `continue`; break must skip join output.
+
+Validate the model with the ordinary, indexed, filtered, reverse, stride, scalar, enum, optional, inverted, else, join, and nested cases above. A flag may be consumed once and only at a VM loop-state boundary; section-lambda `return` alone is not treated as consuming it.
 
 - [ ] **Step 6: Run loop-control and full live tests**
 
@@ -336,13 +399,27 @@ add_codegen_case(string_this_section
 add_codegen_case(string_filtered_section
   "{{#items}}{{#name | take(1)}}[{{this}}]{{/name}}{{/items}}")
 add_codegen_case(string_index_section
-  "{{#items}}{{#name}}{{loop.index}}:{{loop.is_first}}:{{loop.is_last}}:{{loop.size}}:{{this}}{{/name}}{{/items}}")
+  "{{#items}}{{#name}}{{loop.index}}:{{loop.index1}}:{{loop.is_first}}:{{loop.is_last}}:{{loop.size}}:{{this}}{{/name}}{{/items}}")
+add_codegen_case(string_at_section
+  "{{#items}}{{#name}}{{#loop.is_first}}F{{/loop.is_first}}{{^loop.is_last}}N{{/loop.is_last}}{{/name}}{{/items}}")
+add_codegen_case(string_reverse_section
+  "{{#items}}{{#name | reverse}}[{{name}}]{{/name}}{{/items}}")
+add_codegen_case(string_stride_section
+  "{{#items}}{{#name | stride(1,1)}}[{{name}}]{{/name}}{{/items}}")
 add_codegen_case(string_view_section
   "{{#short_text}}[{{this}}]{{/short_text}}")
 add_codegen_case(string_ptr_section
   "{{#text_ptr}}[{{this}}]{{/text_ptr}}")
 add_codegen_case(string_control_guard
   "{{#items}}{{#name}}{{#break}}{{name}}{{/name}}X{{/items}}")
+add_codegen_case(string_continue_guard
+  "{{#items}}{{#name}}{{#continue}}{{name}}{{/name}}Y{{/items}}")
+add_codegen_case(string_take_control_guard
+  "{{#items}}{{#name | take(1)}}{{#break}}{{name}}{{/name}}T{{/items}}")
+add_codegen_case(string_reverse_control_guard
+  "{{#items}}{{#name | reverse}}{{#continue}}{{name}}{{/name}}R{{/items}}")
+add_codegen_case(string_stride_control_guard
+  "{{#items}}{{#name | stride(1,1)}}{{#break}}{{name}}{{/name}}S{{/items}}")
 ```
 
 Create `d_empty_names` with every `CaseItem::name` empty and dataset variants with `short_text={}` / `text_ptr=nullptr`; call `live_check` for both non-empty and empty forms.
@@ -378,11 +455,12 @@ For a non-empty string section:
 - keep `{{this}}` as the enclosing value, not as a character;
 - create VM guard metadata (`index=0`, `size=0`, `has_loop=true`) for generated loop expressions;
 - ignore section filters that are meaningful only to an iterable;
-- consume break/continue inside the guard without propagating to an enclosing container.
+- consume break/continue inside the guard without propagating to an enclosing container;
+- evaluate direct loop opcodes and section-form loop conditions against the guard, including `emit_at_index`, `emit_at_index1`, `emit_at_first`, `emit_at_last`, `emit_at_size`, `emit_at_section`, and `emit_at_inverted`.
 
 - [ ] **Step 6: Parameterize generated loop metadata used inside section lambdas**
 
-Where an `emit_section` body references `loop.index`, `loop.size`, `loop.is_first`, or `loop.is_last`, pass loop metadata as lambda parameters (or equivalent generated values) instead of relying solely on lexically named `_iN/_sizeN` variables.
+Where an `emit_section` body references `loop.index`, `loop.index1`, `loop.size`, `loop.is_first`, `loop.is_last`, `emit_at_*`, `emit_at_section`, or `emit_at_inverted`, pass loop metadata as a generated context (parameters, a stack entry, or an equivalent dependent expression) instead of relying solely on lexically named `_iN/_sizeN` variables.
 
 Required call values:
 
@@ -415,7 +493,7 @@ git commit -m "fix: execute codegen string sections once"
 
 ---
 
-### Task 4: Lock the Existing Two-Stage Access Paths and Add Static Regression Checks
+### Task 4: Lock the Existing Two-Stage Access Paths and Fix `emit_var_size`
 
 **Files:**
 - Modify: `test_codegen/test_codegen_badbc.cpp`
@@ -434,9 +512,19 @@ Ensure the CMake/test matrix from Task 1 contains:
 - `if &&` / `if ||`;
 - filtered `if`;
 - comparison LHS and RHS fallback;
+- `{{field.size}}` emitted as `emit_var_size`;
 - partial body access already covered by existing partial live tests.
 
 For the logical case, use `root_only`-style keys that do not exist on `CaseItem`.
+
+Add a generated case:
+
+```cmake
+add_codegen_case(var_size_root_fallback
+  "{{#items}}{{tags.size}}{{/items}}")
+```
+
+This deliberately places the `items` section reference before the root-only `tags` reference so the var-ref index is nonzero.
 
 - [ ] **Step 2: Run these cases against current helper generation**
 
@@ -445,7 +533,7 @@ cmake --build build --target test_codegen_live -j2
 ./build/test_codegen_live
 ```
 
-Expected on the #10-merged baseline: they already pass. If one fails, trace `resolve_value_access` / `collect_two_stage_keys` for that opcode and make the smallest fix; do not duplicate section-specific fallback code.
+Expected on the #10-merged baseline: ordinary filtered/indexed/if paths already pass. The `var_size_root_fallback` case should fail because `bytecode_compile` stores the ref index in `emit_var_size.operand`, while current codegen reads `operand2` (which is normally zero). Fix `util/injamm_codegen.cpp` to read `bc.var_refs[inst.operand]`, then reuse `emit_value_ref` / `resolve_value_access`. Keep `reader::validate_bytecode` and `collect_two_stage_keys` on the same operand convention.
 
 - [ ] **Step 3: Strengthen generated-text assertions**
 
@@ -455,6 +543,7 @@ In `test_codegen_badbc.cpp`, assert representative generated templates:
 - do not contain `_itemN.<root-only-key>` for the fallback path;
 - use `codegen_compare` for variable/string RHS;
 - use `codegen_string_section_v` in section output;
+- use `value_size(cgns_...cg_get_...` for root-fallback `emit_var_size`;
 - retain direct `range-for` generation for ordinary container sections.
 
 - [ ] **Step 4: Run codegen unit targets**
