@@ -532,7 +532,12 @@ constexpr bool compareStringVariable(bc_opcode op, std::string_view lhs, R const
     if (!rhs.has_value()) {
       return false;
     }
-    return compareStringVariable(op, lhs, *rhs);
+    using inner_type = std::remove_cvref_t<decltype(*rhs)>;
+    if constexpr (injamm::detail::is_std_optional_v<inner_type>) {
+      return false;
+    } else {
+      return compareStringVariable(op, lhs, *rhs);
+    }
   } else if constexpr (string_value_v<rhs_type>) {
     switch (op) {
       case bc_opcode::emit_if_eq: {
@@ -590,7 +595,7 @@ constexpr bool compareString(bc_opcode op, compare_operand_kind rhs_kind, L cons
       return false;
     }
   }
-  if (rhs_kind == compare_operand_kind::int_literal || rhs_kind == compare_operand_kind::none) {
+  if (rhs_kind == compare_operand_kind::int_literal) {
     if constexpr (std::is_arithmetic_v<std::remove_cvref_t<R>> || std::is_enum_v<std::remove_cvref_t<R>>) {
       auto parsed = 0LL;
       auto const result = std::from_chars(lhs_view.data(), lhs_view.data() + lhs_view.size(), parsed);
@@ -611,7 +616,12 @@ constexpr bool compareArithmeticVariable(bc_opcode op, L lhs, R const& rhs) noex
     if (!rhs.has_value()) {
       return false;
     }
-    return compareArithmeticVariable(op, lhs, *rhs);
+    using inner_type = std::remove_cvref_t<decltype(*rhs)>;
+    if constexpr (injamm::detail::is_std_optional_v<inner_type>) {
+      return false;
+    } else {
+      return compareArithmeticVariable(op, lhs, *rhs);
+    }
   } else if constexpr (std::is_enum_v<rhs_type>) {
     auto const rhs_value = static_cast<long long>(static_cast<std::underlying_type_t<rhs_type>>(rhs));
     if constexpr (std::floating_point<L>) {
@@ -642,7 +652,12 @@ constexpr bool compareEnumVariable(bc_opcode op, L lhs, R const& rhs) noexcept {
     if (!rhs.has_value()) {
       return false;
     }
-    return compareEnumVariable(op, lhs, *rhs);
+    using inner_type = std::remove_cvref_t<decltype(*rhs)>;
+    if constexpr (injamm::detail::is_std_optional_v<inner_type>) {
+      return false;
+    } else {
+      return compareEnumVariable(op, lhs, *rhs);
+    }
   } else if constexpr (std::is_enum_v<rhs_type>) {
     auto const rhs_value = static_cast<long long>(static_cast<std::underlying_type_t<rhs_type>>(rhs));
     return compare_values(op, lhs_value, rhs_value);

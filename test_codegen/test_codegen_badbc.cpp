@@ -18,7 +18,11 @@
 #include <string>
 #include <string_view>
 
+#include "codegen_helpers.hpp"
+
 namespace {
+enum class helper_level : int { none, ready };
+
 void put_u32(std::string& s, std::uint32_t v) {
   for (int i = 0; i < 4; ++i) s.push_back(static_cast<char>((v >> (8 * i)) & 0xff));
 }
@@ -113,6 +117,41 @@ int run_ok_bytecode_case(std::string const& cli, std::string const& name, std::s
   }
   std::remove(out_path.c_str());
   return 0;
+}
+
+int run_compare_helper_checks() {
+  int failures = 0;
+  auto const check = [&failures](bool condition, std::string_view name) {
+    if (!condition) {
+      std::cerr << "FAIL: " << name << "\n";
+      ++failures;
+    }
+  };
+
+  check(!codegen_compare(bc_opcode::emit_if_eq, compare_operand_kind::none,
+                         std::string_view{"3"}, 3),
+        "legacy compare rhs kind must be false for string lhs");
+  check(codegen_compare(bc_opcode::emit_if_eq, compare_operand_kind::int_literal,
+                        std::string_view{"3"}, 3),
+        "integer literal must still parse string lhs");
+
+  auto const optional_int = std::optional<int>{3};
+  check(codegen_compare(bc_opcode::emit_if_eq, compare_operand_kind::variable, 3, optional_int),
+        "one optional rhs layer is supported");
+  auto const nested_optional_int = std::optional<std::optional<int>>{optional_int};
+  check(!codegen_compare(bc_opcode::emit_if_eq, compare_operand_kind::variable, 3, nested_optional_int),
+        "nested optional arithmetic rhs is false");
+  check(!codegen_compare(bc_opcode::emit_if_eq, compare_operand_kind::variable,
+                         std::string_view{"3"}, nested_optional_int),
+        "nested optional numeric-string rhs is false");
+  auto const nested_optional_one = std::optional<std::optional<int>>{std::optional<int>{1}};
+  check(!codegen_compare(bc_opcode::emit_if_eq, compare_operand_kind::variable,
+                         helper_level::ready, nested_optional_one),
+        "nested optional enum rhs is false");
+  check(!codegen_compare(bc_opcode::emit_if_eq, compare_operand_kind::variable,
+                         nested_optional_int, 3),
+        "nested optional lhs is false");
+  return failures;
 }
 
 /** @brief {{@key}} を含むテンプレートが非ゼロ終了で拒否されることを確認する
@@ -251,6 +290,11 @@ int main(int argc, char** argv) {
                                  "string variable comparison rhs", "data.name == 0");
   failures += run_forbidden_case(cli, "{{#tags}}{{#if this == \\\"t1\\\"}}Y{{else}}N{{/if}}{{/tags}}",
                                  "this comparison lhs", "_item1.this");
+  failures += run_forbidden_case(
+    cli,
+    "{{#if qty > 2}}A{{/if}}{{#if name == \\\"R\\\"}}B{{/if}}{{#if qty == limit}}C{{/if}}",
+    "normal comparison rhs kinds", "compare_operand_kind::none");
+  failures += run_compare_helper_checks();
 
   // 10. 空文字列リテラルは有効で、引用符を保持した式として生成されること
   failures += run_ok_case(cli, "{{#if name == \\\"\\\"}}Y{{else}}N{{/if}}",
