@@ -24,6 +24,7 @@
 - バイトコード形式、VM、NTTP の実行モデル変更
 - AOT 生成コードを VM の状態機械へ置き換えること
 - `{{loop.key}}` など、Issue #11 外の未対応構文を新規対応すること
+- VM の比較規則や特殊変数 RHS を拡張すること
 - テンプレート構文や公開 API の追加
 
 ## 設計方針
@@ -71,7 +72,7 @@ inline decltype(auto) cg_get_key(const V& value, const R& root) {
 
 ### 3. ループ制御は必要なセクションだけフラグを用いる
 
-事前走査で、各セクション本体のどの制御命令が実コンテナループへ影響するかを記録する。制御命令を含まないテンプレートでは既存の出力形状とホットパスを維持する。
+事前走査で、各制御命令の対象となる VM ループ状態を記録する。制御命令を含まないテンプレートでは既存の出力形状とホットパスを維持する。
 
 制御命令がある場合の規則は以下とする。
 
@@ -79,11 +80,12 @@ inline decltype(auto) cg_get_key(const V& value, const R& root) {
 - ラムダ本文の `emit_continue` は `_continueN = true; return;`
 - 実コンテナループは各反復前にフラグを初期化する
 - 本文後に continue フラグを先に処理し、続けて break フラグを処理する
-- `join` 区切り文字は VM と同様、break / continue 時に出力しない
-- スカラー、optional、文字列、逆セクションはそれ自体を実コンテナループとせず、フラグを親ループへ伝播する
+- `join` 区切り文字は本文の成功後、break / continue の判定前ではなく、制御フラグの確認後に出力する
+- bool / 数値 / enum / optional セクションと逆セクションは独立ループ状態を作らない。制御命令は親ループのフラグへ伝播する
+- 文字列セクションは VM と同じ専用 `guard` を持つ。break / continue は文字列本文を `return` で停止するが、外側コンテナループのフラグへ伝播しない
 - トップレベルで制御命令だけが実行されても不正な C++ を生成せず、VM と同じく出力停止以外の効果を持たない
 
-条件分岐やネストしたセクションに制御命令がある場合は、最も近い実コンテナ反復へ同じ状態を返す。単にラムダのある最内ブロックでフラグを消費しない。
+条件分岐やネストしたセクションに制御命令がある場合は、VM のループ状態と同じ対象へ状態を返す。単にラムダのある最内ブロックでフラグを消費しない。文字列セクションをまたぐ場合だけはガードが伝播境界になる。
 
 ### 4. 文字列セクションは文字を反復しない
 
@@ -98,6 +100,8 @@ inline decltype(auto) cg_get_key(const V& value, const R& root) {
 
 生成コードは `char` ごとの range-for を出してはならない。
 
+この分類は通常 range-for、インデックス必須ループ、セクションフィルタ付きループの選択前に行う。`section_op_count > 0` や `index_loops_` にあることを理由に文字列へ `.size()` / 添字アクセス / range-for を先に出力しない。非空文字列では VM と同じく文字数ではなく本文を 1 回だけ実行し、`loop.index` / `loop.is_first` 等が必要な場合も専用 guard の既定状態へ合わせる。
+
 ### 5. 比較式は RHS 種別を保持する
 
 `get_compare_value` の「整数フィルタの先頭、なければ `0`」という処理を比較式生成の基準から廃止する。
@@ -109,10 +113,12 @@ RHS は `compare_rhs_kind` に応じて生成する。
 | 整数リテラル | 整数値 |
 | 文字列リテラル | C++ 文字列リテラル |
 | 変数参照 | LHS と同じ二段解決規則で値式を生成 |
-| `this` | 現在のループ値式 |
-| 特殊変数 | `loop.*` / `loop.parent.*` 専用式 |
 
-不明な比較種別や、文字列リテラルに空テキストが必要なのにデータが欠落しているケースは、不正なヘッダを書き出さず codegen を失敗させる。旧バイトコードで整数比較が従来形式になっている場合のみ、互換経路として整数フィルタ値を読み取る。
+空文字列リテラルは `compare_rhs_kind == string_literal` かつ `compare_rhs_text.empty()` として正しく表現される有効な入力なので、受け入れる。
+
+不明な比較種別、整数リテラルの値がないバイトコード、空キーの変数参照は、不正なヘッダを書き出さず codegen を失敗させる。既存 reader が対応する旧バイトコードの整数値表現は維持し、新しいバイトコード形式は導入しない。
+
+`this`、`loop.*`、`loop.parent.*` の専用解決は比較 LHS に適用する。現在のコンパイラ/VM はこれらを特別な比較 RHS として分類しないため、RHS 側へ同等機能を追加しない。LHS `this` は現在ループ値、数値 LHS の `loop.index` / `loop.index1` / `loop.size` は VM の現在値へ解決する。
 
 ### 6. VM と同じ型別比較規則を使う
 
@@ -120,10 +126,10 @@ RHS は `compare_rhs_kind` に応じて生成する。
 
 - 整数と浮動小数点は VM と同じ数値昇格規則で比較する
 - enum は underlying 型へ変換する
-- optional は値ありの場合に内部値を比較する
+- optional RHS は値ありの場合だけ内部値を比較対象にし、値なしは偽とする。optional LHS は現行 VM が比較処理を持たないため偽を返す
 - 文字列対文字列は `==` / `!=` を評価し、順序比較は VM と同じく偽とする
 - 数値 RHS と数値文字列 LHS は VM と同じ整数変換を試みる
-- 数値 LHS と数値文字列 RHS は VM と同じ整数変換を試みる
+- 数値 LHS と文字列 RHS は VM と同じく数値へ変換せず、文字列リテラル / 変数右辺が数値変換済みでなければ条件を偽とする
 - 未解決、値なし、変換不能の比較は VM と同じく偽とする
 
 比較ヘルパは `codegen_helpers.hpp` に置き、生成コード本体では共通呼び出しとして使用する。ヘルパ自身は C++23 で記述し、MSVC / Clang / GCC の型推論に依存しない分岐にする。
@@ -134,8 +140,9 @@ RHS は `compare_rhs_kind` に応じて生成する。
 
 1. **事前解析**: ブロックスタックを使い、各ループのインデックス参照、二段解決キー、制御帰属、型別比較要否を収集する。
 2. **式生成**: 値式、ルート式、特殊変数式、比較式を同じヘルパ群から組み立てる。
-3. **命令生成**: 命令種別に応じた文だけを出力し、アクセス規則や比較規則を各 opcode 実装へ重複させない。
-4. **ブロック終了**: ループ、ラムダセクション、条件ブロックの終了処理で制御フラグを消費または親へ伝播する。
+3. **セクション分類**: optional / scalar / string / container の判定を通常、インデックス、フィルタ付きの全ループ経路より前に行う。
+4. **命令生成**: 命令種別に応じた文だけを出力し、アクセス規則や比較規則を各 opcode 実装へ重複させない。
+5. **ブロック終了**: ループ、ラムダセクション、条件ブロックの終了処理で制御フラグを消費または親へ伝播し、文字列 guard を伝播境界として扱う。
 
 `open_block` には制御帰属に必要なフラグ、反復深度、ルート引数、`else` 状態を保持する。既存の `loop_depth_` とラムダ連番を不用意に増やさず、セクションのスコープ変更規則を維持する。
 
@@ -156,15 +163,21 @@ RHS は `compare_rhs_kind` に応じて生成する。
 - セクション本体内の break / continue
 - 逆セクション本体内の break / continue
 - `if` 内にある break / continue
-- `join` / `take` / `reverse` / `stride` を含む反復での制御
+- `join` / `take` / `reverse` / `stride` を含む反復での制御。区切り文字は成功した直前本文の後だけに出力されること
 - ループ内、非存在要素キーからルートへのループセクション fallback
 - インデックス必須ループ内 fallback
 - `if` 単独、否定、AND、OR、filtered の fallback
-- 数値、文字列、enum、optional を含む比較
-- 変数 RHS、文字列リテラル RHS、`this` RHS
+- 数値・文字列・enum LHS、optional RHS を含む比較
+- 数値変数 RHS、文字列変数 RHS、非空 / 空の文字列リテラル RHS
+- LHS `this`、`loop.index`、`loop.index1`、`loop.size`
+- 浮動小数 LHS と整数 / 浮動小数 RHS、数値文字列 LHS と変換不能値
 - LHS と RHS の双方にルート fallback が必要な比較
 - 非空・空の string / string_view / 文字列ポインタセクション
-- ループ内文字列セクションと `this`
+- `take` / `reverse` / `loop.*` を含む文字列セクション
+- ループ内文字列セクションと break / continue の guard 境界
+- ループ内文字列セクションの `this`
+
+具体的な CMake ケースとして、少なくとも `loop_break`, `section_break`, `inverted_continue`, `nested_control`, `join_break`, `loop_filter_root_fallback`, `index_loop_root_fallback`, `if_root_fallback`, `if_compare_variable`, `if_compare_string`, `if_compare_empty`, `if_compare_this`, `string_section`, `filtered_string_section` を生成・コンパイル対象にする。`CaseData` にはテンプレートごとに root-only / value-only のキー、数値ペア、文字列ペア、`tags` コンテナ、空文字列、optional RHS が存在するよう拡張する。
 
 ### 静的・互換性
 
@@ -190,7 +203,8 @@ RHS は `compare_rhs_kind` に応じて生成する。
 - **Clang / MSVC で破棄側が実体化される**: メンバ存在判定を `cg_get_*` 関数テンプレートへ閉じ込める。
 - **比較ヘルパが生成コードを過剰に重くする**: `if constexpr` で型別コードへ削減し、出力ホットパスは現在の直接式を可能な限り維持する。
 - **文字列を iterable として扱う回帰**: optional、scalar、container の判定順を明示し、string 系を container より先に判定する。
-- **古い bytecode 互換性の破壊**: 現形式を優先しつつ、旧整数比較形式だけを限定した互換分岐として扱う。
+- **古い bytecode 互換性の破壊**: 新形式を追加せず、既存 reader の整数比較表現を維持する。
+- **join と制御フラグの順序差**: 本文後・フラグ確認後の区切り出力を VM に対するライブテストで検証する。
 
 ## 完了条件
 
