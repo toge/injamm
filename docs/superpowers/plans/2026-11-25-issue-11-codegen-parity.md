@@ -129,7 +129,9 @@ In `test_codegen_badbc.cpp`, add:
 2. valid cases proving the generated headers no longer contain `data.qty == 0`, `data.name == 0`, or `_item1.this`;
 3. a compact v6 `.bc` builder with the complete layout:
    - `IJBC`, `u32(6)`, body `is_simple=u8(0)`, `literal_total_size=u64(0)`;
-   - instruction count `u64(1)`, then `emit_if_eq=u8(10)`, jump `u32(1)`, var-ref `u32(0)`, operand3 `u32(0)`;
+   - instruction count `u64(2)`;
+   - instruction 0: `emit_if_eq=u8(10)`, jump `u32(2)`, var-ref `u32(0)`, operand3 `u32(0)`;
+   - instruction 1: `emit_endif=u8(17)`, operand1 `u32(0)`, operand2 `u32(0)`, operand3 `u32(0)`;
    - literal count `u64(0)`;
    - var-ref count `u64(1)`, followed by string `key="age"`, `has_dot=u8(0)`, `is_loop_parent=u8(0)`, compare kind `u8`, RHS string, `rhs_has_dot=u8(0)`, `filter_flags=u8(0)`, `section_op_count=u8(0)`, string-filter count `u64(0)`, integer-filter count `u64(n)`, optional integer-filter entries (`u8 kind`, `i32 arg`), float-filter count `u64(0)`, `root_fallback=u8(0)`;
    - partial count `u64(0)`;
@@ -170,7 +172,7 @@ Extend `resolve_if_access` (or split it into a clearly named special/field resol
 - unsupported special comparison LHS values outside a loop generate a false condition rather than a member named `this` / `loop`;
 - ordinary field LHS values continue to use `resolve_value_access`.
 
-Extend `precompute_index_loops` to inspect all six comparison opcodes as well as plain `emit_if`; when the comparison LHS is `loop.index`, `loop.index1`, or `loop.size`, mark the enclosing section for indexed emission. Otherwise the generated expression would reference `_iN` / `_sizeN` that range-for output never declares.
+Extend the same metadata-context prepass used in Task 3 to inspect all six comparison opcodes as well as plain `emit_if`. When the comparison LHS is `loop.index`, `loop.index1`, or `loop.size`, record the `loop-context` entry that owns it and mark that section's **container category** for indexed emission. The body expression itself must use the passed context, so the runtime scalar/string branch can supply inherited/guard metadata without depending on whether the container branch was indexed. `precompute_index_loops` and expression emission must consume the same context entry; do not maintain two unrelated depth counters.
 
 Replace direct `lhs <op> rhs` output for the six compare opcodes with:
 
@@ -318,6 +320,19 @@ For every control opcode, emit a stable control ID and record:
 
 Extend `open_block` with control identifiers/flags rather than using global flags shared by all loops.
 
+Represent generated control with a single shared slot per potential section loop state:
+
+```cpp
+struct _cg_control_state {
+  bool break_requested = false;
+  bool continue_requested = false;
+};
+```
+
+Declare the slot in the scope that encloses every mutually-exclusive section-dispatch branch. Every main-body lambda that belongs to that section accepts or captures the same slot by reference; the optional/scalar/string/container branches do not own separate copies. A nested section receives a pointer/reference to its own slot plus the enclosing slot. The section `else` lambda receives the enclosing slot directly because the section itself did not enter a VM loop state. `if` / logical / filtered blocks do not allocate a slot and continue using the active slot passed through their enclosing section.
+
+On a control opcode, set only the active slot and return from the lambda that currently bounds the remaining body. Do not represent the target with a global “current section” variable. At section end, the dispatch branch consumes the shared slot or copies it into the supplied enclosing slot according to the runtime category.
+
 - [ ] **Step 4: Replace lambda-local control statements**
 
 For control-bearing lambda bodies:
@@ -453,14 +468,31 @@ For a non-empty string section:
 
 - execute the body once;
 - keep `{{this}}` as the enclosing value, not as a character;
-- create VM guard metadata (`index=0`, `size=0`, `has_loop=true`) for generated loop expressions;
+- create VM guard metadata (`active=true`, `index=0`, `size=0`) for generated loop expressions;
 - ignore section filters that are meaningful only to an iterable;
 - consume break/continue inside the guard without propagating to an enclosing container;
 - evaluate direct loop opcodes and section-form loop conditions against the guard, including `emit_at_index`, `emit_at_index1`, `emit_at_first`, `emit_at_last`, `emit_at_size`, `emit_at_section`, and `emit_at_inverted`.
 
+Define guard predicates exactly:
+
+- `is_first = active && index == 0`;
+- `is_last = active && size != 0 && index + 1 == size`;
+- `at_last` / `if loop.is_last` therefore evaluate false for a string guard;
+- `at_index` emits `0`, `at_index1` emits `1`, and `at_size` emits `0`.
+
+Do not reuse expressions such as `_sizeN - 1` for the guard; the VM's `size=0` branch never underflows.
+
 - [ ] **Step 6: Parameterize generated loop metadata used inside section lambdas**
 
-Where an `emit_section` body references `loop.index`, `loop.index1`, `loop.size`, `loop.is_first`, `loop.is_last`, `emit_at_*`, `emit_at_section`, or `emit_at_inverted`, pass loop metadata as a generated context (parameters, a stack entry, or an equivalent dependent expression) instead of relying solely on lexically named `_iN/_sizeN` variables.
+Represent generated loop metadata with one consistent `_cg_loop_context` shape (`active`, `index`, `size`, and the enclosing context reference). Maintain a generator-side stack of syntactic loop contexts during the prepass and during emission:
+
+- prepass entries correspond to `emit_section` bodies, record which body opcodes/refs need metadata, and mark only the container category for indexed C++ output;
+- a runtime scalar/optional body receives the enclosing `_cg_loop_context`;
+- a runtime string guard receives a new context `{active=true,index=0,size=0}`;
+- a runtime container body receives the actual emitted index and kept count;
+- nested sections push/pop their own selected context in generation, so a scalar nested body does not accidentally inherit a string guard declaration or lexical `_iN`.
+
+Where an `emit_section` body references `loop.index`, `loop.index1`, `loop.size`, `loop.is_first`, `loop.is_last`, `emit_at_*`, `emit_at_section`, or `emit_at_inverted`, pass this context through the body lambda (or an equivalent dependent expression) instead of relying solely on lexically named `_iN/_sizeN` variables. Reuse the same metadata-context resolver for plain `if`, comparison LHS, direct interpolation, and section-form loop conditions.
 
 Required call values:
 
