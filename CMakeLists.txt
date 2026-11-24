@@ -179,6 +179,7 @@ if(BUILD_TEST)
       tests/test_injamm_ja.cpp
       tests/test_ct_overload.cpp
       tests/test_ct_exec_crosscheck.cpp
+      tests/test_injamm_tla_counterexample.cpp
       tests/test_noexcept.cpp
     )
     if(_need_custom_main)

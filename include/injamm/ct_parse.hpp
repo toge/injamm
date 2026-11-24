@@ -198,6 +198,151 @@ struct ct_parse_context {
 };
 
 /**
+ * @brief セクション / if 本体の閉じタグをスタック走査で探索する
+ *
+ * @details VM (bytecode_compile.hpp compile_body_impl の expected_close 検証) と
+ *          同じ一致規則に揃える:
+ *          - 開始タグ（{{#...}} / {{^...}}、{{#if X}} は閉じキー "if" に正規化）は
+ *            スタックに積む
+ *          - 閉じタグ {{/k}} はスタック top と一致しなければならない
+ *            （不一致は syntax_error "mismatched closing tag"。SYNTAX.md の仕様）
+ *          - 領域終端までに対応する閉じタグがなければ unexpected_end
+ *            （VM と同じく最も内側の未閉鎖セクションを報告する）
+ *          - 期待キーが空（{{#}}）のときは任意の閉じタグを受け入れる（VM の
+ *            expected_close 空チェックと同じ）
+ *          {{{ }}} と {{! }} は本体パースと同じ規則でスキップする。
+ *          partialdef は VM と同じく本体ごと読み飛ばす。
+ *
+ * @param tmpl      走査対象（現在の再帰レベルの領域）
+ * @param pos       走査開始位置（開始タグの直後）
+ * @param close_key 探索する閉じタグキー
+ * @param tag_start unexpected_end のエラー位置（自分の開始タグの位置）
+ * @param err       エラー設定先（既にエラーがあれば上書きしない）
+ * @param close_end 発見時の閉じタグ終端位置（チルダ等でタグ長が可変のため）
+ * @return 閉じタグの開始位置。見つからなければ std::string_view::npos
+ */
+[[nodiscard]] constexpr std::size_t find_section_close(std::string_view tmpl, std::size_t pos,
+                                                       std::string_view close_key, std::size_t tag_start,
+                                                       error_ctx& err, std::size_t& close_end) noexcept {
+  constexpr int max_depth = 256 + 1;  // VM max_nesting_depth と同等（+自分自身の 1）
+  std::array<std::string_view, max_depth> keys{};
+  std::array<std::size_t, max_depth>      starts{};
+  int                                     depth = 1;  // 自分自身の分
+  keys[0]   = close_key;
+  starts[0] = tag_start;
+  std::size_t search = pos;
+  while (search < tmpl.size()) {
+    auto open_pos = constexpr_find(tmpl, "{{", search);
+    if (open_pos == std::string_view::npos) break;
+    // {{{ raw プレースホルダは }}} までスキップ（未閉鎖は本体パースと同じく 1 バイト進める）
+    if (open_pos + 2 < tmpl.size() && tmpl[open_pos + 2] == '{') {
+      auto end = constexpr_find(tmpl, "}}}", open_pos + 3);
+      search = (end == std::string_view::npos) ? open_pos + 1 : end + 3;
+      continue;
+    }
+    // コメントはネストした {{ }} を考慮してスキップ（本体パース 312-336 行と同じ）
+    if (open_pos + 2 < tmpl.size() && tmpl[open_pos + 2] == '!') {
+      std::size_t comment_pos = open_pos + 3;
+      bool        closed      = false;
+      while (comment_pos < tmpl.size()) {
+        auto next_open  = constexpr_find(tmpl, "{{", comment_pos);
+        auto next_close = constexpr_find(tmpl, "}}", comment_pos);
+        if (next_close == std::string_view::npos) break;
+        if (next_open != std::string_view::npos && next_open < next_close) {
+          auto inner_close = constexpr_find(tmpl, "}}", next_open + 2);
+          if (inner_close == std::string_view::npos) break;
+          comment_pos = inner_close + 2;
+        } else {
+          search = next_close + 2;
+          closed = true;
+          break;
+        }
+      }
+      if (closed) continue;
+      search = open_pos + 1;
+      continue;
+    }
+    auto tag_end = constexpr_find(tmpl, "}}", open_pos + 2);
+    if (tag_end == std::string_view::npos) {  // 本体パースと同じく "{" リテラル扱いで 1 進む
+      search = open_pos + 1;
+      continue;
+    }
+    // チルダ付きタグ ({{~#if x~}} 等) を本体パース 348-356 行と同じ規則で正規化
+    auto inner_raw     = tmpl.substr(open_pos + 2, tag_end - open_pos - 2);
+    bool leading_tilde  = inner_raw.starts_with("~");
+    bool trailing_tilde = inner_raw.ends_with("~") && inner_raw.size() > 1;
+    auto inner = trim_sv(inner_raw);
+    if (leading_tilde && inner.size() > 1 && inner.front() == '~')
+      inner = trim_sv(inner.substr(1));
+    if (trailing_tilde && inner.size() > 1 && inner.back() == '~')
+      inner = trim_sv(inner.substr(0, inner.size() - 1));
+    search = tag_end + 2;
+    if (inner.empty()) continue;
+    if (inner == "/partialdef") continue;  // VM と同じく黙ってスキップ
+    if (inner.starts_with("#")) {
+      auto k = trim_sv(inner.substr(1));
+      if (k == "break" || k == "continue") continue;  // 構造に無関係（VM と同じ）
+      if (k.starts_with("partialdef ")) {
+        // VM と同じく partialdef 本体を読み飛ばす（定義位置は別途処理済み）
+        auto close_tag = constexpr_find_close_partialdef(tmpl, search);
+        if (close_tag == std::string_view::npos) {
+          if (err.ec == error_code::none) err = error_ctx{open_pos, error_code::unexpected_end, "partialdef"};
+          return std::string_view::npos;
+        }
+        search = close_tag + 15;
+        continue;
+      }
+      if (k.starts_with("partial ") || k.starts_with("partiallocal ")) continue;  // 構造に無関係
+      // {{#if X}} の閉じキーは "if"（VM compile_if と同じ）。if 以外はベースキー（パイプ前）
+      if (k == "if" || (k.size() > 2 && k[2] == ' ' && k.starts_with("if"))) {
+        k = "if";
+      } else if (auto parts = split_by_pipe(k); parts.size() > 1) {
+        k = parts[0];
+      }
+      if (depth < max_depth) {
+        keys[depth]   = k;
+        starts[depth] = open_pos;
+      }
+      ++depth;
+      continue;
+    }
+    if (inner.starts_with("^")) {
+      // {{^...}} はキーをそのまま使う（VM compile_inverted と同じ。{{^if x}} も if にならない）
+      auto k = trim_sv(inner.substr(1));
+      if (depth < max_depth) {
+        keys[depth]   = k;
+        starts[depth] = open_pos;
+      }
+      ++depth;
+      continue;
+    }
+    if (inner.starts_with("/")) {
+      auto k = trim_sv(inner.substr(1));
+      --depth;
+      // 期待キーが空（{{#}}）の場合は VM と同じく任意の閉じタグを受け入れる
+      if (!keys[depth].empty() && keys[depth] != k) {
+        if (err.ec == error_code::none)
+          err = error_ctx{open_pos, error_code::syntax_error, "mismatched closing tag"};
+        return std::string_view::npos;
+      }
+      if (depth == 0) {
+        close_end = tag_end + 2;
+        return open_pos;  // 対応する閉じタグ発見
+      }
+      continue;
+    }
+    // 変数 / else / partial / this 等は閉じ対応に無関係
+  }
+  // 終端到達: 未閉鎖。VM と同じく最も内側の未閉鎖セクションを報告する
+  if (err.ec == error_code::none) {
+    auto top           = depth - 1 < 0 ? 0 : depth - 1;
+    auto report_top    = top >= max_depth ? max_depth - 1 : static_cast<std::size_t>(top);
+    err = error_ctx{starts[report_top], error_code::unexpected_end, keys[report_top]};
+  }
+  return std::string_view::npos;
+}
+
+/**
  * @brief テンプレート文字列をコンパイル時にパースし、SoA 形式のチャンク列に出力する
  * @details 入力テンプレート内の `{{...}}` タグを検出しながら順次パースし、
  *          ct_parse_context を介してチャンクを追加していく。
@@ -363,11 +508,29 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
     }
 
     /**
-     * @brief `/` で始まるタグ（閉じタグ）はスキップ
-     * @details 閉じタグは上位の再帰呼び出しですでに処理済みであるため、
-     *          ここでは無視する。
+     * @brief `/` で始まるタグ（閉じタグ）の処理
+     * @details セクション本体は閉じタグ探索 (find_section_close) で VM と同じ
+     *          規則ですでに検証済みのため、ここへ到達するのはトップレベルのみ
+     *          （エラー済みセクションの残骸を除く）。
+     *          VM (compile_impl) と同じくトップレベルの余分な閉じタグは
+     *          stray closing tag エラーとし、残りを無視して停止する。
      */
     if (inner.starts_with("/")) {
+      if (inner == "/partialdef") continue;  // VM と同じく黙ってスキップ
+      if (ctx.tmpl.parse_error.ec == error_code::none)
+        ctx.tmpl.parse_error = error_ctx{tag_start, error_code::syntax_error, "stray closing tag"};
+      pos = tmpl.size();
+      continue;
+    }
+
+    // -- トップレベルの {{else}} は VM と同じく stray 扱いでエラー --
+    // セクション / if 本体は find_toplevel_else で事前分割するためここへ到達せず、
+    // 到達するのはトップレベルと loop.* 本体（VM では else で本体が終端し、
+    // 後続の閉じタグが stray になるためエラー種別が一致する）のみ。
+    if (inner == "else") {
+      if (ctx.tmpl.parse_error.ec == error_code::none)
+        ctx.tmpl.parse_error = error_ctx{tag_start, error_code::syntax_error, "stray closing tag"};
+      pos = tmpl.size();
       continue;
     }
 
@@ -506,51 +669,16 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
             ctx.tmpl.parse_error = error_ctx{tag_start, error_code::unknown_filter, parts[fi]};
         }
 
-        /** @brief ネスト対応のための深さカウンタ */
-        int depth = 1;
-        std::size_t search_pos = pos;
-        std::size_t close_pos = std::string_view::npos;
-
-        /**
-         * @brief {{/if}} までの間でネストした {{#if}} を考慮して閉じ位置を決定
-         * @details depth が 0 になるまで閉じタグを検索し続ける。
-         *          開きタグに出会うたびに depth を増やし、閉じタグに出会うたびに減らす。
-         */
-        while (search_pos < tmpl.size()) {
-          auto next_open_raw = constexpr_find(tmpl, "{{#if", search_pos);
-          std::size_t next_open = std::string_view::npos;
-          if (next_open_raw != std::string_view::npos) {
-            auto after = next_open_raw + 5;
-            if (after >= tmpl.size() || tmpl[after] == ' ' || tmpl[after] == '\t' || tmpl[after] == '\n' || tmpl[after] == '\r' || tmpl[after] == '}') {
-              next_open = next_open_raw;
-            } else {
-              search_pos = next_open_raw + 5;
-              continue;
-            }
-          }
-          auto next_close = constexpr_find(tmpl, "{{/if}}", search_pos);
-          if (next_close == std::string_view::npos) {
-            break;
-          }
-          if (next_open != std::string_view::npos && next_open < next_close) {
-            ++depth;
-            search_pos = next_open + 5;
-          } else {
-            --depth;
-            if (depth == 0) {
-              close_pos = next_close;
-              break;
-            }
-            search_pos = next_close + 7;
-          }
-        }
+        /** @brief 閉じタグ探索は VM (expected_close="if" 検証) と同じスタック走査に揃える */
+        std::size_t close_end = 0;
+        auto close_pos = find_section_close(tmpl, pos, "if", tag_start, ctx.tmpl.parse_error, close_end);
 
         /** @brief if 本体の生文字列 */
         std::string_view body;
         if (close_pos != std::string_view::npos) {
           body = tmpl.substr(pos, close_pos - pos);
           if (lstrip_blocks) body = trim_tail_whitespace_for_lstrip(body);
-          pos = close_pos + 7;
+          pos = close_end;
           if (trim_blocks && pos < tmpl.size()) { if (tmpl[pos] == '\n') ++pos; else if (tmpl[pos] == '\r') { if (pos + 1 < tmpl.size() && tmpl[pos + 1] == '\n') pos += 2; else ++pos; } }
         } else {
           body = tmpl.substr(pos);
@@ -628,11 +756,12 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
         at_var_kind var_kind = *k;
         /** @brief 対応する閉じタグ位置（例: "{{/loop.is_first}}"） */
         auto body_start = pos;
-        auto close_pos = constexpr_find_tag(tmpl, "{{/", key, "}}", pos);
+        std::size_t close_end = 0;
+        auto close_pos = find_section_close(tmpl, pos, key, tag_start, ctx.tmpl.parse_error, close_end);
         if (close_pos != std::string_view::npos) {
           auto body = tmpl.substr(body_start, close_pos - body_start);
           if (lstrip_blocks) body = trim_tail_whitespace_for_lstrip(body);
-          pos = close_pos + 5 + key.size();
+          pos = close_end;
           if (trim_blocks && pos < tmpl.size()) { if (tmpl[pos] == '\n') ++pos; else if (tmpl[pos] == '\r') { if (pos + 1 < tmpl.size() && tmpl[pos + 1] == '\n') pos += 2; else ++pos; } }
 
           /** @brief loop.* セクションチャンクを追加し、本体を再帰パース */
@@ -689,40 +818,17 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
        *          セクション本体は再帰的にパースされる。
        */
       {
-        /** @brief 閉じタグと同一キーの開きタグの位置を直接探索 */
-        auto const tag_size = 5 + close_key.size();
+        /** @brief 閉じタグ探索は VM (expected_close 検証) と同じスタック走査に揃える */
         auto body_start_pos = pos;
-
-        /** @brief ネストした同一キーのセクションを考慮して深さをカウント */
-        int depth2 = 1;
-        std::size_t search = pos;
-        std::size_t close_pos = std::string_view::npos;
-
-        while (search < tmpl.size()) {
-          auto next_open = constexpr_find_section_open(tmpl, "{{#", close_key, search);
-          auto next_close = constexpr_find_tag(tmpl, "{{/", close_key, "}}", search);
-          if (next_close == std::string_view::npos) {
-            break;
-          }
-          if (next_open != std::string_view::npos && next_open < next_close) {
-            ++depth2;
-            search = next_open + tag_size;
-          } else {
-            --depth2;
-            if (depth2 == 0) {
-              close_pos = next_close;
-              break;
-            }
-            search = next_close + tag_size;
-          }
-        }
+        std::size_t close_end = 0;
+        auto close_pos = find_section_close(tmpl, pos, close_key, tag_start, ctx.tmpl.parse_error, close_end);
 
         /** @brief セクション本体の生文字列 */
         std::string_view body;
         if (close_pos != std::string_view::npos) {
           body = tmpl.substr(body_start_pos, close_pos - body_start_pos);
           if (lstrip_blocks) body = trim_tail_whitespace_for_lstrip(body);
-          pos = close_pos + tag_size;
+          pos = close_end;
           if (trim_blocks && pos < tmpl.size()) { if (tmpl[pos] == '\n') ++pos; else if (tmpl[pos] == '\r') { if (pos + 1 < tmpl.size() && tmpl[pos + 1] == '\n') pos += 2; else ++pos; } }
         } else {
           body = tmpl.substr(body_start_pos);
@@ -772,11 +878,12 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
       if (auto k = parse_loop_kind(key); k) {
         at_var_kind var_kind = *k;
         auto body_start_pos = pos;
-        auto close_pos = constexpr_find_tag(tmpl, "{{/", key, "}}", pos);
+        std::size_t close_end = 0;
+        auto close_pos = find_section_close(tmpl, pos, key, tag_start, ctx.tmpl.parse_error, close_end);
         if (close_pos != std::string_view::npos) {
           auto body = tmpl.substr(body_start_pos, close_pos - body_start_pos);
           if (lstrip_blocks) body = trim_tail_whitespace_for_lstrip(body);
-          pos = close_pos + 5 + key.size();
+          pos = close_end;
           if (trim_blocks && pos < tmpl.size()) { if (tmpl[pos] == '\n') ++pos; else if (tmpl[pos] == '\r') { if (pos + 1 < tmpl.size() && tmpl[pos + 1] == '\n') pos += 2; else ++pos; } }
 
           auto chunk_idx = ctx.push_at_section(var_kind, 0, 0, true);
@@ -800,37 +907,17 @@ constexpr void ct_parse_into(ct_parse_context<MaxChunks>& ctx, std::string_view 
 
       // -- {{^key}} 通常の逆セクションの処理 --
       {
-        auto const tag_size = 5 + close_key.size();
         auto body_start_pos = pos;
+        std::size_t close_end = 0;
 
-        int depth2 = 1;
-        std::size_t search = pos;
-        std::size_t close_pos = std::string_view::npos;
-
-        while (search < tmpl.size()) {
-          auto next_open = constexpr_find_section_open(tmpl, "{{^", close_key, search);
-          auto next_close = constexpr_find_tag(tmpl, "{{/", close_key, "}}", search);
-          if (next_close == std::string_view::npos) {
-            break;
-          }
-          if (next_open != std::string_view::npos && next_open < next_close) {
-            ++depth2;
-            search = next_open + tag_size;
-          } else {
-            --depth2;
-            if (depth2 == 0) {
-              close_pos = next_close;
-              break;
-            }
-            search = next_close + tag_size;
-          }
-        }
+        /** @brief 閉じタグ探索は VM (expected_close 検証) と同じスタック走査に揃える */
+        auto close_pos = find_section_close(tmpl, pos, close_key, tag_start, ctx.tmpl.parse_error, close_end);
 
         std::string_view body;
         if (close_pos != std::string_view::npos) {
           body = tmpl.substr(body_start_pos, close_pos - body_start_pos);
           if (lstrip_blocks) body = trim_tail_whitespace_for_lstrip(body);
-          pos = close_pos + tag_size;
+          pos = close_end;
           if (trim_blocks && pos < tmpl.size()) { if (tmpl[pos] == '\n') ++pos; else if (tmpl[pos] == '\r') { if (pos + 1 < tmpl.size() && tmpl[pos + 1] == '\n') pos += 2; else ++pos; } }
         } else {
           body = tmpl.substr(body_start_pos);

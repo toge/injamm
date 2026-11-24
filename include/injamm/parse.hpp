@@ -546,7 +546,15 @@ struct section_filter_op {
     if (end == std::string_view::npos) {
       break;
     }
-    auto tag_inner = trim_sv(body.substr(tag_pos + 2, end - tag_pos - 2));
+    auto tag_inner_raw = body.substr(tag_pos + 2, end - tag_pos - 2);
+    bool leading_tilde  = tag_inner_raw.starts_with("~");
+    bool trailing_tilde = tag_inner_raw.ends_with("~") && tag_inner_raw.size() > 1;
+    auto tag_inner = trim_sv(tag_inner_raw);
+    // チルダ付きタグ ({{~else~}} 等) を本体パース 348-356 行と同じ規則で正規化
+    if (leading_tilde && tag_inner.size() > 1 && tag_inner.front() == '~')
+      tag_inner = trim_sv(tag_inner.substr(1));
+    if (trailing_tilde && tag_inner.size() > 1 && tag_inner.back() == '~')
+      tag_inner = trim_sv(tag_inner.substr(0, tag_inner.size() - 1));
     if (tag_inner.starts_with("#if") && (tag_inner.size() == 3 || tag_inner[3] == ' ' || tag_inner[3] == '\t')) {
       ++if_depth;
     } else if (tag_inner.starts_with("#")) {
@@ -960,13 +968,28 @@ template <class ConstMap>
       continue;
     }
     out.copy(tmpl.substr(pos, cs - pos), pos);
-    auto ce = tmpl.find("}}", cs + 3);
-    if (ce == std::string_view::npos) {
+    // ネストした {{ }} を考慮してコメント終端を探す（CT パーサ ct_parse_into と同じ規則）。
+    // {{! {{name}} }} のようにコメント内にタグがあっても外側の }} で閉じる。
+    std::size_t comment_pos = cs + 3;
+    bool        closed      = false;
+    while (comment_pos < tmpl.size()) {
+      auto next_open  = tmpl.find("{{", comment_pos);
+      auto next_close = tmpl.find("}}", comment_pos);
+      if (next_close == std::string_view::npos) break;
+      if (next_open != std::string_view::npos && next_open < next_close) {
+        auto inner_close = tmpl.find("}}", next_open + 2);
+        if (inner_close == std::string_view::npos) break;
+        comment_pos = inner_close + 2;
+      } else {
+        out.remove(cs, next_close + 2 - cs);
+        pos = next_close + 2;
+        closed = true;
+        break;
+      }
+    }
+    if (!closed) {
       out.copy_char('{', cs);
       pos = cs + 1;
-    } else {
-      out.remove(cs, ce + 2 - cs);
-      pos = ce + 2;
     }
   }
   return out;
