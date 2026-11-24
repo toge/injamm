@@ -390,6 +390,16 @@ if(BUILD_UTIL)
     add_codegen_case(if_loop_and         "{{#items}}{{#if active && age}}A{{else}}B{{/if}}{{/items}}")
     add_codegen_case(if_loop_or          "{{#items}}{{#if active || age}}A{{else}}B{{/if}}{{/items}}")
     add_codegen_case(if_loop_filtered    "{{#items}}{{#if age | gt(18)}}A{{else}}B{{/if}}{{/items}}")
+    add_codegen_case(cmp_bool_section_loop
+      "{{#active}}{{#if loop.index == 0}}F{{else}}N{{/if}}{{/active}}")
+    add_codegen_case(cmp_optional_section_loop
+      "{{#opt}}{{#if loop.index == 0}}F{{else}}N{{/if}}{{/opt}}")
+    add_codegen_case(cmp_number_section_loop
+      "{{#age}}{{#if loop.index == 0}}F{{else}}N{{/if}}{{/age}}")
+    add_codegen_case(cmp_inherited_bool_loop
+      "{{#items}}{{#active}}{{#if loop.index == 0}}F{{else}}N{{/if}}{{/active}}{{/items}}")
+    add_codegen_case(cmp_inherited_optional_loop
+      "{{#items}}{{#opt_limit}}{{#if loop.index == 0}}F{{else}}N{{/if}}{{/opt_limit}}{{/items}}")
     # partial の通常ケースはスコープごとに個別名前空間へ生成し、
     # test_codegen_live_partials.cpp で VM と比較する。
     function(add_codegen_case_partial name tmpl)
@@ -405,6 +415,8 @@ if(BUILD_UTIL)
     add_codegen_case_partial(partial_toplevel  "{{#partialdef t}}{{name}}{{/partialdef}}{{>t}}")
     add_codegen_case_partial(partial_scope_refs
       "{{#partialdef s}}{{root_only}}|{{profile.name}}|{{profile_2E_name}}|{{root_only | upper}}|{{#if active}}T{{else}}F{{/if}}|{{#if age > 18}}G{{else}}S{{/if}}|{{#if active && age}}A{{else}}B{{/if}}|{{#items | take(1)}}S:{{name}}{{/items}}|{{#items}}I:{{loop.index}}{{/items}}{{/partialdef}}{{#items}}[{{>s}}]{{/items}}")
+    add_codegen_case_partial(partial_compare_loop
+      "{{#partialdef inner}}{{#if this == \"t1\"}}T{{else}}N{{/if}}:{{#if loop.index == 0}}F{{else}}L{{/if}}:{{#if loop.index1 == 1}}O{{else}}I{{/if}}:{{#if loop.size == 3}}S{{else}}X{{/if}}{{/partialdef}}{{#partialdef outer}}{{>inner}}{{/partialdef}}{{#tags}}[{{>outer}}]{{/tags}}|{{#items}}[{{>outer}}]{{/items}}")
 
     function(add_codegen_namespaced_case name tmpl ns prefix)
       set(out ${CG_LIVE_DIR}/case_${name}.hpp)

@@ -476,23 +476,25 @@ inline void filter_float_round(std::string& s, int precision) {
 using bc_opcode = injamm::detail::bc_opcode;
 using compare_operand_kind = injamm::detail::compare_operand_kind;
 
+struct codegen_loop_context {
+  bool active = false;
+  std::size_t index = 0;
+  std::size_t size = 0;
+};
+
 namespace codegen_compare_detail {
 
 template <class V>
 inline constexpr bool string_value_v =
   std::same_as<std::remove_cvref_t<V>, std::string> ||
   std::same_as<std::remove_cvref_t<V>, std::string_view> ||
-  injamm::detail::char_pointer_v<V> ||
-  (std::is_array_v<std::remove_cvref_t<V>> &&
-   std::same_as<std::remove_cv_t<std::remove_extent_t<std::remove_cvref_t<V>>>, char>);
+  injamm::detail::char_pointer_v<V>;
 
 template <class V>
 constexpr std::string_view string_view_of(V const& value) noexcept {
   using value_type = std::remove_cvref_t<V>;
   if constexpr (injamm::detail::char_pointer_v<value_type>) {
     return value ? std::string_view{value} : std::string_view{};
-  } else if constexpr (std::is_array_v<value_type>) {
-    return std::string_view{value};
   } else {
     return injamm::detail::to_sv(value);
   }

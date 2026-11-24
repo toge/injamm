@@ -151,6 +151,14 @@ int run_compare_helper_checks() {
   check(!codegen_compare(bc_opcode::emit_if_eq, compare_operand_kind::variable,
                          nested_optional_int, 3),
         "nested optional lhs is false");
+  char unterminated_chars[4] = {'t', 'e', 's', 't'};
+  static_assert(!codegen_compare_detail::string_value_v<decltype(unterminated_chars)>);
+  check(!codegen_compare(bc_opcode::emit_if_eq, compare_operand_kind::variable,
+                         unterminated_chars, std::string_view{"test"}),
+        "unterminated char array lhs matches VM false behavior");
+  check(!codegen_compare(bc_opcode::emit_if_eq, compare_operand_kind::variable,
+                         std::string_view{"test"}, unterminated_chars),
+        "unterminated char array rhs matches VM false behavior");
   return failures;
 }
 
@@ -299,7 +307,7 @@ int main(int argc, char** argv) {
   // 10. 空文字列リテラルは有効で、引用符を保持した式として生成されること
   failures += run_ok_case(cli, "{{#if name == \\\"\\\"}}Y{{else}}N{{/if}}",
                           "empty string comparison literal",
-                          "compare_operand_kind::string_literal, data.name, \"\"))");
+                          "compare_operand_kind::string_literal, data.name, std::string_view{\"\", 0u}))");
 
   // 11. 比較 metadata の欠落・未知値はヘッダ生成前に拒否されること
   failures += run_case(cli, "int literal comparison without payload",

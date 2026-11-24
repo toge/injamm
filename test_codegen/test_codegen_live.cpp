@@ -66,6 +66,12 @@
 #include "case_if_loop_and.hpp"
 #include "case_if_loop_or.hpp"
 #include "case_if_loop_filtered.hpp"
+#include "case_cmp_bool_section_loop.hpp"
+#include "case_cmp_optional_section_loop.hpp"
+#include "case_cmp_number_section_loop.hpp"
+#include "case_cmp_inherited_bool_loop.hpp"
+#include "case_cmp_inherited_optional_loop.hpp"
+#include "case_partial_compare_loop.hpp"
 
 /** test_codegen_live_partials.cpp（別 TU）で検証する partial ケースの数 */
 int run_partial_loop_checks(CaseData const& d, CaseData const& d2);
@@ -224,12 +230,49 @@ int main() {
     [](auto const& data) { return generated::case_if_loop_or(data); });
   live_check("if root filtered in loop", "{{#items}}{{#if age | gt(18)}}A{{else}}B{{/if}}{{/items}}", d, d_root_false,
     [](auto const& data) { return generated::case_if_loop_filtered(data); });
+  live_check("bool section loop metadata at top level",
+             "{{#active}}{{#if loop.index == 0}}F{{else}}N{{/if}}{{/active}}", d, d2,
+    [](auto const& data) { return generated::case_cmp_bool_section_loop(data); });
+  live_check("optional section loop metadata at top level",
+             "{{#opt}}{{#if loop.index == 0}}F{{else}}N{{/if}}{{/opt}}", d, d2,
+    [](auto const& data) { return generated::case_cmp_optional_section_loop(data); });
+  live_check("number section loop metadata at top level",
+             "{{#age}}{{#if loop.index == 0}}F{{else}}N{{/if}}{{/age}}", d, d2,
+    [](auto const& data) { return generated::case_cmp_number_section_loop(data); });
+  live_check("bool section inherits loop metadata",
+             "{{#items}}{{#active}}{{#if loop.index == 0}}F{{else}}N{{/if}}{{/active}}{{/items}}",
+             d, d_root_false,
+    [](auto const& data) { return generated::case_cmp_inherited_bool_loop(data); });
+  live_check("optional section inherits loop metadata",
+             "{{#items}}{{#opt_limit}}{{#if loop.index == 0}}F{{else}}N{{/if}}{{/opt_limit}}{{/items}}",
+             d, d_root_false,
+    [](auto const& data) { return generated::case_cmp_inherited_optional_loop(data); });
 
   // --- partial スコープ: ループ内のグローバル partial は value→root の二段解決 ---
   live_test_count += run_partial_loop_checks(d, d2);
   live_test_count += run_partial_root_checks(d, d2);
   live_test_count += run_partial_toplevel_checks(d, d2);
   live_test_count += run_partial_scope_ref_checks(d, d_partial_falsy);
+  live_check(
+    "nested partial comparison loop context",
+    "{{#partialdef inner}}{{#if this == \"t1\"}}T{{else}}N{{/if}}:"
+    "{{#if loop.index == 0}}F{{else}}L{{/if}}:"
+    "{{#if loop.index1 == 1}}O{{else}}I{{/if}}:"
+    "{{#if loop.size == 3}}S{{else}}X{{/if}}{{/partialdef}}"
+    "{{#partialdef outer}}{{>inner}}{{/partialdef}}"
+    "{{#tags}}[{{>outer}}]{{/tags}}|{{#items}}[{{>outer}}]{{/items}}",
+    d, d2,
+    [](auto const& data) { return case_partial_compare_loop::case_partial_compare_loop(data); });
+  ++live_test_count;
+  std::string public_partial_out;
+  auto const public_partial_result =
+    case_partial_compare_loop::render_partial<"outer">(d, public_partial_out);
+  if (public_partial_result && public_partial_out == "N:L:I:X") {
+    std::cout << "PASS [public partial comparison loop context]\n";
+    ++live_pass_count;
+  } else {
+    std::cerr << "FAIL [public partial comparison loop context]\n";
+  }
   live_test_count += run_namespace_composition_checks(d);
 
   std::cout << "\n=== 結果: " << live_pass_count << "/" << live_test_count << " passed ===\n";

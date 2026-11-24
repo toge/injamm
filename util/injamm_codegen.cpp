@@ -530,7 +530,7 @@ class code_generator {
   std::string func_prefix_;    /**< 関数名プレフィックス（空なら "render"） */
   bool no_simd_ = false;       /**< SIMD命令を生成しない */
   int indent_ = 0;             /**現在のインデントレベル */
-  int loop_depth_ = 0;         /**< 現在のループ深度 */
+  int scope_depth_ = 0;        /**< 現在の値スコープ深度（VM ループ深度とは異なる） */
   bool in_partial_ = false;    /**< partial 本体の生成中（値スコープ式が value、ルート式が root） */
   /**< インデックス形式（_iN/_sizeN）が必要な emit_section 命令 */
   std::unordered_set<const bc::instruction*> index_loops_;
@@ -554,6 +554,8 @@ class code_generator {
     bool        root_param = false;    /**< 本体ラムダがルート引数（_rtN）を持つ */
     bool        else_root_param = false; /**< else ラムダがルート引数（_rtN）を持つ */
     std::string call_root;  /**< ラムダに入る前のルート式（呼び出し引数と復元に使う） */
+    std::string call_loop;  /**< ラムダに入る前の VM ループ情報 */
+    bool        indexed = false; /**< コンテナ分岐で index/size を生成する必要がある */
     const bc::instruction* inst = nullptr; /**< 開始命令（マーキング参照用） */
   };
   int lambda_seq_ = 0; /**< 本体ラムダ名の連番 */
@@ -567,6 +569,11 @@ class code_generator {
   /** @brief 現在の生成位置でルートを参照する式を返す
    *  @details ルート引数付きラムダ内ではその引数（_rtN）、それ以外は data / root。 */
   std::string root_for_emit() const { return cur_root_.empty() ? root_expr() : cur_root_; }
+  /** @brief 現在の VM ループ情報を参照する生成式 */
+  std::string loop_context_expr() const {
+    if (scope_depth_ > 0) return "_loop" + std::to_string(scope_depth_);
+    return in_partial_ ? "_loop" : "codegen_loop_context{}";
+  }
   std::string unsupported_feature_;  /**< generate() が対応不能な命令を検出した場合の説明 */
   std::ostringstream out_;     /**< 出力ストリーム */
 
@@ -621,7 +628,7 @@ class code_generator {
    *          partial 本体トップレベルでは render_partial_impl の value 引数。
    */
   std::string value_expr() const {
-    if (loop_depth_ > 0) return "_item" + std::to_string(loop_depth_);
+    if (scope_depth_ > 0) return "_item" + std::to_string(scope_depth_);
     return in_partial_ ? "value" : "data";
   }
 
@@ -638,7 +645,7 @@ class code_generator {
     if (in_partial_) {
       return true;
     }
-    return loop_depth_ > 0 && ref.root_fallback != injamm::detail::root_fb_proven;
+    return scope_depth_ > 0 && ref.root_fallback != injamm::detail::root_fb_proven;
   }
 
   /**
@@ -762,38 +769,56 @@ class code_generator {
    *          （{{#if loop.is_last}} 等。emit_at_section 相当の最適化を if 構文にも適用）
    */
   std::string resolve_if_access(bc::var_ref const& ref) {
-    if (loop_depth_ > 0) {
-      auto d = std::to_string(loop_depth_);
-      if (ref.key == "loop.is_last") {
-        return "_i" + d + " + 1 == _size" + d;
-      }
-      if (ref.key == "loop.is_first") {
-        return "_i" + d + " == 0";
-      }
+    auto const loop = loop_context_expr();
+    switch (injamm::detail::classify_special_var(ref.key)) {
+      case injamm::detail::special_var_kind::loop_index:
+        return "(" + loop + ".active && " + loop + ".index != 0)";
+      case injamm::detail::special_var_kind::loop_index1:
+        return loop + ".active";
+      case injamm::detail::special_var_kind::loop_size:
+        return "(" + loop + ".active && " + loop + ".size != 0)";
+      case injamm::detail::special_var_kind::loop_is_first:
+        return "(" + loop + ".active && " + loop + ".index == 0)";
+      case injamm::detail::special_var_kind::loop_is_last:
+        return "(" + loop + ".active && " + loop + ".index + 1 == " + loop + ".size)";
+      case injamm::detail::special_var_kind::loop_is_even:
+        return "(" + loop + ".active && " + loop + ".index % 2 == 0)";
+      case injamm::detail::special_var_kind::loop_is_odd:
+        return "(" + loop + ".active && " + loop + ".index % 2 == 1)";
+      case injamm::detail::special_var_kind::loop_unknown:
+        return "false";
+      case injamm::detail::special_var_kind::none:
+        break;
+      default:
+        return "false";
     }
     return resolve_value_access(ref);
   }
 
-  /** @brief 比較命令の LHS が現在ループのインデックス値を使うか */
-  static bool comparison_uses_loop_index(bc::var_ref const& ref) {
-    return ref.key == "loop.index" || ref.key == "loop.index1" || ref.key == "loop.size";
+  /** @brief 比較命令の LHS が現在の VM ループ情報を使うか */
+  static bool comparison_uses_loop_context(bc::var_ref const& ref) {
+    auto const special = injamm::detail::classify_special_var(ref.key);
+    return special == injamm::detail::special_var_kind::this_ ||
+           special == injamm::detail::special_var_kind::loop_index ||
+           special == injamm::detail::special_var_kind::loop_index1 ||
+           special == injamm::detail::special_var_kind::loop_size;
   }
 
   /** @brief 比較命令の左辺を C++ 式へ変換する */
   std::string resolve_compare_lhs(bc::var_ref const& ref) const {
     auto const special = injamm::detail::classify_special_var(ref.key);
+    auto const loop = loop_context_expr();
     switch (special) {
       case injamm::detail::special_var_kind::none:
         return resolve_value_access(ref);
       case injamm::detail::special_var_kind::this_:
-        return loop_depth_ > 0 ? value_expr() : std::string{"std::optional<int>{}"};
+        return value_expr();
       case injamm::detail::special_var_kind::loop_index:
-        return loop_depth_ > 0 ? ("_i" + std::to_string(loop_depth_)) : std::string{"std::optional<int>{}"};
+        return loop + ".index";
       case injamm::detail::special_var_kind::loop_index1:
-        return loop_depth_ > 0 ? ("_i" + std::to_string(loop_depth_) + " + 1")
-                              : std::string{"std::optional<int>{}"};
+        return loop + ".index + 1";
       case injamm::detail::special_var_kind::loop_size:
-        return loop_depth_ > 0 ? ("_size" + std::to_string(loop_depth_)) : std::string{"std::optional<int>{}"};
+        return loop + ".size";
       default:
         return "std::optional<int>{}";
     }
@@ -816,7 +841,8 @@ class code_generator {
         return std::to_string(ref.int_filters[0].arg);
       }
       case injamm::detail::compare_operand_kind::string_literal: {
-        return cpp_string(ref.compare_rhs_text);
+        return "std::string_view{" + cpp_string(ref.compare_rhs_text) + ", " +
+               std::to_string(ref.compare_rhs_text.size()) + "u}";
       }
       case injamm::detail::compare_operand_kind::variable: {
         auto const rhs_ref = make_compare_rhs_ref(ref);
@@ -1090,12 +1116,12 @@ class code_generator {
     emit_raw("template <injamm::fixed_string PartialName, typename V, typename R, typename Sink>");
     emit_raw("  requires injamm::detail::output_sink<Sink>");
     emit_raw("[[nodiscard]] std::expected<void, injamm::error_ctx>");
-    emit_raw(impl_name + "(const V& value, const R& root, Sink& out);");
+    emit_raw(impl_name + "(const V& value, const R& root, const codegen_loop_context& _loop, Sink& out);");
     emit_raw("");
     emit_raw("template <injamm::fixed_string PartialName, typename V, typename R, typename Sink>");
     emit_raw("  requires injamm::detail::output_sink<Sink>");
     emit_raw("[[nodiscard]] std::expected<void, injamm::error_ctx>");
-    emit_raw(impl_name + "(const V& value, const R& root, Sink& out) {");
+    emit_raw(impl_name + "(const V& value, const R& root, const codegen_loop_context& _loop, Sink& out) {");
     ++indent_;
 
     /* if constexpr チェーン: 各 partial 名を std::string_view で比較する。
@@ -1115,12 +1141,12 @@ class code_generator {
       }
       ++indent_;
 
-      /* loop_depth_ などの状態を退避: 各 partial は独立した関数内部と同じ扱い。
+      /* scope_depth_ などの状態を退避: 各 partial は独立した関数内部と同じ扱い。
          値スコープは value、ルートは root 引数になる。 */
-      auto saved_loop    = loop_depth_;
+      auto saved_scope   = scope_depth_;
       auto saved_blocks  = std::move(open_blocks_);
       auto saved_partial = in_partial_;
-      loop_depth_ = 0;
+      scope_depth_ = 0;
       open_blocks_.clear();
       in_partial_ = true;
 
@@ -1137,7 +1163,7 @@ class code_generator {
 
       emit("return {};");
 
-      loop_depth_  = saved_loop;
+      scope_depth_  = saved_scope;
       open_blocks_ = std::move(saved_blocks);
       in_partial_  = saved_partial;
 
@@ -1186,7 +1212,7 @@ class code_generator {
     emit_raw("[[nodiscard]] std::expected<void, injamm::error_ctx>");
     emit_raw("render_partial(const T& data, Sink& out) {");
     ++indent_;
-    emit("return " + impl_name + "<PartialName>(data, data, out);");
+    emit("return " + impl_name + "<PartialName>(data, data, codegen_loop_context{}, out);");
     --indent_;
     emit_raw("}");
     emit_raw("");
@@ -1197,7 +1223,7 @@ class code_generator {
       emit_raw("[[nodiscard]] std::expected<void, injamm::error_ctx>");
       emit_raw(prefixed_api_name + "(const T& data, Sink& out) {");
       ++indent_;
-      emit("return " + impl_name + "<PartialName>(data, data, out);");
+      emit("return " + impl_name + "<PartialName>(data, data, codegen_loop_context{}, out);");
       --indent_;
       emit_raw("}");
       emit_raw("");
@@ -1233,42 +1259,77 @@ class code_generator {
   /**
    * @brief ループ本体がインデックス変数 (_iN/_sizeN) を参照する emit_section を事前収集
    * @details @index/@first/@last/@size および loop.is_first/is_last 系
-   *          (emit_at_section/emit_at_inverted) を本体に含むループはインデックス形式を
-   *          維持し、それ以外は range-for に変換する。ネストループはスタックで追跡し、
-   *          インデックス参照命令は最も内側のループに帰属させる。
+   *          (emit_at_section/emit_at_inverted) を本体に含むセクションを事前収集する。
+   *          生成側は optional/スカラー分岐では親 context を継承し、コンテナ分岐だけを
+   *          インデックス形式にする。ネストでは値スコープをすべて走査して、実際に
+   *          コンテナとなる最内の分岐へ正しい VM ループ情報を渡す。
    * @param bc 解析対象のバイトコード
    */
   void precompute_index_loops(bc::bytecode const& bc) {
     index_loops_ = metadata_index_loops_;
-    std::vector<const bc::instruction*> stack;
+    struct section_block {
+      const bc::instruction* inst;
+      bool is_section;
+      bool in_else;
+    };
+    std::vector<section_block> stack;
+    auto mark_enclosing_loops = [&]() {
+      for (auto const& block : stack) {
+        if (block.is_section && !block.in_else) index_loops_.insert(block.inst);
+      }
+    };
     for (auto const& inst : bc.instructions) {
       auto op = inst.op;
       if (op == bc::opcode::emit_section) {
-        stack.push_back(&inst);
+        stack.push_back({&inst, true, false});
+      }
+      else if (op == bc::opcode::emit_inverted) {
+        stack.push_back({&inst, false, false});
       }
       else if (op == bc::opcode::emit_at_index || op == bc::opcode::emit_at_index1 ||
                op == bc::opcode::emit_at_first || op == bc::opcode::emit_at_last ||
-               op == bc::opcode::emit_at_size || op == bc::opcode::emit_at_section ||
-               op == bc::opcode::emit_at_inverted) {
-        if (!stack.empty()) index_loops_.insert(stack.back());
+               op == bc::opcode::emit_at_size) {
+        mark_enclosing_loops();
+      }
+      else if (op == bc::opcode::emit_at_section || op == bc::opcode::emit_at_inverted) {
+        mark_enclosing_loops();
+        stack.push_back({&inst, false, false});
       }
       else if (op == bc::opcode::emit_if || op == bc::opcode::emit_if_not ||
                op == bc::opcode::emit_if_or || op == bc::opcode::emit_if_and) {
         auto const& ref = bc.var_refs[inst.operand2];
-        if (!stack.empty() && (ref.key == "loop.is_last" || ref.key == "loop.is_first")) {
-          index_loops_.insert(stack.back());
+        if (injamm::detail::classify_special_var(ref.key) != injamm::detail::special_var_kind::none) {
+          mark_enclosing_loops();
         }
+        if (op == bc::opcode::emit_if_or || op == bc::opcode::emit_if_and) {
+          auto const& rhs = bc.var_refs[inst.operand3];
+          if (injamm::detail::classify_special_var(rhs.key) != injamm::detail::special_var_kind::none) {
+            mark_enclosing_loops();
+          }
+        }
+        stack.push_back({&inst, false, false});
       }
       else if (op == bc::opcode::emit_if_eq || op == bc::opcode::emit_if_ne ||
                op == bc::opcode::emit_if_gt || op == bc::opcode::emit_if_gte ||
                op == bc::opcode::emit_if_lt || op == bc::opcode::emit_if_lte) {
         auto const& ref = bc.var_refs[inst.operand2];
-        if (!stack.empty() && comparison_uses_loop_index(ref)) {
-          index_loops_.insert(stack.back());
-        }
+        if (comparison_uses_loop_context(ref)) mark_enclosing_loops();
+        stack.push_back({&inst, false, false});
+      }
+      else if (op == bc::opcode::emit_if_filtered) {
+        stack.push_back({&inst, false, false});
+      }
+      else if (op == bc::opcode::call_partial) {
+        mark_enclosing_loops();
+      }
+      else if (op == bc::opcode::emit_else) {
+        if (!stack.empty() && stack.back().is_section) stack.back().in_else = true;
       }
       else if (op == bc::opcode::emit_end) {
         if (!stack.empty()) stack.pop_back();
+      }
+      else if (op == bc::opcode::emit_endif) {
+        if (!stack.empty() && !stack.back().is_section) stack.pop_back();
       }
     }
   }
@@ -1335,7 +1396,7 @@ class code_generator {
    *          ルート引数（_rtN）を持たせることをマーキングする。
    * @param bc 解析対象のバイトコード（partial 本体は再帰的に走査する）
    * @param in_partial partial 本体の走査か
-   * @param depth 現在のループ深度
+   * @param depth 現在の値スコープ深度
    */
   void collect_two_stage_keys(bc::bytecode const& bc, bool in_partial, int depth) {
     struct pc_block {
@@ -1367,11 +1428,8 @@ class code_generator {
       }
     };
     auto mark_enclosing_index_loop = [&]() {
-      for (auto it = blocks.rbegin(); it != blocks.rend(); ++it) {
-        if (it->is_section) {
-          metadata_index_loops_.insert(it->inst);
-          return;
-        }
+      for (auto const& block : blocks) {
+        if (block.is_section && !block.has_else) metadata_index_loops_.insert(block.inst);
       }
     };
     for (auto const& inst : bc.instructions) {
@@ -1422,7 +1480,7 @@ class code_generator {
             auto const rhs_ref = make_compare_rhs_ref(ref);
             if (value_relative(rhs_ref)) two_stage_keys_.insert(rhs_ref.key);
           }
-          if (comparison_uses_loop_index(ref)) mark_enclosing_index_loop();
+          if (comparison_uses_loop_context(ref)) mark_enclosing_index_loop();
           blocks.push_back({false, false, nullptr, false});
           break;
         }
@@ -1500,8 +1558,9 @@ class code_generator {
        *  進める前に行う（access の解決と同じ深さ）。 */
       std::string two_stage_key;
       if (is_value_relative(ref)) two_stage_key = ref.key;
-      ++loop_depth_;
-      auto idx = std::to_string(loop_depth_);
+      auto const call_loop = loop_context_expr();
+      ++scope_depth_;
+      auto idx = std::to_string(scope_depth_);
       if (ref.section_op_count > 0) {
         emit("{");
         ++indent_;
@@ -1550,7 +1609,7 @@ class code_generator {
           }
         }
         if (has_stride) {
-          stride_loops_.insert(loop_depth_);
+          stride_loops_.insert(scope_depth_);
           emit("auto _block" + idx + " = _st_take" + idx + " + _st_skip" + idx + ";");
           emit("auto _count" + idx + " = _st_take" + idx + " == 0 ? std::size_t(0) : ((_hi" + idx + " - _lo" + idx + ") / _block" + idx + " * _st_take" + idx + " + std::min(_st_take" + idx + ", (_hi" + idx + " - _lo" + idx + ") % _block" + idx + "));");
           emit("std::size_t _src" + idx + " = _bwd" + idx + " ? (_hi" + idx + " - 1) : _lo" + idx + ";");
@@ -1565,6 +1624,7 @@ class code_generator {
           emit("auto _idx" + idx + " = _bwd" + idx + " ? (_hi" + idx + " - 1 - _i" + idx + ") : (_lo" + idx + " + _i" + idx + ");");
           emit("const auto& _item" + idx + " = " + container_access + "[_idx" + idx + "];");
         }
+        emit("const codegen_loop_context _loop" + idx + "{true, _i" + idx + ", _count" + idx + "};");
         // join: イテレーション間（区切り文字が空でない、かつ最初のイテレーション以外）に出力
         if (!join_sep.empty()) {
           auto sep_lit = cpp_string(join_sep);
@@ -1575,18 +1635,6 @@ class code_generator {
           emit("}");
         }
         open_blocks_.push_back({.kind = end_kind::loop, .has_else = has_else, .scoped = true});
-      } else if (index_loops_.count(&inst) != 0) {
-        /* @index/@first/@last/@size 等を参照するループはインデックス形式を維持 */
-        emit("{");
-        ++indent_;
-        if (has_else) {
-          emit("if (!value_empty(" + container_access + ")) {");
-        }
-        emit("auto _size" + idx + " = " + container_access + ".size();");
-        emit("for (std::size_t _i" + idx + " = 0; _i" + idx + " < _size" + idx + "; ++_i" + idx + ") {");
-        ++indent_;
-        emit("const auto& _item" + idx + " = " + container_access + "[_i" + idx + "];");
-        open_blocks_.push_back({.kind = end_kind::loop, .has_else = has_else, .scoped = true});
       } else {
         /* コンテナは range-for、スカラー（bool/数値/enum）は VM (bytecode_exec.hpp do_section)
            と同じ「真なら本体を 1 回だけ実行」。本体はどちらも _itemN 経由で現在スコープを
@@ -1595,7 +1643,7 @@ class code_generator {
            コンテナの for が消えて何も出力しなかった。 */
         auto seq = ++lambda_seq_;
         bool rpm = root_param_main_.count(&inst) != 0;
-        std::string params = "(const auto& _item" + idx;
+        std::string params = "(const auto& _item" + idx + ", const codegen_loop_context& _loop" + idx;
         std::string call_root = root_for_emit();
         if (rpm) {
           params += ", const auto& _rt" + std::to_string(seq);
@@ -1603,33 +1651,38 @@ class code_generator {
         }
         emit("auto _body" + std::to_string(seq) + " = [&]" + params + ") {");
         ++indent_;
-        open_block blk{.kind = end_kind::scalar_section, .access = access, .idx = loop_depth_, .seq = seq,
-                       .two_stage_key = two_stage_key, .root_param = rpm, .call_root = call_root, .inst = &inst};
+        open_block blk{.kind = end_kind::scalar_section, .access = access, .idx = scope_depth_, .seq = seq,
+                       .two_stage_key = two_stage_key, .root_param = rpm, .call_root = call_root,
+                       .call_loop = call_loop, .indexed = index_loops_.count(&inst) != 0, .inst = &inst};
         open_blocks_.push_back(std::move(blk));
       }
     }
     else if (op == bc::opcode::emit_at_section) {
       auto kind = inst.operand2;
-      auto d = std::to_string(loop_depth_);
+      auto const loop = loop_context_expr();
       if (kind == 0) {
-        emit("if (_i" + d + " > 0) {");
+        emit("if (" + loop + ".active && " + loop + ".index > 0) {");
       } else if (kind == 1) {
-        emit("if (_i" + d + " == 0) {");
+        emit("if (" + loop + ".active && " + loop + ".index == 0) {");
       } else if (kind == 2) {
-        emit("if (_i" + d + " + 1 == _size" + d + ") {");
+        emit("if (" + loop + ".active && " + loop + ".index + 1 == " + loop + ".size) {");
+      } else {
+        emit("if (false) {");
       }
       ++indent_;
       open_blocks_.push_back({end_kind::cond});
     }
     else if (op == bc::opcode::emit_at_inverted) {
       auto kind = inst.operand2;
-      auto d = std::to_string(loop_depth_);
+      auto const loop = loop_context_expr();
       if (kind == 0) {
-        emit("if (_i" + d + " == 0) {");
+        emit("if (" + loop + ".active && " + loop + ".index == 0) {");
       } else if (kind == 1) {
-        emit("if (_i" + d + " > 0) {");
+        emit("if (" + loop + ".active && " + loop + ".index > 0) {");
       } else if (kind == 2) {
-        emit("if (_i" + d + " + 1 < _size" + d + ") {");
+        emit("if (" + loop + ".active && " + loop + ".index + 1 < " + loop + ".size) {");
+      } else {
+        emit("if (false) {");
       }
       ++indent_;
       open_blocks_.push_back({end_kind::cond});
@@ -1641,18 +1694,18 @@ class code_generator {
       switch (block.kind) {
       case end_kind::loop:
         if (block.has_else) {
-          /* else 本体の終端: ガード if を閉じる（loop_depth_ は emit_else で減済） */
+          /* else 本体の終端: ガード if を閉じる（scope_depth_ は emit_else で減済） */
           --indent_;
           emit("}");
         } else {
-          if (stride_loops_.count(loop_depth_) != 0) {
-            auto sidx = std::to_string(loop_depth_);
+          if (stride_loops_.count(scope_depth_) != 0) {
+            auto sidx = std::to_string(scope_depth_);
             emit("if (_bwd" + sidx + ") --_src" + sidx + "; else ++_src" + sidx + ";");
-            stride_loops_.erase(loop_depth_);
+            stride_loops_.erase(scope_depth_);
           }
           --indent_;
           emit("}");
-          --loop_depth_;
+          --scope_depth_;
         }
         if (block.scoped) {
           --indent_;
@@ -1673,8 +1726,8 @@ class code_generator {
         auto body = "_body" + std::to_string(block.seq);
         auto velem = "_v" + std::to_string(block.seq);
         auto root_args = block.root_param ? (", " + block.call_root) : std::string{};
-        auto body_call_scope = body + "(" + scope + root_args + ")";   // スカラー: 親スコープを要素として 1 回
-        auto body_call_elem = body + "(" + velem + root_args + ")";    // コンテナ: 各要素
+        auto body_call_scope = body + "(" + scope + ", " + block.call_loop + root_args + ")"; // スカラー
+        auto body_call_elem = body + "(" + velem + ", " + block.call_loop + root_args + ")";  // range-for
         auto els = block.else_seq ? "_else" + std::to_string(block.else_seq) : std::string{};
         auto els_stmt = block.else_seq
                             ? ((block.else_root_param ? (els + "(" + block.call_root + ")") : (els + "()")) + ";")
@@ -1683,7 +1736,7 @@ class code_generator {
         auto dispatch_of = [&](std::string const& acc) {
           emit("if constexpr (codegen_optional_section_v<decltype(" + acc + ")>) {");
           ++indent_;
-          emit("if (" + acc + ".has_value()) " + body + "(*" + acc + root_args + ");" + then_else);
+          emit("if (" + acc + ".has_value()) " + body + "(*" + acc + ", " + block.call_loop + root_args + ");" + then_else);
           --indent_;
           emit("} else if constexpr (codegen_scalar_section_v<decltype(" + acc + ")>) {");
           ++indent_;
@@ -1691,11 +1744,29 @@ class code_generator {
           --indent_;
           emit("} else {");
           ++indent_;
+          auto emit_container_loop = [&]() {
+            if (block.indexed) {
+              auto idx = std::to_string(block.idx);
+              emit("auto _size" + idx + " = " + acc + ".size();");
+              emit("for (std::size_t _i" + idx + " = 0; _i" + idx + " < _size" + idx + "; ++_i" + idx + ") {");
+              ++indent_;
+              emit(body + "(" + acc + "[_i" + idx + "], codegen_loop_context{true, _i" + idx + ", _size" + idx + "}" +
+                   root_args + ");");
+              --indent_;
+              emit("}");
+            } else {
+              emit("for (const auto& " + velem + " : " + acc + ") " + body_call_elem + ";");
+            }
+          };
           if (block.else_seq) {
             // VM はコンテナが空のとき else 節を描画する
-            emit("if (value_empty(" + acc + ")) " + els_stmt + " else for (const auto& " + velem + " : " + acc + ") " + body_call_elem + ";");
+            emit("if (value_empty(" + acc + ")) " + els_stmt + " else {");
+            ++indent_;
+            emit_container_loop();
+            --indent_;
+            emit("}");
           } else {
-            emit("for (const auto& " + velem + " : " + acc + ") " + body_call_elem + ";");
+            emit_container_loop();
           }
           --indent_;
           emit("}");
@@ -1715,7 +1786,7 @@ class code_generator {
           --indent_;
           emit("}");
         }
-        if (!block.else_seq) --loop_depth_;
+        if (!block.else_seq) --scope_depth_;
         break;
       }
       case end_kind::cond:
@@ -1759,25 +1830,29 @@ class code_generator {
         emit("auto _body" + std::to_string(seq) + " = [&]() {");
         ++indent_;
       }
-      open_block blk{.kind = end_kind::inverted, .access = access, .idx = loop_depth_, .seq = seq,
+      open_block blk{.kind = end_kind::inverted, .access = access, .idx = scope_depth_, .seq = seq,
                      .root_param = rpm, .call_root = call_root, .inst = &inst};
       open_blocks_.push_back(std::move(blk));
     }
     else if (op == bc::opcode::emit_at_index) {
-      emit("append_number(out, _i" + std::to_string(loop_depth_) + ");");
+      auto const loop = loop_context_expr();
+      emit("if (" + loop + ".active) append_number(out, " + loop + ".index);");
     }
     else if (op == bc::opcode::emit_at_index1) {
-      emit("append_number(out, _i" + std::to_string(loop_depth_) + " + 1);");
+      auto const loop = loop_context_expr();
+      emit("if (" + loop + ".active) append_number(out, " + loop + ".index + 1);");
     }
     else if (op == bc::opcode::emit_at_first) {
-      emit("out.append((_i" + std::to_string(loop_depth_) + " == 0) ? \"true\" : \"false\");");
+      auto const loop = loop_context_expr();
+      emit("out.append((" + loop + ".active && " + loop + ".index == 0) ? \"true\" : \"false\");");
     }
     else if (op == bc::opcode::emit_at_last) {
-      auto d = std::to_string(loop_depth_);
-      emit("out.append((_i" + d + " == _size" + d + " - 1) ? \"true\" : \"false\");");
+      auto const loop = loop_context_expr();
+      emit("out.append((" + loop + ".active && " + loop + ".index + 1 == " + loop + ".size) ? \"true\" : \"false\");");
     }
     else if (op == bc::opcode::emit_at_size) {
-      emit("append_number(out, _size" + std::to_string(loop_depth_) + ");");
+      auto const loop = loop_context_expr();
+      emit("if (" + loop + ".active) append_number(out, " + loop + ".size);");
     }
     else if (op == bc::opcode::emit_if) {
       auto access = resolve_if_access(bc.var_refs[inst.operand2]);
@@ -1791,7 +1866,8 @@ class code_generator {
       auto const& ref = bc.var_refs[inst.operand2];
       auto const lhs = resolve_compare_lhs(ref);
       auto const rhs = get_compare_rhs_expression(ref);
-      emit("if (codegen_compare(" + compare_opcode_expression(op) + ", " +
+      auto const guard = comparison_uses_loop_context(ref) ? (loop_context_expr() + ".active && ") : std::string{};
+      emit("if (" + guard + "codegen_compare(" + compare_opcode_expression(op) + ", " +
            compare_rhs_kind_expression(ref) + ", " + lhs + ", " + rhs + ")) {");
       ++indent_;
       open_blocks_.push_back({.kind = end_kind::cond});
@@ -1800,12 +1876,12 @@ class code_generator {
       if (!open_blocks_.empty() && open_blocks_.back().kind == end_kind::scalar_section) {
         /* セクションの {{else}} トランポリン: 本体ラムダを閉じて else 本体ラムダへ。
            else 本体は親コンテキストでコンパイルされている（bytecode_compile.hpp）ため
-           loop_depth_ を親に戻す。 */
+           scope_depth_ を親に戻す。 */
         auto& blk = open_blocks_.back();
         if (blk.root_param) cur_root_ = blk.call_root;  // 本体ラムダのルート式を復元
         --indent_;
         emit("};");
-        --loop_depth_;
+        --scope_depth_;
         blk.else_seq = ++lambda_seq_;
         blk.else_root_param = blk.inst && root_param_else_.count(blk.inst) != 0;
         if (blk.else_root_param) {
@@ -1833,15 +1909,15 @@ class code_generator {
       } else if (!open_blocks_.empty() && open_blocks_.back().kind == end_kind::loop &&
                  open_blocks_.back().has_else) {
         /* ループ種別セクションの {{else}}: for を閉じ、事前ガードを else へ切り替える
-           （else 本体は親コンテキストなので loop_depth_ を戻す） */
-        if (stride_loops_.count(loop_depth_) != 0) {
-          auto sidx = std::to_string(loop_depth_);
+           （else 本体は親コンテキストなので scope_depth_ を戻す） */
+        if (stride_loops_.count(scope_depth_) != 0) {
+          auto sidx = std::to_string(scope_depth_);
           emit("if (_bwd" + sidx + ") --_src" + sidx + "; else ++_src" + sidx + ";");
-          stride_loops_.erase(loop_depth_);
+          stride_loops_.erase(scope_depth_);
         }
         --indent_;
         emit("}");
-        --loop_depth_;
+        --scope_depth_;
         --indent_;
         emit("} else {");
         ++indent_;
@@ -1877,11 +1953,11 @@ class code_generator {
       emit("append_value(out, " + root_expr() + "." + bc.var_refs[inst.operand].key + ");");
     }
     else if (op == bc::opcode::emit_at_key) {
-      emit("out.append(_key" + std::to_string(loop_depth_) + ");");
+      emit("out.append(_key" + std::to_string(scope_depth_) + ");");
     }
     else if (op == bc::opcode::emit_this) {
-      if (loop_depth_ > 0) {
-        emit("html_escape_append_value(out, _item" + std::to_string(loop_depth_) + ");");
+      if (scope_depth_ > 0) {
+        emit("html_escape_append_value(out, _item" + std::to_string(scope_depth_) + ");");
       } else {
         emit("html_escape_append_value(out, " + value_expr() + ");");
       }
@@ -2059,7 +2135,8 @@ class code_generator {
          VM と結果が不一致だった）。local partial も同じ経路で描画される。 */
       auto& pe = bc.partial_entries[inst.operand];
       if (pe.bc && !pe.bc->instructions.empty()) {
-        emit("(void)" + partial_impl_name() + "<\"" + pe.name + "\">(" + value_expr() + ", " + root_expr() + ", out);");
+        emit("(void)" + partial_impl_name() + "<\"" + pe.name + "\">(" + value_expr() + ", " + root_expr() +
+             ", " + loop_context_expr() + ", out);");
       }
     }
     else if (op == bc::opcode::emit_var_size) {
