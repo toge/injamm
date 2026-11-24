@@ -723,7 +723,8 @@ class bc_compiler {
       bool else_reached_end = false;
       auto else_result = compile_body_impl(else_reached_end, key);
       if (else_result == body_result::eof) {
-        bc_.error = error_ctx{tag_start, error_code::unexpected_end, key};
+        // 内側で既にエラー（mismatched closing tag 等）が設定されている場合は最初のエラーを優先する
+        if (bc_.error.ec == error_code::none) bc_.error = error_ctx{tag_start, error_code::unexpected_end, key};
         return;
       }
 
@@ -737,7 +738,8 @@ class bc_compiler {
       bc_.add_instruction(bc_opcode::emit_end);
       bc_.patch_jump(section_instr_idx, static_cast<std::uint32_t>(bc_.current_offset()));
     } else {
-      bc_.error = error_ctx{tag_start, error_code::unexpected_end, key};
+      // 内側で既にエラー（mismatched closing tag 等）が設定されている場合は最初のエラーを優先する
+      if (bc_.error.ec == error_code::none) bc_.error = error_ctx{tag_start, error_code::unexpected_end, key};
       return;
     }
 
@@ -775,7 +777,8 @@ class bc_compiler {
       bool else_reached_end = false;
       auto else_result = compile_body_impl(else_reached_end, key);
       if (else_result == body_result::eof) {
-        bc_.error = error_ctx{tag_start, error_code::unexpected_end, key};
+        // 内側で既にエラー（mismatched closing tag 等）が設定されている場合は最初のエラーを優先する
+        if (bc_.error.ec == error_code::none) bc_.error = error_ctx{tag_start, error_code::unexpected_end, key};
         return;
       }
 
@@ -789,7 +792,8 @@ class bc_compiler {
       bc_.add_instruction(bc_opcode::emit_end);
       bc_.patch_jump(section_instr_idx, static_cast<std::uint32_t>(bc_.current_offset()));
     } else {
-      bc_.error = error_ctx{tag_start, error_code::unexpected_end, key};
+      // 内側で既にエラー（mismatched closing tag 等）が設定されている場合は最初のエラーを優先する
+      if (bc_.error.ec == error_code::none) bc_.error = error_ctx{tag_start, error_code::unexpected_end, key};
       return;
     }
 
@@ -1276,7 +1280,8 @@ class bc_compiler {
       }
       if (inner.starts_with("/")) {
         if (!expected_close.empty() && trim_sv(inner.substr(1)) != expected_close) {
-          bc_.error = error_ctx{tag_start, error_code::syntax_error, "mismatched closing tag"};
+          // 最初のエラーを優先する（外側の unexpected_end で上書きしない）
+          if (bc_.error.ec == error_code::none) bc_.error = error_ctx{tag_start, error_code::syntax_error, "mismatched closing tag"};
           return body_result::close;
         }
         return body_result::close;

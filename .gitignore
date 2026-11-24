@@ -3,6 +3,9 @@ build_static/
 vcpkg_installed/
 vcpkg-manifest-install.log
 
+# TLA+ (TLC の状態ダンプ)
+tlaplus/states/
+
 # CMake
 CMakeCache.txt
 CMakeFiles/

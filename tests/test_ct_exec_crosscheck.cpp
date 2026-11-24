@@ -74,6 +74,27 @@ TEST_CASE("ct_exec cross-check: complex templates (VM fallback)", "[ct_exec][cro
   CROSSCHECK("{{#tags}}{{this}}{{/tags}} and {{name}}");
 }
 
+TEST_CASE("ct_exec cross-check: comments containing braces", "[ct_exec][crosscheck][comment]") {
+  auto d = make_data();
+
+  // コメント内に {{ }} を含む場合も、VM の前処理 (strip_bang_comments) と
+  // CT パーサ (ct_parse_into) で同じコメント終端判定をする。
+  // CT 側はネストした {{ }} を考慮してスキップする（ct_parse.hpp の仕様）。
+  CROSSCHECK("{{#name}}{{! a }}y{{/name}}");
+  CROSSCHECK("{{! {{name}} }}x");
+  CROSSCHECK("{{#name}}{{! {{/name}} }}z{{/name}}");
+}
+
+TEST_CASE("ct_exec cross-check: tilde-wrapped else tags", "[ct_exec][crosscheck][comment]") {
+  auto d = make_data();
+
+  // {{~else~}} も VM の前処理と同じく else として認識される（find_toplevel_else
+  // は本体パースと同じチルダ正規化を行う）
+  CROSSCHECK("{{#name}}a{{~else~}}b{{/name}}");
+  CROSSCHECK("{{#if age}}a{{~else~}}b{{/if}}");
+  CROSSCHECK("{{#name}}a{{ else }}b{{/name}}");
+}
+
 #undef CROSSCHECK
 
 // ---- 直線 only partial のコンパイル時アンロール（htmx の行更新用途） ----

@@ -1,5 +1,14 @@
 # Changelog
 
+## 2026-11-24
+
+- `fix: NTTP render がセクションの構文エラーを黙って無視していた問題` — TLA+ モデル検査（`tlaplus/`）が検出した VM/CT 不整合を修正。CT パーサの閉じタグ探索を VM (`compile_body_impl` の `expected_close` 検証) と同じスタック走査に揃え、`{{#a}}{{/b}}`（取り違え → `syntax_error`）、未閉鎖セクション（`unexpected_end`）、トップレベルの余分な閉じタグ（`stray closing tag`）が `engine<T>` と `render<>` の両方で同じエラーになる。`{{~/if~}}` 等チルダ付き閉じタグも VM の前処理と同じ意味で一致（旧 CT 実装は未閉鎖+閉じタグ無視の 2 バグが相殺して通っていた）
+- `fix: VM 前処理 strip_bang_comments がコメント内の {{ }} を考慮せず最初の }} で切っていた問題` — `{{! {{name}} }}x` が engine で ` }}x`、NTTP render で `x` になる出力不一致を解消。CT パーサと同じネスト考慮のコメント終端判定に揃えた（差分プローブで検出、crosscheck テスト追加）
+- `fix: VM がネスト内の mismatched closing tag を外側の unexpected_end で上書きしていた問題` — `{{#a}}{{#b}}{{/a}}` が engine で `unexpected_end`、NTTP render で `syntax_error` になるエラー種別の不一致を解消。`compile_section` / `compile_inverted` / `compile_body_impl` のエラー設定に first-wins ガードを追加し、SYNTAX.md どおり取り違え = `syntax_error` が最優先で報告される（差分プローブで検出、回帰テスト追加）
+- `fix: トップレベル / loop.* 本体内の {{else}} の扱いが VM と NTTP で食い違う問題` — トップレベル `{{else}}` が engine で `syntax_error`(stray)、NTTP で `unknown_key` になる種別不一致、`{{#loop.index}}A{{else}}B{{/loop.index}}` が engine で `syntax_error`、NTTP で無エラーになる不一致を解消。CT メインパーサに else を stray 扱いでエラー化する分岐を追加
+- `fix: {{~else~}}（チルダ付き else）が NTTP で else として認識されない問題` — `find_toplevel_else` がチルダ正規化を行っておらず、`{{#name}}a{{~else~}}b{{/name}}` が engine で成功・NTTP で `unknown_key` エラーになっていた。本体パースと同じチルダ正規化を追加
+- `test: TLA+ 反例の回帰テストを追加` — `tests/test_injamm_tla_counterexample.cpp`（TLC が列挙した反例 `{{#a}}{{/b}}` / `{{#a}}` を回帰として固定）
+
 ## 2026-11-20
 
 - `fix: injamm_codegen がスカラー/optional の逆セクション（{{^bool}} 等）でコンパイル不能なコードを生成する問題` — `value_empty` に bool/算術型/enum/optional/reflectable の分岐を追加し、VM (`do_inverted`) と同一の「空/偽のとき本体 1 回」判定を生成
