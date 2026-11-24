@@ -25,21 +25,19 @@
 //
 // 修正後の挙動: 両パスともエラーを返す(仕様どおり一致する)。
 
-namespace {
-
+// glaze の reflection (get_name) はリンケージのない型を許容しない (Clang で
+// エラーになる) ため、TlaData はグローバルスコープに置く
 struct TlaData {
   std::string a;
   std::string b;
 };
 
-TlaData make_data() {
+TlaData make_tla_data() {
   return TlaData{"x", "y"};
 }
 
-} // namespace
-
 TEST_CASE("TLA+ counterexample: mismatched close tag {{#a}}{{/b}}", "[tla_counterexample]") {
-  auto d = make_data();
+  auto d = make_tla_data();
 
   // ランタイム VM は仕様どおり syntax_error を返す(これは通る)
   injamm::engine<TlaData> e("{{#a}}{{/b}}");
@@ -54,7 +52,7 @@ TEST_CASE("TLA+ counterexample: mismatched close tag {{#a}}{{/b}}", "[tla_counte
 }
 
 TEST_CASE("TLA+ counterexample: unterminated section {{#a}}", "[tla_counterexample]") {
-  auto d = make_data();
+  auto d = make_tla_data();
 
   // ランタイム VM は unexpected_end を返す(これは通る)
   injamm::engine<TlaData> e("{{#a}}");
@@ -69,7 +67,7 @@ TEST_CASE("TLA+ counterexample: unterminated section {{#a}}", "[tla_counterexamp
 }
 
 TEST_CASE("TLA+ counterexample: stray closing tag {{/a}}", "[tla_counterexample]") {
-  auto d = make_data();
+  auto d = make_tla_data();
 
   // ランタイム VM は stray closing tag (syntax_error) を返す(これは通る)
   injamm::engine<TlaData> e("x{{/a}}y");
@@ -84,7 +82,7 @@ TEST_CASE("TLA+ counterexample: stray closing tag {{/a}}", "[tla_counterexample]
 }
 
 TEST_CASE("TLA+ counterexample: unterminated if section {{#if a}}", "[tla_counterexample]") {
-  auto d = make_data();
+  auto d = make_tla_data();
 
   // ランタイム VM は unexpected_end を返す(これは通る)
   injamm::engine<TlaData> e("{{#if a}}");
@@ -99,7 +97,7 @@ TEST_CASE("TLA+ counterexample: unterminated if section {{#if a}}", "[tla_counte
 }
 
 TEST_CASE("TLA+ counterexample: mismatched close tag inside if", "[tla_counterexample]") {
-  auto d = make_data();
+  auto d = make_tla_data();
 
   // {{#if a}} の本体内の {{/b}} は VM では mismatched closing tag
   injamm::engine<TlaData> e("{{#if a}}{{/b}}");
@@ -114,7 +112,7 @@ TEST_CASE("TLA+ counterexample: mismatched close tag inside if", "[tla_counterex
 }
 
 TEST_CASE("TLA+ counterexample: nested mismatched close tag", "[tla_counterexample]") {
-  auto d = make_data();
+  auto d = make_tla_data();
 
   // {{#a}} の本体の {{#b}} の内側の {{/a}} は取り違え。SYNTAX.md どおり
   // 両パスとも syntax_error になるべき（修正前の VM は内側の mismatch エラーを
@@ -131,7 +129,7 @@ TEST_CASE("TLA+ counterexample: nested mismatched close tag", "[tla_counterexamp
 }
 
 TEST_CASE("TLA+ counterexample: top-level else tag", "[tla_counterexample]") {
-  auto d = make_data();
+  auto d = make_tla_data();
 
   // トップレベルの {{else}} は VM では stray closing tag (syntax_error)。
   // 修正前の CT は unknown_key で種別が不一致だった
@@ -147,7 +145,7 @@ TEST_CASE("TLA+ counterexample: top-level else tag", "[tla_counterexample]") {
 }
 
 TEST_CASE("TLA+ counterexample: else inside loop section", "[tla_counterexample]") {
-  auto d = make_data();
+  auto d = make_tla_data();
 
   // loop.* セクションは {{else}} をサポートしない。VM では else で本体が終端し、
   // 後続の閉じタグが stray closing tag (syntax_error) になる。
