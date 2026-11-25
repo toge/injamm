@@ -557,6 +557,9 @@ class code_generator {
     std::string call_loop;  /**< ラムダに入る前の VM ループ情報 */
     bool        indexed = false; /**< コンテナ分岐で index/size を生成する必要がある */
     const bc::instruction* inst = nullptr; /**< 開始命令（マーキング参照用） */
+    int         control_owner = 0; /**< このブロック内の break/continue が伝播する VM ループ深度 */
+    std::string join_sep; /**< loop ブロックの join 区切り文字 */
+    bool        in_else = false; /**< loop ブロックが {{else}} 本体を生成中か */
   };
   int lambda_seq_ = 0; /**< 本体ラムダ名の連番 */
   std::vector<open_block> open_blocks_;
@@ -573,6 +576,25 @@ class code_generator {
   std::string loop_context_expr() const {
     if (scope_depth_ > 0) return "_loop" + std::to_string(scope_depth_);
     return in_partial_ ? "_loop" : "codegen_loop_context{}";
+  }
+  /** @brief 現在のブロックスタックから break/continue の所有 VM ループを返す */
+  int control_owner_depth() const {
+    for (auto it = open_blocks_.rbegin(); it != open_blocks_.rend(); ++it) {
+      if (it->kind == end_kind::loop && !it->in_else) return it->idx;
+    }
+    for (auto it = open_blocks_.rbegin(); it != open_blocks_.rend(); ++it) {
+      if (it->kind == end_kind::scalar_section) return it->control_owner != 0 ? it->control_owner : it->idx;
+      if (it->kind == end_kind::inverted) return it->idx;
+    }
+    return 0;
+  }
+  /** @brief ループ本体が通常の C++ for の内側か判定する */
+  bool control_is_direct_loop() const {
+    for (auto it = open_blocks_.rbegin(); it != open_blocks_.rend(); ++it) {
+      if (it->kind == end_kind::scalar_section || it->kind == end_kind::inverted) return false;
+      if (it->kind == end_kind::loop) return !it->in_else;
+    }
+    return false;
   }
   std::string unsupported_feature_;  /**< generate() が対応不能な命令を検出した場合の説明 */
   std::ostringstream out_;     /**< 出力ストリーム */
@@ -1016,6 +1038,10 @@ class code_generator {
       emit("std::string _filtered;");
       emit("_filtered.reserve(64);");
     }
+    for (auto const depth : std::views::iota(1, 9)) {
+      emit("bool _cg_break_" + std::to_string(depth) + " = false;");
+      emit("bool _cg_continue_" + std::to_string(depth) + " = false;");
+    }
     emit_raw("");
   }
 
@@ -1154,6 +1180,10 @@ class code_generator {
       if (uses_filtered(*pe.bc)) {
         emit("std::string _filtered;");
         emit("_filtered.reserve(64);");
+      }
+      for (auto const depth : std::views::iota(1, 9)) {
+        emit("bool _cg_break_" + std::to_string(depth) + " = false;");
+        emit("bool _cg_continue_" + std::to_string(depth) + " = false;");
       }
       precompute_index_loops(*pe.bc);
 
@@ -1559,8 +1589,10 @@ class code_generator {
       std::string two_stage_key;
       if (is_value_relative(ref)) two_stage_key = ref.key;
       auto const call_loop = loop_context_expr();
+      int control_owner = control_owner_depth();
       ++scope_depth_;
       auto idx = std::to_string(scope_depth_);
+      if (control_owner == 0) control_owner = scope_depth_;
       if (ref.section_op_count > 0) {
         emit("{");
         ++indent_;
@@ -1613,28 +1645,32 @@ class code_generator {
           emit("auto _block" + idx + " = _st_take" + idx + " + _st_skip" + idx + ";");
           emit("auto _count" + idx + " = _st_take" + idx + " == 0 ? std::size_t(0) : ((_hi" + idx + " - _lo" + idx + ") / _block" + idx + " * _st_take" + idx + " + std::min(_st_take" + idx + ", (_hi" + idx + " - _lo" + idx + ") % _block" + idx + "));");
           emit("std::size_t _src" + idx + " = _bwd" + idx + " ? (_hi" + idx + " - 1) : _lo" + idx + ";");
+          if (!join_sep.empty()) emit("bool _cg_join_pending_" + idx + " = false;");
           emit("for (std::size_t _i" + idx + " = 0; _i" + idx + " < _count" + idx + "; ++_i" + idx + ") {");
           ++indent_;
           emit("while (!(_src" + idx + " >= _lo" + idx + " && _src" + idx + " < _hi" + idx + " && ((_bwd" + idx + " ? (_hi" + idx + " - 1 - _src" + idx + ") : (_src" + idx + " - _lo" + idx + ")) % _block" + idx + ") < _st_take" + idx + ")) { if (_bwd" + idx + ") --_src" + idx + "; else ++_src" + idx + "; }");
           emit("const auto& _item" + idx + " = " + container_access + "[_src" + idx + "];");
         } else {
           emit("auto _count" + idx + " = _hi" + idx + " - _lo" + idx + ";");
+          if (!join_sep.empty()) emit("bool _cg_join_pending_" + idx + " = false;");
           emit("for (std::size_t _i" + idx + " = 0; _i" + idx + " < _count" + idx + "; ++_i" + idx + ") {");
           ++indent_;
           emit("auto _idx" + idx + " = _bwd" + idx + " ? (_hi" + idx + " - 1 - _i" + idx + ") : (_lo" + idx + " + _i" + idx + ");");
           emit("const auto& _item" + idx + " = " + container_access + "[_idx" + idx + "];");
         }
         emit("const codegen_loop_context _loop" + idx + "{true, _i" + idx + ", _count" + idx + "};");
-        // join: イテレーション間（区切り文字が空でない、かつ最初のイテレーション以外）に出力
+        emit("bool _cg_break_" + std::to_string(control_owner) + " = false;");
+        emit("bool _cg_continue_" + std::to_string(control_owner) + " = false;");
         if (!join_sep.empty()) {
-          auto sep_lit = cpp_string(join_sep);
-          emit("if (_i" + idx + " > 0) {");
+          emit("if (_cg_join_pending_" + idx + ") {");
           ++indent_;
-          emit("out.append(" + sep_lit + ");");
+          emit("out.append(" + cpp_string(join_sep) + ");");
+          emit("_cg_join_pending_" + idx + " = false;");
           --indent_;
           emit("}");
         }
-        open_blocks_.push_back({.kind = end_kind::loop, .has_else = has_else, .scoped = true});
+        open_blocks_.push_back({.kind = end_kind::loop, .idx = scope_depth_, .has_else = has_else, .scoped = true,
+                               .control_owner = control_owner, .join_sep = join_sep});
       } else {
         /* コンテナは range-for、スカラー（bool/数値/enum）は VM (bytecode_exec.hpp do_section)
            と同じ「真なら本体を 1 回だけ実行」。本体はどちらも _itemN 経由で現在スコープを
@@ -1653,7 +1689,8 @@ class code_generator {
         ++indent_;
         open_block blk{.kind = end_kind::scalar_section, .access = access, .idx = scope_depth_, .seq = seq,
                        .two_stage_key = two_stage_key, .root_param = rpm, .call_root = call_root,
-                       .call_loop = call_loop, .indexed = index_loops_.count(&inst) != 0, .inst = &inst};
+                       .call_loop = call_loop, .indexed = index_loops_.count(&inst) != 0, .inst = &inst,
+                       .control_owner = control_owner};
         open_blocks_.push_back(std::move(blk));
       }
     }
@@ -1703,6 +1740,12 @@ class code_generator {
             emit("if (_bwd" + sidx + ") --_src" + sidx + "; else ++_src" + sidx + ";");
             stride_loops_.erase(scope_depth_);
           }
+          auto owner = block.control_owner;
+          emit("if (_cg_continue_" + std::to_string(owner) + ") continue;");
+          emit("if (_cg_break_" + std::to_string(owner) + ") break;");
+          if (!block.join_sep.empty()) {
+            emit("_cg_join_pending_" + std::to_string(block.idx) + " = true;");
+          }
           --indent_;
           emit("}");
           --scope_depth_;
@@ -1733,6 +1776,8 @@ class code_generator {
                             ? ((block.else_root_param ? (els + "(" + block.call_root + ")") : (els + "()")) + ";")
                             : std::string{};
         auto then_else = block.else_seq ? (" else " + els_stmt) : std::string{};
+        bool control_top_level = open_blocks_.empty();
+        auto control_owner = block.control_owner;
         auto dispatch_of = [&](std::string const& acc) {
           emit("if constexpr (codegen_optional_section_v<decltype(" + acc + ")>) {");
           ++indent_;
@@ -1752,10 +1797,26 @@ class code_generator {
               ++indent_;
               emit(body + "(" + acc + "[_i" + idx + "], codegen_loop_context{true, _i" + idx + ", _size" + idx + "}" +
                    root_args + ");");
+              if (control_top_level) {
+                emit("if (_cg_continue_" + std::to_string(control_owner) + ") { _cg_continue_" + std::to_string(control_owner) + " = false; continue; }");
+                emit("if (_cg_break_" + std::to_string(control_owner) + ") break;");
+              } else {
+                emit("if (_cg_break_" + std::to_string(control_owner) + " || _cg_continue_" + std::to_string(control_owner) + ") break;");
+              }
               --indent_;
               emit("}");
             } else {
-              emit("for (const auto& " + velem + " : " + acc + ") " + body_call_elem + ";");
+              emit("for (const auto& " + velem + " : " + acc + ") {");
+              ++indent_;
+              emit(body_call_elem + ";");
+              if (control_top_level) {
+                emit("if (_cg_continue_" + std::to_string(control_owner) + ") { _cg_continue_" + std::to_string(control_owner) + " = false; continue; }");
+                emit("if (_cg_break_" + std::to_string(control_owner) + ") break;");
+              } else {
+                emit("if (_cg_break_" + std::to_string(control_owner) + " || _cg_continue_" + std::to_string(control_owner) + ") break;");
+              }
+              --indent_;
+              emit("}");
             }
           };
           if (block.else_seq) {
@@ -1786,6 +1847,19 @@ class code_generator {
           --indent_;
           emit("}");
         }
+        if (!open_blocks_.empty()) {
+          auto owner = block.control_owner;
+          if (control_is_direct_loop()) {
+            emit("if (_cg_break_" + std::to_string(owner) + ") break;");
+            emit("if (_cg_continue_" + std::to_string(owner) + ") continue;");
+          } else {
+            if (block.else_seq != 0) {
+              emit("if (_cg_break_" + std::to_string(owner) + " || _cg_continue_" + std::to_string(owner) + ") return;");
+            } else {
+              emit("if (_cg_continue_" + std::to_string(owner) + ") _cg_continue_" + std::to_string(owner) + " = false;");
+            }
+          }
+        }
         if (!block.else_seq) --scope_depth_;
         break;
       }
@@ -1808,6 +1882,15 @@ class code_generator {
         auto s = "if (value_empty(" + block.access + ")) " + body_call + ";";
         if (block.else_seq) s += " else " + els_call;
         emit(s);
+        if (!open_blocks_.empty()) {
+          auto owner = block.control_owner;
+          if (control_is_direct_loop()) {
+            emit("if (_cg_break_" + std::to_string(owner) + ") break;");
+            emit("if (_cg_continue_" + std::to_string(owner) + ") continue;");
+          } else {
+            emit("if (_cg_continue_" + std::to_string(owner) + ") _cg_continue_" + std::to_string(owner) + " = false;");
+          }
+        }
         break;
       }
       }
@@ -1819,6 +1902,8 @@ class code_generator {
       auto const& ref = bc.var_refs[inst.operand2];
       auto access = resolve_access(ref);
       if (is_value_relative(ref)) access = two_stage_access(ref.key);
+      int control_owner = control_owner_depth();
+      if (control_owner == 0) control_owner = scope_depth_ + 1;
       auto seq = ++lambda_seq_;
       bool rpm = root_param_inv_.count(&inst) != 0;
       std::string call_root = root_for_emit();
@@ -1831,7 +1916,7 @@ class code_generator {
         ++indent_;
       }
       open_block blk{.kind = end_kind::inverted, .access = access, .idx = scope_depth_, .seq = seq,
-                     .root_param = rpm, .call_root = call_root, .inst = &inst};
+                     .root_param = rpm, .call_root = call_root, .inst = &inst, .control_owner = control_owner};
       open_blocks_.push_back(std::move(blk));
     }
     else if (op == bc::opcode::emit_at_index) {
@@ -1921,6 +2006,7 @@ class code_generator {
         --indent_;
         emit("} else {");
         ++indent_;
+        open_blocks_.back().in_else = true;
       } else {
         /* {{#if}} 系の else（従来どおり if 文の else 節） */
         --indent_;
@@ -2143,10 +2229,29 @@ class code_generator {
       emit_value_ref("append_number(out, value_size(", "));", bc.var_refs[inst.operand2]);
     }
     else if (op == bc::opcode::emit_break) {
-      emit("break;");
+      auto owner = control_owner_depth();
+      if (control_is_direct_loop()) {
+        emit("if (true) { _cg_break_" + std::to_string(owner) + " = true; break; }");
+      } else if (owner != 0) {
+        emit("_cg_break_" + std::to_string(owner) + " = true; return;");
+      } else {
+        emit("return;");
+      }
     }
     else if (op == bc::opcode::emit_continue) {
-      emit("continue;");
+      auto owner = control_owner_depth();
+      if (control_is_direct_loop()) {
+        emit("_cg_continue_" + std::to_string(owner) + " = true;");
+        if (!stride_loops_.empty()) {
+          auto sidx = std::to_string(owner);
+          emit("if (_bwd" + sidx + ") --_src" + sidx + "; else ++_src" + sidx + ";");
+        }
+        emit("continue;");
+      } else if (owner != 0) {
+        emit("_cg_continue_" + std::to_string(owner) + " = true; return;");
+      } else {
+        emit("return;");
+      }
     }
     else if (op == bc::opcode::halt) {
       // 何もしない
