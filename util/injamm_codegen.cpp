@@ -1782,13 +1782,19 @@ class code_generator {
       }
     };
     auto dispatch_of = [&](std::string const& access) {
-      emit("if constexpr (codegen_string_section_v<decltype(" + access + ")>) {");
+      emit("if constexpr (codegen_unsupported_string_v<decltype(" + access + ")>) {");
+      ++indent_;
+      emit("static_assert(!codegen_unsupported_string_v<decltype(" + access +
+           ")>, \"raw char arrays and volatile C strings are not supported in codegen sections\");");
+      --indent_;
+      emit("} else if constexpr (codegen_string_section_v<decltype(" + access + ")>) {");
       ++indent_;
       emit("if (!value_empty(" + access + ")) {");
       ++indent_;
       emit(control_type + " " + local_slot + " = {};");
-      auto const string_item = block.idx > 1 ? "_item" + std::to_string(block.idx - 1) : access;
-      emit(body + "(" + string_item + ", codegen_loop_context{true, 0, 0}, " + local_slot +
+      auto const string_scope =
+        block.idx > 1 ? "_item" + std::to_string(block.idx - 1) : (in_partial_ ? "value" : "data");
+      emit(body + "(" + string_scope + ", codegen_loop_context{true, 0, 0}, " + local_slot +
            root_args + ");");
       --indent_;
       emit(std::string{"}"} + (block.else_seq ? " else {" : ""));

@@ -485,15 +485,26 @@ struct codegen_loop_context {
 namespace codegen_compare_detail {
 
 template <class V>
+inline constexpr bool c_string_pointer_v = [] {
+  using value_type = std::remove_cvref_t<V>;
+  if constexpr (std::is_pointer_v<value_type> &&
+                std::same_as<std::remove_cv_t<std::remove_pointer_t<value_type>>, char>) {
+    return !std::is_volatile_v<std::remove_pointer_t<value_type>>;
+  } else {
+    return false;
+  }
+}();
+
+template <class V>
 inline constexpr bool string_value_v =
   std::same_as<std::remove_cvref_t<V>, std::string> ||
   std::same_as<std::remove_cvref_t<V>, std::string_view> ||
-  injamm::detail::char_pointer_v<V>;
+  c_string_pointer_v<V>;
 
 template <class V>
 constexpr std::string_view string_view_of(V const& value) noexcept {
   using value_type = std::remove_cvref_t<V>;
-  if constexpr (injamm::detail::char_pointer_v<value_type>) {
+  if constexpr (c_string_pointer_v<value_type>) {
     return value ? std::string_view{value} : std::string_view{};
   } else {
     return injamm::detail::to_sv(value);
@@ -729,12 +740,28 @@ constexpr bool codegen_compare(bc_opcode op, compare_operand_kind rhs_kind, L co
   }
 }
 
+template <class V>
+inline constexpr bool codegen_unsupported_string_v = [] {
+  using value_type = std::remove_cvref_t<V>;
+  constexpr bool char_array =
+      std::is_array_v<value_type> &&
+      std::same_as<std::remove_cv_t<std::remove_extent_t<value_type>>, char>;
+  constexpr bool volatile_char_pointer =
+      std::is_pointer_v<value_type> &&
+      std::same_as<std::remove_cv_t<std::remove_pointer_t<value_type>>, char> &&
+      std::is_volatile_v<std::remove_pointer_t<value_type>>;
+  return char_array || volatile_char_pointer;
+}();
+
 template <class Buffer, typename V>
 inline void append_value(Buffer& out, V const& v) {
-  if constexpr (std::is_same_v<V, std::string> || std::is_same_v<V, std::string_view>) {
+  if constexpr (codegen_unsupported_string_v<V>) {
+    static_assert(!codegen_unsupported_string_v<V>,
+                  "raw char arrays and volatile C strings are not supported by codegen output");
+  } else if constexpr (std::is_same_v<V, std::string> || std::is_same_v<V, std::string_view>) {
     out.append(v);
-  } else if constexpr (std::is_same_v<V, const char*>) {
-    out.append(v ? v : "");
+  } else if constexpr (codegen_compare_detail::c_string_pointer_v<V>) {
+    out.append(v ? std::string_view{v} : std::string_view{});
   } else if constexpr (std::is_same_v<V, bool>) {
     out.append(v ? "true" : "false");
   } else if constexpr (std::is_arithmetic_v<V>) {
@@ -744,9 +771,11 @@ inline void append_value(Buffer& out, V const& v) {
   } else if constexpr (injamm::detail::serializable_v<V>) {
     serialize_value(out, v);
   } else if constexpr (injamm::detail::ct_glz_reflectable<V>) {
-    std::string scratch;
-    (void)::glz::write_json(v, scratch);
-    out.append(scratch);
+    if constexpr (::glz::write_supported<V, ::glz::JSON>) {
+      std::string scratch;
+      (void)::glz::write_json(v, scratch);
+      out.append(scratch);
+    }
   } else {
     out.append(v);
   }
@@ -769,14 +798,20 @@ inline constexpr bool codegen_optional_section_v = injamm::detail::is_std_option
 
 /** @brief std::string/string_view/C-string セクションを文字範囲ではなく値として 1 回実行する。 */
 template <class V>
+inline constexpr bool codegen_c_string_pointer_v = codegen_compare_detail::c_string_pointer_v<V>;
+
+template <class V>
 inline constexpr bool codegen_string_section_v =
     std::same_as<std::remove_cvref_t<V>, std::string> ||
     std::same_as<std::remove_cvref_t<V>, std::string_view> ||
-    injamm::detail::char_pointer_v<std::remove_cvref_t<V>>;
+    codegen_c_string_pointer_v<V>;
 
 template <typename V>
 constexpr bool value_empty(V const& v) {
-  if constexpr (std::is_same_v<V, const char*>) {
+  if constexpr (codegen_unsupported_string_v<V>) {
+    static_assert(!codegen_unsupported_string_v<V>,
+                  "raw char arrays and volatile C strings are not supported by codegen helpers");
+  } else if constexpr (codegen_c_string_pointer_v<V>) {
     return !v || v[0] == '\0';
   } else if constexpr (std::is_same_v<V, std::string> || std::is_same_v<V, std::string_view>) {
     return v.empty();
@@ -799,7 +834,10 @@ constexpr bool value_empty(V const& v) {
 
 template <typename V>
 constexpr std::size_t value_size(V const& v) {
-  if constexpr (std::is_same_v<V, const char*>) {
+  if constexpr (codegen_unsupported_string_v<V>) {
+    static_assert(!codegen_unsupported_string_v<V>,
+                  "raw char arrays and volatile C strings are not supported by codegen helpers");
+  } else if constexpr (codegen_c_string_pointer_v<V>) {
     return v ? std::string_view{v}.size() : 0;
   } else {
     return v.size();
@@ -808,10 +846,13 @@ constexpr std::size_t value_size(V const& v) {
 
 template <class Buffer, typename V>
 inline void html_escape_append_value(Buffer& out, V const& v) {
-  if constexpr (std::is_same_v<V, std::string> || std::is_same_v<V, std::string_view>) {
+  if constexpr (codegen_unsupported_string_v<V>) {
+    static_assert(!codegen_unsupported_string_v<V>,
+                  "raw char arrays and volatile C strings are not supported by codegen output");
+  } else if constexpr (std::is_same_v<V, std::string> || std::is_same_v<V, std::string_view>) {
     html_escape_append(out, v);
-  } else if constexpr (std::is_same_v<V, const char*>) {
-    html_escape_append(out, v ? v : "");
+  } else if constexpr (codegen_c_string_pointer_v<V>) {
+    html_escape_append(out, v ? std::string_view{v} : std::string_view{});
   } else if constexpr (std::is_same_v<V, bool>) {
     out.append(v ? "true" : "false");
   } else if constexpr (std::is_arithmetic_v<V>) {
@@ -823,9 +864,11 @@ inline void html_escape_append_value(Buffer& out, V const& v) {
     serialize_value(scratch, v);
     html_escape_append(out, scratch);
   } else if constexpr (injamm::detail::ct_glz_reflectable<V>) {
-    std::string scratch;
-    (void)::glz::write_json(v, scratch);
-    html_escape_append(out, scratch);
+    if constexpr (::glz::write_supported<V, ::glz::JSON>) {
+      std::string scratch;
+      (void)::glz::write_json(v, scratch);
+      html_escape_append(out, scratch);
+    }
   } else {
     html_escape_append(out, v);
   }

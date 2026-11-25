@@ -9,7 +9,6 @@
 #include <optional>
 #include <string>
 #include <string_view>
-#include <utility>
 #include <vector>
 
 struct CaseProfile {
@@ -50,12 +49,7 @@ struct CaseData {
 };
 
 struct CaseStringViewData {
-  std::string storage;
-  std::string_view short_text;
-
-  explicit CaseStringViewData(std::string value = "SV") : storage(std::move(value)), short_text(storage) {}
-  CaseStringViewData(CaseStringViewData const&) = delete;
-  CaseStringViewData& operator=(CaseStringViewData const&) = delete;
+  std::string_view short_text = "SV";
 };
 
 struct CaseStringPointerData {

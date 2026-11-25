@@ -108,6 +108,7 @@
 #include "case_control_partial_continue_trailing.hpp"
 #include "case_string_section.hpp"
 #include "case_string_this_section.hpp"
+#include "case_string_view_scope.hpp"
 #include "case_string_filtered_section.hpp"
 #include "case_string_reverse_section.hpp"
 #include "case_string_stride_section.hpp"
@@ -156,7 +157,7 @@ int main() {
   d_empty.items[0].name.clear();
   d_empty.items[1].name.clear();
   CaseStringViewData view_data;
-  CaseStringViewData empty_view_data{""};
+  CaseStringViewData empty_view_data{.short_text = {}};
   CaseStringPointerData ptr_data;
   CaseStringPointerData empty_ptr_data{.text_ptr = ""};
   CaseData d_low = d;
@@ -302,11 +303,11 @@ int main() {
     [](auto const& data) { return generated::case_string_index_section(data); });
   live_check("string at section", "{{#items}}{{#name}}{{#loop.is_first}}F{{/loop.is_first}}{{^loop.is_last}}N{{/loop.is_last}}{{/name}}{{/items}}", d, d_empty,
     [](auto const& data) { return generated::case_string_at_section(data); });
-  live_generated_check("string_view section", "[SV]", view_data,
+  live_check("string_view section", "{{#short_text}}[{{this}}]{{/short_text}}", view_data, empty_view_data,
     [](auto const& data) { return generated::case_string_view_section(data); });
-  live_generated_check("string_view empty section", "", empty_view_data,
-    [](auto const& data) { return generated::case_string_view_section(data); });
-  live_generated_check("string_ptr section", "[PTR]", ptr_data,
+  live_check("string_view scope", "{{#short_text}}[{{this}}|{{short_text}}]{{/short_text}}", view_data, empty_view_data,
+    [](auto const& data) { return generated::case_string_view_scope(data); });
+  live_generated_check("string_ptr section", "[{}|PTR]", ptr_data,
     [](auto const& data) { return generated::case_string_ptr_section(data); });
   live_generated_check("string_ptr empty section", "", empty_ptr_data,
     [](auto const& data) { return generated::case_string_ptr_section(data); });
