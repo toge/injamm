@@ -386,22 +386,40 @@ int main(int argc, char** argv) {
     cli,
     "{{#if qty > 2}}A{{/if}}{{#if name == \\\"R\\\"}}B{{/if}}{{#if qty == limit}}C{{/if}}",
     "normal comparison rhs kinds", "compare_operand_kind::none");
-  failures += run_ok_case(
+  failures += run_ok_forbidden_case(
     cli,
     "{{#items}}{{#tags}}{{#if loop.index == loop.parent.index}}Y{{else}}N{{/if}}{{/tags}}{{/items}}",
-    "loop parent rhs index comparison", "codegen_compare(bc_opcode::emit_if_eq, compare_operand_kind::variable, _loop2.index, _loop1.index))");
-  failures += run_ok_case(
+    "loop parent rhs index comparison",
+    "codegen_compare(bc_opcode::emit_if_eq, compare_operand_kind::variable, _loop2.index, std::optional<int>{}))",
+    ", _loop1.index))");
+  failures += run_ok_forbidden_case(
     cli,
     "{{#items}}{{#tags}}{{#if loop.parent.index == loop.index}}Y{{else}}N{{/if}}{{/tags}}{{/items}}",
-    "loop parent lhs index comparison", "codegen_compare(bc_opcode::emit_if_eq, compare_operand_kind::variable, _loop1.index, _loop2.index))");
-  failures += run_ok_case(
+    "loop parent lhs index comparison",
+    "codegen_compare(bc_opcode::emit_if_eq, compare_operand_kind::variable, std::optional<int>{}, std::optional<int>{}))",
+    ", _loop2.index))");
+  failures += run_ok_forbidden_case(
     cli,
     "{{#items}}{{#tags}}{{#if loop.index1 == loop.parent.index1}}Y{{else}}N{{/if}}{{/tags}}{{/items}}",
-    "loop parent rhs index1 comparison", "_loop1.index + 1))");
+    "loop parent rhs index1 comparison",
+    "codegen_compare(bc_opcode::emit_if_eq, compare_operand_kind::variable, _loop2.index + 1, std::optional<int>{}))",
+    "_loop1.index + 1))");
   failures += run_ok_case(
     cli,
     "{{#items}}{{#tags}}{{#if loop.parent.size == 2}}Y{{else}}N{{/if}}{{/tags}}{{/items}}",
-    "loop parent lhs size comparison", "codegen_compare(bc_opcode::emit_if_eq, compare_operand_kind::int_literal, _loop1.size, 2))");
+    "loop parent lhs size comparison", "codegen_compare(bc_opcode::emit_if_eq, compare_operand_kind::int_literal, std::optional<int>{}, 2))");
+  failures += run_ok_forbidden_case(
+    cli,
+    "{{#items}}{{#if qty == loop.index}}Y{{else}}N{{/if}}{{/items}}",
+    "loop rhs is unavailable",
+    "std::optional<int>{}))",
+    ", _loop1.index))");
+  failures += run_ok_forbidden_case(
+    cli,
+    "{{#items}}{{#if name == this}}Y{{else}}N{{/if}}{{/items}}",
+    "this rhs is unavailable",
+    "std::optional<int>{}))",
+    ", _item1))");
   failures += run_forbidden_case(
     cli,
     "{{#items}}{{#tags}}{{loop.parent.index}}/{{loop.parent.index1}}/{{loop.parent.size}}{{/tags}}{{/items}}",

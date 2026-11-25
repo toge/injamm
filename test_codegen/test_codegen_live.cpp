@@ -393,37 +393,21 @@ int main() {
     [](auto const& data) { return generated::case_cmp_rhs_loop_size(data); });
   live_check("compare rhs this string", "{{#items}}{{#if name == this}}Y{{else}}N{{/if}}{{/items}}", d, d2,
     [](auto const& data) { return generated::case_cmp_rhs_this_string(data); });
-  live_generated_check("compare rhs loop.parent.index",
-                       "YNNNYN",
-                       d,
+  live_check("compare rhs loop.parent.index",
+                       "{{#items}}{{#tags}}{{#if loop.index == loop.parent.index}}Y{{else}}N{{/if}}{{/tags}}{{/items}}",
+                       d, d2,
     [](auto const& data) { return generated::case_cmp_rhs_loop_parent_index(data); });
-  live_generated_check("compare rhs loop.parent.index/falsy",
-                       "",
-                       d2,
-    [](auto const& data) { return generated::case_cmp_rhs_loop_parent_index(data); });
-  live_generated_check("compare rhs loop.parent.index1",
-                       "YNNNYN",
-                       d,
+  live_check("compare rhs loop.parent.index1",
+                       "{{#items}}{{#tags}}{{#if loop.index1 == loop.parent.index1}}Y{{else}}N{{/if}}{{/tags}}{{/items}}",
+                       d, d2,
     [](auto const& data) { return generated::case_cmp_rhs_loop_parent_index1(data); });
-  live_generated_check("compare rhs loop.parent.index1/falsy",
-                       "",
-                       d2,
-    [](auto const& data) { return generated::case_cmp_rhs_loop_parent_index1(data); });
-  live_generated_check("compare rhs loop.parent.size",
-                       "YYYYYY",
-                       d,
+  live_check("compare rhs loop.parent.size",
+                       "{{#items}}{{#tags}}{{#if loop.parent.size == 2}}Y{{else}}N{{/if}}{{/tags}}{{/items}}",
+                       d, d2,
     [](auto const& data) { return generated::case_cmp_rhs_loop_parent_size(data); });
-  live_generated_check("compare rhs loop.parent.size/falsy",
-                       "",
-                       d2,
-    [](auto const& data) { return generated::case_cmp_rhs_loop_parent_size(data); });
-  live_generated_check("compare lhs loop.parent.index",
-                       "YNNNYN",
-                       d,
-    [](auto const& data) { return generated::case_cmp_lhs_loop_parent_index(data); });
-  live_generated_check("compare lhs loop.parent.index/falsy",
-                       "",
-                       d2,
+  live_check("compare lhs loop.parent.index",
+                       "{{#items}}{{#tags}}{{#if loop.parent.index == loop.index}}Y{{else}}N{{/if}}{{/tags}}{{/items}}",
+                       d, d2,
     [](auto const& data) { return generated::case_cmp_lhs_loop_parent_index(data); });
   live_generated_check("emit loop.parent.index",
                        "0/0/0/1/1/1/",
@@ -441,13 +425,13 @@ int main() {
                        "2/2/2/2/2/2/",
                        d,
     [](auto const& data) { return generated::case_loop_parent_emit_size(data); });
-  live_generated_check("if loop.parent.index",
-                       "PPPNNN",
-                       d,
+  live_check("if loop.parent.index",
+                       "{{#items}}{{#tags}}{{#if loop.parent.index == 0}}P{{else}}N{{/if}}{{/tags}}{{/items}}",
+                       d, d2,
     [](auto const& data) { return generated::case_loop_parent_if_index(data); });
-  live_generated_check("if loop.parent.size",
-                       "PPPPPP",
-                       d,
+  live_check("if loop.parent.size",
+                       "{{#items}}{{#tags}}{{#if loop.parent.size == 2}}P{{else}}N{{/if}}{{/tags}}{{/items}}",
+                       d, d2,
     [](auto const& data) { return generated::case_loop_parent_if_size(data); });
   live_generated_check("section loop.parent.is_first",
                        "FFF",
