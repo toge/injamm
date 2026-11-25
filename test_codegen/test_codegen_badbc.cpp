@@ -402,6 +402,21 @@ int main(int argc, char** argv) {
     cli,
     "{{#items}}{{#tags}}{{#if loop.parent.size == 2}}Y{{else}}N{{/if}}{{/tags}}{{/items}}",
     "loop parent lhs size comparison", "codegen_compare(bc_opcode::emit_if_eq, compare_operand_kind::int_literal, _loop1.size, 2))");
+  failures += run_forbidden_case(
+    cli,
+    "{{#items}}{{#tags}}{{loop.parent.index}}/{{loop.parent.index1}}/{{loop.parent.size}}{{/tags}}{{/items}}",
+    "loop parent emit avoids data/root pseudo fields",
+    "data.loop.parent");
+  failures += run_forbidden_case(
+    cli,
+    "{{#items}}{{#tags}}{{loop.parent.index}}/{{loop.parent.index1}}/{{loop.parent.size}}{{/tags}}{{/items}}",
+    "loop parent emit avoids synthetic data.index",
+    "data.index");
+  failures += run_forbidden_case(
+    cli,
+    "{{#items}}{{#tags}}{{#if loop.parent.index == 0}}P{{else}}N{{/if}}{{/tags}}{{/items}}",
+    "loop parent compare avoids root loop parent access",
+    "root.loop.parent");
   failures += run_ok_forbidden_case(
     cli,
     "{{#items}}{{name.size}}|{{root.name.size}}{{/items}}",

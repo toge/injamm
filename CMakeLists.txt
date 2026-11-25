@@ -402,6 +402,18 @@ if(BUILD_UTIL)
       "{{#items}}{{#tags}}{{#if loop.parent.size == 2}}Y{{else}}N{{/if}}{{/tags}}{{/items}}")
     add_codegen_case(cmp_lhs_loop_parent_index
       "{{#items}}{{#tags}}{{#if loop.parent.index == loop.index}}Y{{else}}N{{/if}}{{/tags}}{{/items}}")
+    add_codegen_case(loop_parent_emit_index
+      "{{#items}}{{#tags}}{{loop.parent.index}}/{{/tags}}{{/items}}")
+    add_codegen_case(loop_parent_emit_index1
+      "{{#items}}{{#tags}}{{loop.parent.index1}}/{{/tags}}{{/items}}")
+    add_codegen_case(loop_parent_emit_size
+      "{{#items}}{{#tags}}{{loop.parent.size}}/{{/tags}}{{/items}}")
+    add_codegen_case(loop_parent_if_index
+      "{{#items}}{{#tags}}{{#if loop.parent.index == 0}}P{{else}}N{{/if}}{{/tags}}{{/items}}")
+    add_codegen_case(loop_parent_if_size
+      "{{#items}}{{#tags}}{{#if loop.parent.size == 2}}P{{else}}N{{/if}}{{/tags}}{{/items}}")
+    add_codegen_case(loop_parent_section_first
+      "{{#items}}{{#tags}}{{#loop.parent.is_first}}F{{/loop.parent.is_first}}{{/tags}}{{/items}}")
     add_codegen_case(cmp_string_int      "{{#if numeric == age}}Y{{else}}N{{/if}}")
     add_codegen_case(cmp_invalid_string  "{{#if invalid_numeric == age}}Y{{else}}N{{/if}}")
     add_codegen_case(cmp_string_float    "{{#if numeric == ratio}}Y{{else}}N{{/if}}")
@@ -528,6 +540,8 @@ if(BUILD_UTIL)
       "{{#partialdef s}}{{root_only}}|{{profile.name}}|{{profile_2E_name}}|{{root_only | upper}}|{{#if active}}T{{else}}F{{/if}}|{{#if age > 18}}G{{else}}S{{/if}}|{{#if active && age}}A{{else}}B{{/if}}|{{#items | take(1)}}S:{{name}}{{/items}}|{{#items}}I:{{loop.index}}{{/items}}{{/partialdef}}{{#items}}[{{>s}}]{{/items}}")
     add_codegen_case_partial(partial_compare_loop
       "{{#partialdef inner}}{{#if this == \"t1\"}}T{{else}}N{{/if}}:{{#if loop.index == 0}}F{{else}}L{{/if}}:{{#if loop.index1 == 1}}O{{else}}I{{/if}}:{{#if loop.size == 3}}S{{else}}X{{/if}}{{/partialdef}}{{#partialdef outer}}{{>inner}}{{/partialdef}}{{#tags}}[{{>outer}}]{{/tags}}|{{#items}}[{{>outer}}]{{/items}}")
+    add_codegen_case_partial(partial_loop_parent
+      "{{#partialdef inner}}{{#tags}}{{loop.parent.index}}/{{loop.parent.index1}}/{{/tags}}{{/partialdef}}{{#items}}[{{>inner}}]{{/items}}")
 
     function(add_codegen_namespaced_case name tmpl ns prefix)
       set(out ${CG_LIVE_DIR}/case_${name}.hpp)

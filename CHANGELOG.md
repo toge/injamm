@@ -2,6 +2,7 @@
 
 ## 2026-11-25
 
+- `fix: injamm_codegen の loop.parent.* 解決を全 emit 経路に拡張` — これまで比較系のみだった `loop.parent.index/index1/size` の親ループ解決を `emit_var` / `emit_var_raw` / `emit_litvar` / `emit_if*` / セクション判定 / nested partial まで統一。誤って `data.loop.parent` / `data.index` / `root.loop.parent` を生成する経路を除去し、badbc/live テストを拡張して回帰を固定
 - `docs: Issue11 パリティ最終同期` — `injamm_codegen` 再生成結果を反映し、README/SYNTAX の AOT 説明を VM/NTTP と一致（break/continue の安全な生成境界、直接比較の右辺（変数/文字列）明記、文字列セクションは真なら 1 回評価、二段解決の既存規則を維持）させた
 
 ## 2026-11-24

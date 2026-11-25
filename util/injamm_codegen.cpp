@@ -753,6 +753,74 @@ class code_generator {
     return scope_depth_ > 0 && ref.root_fallback != injamm::detail::root_fb_proven;
   }
 
+  enum class loop_parent_meta_kind {
+    none,
+    index,
+    index1,
+    size,
+    is_first,
+    is_last,
+    is_even,
+    is_odd,
+    key,
+    unknown,
+  };
+
+  static loop_parent_meta_kind classify_loop_parent_meta_key(std::string_view key) {
+    if (key == "index") return loop_parent_meta_kind::index;
+    if (key == "index1") return loop_parent_meta_kind::index1;
+    if (key == "size") return loop_parent_meta_kind::size;
+    if (key == "is_first") return loop_parent_meta_kind::is_first;
+    if (key == "is_last") return loop_parent_meta_kind::is_last;
+    if (key == "is_even") return loop_parent_meta_kind::is_even;
+    if (key == "is_odd") return loop_parent_meta_kind::is_odd;
+    if (key == "key") return loop_parent_meta_kind::key;
+    return loop_parent_meta_kind::none;
+  }
+
+  static loop_parent_meta_kind classify_loop_parent_meta(bc::var_ref const& ref) {
+    if (!ref.is_loop_parent &&
+        !(std::string_view{ref.key}.starts_with("loop.parent.") || ref.key == "loop.parent")) {
+      return loop_parent_meta_kind::none;
+    }
+    if (auto const mapped = classify_loop_parent_meta_key(ref.key);
+        mapped != loop_parent_meta_kind::none) {
+      return mapped;
+    }
+    if (std::string_view key = ref.key; key.starts_with("loop.parent.")) {
+      auto const mapped = classify_loop_parent_meta_key(key.substr(12));
+      if (mapped != loop_parent_meta_kind::none) return mapped;
+    }
+    if (ref.key == "loop.parent") return loop_parent_meta_kind::size;
+    return loop_parent_meta_kind::unknown;
+  }
+
+  std::string resolve_loop_parent_access(bc::var_ref const& ref) const {
+    auto const parent_loop = parent_loop_context_expr();
+    switch (classify_loop_parent_meta(ref)) {
+      case loop_parent_meta_kind::index:
+        return "(" + parent_loop + ".active ? " + parent_loop + ".index : 0)";
+      case loop_parent_meta_kind::index1:
+        return "(" + parent_loop + ".active ? (" + parent_loop + ".index + 1) : 0)";
+      case loop_parent_meta_kind::size:
+        return "(" + parent_loop + ".active ? " + parent_loop + ".size : 0)";
+      case loop_parent_meta_kind::is_first:
+        return "(" + parent_loop + ".active && " + parent_loop + ".index == 0)";
+      case loop_parent_meta_kind::is_last:
+        return "(" + parent_loop + ".active && " + parent_loop + ".index + 1 == " + parent_loop + ".size)";
+      case loop_parent_meta_kind::is_even:
+        return "(" + parent_loop + ".active && " + parent_loop + ".index % 2 == 0)";
+      case loop_parent_meta_kind::is_odd:
+        return "(" + parent_loop + ".active && " + parent_loop + ".index % 2 == 1)";
+      case loop_parent_meta_kind::key:
+        return "std::string_view{}";
+      case loop_parent_meta_kind::unknown:
+      case loop_parent_meta_kind::none:
+        return "std::optional<int>{}";
+    }
+    return "std::optional<int>{}";
+  }
+
   /**
    * @brief 変数参照を C++ のフィールドアクセス式に変換
    * @details ループ内では _item{depth}.field、ルートでは data.field を返す。
@@ -761,12 +829,7 @@ class code_generator {
    */
   std::string resolve_access(bc::var_ref const& ref) const {
     if (ref.is_loop_parent) {
-      if (ref.has_dot) {
-        auto pos = ref.key.find("loop.parent.");
-        auto path = (pos != std::string::npos) ? ref.key.substr(pos + 12) : ref.key;
-        return root_expr() + "." + path;
-      }
-      return root_expr();
+      return resolve_loop_parent_access(ref);
     }
 
     /** ルート型フォールバック参照: ルートデータのフィールドを直接アクセスする */
@@ -874,6 +937,28 @@ class code_generator {
    *          （{{#if loop.is_last}} 等。emit_at_section 相当の最適化を if 構文にも適用）
    */
   std::string resolve_if_access(bc::var_ref const& ref) {
+    auto const parent_loop = parent_loop_context_expr();
+    switch (classify_loop_parent_meta(ref)) {
+      case loop_parent_meta_kind::index:
+        return "(" + parent_loop + ".active && " + parent_loop + ".index != 0)";
+      case loop_parent_meta_kind::index1:
+        return parent_loop + ".active";
+      case loop_parent_meta_kind::size:
+        return "(" + parent_loop + ".active && " + parent_loop + ".size != 0)";
+      case loop_parent_meta_kind::is_first:
+        return "(" + parent_loop + ".active && " + parent_loop + ".index == 0)";
+      case loop_parent_meta_kind::is_last:
+        return "(" + parent_loop + ".active && " + parent_loop + ".index + 1 == " + parent_loop + ".size)";
+      case loop_parent_meta_kind::is_even:
+        return "(" + parent_loop + ".active && " + parent_loop + ".index % 2 == 0)";
+      case loop_parent_meta_kind::is_odd:
+        return "(" + parent_loop + ".active && " + parent_loop + ".index % 2 == 1)";
+      case loop_parent_meta_kind::key:
+      case loop_parent_meta_kind::unknown:
+        return "false";
+      case loop_parent_meta_kind::none:
+        break;
+    }
     auto const loop = loop_context_expr();
     switch (injamm::detail::classify_special_var(ref.key)) {
       case injamm::detail::special_var_kind::loop_index:
@@ -903,6 +988,10 @@ class code_generator {
   /** @brief 現在の比較スコープから見た親ループコンテキスト式 */
   std::string parent_loop_context_expr() const {
     if (scope_depth_ > 1) return "_loop" + std::to_string(scope_depth_ - 1);
+    if (in_partial_) {
+      if (scope_depth_ == 1) return "_loop";
+      if (scope_depth_ == 0) return "_loop_parent";
+    }
     return "codegen_loop_context{}";
   }
 
@@ -922,23 +1011,22 @@ class code_generator {
   }
 
   /** @brief 比較で loop.parent.*(metadata) が親ループ active 条件を要求するか */
-  static bool loop_parent_special_requires_active(injamm::detail::special_var_kind special) {
-    return special == injamm::detail::special_var_kind::lp_index ||
-           special == injamm::detail::special_var_kind::lp_index1 ||
-           special == injamm::detail::special_var_kind::lp_size;
+  static bool loop_parent_special_requires_active(loop_parent_meta_kind kind) {
+    return kind == loop_parent_meta_kind::index ||
+           kind == loop_parent_meta_kind::index1 ||
+           kind == loop_parent_meta_kind::size;
   }
 
   /** @brief 比較命令の左辺を C++ 式へ変換する */
   std::string resolve_compare_lhs(bc::var_ref const& ref) const {
     if (ref.is_loop_parent) {
-      auto const special = injamm::detail::classify_special_var(ref.key);
       auto const parent_loop = parent_loop_context_expr();
-      switch (special) {
-        case injamm::detail::special_var_kind::lp_index:
+      switch (classify_loop_parent_meta(ref)) {
+        case loop_parent_meta_kind::index:
           return parent_loop + ".index";
-        case injamm::detail::special_var_kind::lp_index1:
+        case loop_parent_meta_kind::index1:
           return parent_loop + ".index + 1";
-        case injamm::detail::special_var_kind::lp_size:
+        case loop_parent_meta_kind::size:
           return parent_loop + ".size";
         default:
           return resolve_value_access(ref);
@@ -991,13 +1079,13 @@ class code_generator {
     }
     auto const rhs_ref = make_compare_rhs_ref(ref);
     if (!rhs_ref.is_loop_parent) return false;
-    return loop_parent_special_requires_active(injamm::detail::classify_special_var(rhs_ref.key));
+    return loop_parent_special_requires_active(classify_loop_parent_meta(rhs_ref));
   }
 
   /** @brief 比較 LHS が loop.parent.index 系の実行時親ループ情報を使うか */
   static bool comparison_lhs_uses_parent_loop_context(bc::var_ref const& ref) {
     if (!ref.is_loop_parent) return false;
-    return loop_parent_special_requires_active(injamm::detail::classify_special_var(ref.key));
+    return loop_parent_special_requires_active(classify_loop_parent_meta(ref));
   }
 
   /** @brief compare_rhs_kind に応じた比較 RHS の C++ 式を返す */
@@ -1014,14 +1102,13 @@ class code_generator {
       case injamm::detail::compare_operand_kind::variable: {
         auto const rhs_ref = make_compare_rhs_ref(ref);
         if (rhs_ref.is_loop_parent) {
-          auto const special = injamm::detail::classify_special_var(rhs_ref.key);
           auto const parent_loop = parent_loop_context_expr();
-          switch (special) {
-            case injamm::detail::special_var_kind::lp_index:
+          switch (classify_loop_parent_meta(rhs_ref)) {
+            case loop_parent_meta_kind::index:
               return parent_loop + ".index";
-            case injamm::detail::special_var_kind::lp_index1:
+            case loop_parent_meta_kind::index1:
               return parent_loop + ".index + 1";
-            case injamm::detail::special_var_kind::lp_size:
+            case loop_parent_meta_kind::size:
               return parent_loop + ".size";
             default:
               return resolve_value_access(rhs_ref);
@@ -1317,13 +1404,13 @@ class code_generator {
     emit_raw("template <injamm::fixed_string PartialName, typename V, typename R, typename Sink>");
     emit_raw("  requires injamm::detail::output_sink<Sink>");
     emit_raw("[[nodiscard]] std::expected<void, injamm::error_ctx>");
-    emit_raw(impl_name + "(const V& value, const R& root, const codegen_loop_context& _loop, " +
+    emit_raw(impl_name + "(const V& value, const R& root, const codegen_loop_context& _loop, const codegen_loop_context& _loop_parent, " +
              cgns_name() + "::control_slot& _root_control, Sink& out);");
     emit_raw("");
     emit_raw("template <injamm::fixed_string PartialName, typename V, typename R, typename Sink>");
     emit_raw("  requires injamm::detail::output_sink<Sink>");
     emit_raw("[[nodiscard]] std::expected<void, injamm::error_ctx>");
-    emit_raw(impl_name + "(const V& value, const R& root, const codegen_loop_context& _loop, " +
+    emit_raw(impl_name + "(const V& value, const R& root, const codegen_loop_context& _loop, const codegen_loop_context& _loop_parent, " +
              cgns_name() + "::control_slot& _root_control, Sink& out) {");
     ++indent_;
 
@@ -1417,7 +1504,7 @@ class code_generator {
     emit_raw("render_partial(const T& data, Sink& out) {");
     ++indent_;
     emit(cgns_name() + "::control_slot _root_control;");
-    emit("return " + impl_name + "<PartialName>(data, data, codegen_loop_context{}, _root_control, out);");
+    emit("return " + impl_name + "<PartialName>(data, data, codegen_loop_context{}, codegen_loop_context{}, _root_control, out);");
     --indent_;
     emit_raw("}");
     emit_raw("");
@@ -1429,7 +1516,7 @@ class code_generator {
       emit_raw(prefixed_api_name + "(const T& data, Sink& out) {");
       ++indent_;
       emit(cgns_name() + "::control_slot _root_control;");
-      emit("return " + impl_name + "<PartialName>(data, data, codegen_loop_context{}, _root_control, out);");
+      emit("return " + impl_name + "<PartialName>(data, data, codegen_loop_context{}, codegen_loop_context{}, _root_control, out);");
       --indent_;
       emit_raw("}");
       emit_raw("");
@@ -1580,9 +1667,17 @@ class code_generator {
     for (auto const& inst : bc.instructions) {
       auto op = inst.op;
       if (op == bc::opcode::emit_section) {
+        auto const& ref = bc.var_refs[inst.operand2];
+        if (classify_loop_parent_meta(ref) != loop_parent_meta_kind::none) {
+          mark_enclosing_loops();
+        }
         stack.push_back({&inst, true, false});
       }
       else if (op == bc::opcode::emit_inverted) {
+        auto const& ref = bc.var_refs[inst.operand2];
+        if (classify_loop_parent_meta(ref) != loop_parent_meta_kind::none) {
+          mark_enclosing_loops();
+        }
         stack.push_back({&inst, false, false});
       }
       else if (op == bc::opcode::emit_at_index || op == bc::opcode::emit_at_index1 ||
@@ -1597,16 +1692,31 @@ class code_generator {
       else if (op == bc::opcode::emit_if || op == bc::opcode::emit_if_not ||
                op == bc::opcode::emit_if_or || op == bc::opcode::emit_if_and) {
         auto const& ref = bc.var_refs[inst.operand2];
-        if (injamm::detail::classify_special_var(ref.key) != injamm::detail::special_var_kind::none) {
+        if (injamm::detail::classify_special_var(ref.key) != injamm::detail::special_var_kind::none ||
+            classify_loop_parent_meta(ref) != loop_parent_meta_kind::none) {
           mark_enclosing_loops();
         }
         if (op == bc::opcode::emit_if_or || op == bc::opcode::emit_if_and) {
           auto const& rhs = bc.var_refs[inst.operand3];
-          if (injamm::detail::classify_special_var(rhs.key) != injamm::detail::special_var_kind::none) {
+          if (injamm::detail::classify_special_var(rhs.key) != injamm::detail::special_var_kind::none ||
+              classify_loop_parent_meta(rhs) != loop_parent_meta_kind::none) {
             mark_enclosing_loops();
           }
         }
         stack.push_back({&inst, false, false});
+      }
+      else if (op == bc::opcode::emit_var || op == bc::opcode::emit_var_raw ||
+               op == bc::opcode::emit_var_size) {
+        auto const& ref = bc.var_refs[inst.operand];
+        if (classify_loop_parent_meta(ref) != loop_parent_meta_kind::none) {
+          mark_enclosing_loops();
+        }
+      }
+      else if (op == bc::opcode::emit_litvar || op == bc::opcode::emit_litvar_raw) {
+        auto const& ref = bc.var_refs[inst.operand2];
+        if (classify_loop_parent_meta(ref) != loop_parent_meta_kind::none) {
+          mark_enclosing_loops();
+        }
       }
       else if (op == bc::opcode::emit_if_eq || op == bc::opcode::emit_if_ne ||
                op == bc::opcode::emit_if_gt || op == bc::opcode::emit_if_gte ||
@@ -1958,6 +2068,25 @@ class code_generator {
       --indent_;
       emit("}");
     };
+    if (block.inst &&
+        classify_loop_parent_meta(bc.var_refs[block.inst->operand2]) != loop_parent_meta_kind::none) {
+      emit(control_type + " " + local_slot + " = {};");
+      emit("if (static_cast<bool>(" + block.access + ")) {");
+      ++indent_;
+      emit(scalar_call(
+        (block.idx > 1 ? "_item" + std::to_string(block.idx - 1) : (in_partial_ ? "value" : "data"))) + ";");
+      emit_control_stop(block.parent_control);
+      --indent_;
+      emit(std::string{"}"} + (block.else_seq ? " else {" : ""));
+      if (block.else_seq) {
+        ++indent_;
+        emit(else_call() + ";");
+        emit_control_stop(block.parent_control);
+        --indent_;
+        emit("}");
+      }
+      return;
+    }
     dispatch_of(block.access);
   }
 
@@ -2623,6 +2752,7 @@ class code_generator {
         auto const result = "_partial_result" + std::to_string(++lambda_seq_);
         emit("auto " + result + " = " + partial_impl_name() + "<\"" + pe.name + "\">(" +
              value_expr() + ", " + root_expr() + ", " + loop_context_expr() + ", " +
+             parent_loop_context_expr() + ", " +
              active_control_channel() + ", out);");
         emit("if (!" + result + ") " +
              (in_control_lambda() ? "return;" :
@@ -2631,7 +2761,13 @@ class code_generator {
       }
     }
     else if (op == bc::opcode::emit_var_size) {
-      emit_value_ref("append_number(out, value_size(", "));", bc.var_refs[inst.operand]);
+      auto const& ref = bc.var_refs[inst.operand];
+      if (classify_loop_parent_meta(ref) == loop_parent_meta_kind::size) {
+        auto const parent_loop = parent_loop_context_expr();
+        emit("if (" + parent_loop + ".active) append_number(out, " + parent_loop + ".size);");
+      } else {
+        emit_value_ref("append_number(out, value_size(", "));", ref);
+      }
     }
     else if (op == bc::opcode::emit_break) {
       emit(active_control_channel() + ".break_requested = true;");

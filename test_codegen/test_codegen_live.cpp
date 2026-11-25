@@ -59,6 +59,12 @@
 #include "case_cmp_rhs_loop_parent_index1.hpp"
 #include "case_cmp_rhs_loop_parent_size.hpp"
 #include "case_cmp_lhs_loop_parent_index.hpp"
+#include "case_loop_parent_emit_index.hpp"
+#include "case_loop_parent_emit_index1.hpp"
+#include "case_loop_parent_emit_size.hpp"
+#include "case_loop_parent_if_index.hpp"
+#include "case_loop_parent_if_size.hpp"
+#include "case_loop_parent_section_first.hpp"
 #include "case_cmp_string_int.hpp"
 #include "case_cmp_invalid_string.hpp"
 #include "case_cmp_string_float.hpp"
@@ -147,6 +153,7 @@ int run_partial_loop_checks(CaseData const& d, CaseData const& d2);
 int run_partial_root_checks(CaseData const& d, CaseData const& d2);
 int run_partial_toplevel_checks(CaseData const& d, CaseData const& d2);
 int run_partial_scope_ref_checks(CaseData const& d, CaseData const& d2);
+int run_partial_loop_parent_checks(CaseData const& d, CaseData const& d2);
 int run_namespace_composition_checks(CaseData const& d);
 
 int main() {
@@ -418,6 +425,34 @@ int main() {
                        "",
                        d2,
     [](auto const& data) { return generated::case_cmp_lhs_loop_parent_index(data); });
+  live_generated_check("emit loop.parent.index",
+                       "0/0/0/1/1/1/",
+                       d,
+    [](auto const& data) { return generated::case_loop_parent_emit_index(data); });
+  live_generated_check("emit loop.parent.index/falsy",
+                       "",
+                       d2,
+    [](auto const& data) { return generated::case_loop_parent_emit_index(data); });
+  live_generated_check("emit loop.parent.index1",
+                       "1/1/1/2/2/2/",
+                       d,
+    [](auto const& data) { return generated::case_loop_parent_emit_index1(data); });
+  live_generated_check("emit loop.parent.size",
+                       "2/2/2/2/2/2/",
+                       d,
+    [](auto const& data) { return generated::case_loop_parent_emit_size(data); });
+  live_generated_check("if loop.parent.index",
+                       "PPPNNN",
+                       d,
+    [](auto const& data) { return generated::case_loop_parent_if_index(data); });
+  live_generated_check("if loop.parent.size",
+                       "PPPPPP",
+                       d,
+    [](auto const& data) { return generated::case_loop_parent_if_size(data); });
+  live_generated_check("section loop.parent.is_first",
+                       "FFF",
+                       d,
+    [](auto const& data) { return generated::case_loop_parent_section_first(data); });
   live_check("compare string and integer variable", "{{#if numeric == age}}Y{{else}}N{{/if}}", d, d2,
     [](auto const& data) { return generated::case_cmp_string_int(data); });
   live_check("compare invalid numeric string", "{{#if invalid_numeric == age}}Y{{else}}N{{/if}}", d, d2,
@@ -523,6 +558,7 @@ int main() {
   live_test_count += run_partial_root_checks(d, d2);
   live_test_count += run_partial_toplevel_checks(d, d2);
   live_test_count += run_partial_scope_ref_checks(d, d_partial_falsy);
+  live_test_count += run_partial_loop_parent_checks(d, d2);
   live_check(
     "nested partial comparison loop context",
     "{{#partialdef inner}}{{#if this == \"t1\"}}T{{else}}N{{/if}}:"
