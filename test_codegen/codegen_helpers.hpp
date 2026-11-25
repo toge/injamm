@@ -840,8 +840,19 @@ constexpr std::size_t value_size(V const& v) {
   if constexpr (codegen_unsupported_string_v<V>) {
     static_assert(!codegen_unsupported_string_v<V>,
                   "raw char arrays and volatile C strings are not supported by codegen helpers");
+  } else if constexpr (std::is_arithmetic_v<V> || std::is_enum_v<V>) {
+    (void)v;
+    return 0;
+  } else if constexpr (injamm::detail::is_std_optional_v<V>) {
+    (void)v;
+    return 0;
+  } else if constexpr (std::is_same_v<V, std::string> || std::is_same_v<V, std::string_view>) {
+    return v.size();
   } else if constexpr (codegen_c_string_pointer_v<V>) {
     return v ? std::string_view{v}.size() : 0;
+  } else if constexpr (injamm::detail::ct_glz_reflectable<V>) {
+    (void)v;
+    return 0;
   } else {
     return v.size();
   }

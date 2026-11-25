@@ -50,6 +50,11 @@
 #include "case_cmp_loop_roots.hpp"
 #include "case_cmp_loop_value_rhs.hpp"
 #include "case_cmp_loop_bool.hpp"
+#include "case_cmp_rhs_loop_index.hpp"
+#include "case_cmp_rhs_this_numeric.hpp"
+#include "case_cmp_rhs_loop_index1.hpp"
+#include "case_cmp_rhs_loop_size.hpp"
+#include "case_cmp_rhs_this_string.hpp"
 #include "case_cmp_string_int.hpp"
 #include "case_cmp_invalid_string.hpp"
 #include "case_cmp_string_float.hpp"
@@ -75,6 +80,11 @@
 #include "case_size_loop_current_item.hpp"
 #include "case_size_root_items_from_tags.hpp"
 #include "case_size_loop_vs_root.hpp"
+#include "case_size_scalar_age.hpp"
+#include "case_size_enum_level.hpp"
+#include "case_size_optional_opt.hpp"
+#include "case_size_scalar_name.hpp"
+#include "case_size_container_items.hpp"
 #include "case_partial_compare_loop.hpp"
 #include "case_control_break.hpp"
 #include "case_control_continue.hpp"
@@ -359,6 +369,16 @@ int main() {
     [](auto const& data) { return generated::case_cmp_loop_value_rhs(data); });
   live_check("compare loop bool", "{{#items}}{{#if on == active}}Y{{else}}N{{/if}}{{/items}}", d, d_root_false,
     [](auto const& data) { return generated::case_cmp_loop_bool(data); });
+  live_check("compare rhs loop index", "{{#items}}{{#if qty == loop.index}}Y{{else}}N{{/if}}{{/items}}", d, d2,
+    [](auto const& data) { return generated::case_cmp_rhs_loop_index(data); });
+  live_check("compare rhs this numeric", "{{#items}}{{#if loop.index == this}}Y{{else}}N{{/if}}{{/items}}", d, d2,
+    [](auto const& data) { return generated::case_cmp_rhs_this_numeric(data); });
+  live_check("compare rhs loop index1", "{{#items}}{{#if qty == loop.index1}}Y{{else}}N{{/if}}{{/items}}", d, d2,
+    [](auto const& data) { return generated::case_cmp_rhs_loop_index1(data); });
+  live_check("compare rhs loop size", "{{#items}}{{#if qty == loop.size}}Y{{else}}N{{/if}}{{/items}}", d, d2,
+    [](auto const& data) { return generated::case_cmp_rhs_loop_size(data); });
+  live_check("compare rhs this string", "{{#items}}{{#if name == this}}Y{{else}}N{{/if}}{{/items}}", d, d2,
+    [](auto const& data) { return generated::case_cmp_rhs_this_string(data); });
   live_check("compare string and integer variable", "{{#if numeric == age}}Y{{else}}N{{/if}}", d, d2,
     [](auto const& data) { return generated::case_cmp_string_int(data); });
   live_check("compare invalid numeric string", "{{#if invalid_numeric == age}}Y{{else}}N{{/if}}", d, d2,
@@ -426,6 +446,26 @@ int main() {
              "{{#items}}{{name.size}}|{{root.name.size}}{{/items}}",
              d, d2,
     [](auto const& data) { return generated::case_size_loop_vs_root(data); });
+  live_check("size scalar age",
+             "{{age.size}}",
+             d, d2,
+    [](auto const& data) { return generated::case_size_scalar_age(data); });
+  live_check("size enum level",
+             "{{level.size}}",
+             d, d2,
+    [](auto const& data) { return generated::case_size_enum_level(data); });
+  live_check("size optional opt",
+             "{{opt.size}}",
+             d, d2,
+    [](auto const& data) { return generated::case_size_optional_opt(data); });
+  live_check("size scalar name",
+             "{{name.size}}",
+             d, d2,
+    [](auto const& data) { return generated::case_size_scalar_name(data); });
+  live_check("size container items",
+             "{{items.size}}",
+             d, d2,
+    [](auto const& data) { return generated::case_size_container_items(data); });
 
   // --- partial スコープ: ループ内のグローバル partial は value→root の二段解決 ---
   live_test_count += run_partial_loop_checks(d, d2);

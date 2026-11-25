@@ -909,6 +909,13 @@ class code_generator {
            special == injamm::detail::special_var_kind::loop_size;
   }
 
+  /** @brief RHS 特殊変数がループコンテキストを必須とするか */
+  static bool loop_special_requires_active(injamm::detail::special_var_kind special) {
+    return special == injamm::detail::special_var_kind::loop_index ||
+           special == injamm::detail::special_var_kind::loop_index1 ||
+           special == injamm::detail::special_var_kind::loop_size;
+  }
+
   /** @brief 比較命令の左辺を C++ 式へ変換する */
   std::string resolve_compare_lhs(bc::var_ref const& ref) const {
     auto const special = injamm::detail::classify_special_var(ref.key);
@@ -934,8 +941,22 @@ class code_generator {
     bc::var_ref rhs_ref;
     rhs_ref.key = ref.compare_rhs_text;
     rhs_ref.has_dot = ref.compare_rhs_has_dot;
+    rhs_ref.is_loop_parent = std::string_view{ref.compare_rhs_text}.starts_with("loop.parent.");
     rhs_ref.root_fallback = injamm::detail::root_fb_unproven;
     return rhs_ref;
+  }
+
+  /** @brief 比較 RHS が loop.index 系の実行時ループ情報を使うか */
+  static bool comparison_rhs_uses_loop_context(bc::var_ref const& ref) {
+    if (static_cast<injamm::detail::compare_operand_kind>(ref.compare_rhs_kind) !=
+        injamm::detail::compare_operand_kind::variable) {
+      return false;
+    }
+    auto const rhs_ref = make_compare_rhs_ref(ref);
+    if (rhs_ref.is_loop_parent) {
+      return false;
+    }
+    return loop_special_requires_active(injamm::detail::classify_special_var(rhs_ref.key));
   }
 
   /** @brief compare_rhs_kind に応じた比較 RHS の C++ 式を返す */
@@ -951,10 +972,25 @@ class code_generator {
       }
       case injamm::detail::compare_operand_kind::variable: {
         auto const rhs_ref = make_compare_rhs_ref(ref);
-        if (injamm::detail::classify_special_var(rhs_ref.key) != injamm::detail::special_var_kind::none) {
-          return "std::optional<int>{}";
+        if (rhs_ref.is_loop_parent) {
+          return resolve_value_access(rhs_ref);
         }
-        return resolve_value_access(rhs_ref);
+        auto const special = injamm::detail::classify_special_var(rhs_ref.key);
+        auto const loop = loop_context_expr();
+        switch (special) {
+          case injamm::detail::special_var_kind::none:
+            return resolve_value_access(rhs_ref);
+          case injamm::detail::special_var_kind::this_:
+            return value_expr();
+          case injamm::detail::special_var_kind::loop_index:
+            return loop + ".index";
+          case injamm::detail::special_var_kind::loop_index1:
+            return loop + ".index + 1";
+          case injamm::detail::special_var_kind::loop_size:
+            return loop + ".size";
+          default:
+            return "std::optional<int>{}";
+        }
       }
       case injamm::detail::compare_operand_kind::none: {
         return std::to_string(ref.int_filters[0].arg);
@@ -2214,9 +2250,12 @@ class code_generator {
       auto const& ref = bc.var_refs[inst.operand2];
       auto const lhs = resolve_compare_lhs(ref);
       auto const rhs = get_compare_rhs_expression(ref);
-      auto const guard = comparison_uses_loop_context(ref) ? (loop_context_expr() + ".active && ") : std::string{};
+      auto const rhs_kind = compare_rhs_kind_expression(ref);
+      auto const needs_loop_guard =
+          comparison_uses_loop_context(ref) || comparison_rhs_uses_loop_context(ref);
+      auto const guard = needs_loop_guard ? (loop_context_expr() + ".active && ") : std::string{};
       emit("if (" + guard + "codegen_compare(" + compare_opcode_expression(op) + ", " +
-           compare_rhs_kind_expression(ref) + ", " + lhs + ", " + rhs + ")) {");
+           rhs_kind + ", " + lhs + ", " + rhs + ")) {");
       ++indent_;
       auto const& ownership = control_ownership_.at(&inst);
       open_blocks_.push_back({
