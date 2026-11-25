@@ -19,6 +19,7 @@
 #include <string_view>
 
 #include "codegen_helpers.hpp"
+#include "codegen_case_types.hpp"
 
 namespace {
 enum class helper_level : int { none, ready };
@@ -153,12 +154,23 @@ int run_compare_helper_checks() {
         "nested optional lhs is false");
   char unterminated_chars[4] = {'t', 'e', 's', 't'};
   static_assert(!codegen_compare_detail::string_value_v<decltype(unterminated_chars)>);
+  static_assert(codegen_unsupported_string_v<decltype(unterminated_chars)>);
   check(!codegen_compare(bc_opcode::emit_if_eq, compare_operand_kind::variable,
                          unterminated_chars, std::string_view{"test"}),
         "unterminated char array lhs matches VM false behavior");
   check(!codegen_compare(bc_opcode::emit_if_eq, compare_operand_kind::variable,
                          std::string_view{"test"}, unterminated_chars),
         "unterminated char array rhs matches VM false behavior");
+  check(value_size(42) == 0, "arithmetic size is zero");
+  check(value_size(helper_level::ready) == 0, "enum size is zero");
+  check(value_size(std::optional<int>{7}) == 0, "optional arithmetic size is zero");
+  check(value_size(std::optional<std::string>{"abc"}) == 0, "optional string size is zero");
+  check(value_size(CaseProfile{"ROOT"}) == 0, "reflectable struct size is zero");
+  check(value_size(std::string{"abc"}) == 3, "std::string size is string length");
+  char const* ptr = "abcd";
+  check(value_size(ptr) == 4, "cstring pointer size is string length");
+  char const* null_ptr = nullptr;
+  check(value_size(null_ptr) == 0, "null cstring pointer size is zero");
   return failures;
 }
 
@@ -374,6 +386,22 @@ int main(int argc, char** argv) {
     cli,
     "{{#if qty > 2}}A{{/if}}{{#if name == \\\"R\\\"}}B{{/if}}{{#if qty == limit}}C{{/if}}",
     "normal comparison rhs kinds", "compare_operand_kind::none");
+  failures += run_ok_case(
+    cli,
+    "{{#items}}{{#tags}}{{#if loop.index == loop.parent.index}}Y{{else}}N{{/if}}{{/tags}}{{/items}}",
+    "loop parent rhs index comparison", "codegen_compare(bc_opcode::emit_if_eq, compare_operand_kind::variable, _loop2.index, _loop1.index))");
+  failures += run_ok_case(
+    cli,
+    "{{#items}}{{#tags}}{{#if loop.parent.index == loop.index}}Y{{else}}N{{/if}}{{/tags}}{{/items}}",
+    "loop parent lhs index comparison", "codegen_compare(bc_opcode::emit_if_eq, compare_operand_kind::variable, _loop1.index, _loop2.index))");
+  failures += run_ok_case(
+    cli,
+    "{{#items}}{{#tags}}{{#if loop.index1 == loop.parent.index1}}Y{{else}}N{{/if}}{{/tags}}{{/items}}",
+    "loop parent rhs index1 comparison", "_loop1.index + 1))");
+  failures += run_ok_case(
+    cli,
+    "{{#items}}{{#tags}}{{#if loop.parent.size == 2}}Y{{else}}N{{/if}}{{/tags}}{{/items}}",
+    "loop parent lhs size comparison", "codegen_compare(bc_opcode::emit_if_eq, compare_operand_kind::int_literal, _loop1.size, 2))");
   failures += run_ok_forbidden_case(
     cli,
     "{{#items}}{{name.size}}|{{root.name.size}}{{/items}}",
@@ -386,6 +414,12 @@ int main(int argc, char** argv) {
     "emit_var_size root fallback avoids accidental data access",
     "append_number(out, value_size(cgns_render::cg_get_6974656D73(",
     "append_number(out, value_size(data.items));");
+  failures += run_ok_case(cli, "{{profile.size}}",
+                          "emit_var_size reflectable field",
+                          "append_number(out, value_size(data.profile));");
+  failures += run_ok_case(cli, "{{text_ptr.size}}",
+                          "emit_var_size cstring field",
+                          "append_number(out, value_size(data.text_ptr));");
   failures += run_compare_helper_checks();
 
   // 10. 空文字列リテラルは有効で、引用符を保持した式として生成されること

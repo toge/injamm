@@ -394,6 +394,14 @@ if(BUILD_UTIL)
     add_codegen_case(cmp_rhs_loop_index1 "{{#items}}{{#if qty == loop.index1}}Y{{else}}N{{/if}}{{/items}}")
     add_codegen_case(cmp_rhs_loop_size   "{{#items}}{{#if qty == loop.size}}Y{{else}}N{{/if}}{{/items}}")
     add_codegen_case(cmp_rhs_this_string "{{#items}}{{#if name == this}}Y{{else}}N{{/if}}{{/items}}")
+    add_codegen_case(cmp_rhs_loop_parent_index
+      "{{#items}}{{#tags}}{{#if loop.index == loop.parent.index}}Y{{else}}N{{/if}}{{/tags}}{{/items}}")
+    add_codegen_case(cmp_rhs_loop_parent_index1
+      "{{#items}}{{#tags}}{{#if loop.index1 == loop.parent.index1}}Y{{else}}N{{/if}}{{/tags}}{{/items}}")
+    add_codegen_case(cmp_rhs_loop_parent_size
+      "{{#items}}{{#tags}}{{#if loop.parent.size == 2}}Y{{else}}N{{/if}}{{/tags}}{{/items}}")
+    add_codegen_case(cmp_lhs_loop_parent_index
+      "{{#items}}{{#tags}}{{#if loop.parent.index == loop.index}}Y{{else}}N{{/if}}{{/tags}}{{/items}}")
     add_codegen_case(cmp_string_int      "{{#if numeric == age}}Y{{else}}N{{/if}}")
     add_codegen_case(cmp_invalid_string  "{{#if invalid_numeric == age}}Y{{else}}N{{/if}}")
     add_codegen_case(cmp_string_float    "{{#if numeric == ratio}}Y{{else}}N{{/if}}")
@@ -431,8 +439,10 @@ if(BUILD_UTIL)
     add_codegen_case(size_scalar_age "{{age.size}}")
     add_codegen_case(size_enum_level "{{level.size}}")
     add_codegen_case(size_optional_opt "{{opt.size}}")
+    add_codegen_case(size_reflectable_profile "{{profile.size}}")
     add_codegen_case(size_scalar_name "{{name.size}}")
     add_codegen_case(size_container_items "{{items.size}}")
+    add_codegen_case(size_cstring_text_ptr "{{text_ptr.size}}")
     add_codegen_case(control_break
       "{{#items}}{{name}}{{#if loop.is_first}}{{else}}{{#break}}{{/if}}{{/items}}Z")
     add_codegen_case(control_continue

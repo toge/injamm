@@ -55,6 +55,10 @@
 #include "case_cmp_rhs_loop_index1.hpp"
 #include "case_cmp_rhs_loop_size.hpp"
 #include "case_cmp_rhs_this_string.hpp"
+#include "case_cmp_rhs_loop_parent_index.hpp"
+#include "case_cmp_rhs_loop_parent_index1.hpp"
+#include "case_cmp_rhs_loop_parent_size.hpp"
+#include "case_cmp_lhs_loop_parent_index.hpp"
 #include "case_cmp_string_int.hpp"
 #include "case_cmp_invalid_string.hpp"
 #include "case_cmp_string_float.hpp"
@@ -83,8 +87,10 @@
 #include "case_size_scalar_age.hpp"
 #include "case_size_enum_level.hpp"
 #include "case_size_optional_opt.hpp"
+#include "case_size_reflectable_profile.hpp"
 #include "case_size_scalar_name.hpp"
 #include "case_size_container_items.hpp"
+#include "case_size_cstring_text_ptr.hpp"
 #include "case_partial_compare_loop.hpp"
 #include "case_control_break.hpp"
 #include "case_control_continue.hpp"
@@ -174,6 +180,7 @@ int main() {
   CaseStringViewData empty_view_data{.short_text = {}};
   CaseStringPointerData ptr_data;
   CaseStringPointerData empty_ptr_data{.text_ptr = ""};
+  CaseStringPointerData null_ptr_data{.text_ptr = nullptr};
   CaseData d_low = d;
   d_low.qty = 2;
   CaseData d_high = d;
@@ -379,6 +386,38 @@ int main() {
     [](auto const& data) { return generated::case_cmp_rhs_loop_size(data); });
   live_check("compare rhs this string", "{{#items}}{{#if name == this}}Y{{else}}N{{/if}}{{/items}}", d, d2,
     [](auto const& data) { return generated::case_cmp_rhs_this_string(data); });
+  live_generated_check("compare rhs loop.parent.index",
+                       "YNNNYN",
+                       d,
+    [](auto const& data) { return generated::case_cmp_rhs_loop_parent_index(data); });
+  live_generated_check("compare rhs loop.parent.index/falsy",
+                       "",
+                       d2,
+    [](auto const& data) { return generated::case_cmp_rhs_loop_parent_index(data); });
+  live_generated_check("compare rhs loop.parent.index1",
+                       "YNNNYN",
+                       d,
+    [](auto const& data) { return generated::case_cmp_rhs_loop_parent_index1(data); });
+  live_generated_check("compare rhs loop.parent.index1/falsy",
+                       "",
+                       d2,
+    [](auto const& data) { return generated::case_cmp_rhs_loop_parent_index1(data); });
+  live_generated_check("compare rhs loop.parent.size",
+                       "YYYYYY",
+                       d,
+    [](auto const& data) { return generated::case_cmp_rhs_loop_parent_size(data); });
+  live_generated_check("compare rhs loop.parent.size/falsy",
+                       "",
+                       d2,
+    [](auto const& data) { return generated::case_cmp_rhs_loop_parent_size(data); });
+  live_generated_check("compare lhs loop.parent.index",
+                       "YNNNYN",
+                       d,
+    [](auto const& data) { return generated::case_cmp_lhs_loop_parent_index(data); });
+  live_generated_check("compare lhs loop.parent.index/falsy",
+                       "",
+                       d2,
+    [](auto const& data) { return generated::case_cmp_lhs_loop_parent_index(data); });
   live_check("compare string and integer variable", "{{#if numeric == age}}Y{{else}}N{{/if}}", d, d2,
     [](auto const& data) { return generated::case_cmp_string_int(data); });
   live_check("compare invalid numeric string", "{{#if invalid_numeric == age}}Y{{else}}N{{/if}}", d, d2,
@@ -458,6 +497,10 @@ int main() {
              "{{opt.size}}",
              d, d2,
     [](auto const& data) { return generated::case_size_optional_opt(data); });
+  live_check("size reflectable profile",
+             "{{profile.size}}",
+             d, d2,
+    [](auto const& data) { return generated::case_size_reflectable_profile(data); });
   live_check("size scalar name",
              "{{name.size}}",
              d, d2,
@@ -466,6 +509,14 @@ int main() {
              "{{items.size}}",
              d, d2,
     [](auto const& data) { return generated::case_size_container_items(data); });
+  live_generated_check("size cstring pointer",
+                       "3",
+                       ptr_data,
+    [](auto const& data) { return generated::case_size_cstring_text_ptr(data); });
+  live_generated_check("size null cstring pointer",
+                       "0",
+                       null_ptr_data,
+    [](auto const& data) { return generated::case_size_cstring_text_ptr(data); });
 
   // --- partial スコープ: ループ内のグローバル partial は value→root の二段解決 ---
   live_test_count += run_partial_loop_checks(d, d2);
