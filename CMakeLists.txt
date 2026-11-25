@@ -415,6 +415,14 @@ if(BUILD_UTIL)
       "{{#items}}{{#active}}{{#if loop.index == 0}}F{{else}}N{{/if}}{{/active}}{{/items}}")
     add_codegen_case(cmp_inherited_optional_loop
       "{{#items}}{{#opt_limit}}{{#if loop.index == 0}}F{{else}}N{{/if}}{{/opt_limit}}{{/items}}")
+    add_codegen_case(size_loop_root_fallback
+      "{{#items}}{{tags.size}}{{/items}}")
+    add_codegen_case(size_loop_current_item
+      "{{#items}}{{name.size}}{{/items}}")
+    add_codegen_case(size_root_items_from_tags
+      "{{#tags}}{{items.size}}{{/tags}}")
+    add_codegen_case(size_loop_vs_root
+      "{{#items}}{{name.size}}|{{root.name.size}}{{/items}}")
     add_codegen_case(control_break
       "{{#items}}{{name}}{{#if loop.is_first}}{{else}}{{#break}}{{/if}}{{/items}}Z")
     add_codegen_case(control_continue

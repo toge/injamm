@@ -71,6 +71,10 @@
 #include "case_cmp_number_section_loop.hpp"
 #include "case_cmp_inherited_bool_loop.hpp"
 #include "case_cmp_inherited_optional_loop.hpp"
+#include "case_size_loop_root_fallback.hpp"
+#include "case_size_loop_current_item.hpp"
+#include "case_size_root_items_from_tags.hpp"
+#include "case_size_loop_vs_root.hpp"
 #include "case_partial_compare_loop.hpp"
 #include "case_control_break.hpp"
 #include "case_control_continue.hpp"
@@ -406,6 +410,22 @@ int main() {
              "{{#items}}{{#opt_limit}}{{#if loop.index == 0}}F{{else}}N{{/if}}{{/opt_limit}}{{/items}}",
              d, d_root_false,
     [](auto const& data) { return generated::case_cmp_inherited_optional_loop(data); });
+  live_check("size loop root fallback",
+             "{{#items}}{{tags.size}}{{/items}}",
+             d, d2,
+    [](auto const& data) { return generated::case_size_loop_root_fallback(data); });
+  live_check("size loop current item",
+             "{{#items}}{{name.size}}{{/items}}",
+             d, d2,
+    [](auto const& data) { return generated::case_size_loop_current_item(data); });
+  live_check("size root items from tags",
+             "{{#tags}}{{items.size}}{{/tags}}",
+             d, d2,
+    [](auto const& data) { return generated::case_size_root_items_from_tags(data); });
+  live_check("size loop vs root",
+             "{{#items}}{{name.size}}|{{root.name.size}}{{/items}}",
+             d, d2,
+    [](auto const& data) { return generated::case_size_loop_vs_root(data); });
 
   // --- partial スコープ: ループ内のグローバル partial は value→root の二段解決 ---
   live_test_count += run_partial_loop_checks(d, d2);

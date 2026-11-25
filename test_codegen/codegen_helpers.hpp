@@ -788,13 +788,16 @@ inline void append_value(Buffer& out, V const& v) {
  *           has_value で分岐するため別経路）。 */
 template <class V>
 inline constexpr bool codegen_scalar_section_v =
-    std::is_same_v<V, bool> || std::is_arithmetic_v<V> || std::is_enum_v<V>;
+    std::is_same_v<std::remove_cvref_t<V>, bool> ||
+    std::is_arithmetic_v<std::remove_cvref_t<V>> ||
+    std::is_enum_v<std::remove_cvref_t<V>>;
 
 /** @brief std::optional のセクション本体を 1 回だけ実行するか判定（VM の has_value 分岐に対応）
  *  @details VM (bytecode_exec.hpp do_section) は optional を has_value() で判定し、
  *           有値時は *opt を要素スコープとして本体を 1 回実行する。 */
 template <class V>
-inline constexpr bool codegen_optional_section_v = injamm::detail::is_std_optional_v<V>;
+inline constexpr bool codegen_optional_section_v =
+    injamm::detail::is_std_optional_v<std::remove_cvref_t<V>>;
 
 /** @brief std::string/string_view/C-string セクションを文字範囲ではなく値として 1 回実行する。 */
 template <class V>

@@ -1860,19 +1860,7 @@ class code_generator {
       --indent_;
       emit("}");
     };
-    if (block.two_stage_key.empty()) {
-      dispatch_of(block.access);
-    } else {
-      emit("if constexpr (requires { " + block.access + "; }) {");
-      ++indent_;
-      dispatch_of(block.access);
-      --indent_;
-      emit("} else {");
-      ++indent_;
-      dispatch_of(block.call_root + "." + block.two_stage_key);
-      --indent_;
-      emit("}");
-    }
+    dispatch_of(block.access);
   }
 
   void emit_filtered_section(open_block const& block, bc::bytecode const& bc) {
@@ -2007,10 +1995,8 @@ class code_generator {
     }
     else if (op == bc::opcode::emit_section) {
       auto const& ref = bc.var_refs[inst.operand2];
-      auto access = resolve_access(ref);
+      auto access = resolve_value_access(ref);
       auto container_access = resolve_value_access(ref);
-      std::string two_stage_key;
-      if (is_value_relative(ref)) two_stage_key = ref.key;
       auto const call_loop = loop_context_expr();
       auto const ownership = control_ownership_.at(&inst);
       ++scope_depth_;
@@ -2040,7 +2026,6 @@ class code_generator {
         .container_access = container_access,
         .idx = scope_depth_,
         .seq = seq,
-        .two_stage_key = two_stage_key,
         .root_param = rpm,
         .call_root = call_root,
         .call_loop = call_loop,
@@ -2307,10 +2292,28 @@ class code_generator {
       emit("html_escape_append_value(out, " + root_expr() + ");");
     }
     else if (op == bc::opcode::emit_at_root_field) {
-      emit("html_escape_append_value(out, " + root_expr() + "." + bc.var_refs[inst.operand].key + ");");
+      auto const& key = bc.var_refs[inst.operand].key;
+      if (key.size() > 5 && key.rfind(".size") == key.size() - 5) {
+        emit("if constexpr (requires { " + root_expr() + "." + key + "; }) {");
+        ++indent_;
+        emit("html_escape_append_value(out, " + root_expr() + "." + key + ");");
+        --indent_;
+        emit("}");
+      } else {
+        emit("html_escape_append_value(out, " + root_expr() + "." + key + ");");
+      }
     }
     else if (op == bc::opcode::emit_at_root_field_raw) {
-      emit("append_value(out, " + root_expr() + "." + bc.var_refs[inst.operand].key + ");");
+      auto const& key = bc.var_refs[inst.operand].key;
+      if (key.size() > 5 && key.rfind(".size") == key.size() - 5) {
+        emit("if constexpr (requires { " + root_expr() + "." + key + "; }) {");
+        ++indent_;
+        emit("append_value(out, " + root_expr() + "." + key + ");");
+        --indent_;
+        emit("}");
+      } else {
+        emit("append_value(out, " + root_expr() + "." + key + ");");
+      }
     }
     else if (op == bc::opcode::emit_at_key) {
       emit("out.append(_key" + std::to_string(scope_depth_) + ");");
@@ -2518,7 +2521,7 @@ class code_generator {
       }
     }
     else if (op == bc::opcode::emit_var_size) {
-      emit_value_ref("append_number(out, value_size(", "));", bc.var_refs[inst.operand2]);
+      emit_value_ref("append_number(out, value_size(", "));", bc.var_refs[inst.operand]);
     }
     else if (op == bc::opcode::emit_break) {
       emit(active_control_channel() + ".break_requested = true;");

@@ -221,6 +221,34 @@ int run_forbidden_case(std::string const& cli, std::string const& expr,
   return 0;
 }
 
+/** @brief 生成ヘッダが expected を含み、forbidden を含まないことを検証する */
+int run_ok_forbidden_case(std::string const& cli, std::string const& expr,
+                          std::string const& name, std::string const& expected,
+                          std::string const& forbidden) {
+  std::string const out_path = "codegen_ok_forbidden_fixture.hpp";
+  std::string const cmd      = "\"" + cli + "\" -e \"" + expr + "\" -t Ok -o " + out_path + " 2>codegen_err.txt";
+  int const         rc       = std::system(cmd.c_str());
+  std::remove("codegen_err.txt");
+  if (rc != 0) {
+    std::cerr << "FAIL: codegen failed for " << name << "\n";
+    std::remove(out_path.c_str());
+    return 1;
+  }
+
+  std::ifstream f(out_path);
+  std::string   content((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+  std::remove(out_path.c_str());
+  if (content.find(expected) == std::string::npos) {
+    std::cerr << "FAIL: expected pattern missing in generated code for " << name << "\n";
+    return 1;
+  }
+  if (content.find(forbidden) != std::string::npos) {
+    std::cerr << "FAIL: forbidden generated pattern remains for " << name << ": " << forbidden << "\n";
+    return 1;
+  }
+  return 0;
+}
+
 int run_control_rejection_checks(std::string const& cli) {
   int failures = 0;
   for (auto const& expr : {
@@ -323,6 +351,9 @@ int main(int argc, char** argv) {
   //    （スカラー分岐だけを出してコンテナ側の for を落とし、何も描画しなくなった回帰の検出）
   failures += run_ok_case(cli, "{{#items}}{{name}}{{/items}}", "container section range-for",
                           "for (const auto& _v1 : data.items)");
+  failures += run_ok_case(cli, "{{#tags}}{{#items}}{{name}}{{/items}}{{/tags}}",
+                          "loop missing root key uses helper and range-for",
+                          "for (const auto& _v2 : cgns_");
 
   // 7. 同一スコープの兄弟セクションで本体ラムダ名が衝突しないこと
   failures += run_ok_case(cli, "{{#items}}{{name}}{{/items}}{{#name}}x{{/name}}", "sibling sections",
@@ -343,6 +374,18 @@ int main(int argc, char** argv) {
     cli,
     "{{#if qty > 2}}A{{/if}}{{#if name == \\\"R\\\"}}B{{/if}}{{#if qty == limit}}C{{/if}}",
     "normal comparison rhs kinds", "compare_operand_kind::none");
+  failures += run_ok_forbidden_case(
+    cli,
+    "{{#items}}{{name.size}}|{{root.name.size}}{{/items}}",
+    "emit_var_size uses instruction operand",
+    "append_number(out, value_size(cgns_render::cg_get_6E616D65(",
+    "append_number(out, value_size(cgns_render::cg_get_6974656D73(");
+  failures += run_ok_forbidden_case(
+    cli,
+    "{{#tags}}{{items.size}}{{/tags}}",
+    "emit_var_size root fallback avoids accidental data access",
+    "append_number(out, value_size(cgns_render::cg_get_6974656D73(",
+    "append_number(out, value_size(data.items));");
   failures += run_compare_helper_checks();
 
   // 10. 空文字列リテラルは有効で、引用符を保持した式として生成されること
