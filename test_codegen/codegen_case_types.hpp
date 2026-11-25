@@ -32,6 +32,7 @@ struct CaseData {
   std::string                root_only = "root";
   CaseProfile                profile{"ROOT"};
   std::vector<CaseItem>      items  = {{"a", true}, {"b", false}};
+  std::vector<CaseItem>      users  = {{"Alice", true}, {"Bob", true}, {"Charlie", true}};
   int                        qty = 3;
   int                        limit = 3;
   double                     ratio = 1.5;

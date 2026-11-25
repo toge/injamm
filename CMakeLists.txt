@@ -400,6 +400,54 @@ if(BUILD_UTIL)
       "{{#items}}{{#active}}{{#if loop.index == 0}}F{{else}}N{{/if}}{{/active}}{{/items}}")
     add_codegen_case(cmp_inherited_optional_loop
       "{{#items}}{{#opt_limit}}{{#if loop.index == 0}}F{{else}}N{{/if}}{{/opt_limit}}{{/items}}")
+    add_codegen_case(control_break
+      "{{#items}}{{name}}{{#if loop.is_first}}{{else}}{{#break}}{{/if}}{{/items}}Z")
+    add_codegen_case(control_continue
+      "{{#items}}{{#if loop.is_first}}{{else}}{{#continue}}{{/if}}{{name}}{{/items}}Z")
+    add_codegen_case(control_section_else_break
+      "{{#items}}{{#active}}{{name}}{{else}}{{#break}}{{/active}}X{{/items}}Z")
+    add_codegen_case(control_section_else_continue
+      "{{#items}}{{#active}}{{name}}{{else}}{{#continue}}{{/active}}X{{/items}}Z")
+    add_codegen_case(control_inverted_else_break
+      "{{#items}}{{^active}}{{name}}{{else}}{{#break}}{{/active}}X{{/items}}Z")
+    add_codegen_case(control_inverted_else_continue
+      "{{#items}}{{^active}}{{name}}{{else}}{{#continue}}{{/active}}X{{/items}}Z")
+    add_codegen_case(control_nested_container_break
+      "{{#items}}[{{#tags}}{{this}}{{#if loop.is_last}}{{else}}{{#break}}{{/if}}{{/tags}}]{{/items}}Z")
+    add_codegen_case(control_nested_container_continue
+      "{{#items}}[{{#tags}}{{#if loop.index}}{{#continue}}{{/if}}{{this}}{{/tags}}]{{/items}}Z")
+    add_codegen_case(control_scalar_break
+      "{{#items}}{{#active}}A{{#break}}{{/active}}X{{/items}}Z")
+    add_codegen_case(control_scalar_continue
+      "{{#items}}{{#active}}A{{#continue}}{{/active}}X{{/items}}Z")
+    add_codegen_case(control_optional_break
+      "{{#items}}{{#opt_limit}}A{{#break}}{{/opt_limit}}X{{/items}}Z")
+    add_codegen_case(control_optional_continue
+      "{{#items}}{{#opt_limit}}A{{#continue}}{{/opt_limit}}X{{/items}}Z")
+    add_codegen_case(control_inverted_break
+      "{{#items}}{{^active}}A{{#break}}{{/active}}X{{/items}}Z")
+    add_codegen_case(control_inverted_continue
+      "{{#items}}{{^active}}A{{#continue}}{{/active}}X{{/items}}Z")
+    add_codegen_case(control_top_break
+      "A{{#break}}B")
+    add_codegen_case(control_top_continue
+      "A{{#continue}}B")
+    add_codegen_case(control_join_break
+      "{{#items | join(\",\")}}{{name}}{{#if loop.is_first}}{{else}}{{#break}}{{/if}}{{/items}}Z")
+    add_codegen_case(control_join_continue
+      "{{#items | join(\",\")}}{{#if loop.is_first}}{{#continue}}{{/if}}{{name}}{{/items}}Z")
+    add_codegen_case(control_reverse_break
+      "{{#items | reverse}}{{name}}{{#if loop.is_first}}{{else}}{{#break}}{{/if}}{{/items}}Z")
+    add_codegen_case(control_stride_continue
+      "{{#tags | stride(1,1)}}{{#if loop.index}}{{#continue}}{{/if}}{{this}}{{/tags}}Z")
+    add_codegen_case(control_take_break
+      "{{#items | take(2)}}{{name}}{{#break}}{{/items}}Z")
+    add_codegen_case(control_number_section
+      "{{#items}}{{#age}}A{{#continue}}{{/age}}X{{/items}}Z")
+    add_codegen_case(control_enum_section
+      "{{#items}}{{#level}}A{{#break}}{{/level}}X{{/items}}Z")
+    add_codegen_case(control_syntax_break
+      "{{#users}}{{name}}{{#if loop.is_last}}.{{else}}{{#break}}{{/if}}{{/users}}")
     # partial の通常ケースはスコープごとに個別名前空間へ生成し、
     # test_codegen_live_partials.cpp で VM と比較する。
     function(add_codegen_case_partial name tmpl)

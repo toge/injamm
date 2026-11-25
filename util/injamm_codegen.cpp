@@ -31,6 +31,7 @@
 #include <string>
 #include <string_view>
 #include <set>
+#include <unordered_map>
 #include <unordered_set>
 #include <vector>
 
@@ -473,6 +474,62 @@ public:
     for (auto const& pe : bc.partial_entries) {
       if (pe.bc && !validate_bytecode(*pe.bc)) return false;
     }
+    enum class structural_kind { section_like, condition };
+    struct structural_block {
+      structural_kind kind;
+      bool saw_else = false;
+    };
+    std::vector<structural_block> blocks;
+    for (auto const& inst : bc.instructions) {
+      switch (inst.op) {
+        case bc::opcode::emit_section:
+        case bc::opcode::emit_inverted:
+        case bc::opcode::emit_at_section:
+        case bc::opcode::emit_at_inverted:
+          blocks.push_back({structural_kind::section_like, false});
+          break;
+        case bc::opcode::emit_if:
+        case bc::opcode::emit_if_not:
+        case bc::opcode::emit_if_or:
+        case bc::opcode::emit_if_and:
+        case bc::opcode::emit_if_eq:
+        case bc::opcode::emit_if_ne:
+        case bc::opcode::emit_if_gt:
+        case bc::opcode::emit_if_gte:
+        case bc::opcode::emit_if_lt:
+        case bc::opcode::emit_if_lte:
+        case bc::opcode::emit_if_filtered:
+          blocks.push_back({structural_kind::condition, false});
+          break;
+        case bc::opcode::emit_else:
+          if (blocks.empty() || blocks.back().saw_else) {
+            fail();
+            return false;
+          }
+          blocks.back().saw_else = true;
+          break;
+        case bc::opcode::emit_end:
+          if (blocks.empty() || blocks.back().kind != structural_kind::section_like) {
+            fail();
+            return false;
+          }
+          blocks.pop_back();
+          break;
+        case bc::opcode::emit_endif:
+          if (blocks.empty() || blocks.back().kind != structural_kind::condition) {
+            fail();
+            return false;
+          }
+          blocks.pop_back();
+          break;
+        default:
+          break;
+      }
+    }
+    if (!blocks.empty()) {
+      fail();
+      return false;
+    }
     return true;
   }
 
@@ -536,20 +593,41 @@ class code_generator {
   std::unordered_set<const bc::instruction*> index_loops_;
   /**< collect_two_stage_keys のメタデータ走査で発見したインデックス形式ループ */
   std::unordered_set<const bc::instruction*> metadata_index_loops_;
-  /**< stride ループ深度（ループ末尾で _srcN を進める） */
-  std::unordered_set<int> stride_loops_;
+  enum class block_syntax_kind { section, inverted, condition, at_condition, top_level };
+  enum class block_phase { main, else_body };
+  enum class runtime_category { container, scalar_optional, inverted, if_branch, top_level };
 
-  /** @brief emit_end で閉じるブロックの種類 */
-  enum class end_kind { loop, scalar_section, cond, inverted };
-  /** @brief emit_end で閉じるブロックの情報（開始命令ごとに積む） */
+  struct control_ownership {
+    block_syntax_kind syntax = block_syntax_kind::top_level;
+    runtime_category runtime = runtime_category::top_level;
+    int id = 0;
+    int parent_id = 0;
+    int loop_depth = 0;
+    std::string local_channel;
+    std::string parent_channel;
+    std::string root_expression;
+    std::string loop_context;
+  };
+
+  std::unordered_map<const bc::instruction*, control_ownership> control_ownership_;
+  int next_control_id_ = 0;
+
+  /** @brief emit_end/emit_endif で閉じる構文ブロック */
   struct open_block {
-    end_kind    kind;     /**< 閉じ方の種類 */
+    block_syntax_kind syntax = block_syntax_kind::condition;
+    block_phase phase = block_phase::main;
+    runtime_category runtime = runtime_category::if_branch;
+    int control_id = 0;
+    std::string local_control;
+    std::string parent_control;
+    std::string root_expression;
+    std::string loop_context;
+    int loop_depth = 0;
     std::string access;   /**< scalar_section/inverted: セクション対象のアクセス式 */
+    std::string container_access; /**< フィルタ済みコンテナの値/ルート二段解決式 */
     int         idx = 0;  /**< scalar_section: 本体の _itemN の N（スコープ解決に使うループ深度） */
     int         seq = 0;  /**< scalar_section/inverted: 本体ラムダ名の連番（兄弟セクションで衝突させない） */
     int         else_seq = 0;  /**< {{else}} 本体ラムダ名の連番（else なしは 0） */
-    bool        has_else = false; /**< loop 種別: セクションに {{else}} が付いている（事前ガードを閉じる） */
-    bool        scoped = false; /**< loop 種別: インデックス/フィルタ変数を内包する一時スコープ */
     std::string two_stage_key; /**< 二段解決の対象キー（空なら二段解決なし。ディスパッチのガードに使う） */
     bool        root_param = false;    /**< 本体ラムダがルート引数（_rtN）を持つ */
     bool        else_root_param = false; /**< else ラムダがルート引数（_rtN）を持つ */
@@ -557,6 +635,7 @@ class code_generator {
     std::string call_loop;  /**< ラムダに入る前の VM ループ情報 */
     bool        indexed = false; /**< コンテナ分岐で index/size を生成する必要がある */
     const bc::instruction* inst = nullptr; /**< 開始命令（マーキング参照用） */
+    bool filtered = false;
   };
   int lambda_seq_ = 0; /**< 本体ラムダ名の連番 */
   std::vector<open_block> open_blocks_;
@@ -574,6 +653,32 @@ class code_generator {
     if (scope_depth_ > 0) return "_loop" + std::to_string(scope_depth_);
     return in_partial_ ? "_loop" : "codegen_loop_context{}";
   }
+
+  std::string active_control_channel() const {
+    for (auto it = open_blocks_.rbegin(); it != open_blocks_.rend(); ++it) {
+      if (!it->local_control.empty()) return it->local_control;
+    }
+    return "_root_control";
+  }
+
+  bool in_control_lambda() const {
+    for (auto const& block : open_blocks_) {
+      if (block.syntax == block_syntax_kind::section ||
+          block.syntax == block_syntax_kind::inverted) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  void emit_else_control_stop(std::string const& channel) {
+    emit("if (" + channel + ".break_requested || " + channel + ".continue_requested) {");
+    ++indent_;
+    emit(in_control_lambda() ? "return;" : "return {};");
+    --indent_;
+    emit("}");
+  }
+
   std::string unsupported_feature_;  /**< generate() が対応不能な命令を検出した場合の説明 */
   std::ostringstream out_;     /**< 出力ストリーム */
 
@@ -946,6 +1051,13 @@ class code_generator {
    *          生成ヘッダをインクルードしても衝突しない。
    */
   void emit_helpers() {
+    emit_raw("");
+    emit_raw("namespace " + cgns_name() + " {");
+    emit_raw("struct control_slot {");
+    emit_raw("  bool break_requested = false;");
+    emit_raw("  bool continue_requested = false;");
+    emit_raw("};");
+    emit_raw("} // namespace " + cgns_name());
     if (two_stage_keys_.empty()) return;
     emit_raw("");
     emit_raw("namespace " + cgns_name() + " {");
@@ -1016,6 +1128,7 @@ class code_generator {
       emit("std::string _filtered;");
       emit("_filtered.reserve(64);");
     }
+    emit(cgns_name() + "::control_slot _root_control;");
     emit_raw("");
   }
 
@@ -1116,12 +1229,14 @@ class code_generator {
     emit_raw("template <injamm::fixed_string PartialName, typename V, typename R, typename Sink>");
     emit_raw("  requires injamm::detail::output_sink<Sink>");
     emit_raw("[[nodiscard]] std::expected<void, injamm::error_ctx>");
-    emit_raw(impl_name + "(const V& value, const R& root, const codegen_loop_context& _loop, Sink& out);");
+    emit_raw(impl_name + "(const V& value, const R& root, const codegen_loop_context& _loop, " +
+             cgns_name() + "::control_slot& _root_control, Sink& out);");
     emit_raw("");
     emit_raw("template <injamm::fixed_string PartialName, typename V, typename R, typename Sink>");
     emit_raw("  requires injamm::detail::output_sink<Sink>");
     emit_raw("[[nodiscard]] std::expected<void, injamm::error_ctx>");
-    emit_raw(impl_name + "(const V& value, const R& root, const codegen_loop_context& _loop, Sink& out) {");
+    emit_raw(impl_name + "(const V& value, const R& root, const codegen_loop_context& _loop, " +
+             cgns_name() + "::control_slot& _root_control, Sink& out) {");
     ++indent_;
 
     /* if constexpr チェーン: 各 partial 名を std::string_view で比較する。
@@ -1149,6 +1264,7 @@ class code_generator {
       scope_depth_ = 0;
       open_blocks_.clear();
       in_partial_ = true;
+      precompute_control_ownership(*pe.bc);
 
       /* _filtered を使う partial はブロック先頭で宣言する（ループ内フィルタの再アロケーション回避） */
       if (uses_filtered(*pe.bc)) {
@@ -1212,7 +1328,8 @@ class code_generator {
     emit_raw("[[nodiscard]] std::expected<void, injamm::error_ctx>");
     emit_raw("render_partial(const T& data, Sink& out) {");
     ++indent_;
-    emit("return " + impl_name + "<PartialName>(data, data, codegen_loop_context{}, out);");
+    emit(cgns_name() + "::control_slot _root_control;");
+    emit("return " + impl_name + "<PartialName>(data, data, codegen_loop_context{}, _root_control, out);");
     --indent_;
     emit_raw("}");
     emit_raw("");
@@ -1223,7 +1340,8 @@ class code_generator {
       emit_raw("[[nodiscard]] std::expected<void, injamm::error_ctx>");
       emit_raw(prefixed_api_name + "(const T& data, Sink& out) {");
       ++indent_;
-      emit("return " + impl_name + "<PartialName>(data, data, codegen_loop_context{}, out);");
+      emit(cgns_name() + "::control_slot _root_control;");
+      emit("return " + impl_name + "<PartialName>(data, data, codegen_loop_context{}, _root_control, out);");
       --indent_;
       emit_raw("}");
       emit_raw("");
@@ -1254,6 +1372,99 @@ class code_generator {
     auto const guard = header_guard_name();
     emit_raw("");
     emit_raw("#endif // " + guard);
+  }
+
+  void precompute_control_ownership(bc::bytecode const& bc) {
+    control_ownership_.clear();
+    next_control_id_ = 0;
+    struct control_block {
+      int id;
+      bool owns_value_scope;
+    };
+    std::vector<control_block> stack;
+    auto parent_id = [&]() { return stack.empty() ? 0 : stack.back().id; };
+    auto channel_for = [](int id) { return id == 0 ? std::string{"_root_control"} : "_control" + std::to_string(id); };
+    auto push = [&](bc::instruction const& inst, block_syntax_kind syntax,
+                    runtime_category runtime, bool owns_value_scope) {
+      auto const id = ++next_control_id_;
+      control_ownership_.emplace(&inst, control_ownership{
+        .syntax = syntax,
+        .runtime = runtime,
+        .id = id,
+        .parent_id = parent_id(),
+        .loop_depth = scope_depth_,
+        .local_channel = channel_for(id),
+        .parent_channel = channel_for(parent_id()),
+        .root_expression = root_for_emit(),
+        .loop_context = loop_context_expr(),
+      });
+      stack.push_back({id, owns_value_scope});
+      if (owns_value_scope) ++scope_depth_;
+    };
+    auto close = [&]() {
+      if (stack.empty()) return;
+      if (stack.back().owns_value_scope) --scope_depth_;
+      stack.pop_back();
+    };
+    auto push_condition = [&](bc::instruction const& inst, runtime_category runtime) {
+      auto const pid = parent_id();
+      auto const id = ++next_control_id_;
+      control_ownership_.emplace(&inst, control_ownership{
+        .syntax = block_syntax_kind::condition,
+        .runtime = runtime,
+        .id = id,
+        .parent_id = pid,
+        .loop_depth = scope_depth_,
+        .local_channel = channel_for(pid),
+        .parent_channel = channel_for(pid),
+        .root_expression = root_for_emit(),
+        .loop_context = loop_context_expr(),
+      });
+      stack.push_back({pid, false});
+    };
+    scope_depth_ = 0;
+    for (auto const& inst : bc.instructions) {
+      switch (inst.op) {
+        case bc::opcode::emit_section:
+          push(inst, block_syntax_kind::section,
+               bc.var_refs[inst.operand2].section_op_count > 0
+                 ? runtime_category::container
+                 : runtime_category::scalar_optional,
+               true);
+          break;
+        case bc::opcode::emit_inverted:
+          push(inst, block_syntax_kind::inverted, runtime_category::inverted, false);
+          break;
+        case bc::opcode::emit_if:
+        case bc::opcode::emit_if_not:
+        case bc::opcode::emit_if_or:
+        case bc::opcode::emit_if_and:
+        case bc::opcode::emit_if_eq:
+        case bc::opcode::emit_if_ne:
+        case bc::opcode::emit_if_gt:
+        case bc::opcode::emit_if_gte:
+        case bc::opcode::emit_if_lt:
+        case bc::opcode::emit_if_lte:
+        case bc::opcode::emit_if_filtered:
+          push_condition(inst, runtime_category::if_branch);
+          break;
+        case bc::opcode::emit_at_section:
+        case bc::opcode::emit_at_inverted:
+          push_condition(inst, runtime_category::if_branch);
+          break;
+        case bc::opcode::emit_else:
+          break;
+        case bc::opcode::emit_end:
+          close();
+          break;
+        case bc::opcode::emit_endif:
+          close();
+          break;
+        default:
+          break;
+      }
+    }
+    scope_depth_ = 0;
   }
 
   /**
@@ -1529,6 +1740,226 @@ class code_generator {
     }
   }
 
+  void emit_section_dispatch(open_block const& block, bc::bytecode const& bc) {
+    auto const control_type = cgns_name() + "::control_slot";
+    auto const idx = std::to_string(block.idx);
+    auto const local_slot = "_loop_control" + std::to_string(block.control_id);
+    auto const body = "_body" + std::to_string(block.seq);
+    auto const else_body = block.else_seq ? "_else" + std::to_string(block.else_seq) : std::string{};
+    auto const root_args = block.root_param ? (", " + block.call_root) : std::string{};
+    auto const scalar_call = [&](std::string const& item) {
+      return body + "(" + item + ", " + block.call_loop + ", " + block.parent_control + root_args + ")";
+    };
+    auto const else_call = [&]() {
+      if (else_body.empty()) return std::string{};
+      auto call = else_body + "(" + block.parent_control;
+      if (block.else_root_param) call += ", " + block.call_root;
+      return call + ")";
+    };
+    auto const container_loop = [&](std::string const& access) {
+      emit(control_type + " " + local_slot + ";");
+      if (block.indexed) {
+        emit("auto _size" + idx + " = " + access + ".size();");
+        emit("for (std::size_t _i" + idx + " = 0; _i" + idx + " < _size" + idx + "; ++_i" + idx + ") {");
+        ++indent_;
+        emit(local_slot + " = {};");
+        emit(body + "(" + access + "[_i" + idx + "], codegen_loop_context{true, _i" + idx +
+             ", _size" + idx + "}, " + local_slot + root_args + ");");
+        emit("if (" + local_slot + ".break_requested) break;");
+        emit("if (" + local_slot + ".continue_requested) continue;");
+        --indent_;
+        emit("}");
+      } else {
+        emit("for (const auto& _v" + std::to_string(block.seq) + " : " + access + ") {");
+        ++indent_;
+        emit(local_slot + " = {};");
+        emit(body + "(_v" + std::to_string(block.seq) + ", " + block.call_loop + ", " +
+             local_slot + root_args + ");");
+        emit("if (" + local_slot + ".break_requested) break;");
+        emit("if (" + local_slot + ".continue_requested) continue;");
+        --indent_;
+        emit("}");
+      }
+    };
+    auto dispatch_of = [&](std::string const& access) {
+      emit("if constexpr (codegen_optional_section_v<decltype(" + access + ")>) {");
+      ++indent_;
+      emit("if (" + access + ".has_value()) {");
+      ++indent_;
+      emit(scalar_call("*" + access) + ";");
+      --indent_;
+      emit(std::string{"}"} + (block.else_seq ? " else {" : ""));
+      if (block.else_seq) {
+        ++indent_;
+        emit(else_call() + ";");
+        emit_else_control_stop(block.parent_control);
+        --indent_;
+        emit("}");
+      }
+      --indent_;
+      emit("} else if constexpr (codegen_scalar_section_v<decltype(" + access + ")>) {");
+      ++indent_;
+      emit("if (static_cast<bool>(" + access + ")) {");
+      ++indent_;
+      emit(scalar_call(
+        (block.idx > 1 ? "_item" + std::to_string(block.idx - 1) : (in_partial_ ? "value" : "data"))) + ";");
+      --indent_;
+      emit(std::string{"}"} + (block.else_seq ? " else {" : ""));
+      if (block.else_seq) {
+        ++indent_;
+        emit(else_call() + ";");
+        emit_else_control_stop(block.parent_control);
+        --indent_;
+        emit("}");
+      }
+      --indent_;
+      emit("} else {");
+      ++indent_;
+      if (block.else_seq) {
+        emit("if (value_empty(" + access + ")) {");
+        ++indent_;
+        emit(else_call() + ";");
+        emit_else_control_stop(block.parent_control);
+        --indent_;
+        emit("} else {");
+        ++indent_;
+        container_loop(access);
+        --indent_;
+        emit("}");
+      } else {
+        container_loop(access);
+      }
+      --indent_;
+      emit("}");
+    };
+    if (block.two_stage_key.empty()) {
+      dispatch_of(block.access);
+    } else {
+      emit("if constexpr (requires { " + block.access + "; }) {");
+      ++indent_;
+      dispatch_of(block.access);
+      --indent_;
+      emit("} else {");
+      ++indent_;
+      dispatch_of(block.call_root + "." + block.two_stage_key);
+      --indent_;
+      emit("}");
+    }
+  }
+
+  void emit_filtered_section(open_block const& block, bc::bytecode const& bc) {
+    auto const& ref = bc.var_refs[block.inst->operand2];
+    auto const access = block.container_access.empty() ? block.access : block.container_access;
+    auto const idx = std::to_string(block.idx);
+    auto const control_type = cgns_name() + "::control_slot";
+    auto const local_slot = "_loop_control" + std::to_string(block.control_id);
+    auto const body = "_body" + std::to_string(block.seq);
+    auto const else_body = block.else_seq ? "_else" + std::to_string(block.else_seq) : std::string{};
+    auto const root_args = block.root_param ? (", " + block.call_root) : std::string{};
+    auto const else_call = [&]() {
+      if (else_body.empty()) return std::string{};
+      auto call = else_body + "(" + block.parent_control;
+      if (block.else_root_param) call += ", " + block.call_root;
+      return call + ")";
+    };
+    bool has_stride = false;
+    std::string join_separator;
+    emit("{");
+    ++indent_;
+    emit("auto _size" + idx + " = " + access + ".size();");
+    emit("std::size_t _lo" + idx + " = 0, _hi" + idx + " = _size" + idx + ";");
+    emit("bool _bwd" + idx + " = false;");
+    for (std::uint8_t si = 0; si < ref.section_op_count; ++si) {
+      auto const& sop = ref.section_ops[si];
+      auto const n = std::to_string(sop.arg);
+      switch (sop.kind) {
+        case injamm::detail::section_filter_op_kind::reverse:
+          emit("_bwd" + idx + " = !_bwd" + idx + ";");
+          break;
+        case injamm::detail::section_filter_op_kind::take:
+          emit("if (_bwd" + idx + ") _lo" + idx + " = (_hi" + idx + " > " + n +
+               "u ? std::max(_lo" + idx + ", _hi" + idx + " - " + n + "u) : _lo" + idx + ");");
+          emit("else _hi" + idx + " = std::min(_hi" + idx + ", _lo" + idx + " + " + n + "u);");
+          break;
+        case injamm::detail::section_filter_op_kind::skip:
+          emit("if (_bwd" + idx + ") _hi" + idx + " = (_hi" + idx + " > " + n +
+               "u ? _hi" + idx + " - " + n + "u : _lo" + idx + ");");
+          emit("else _lo" + idx + " = std::min(_hi" + idx + ", _lo" + idx + " + " + n + "u);");
+          break;
+        case injamm::detail::section_filter_op_kind::take_last:
+          emit("if (_bwd" + idx + ") _hi" + idx + " = std::min(_hi" + idx + ", _lo" + idx + " + " + n + "u);");
+          emit("else _lo" + idx + " = (_hi" + idx + " > " + n +
+               "u ? std::max(_lo" + idx + ", _hi" + idx + " - " + n + "u) : _lo" + idx + ");");
+          break;
+        case injamm::detail::section_filter_op_kind::skip_last:
+          emit("if (_bwd" + idx + ") _lo" + idx + " = std::min(_hi" + idx + ", _lo" + idx + " + " + n + "u);");
+          emit("else _hi" + idx + " = (_hi" + idx + " > " + n +
+               "u ? _hi" + idx + " - " + n + "u : _lo" + idx + ");");
+          break;
+        case injamm::detail::section_filter_op_kind::stride:
+          emit("const std::size_t _st_take" + idx + " = " + std::to_string(std::max(sop.arg, 0)) + "u;");
+          emit("const std::size_t _st_skip" + idx + " = " + std::to_string(std::max(sop.arg2, 0)) + "u;");
+          has_stride = true;
+          break;
+        case injamm::detail::section_filter_op_kind::join:
+          join_separator.assign(sop.str_arg1.data(), sop.str_arg1.size());
+          break;
+      }
+    }
+    emit(control_type + " " + local_slot + ";");
+    if (block.else_seq) {
+      emit("if (value_empty(" + access + ")) {");
+      ++indent_;
+      emit(else_call() + ";");
+      emit_else_control_stop(block.parent_control);
+      --indent_;
+      emit("} else {");
+      ++indent_;
+    }
+    if (has_stride) {
+      emit("const auto _block" + idx + " = _st_take" + idx + " + _st_skip" + idx + ";");
+      emit("const auto _count" + idx + " = _st_take" + idx + " == 0 ? std::size_t(0) : "
+           "((_hi" + idx + " - _lo" + idx + ") / _block" + idx + " * _st_take" + idx +
+           " + std::min(_st_take" + idx + ", (_hi" + idx + " - _lo" + idx + ") % _block" + idx + "));");
+      emit("std::size_t _src" + idx + " = _bwd" + idx + " ? (_hi" + idx + " - 1) : _lo" + idx + ";");
+    } else {
+      emit("const auto _count" + idx + " = _hi" + idx + " - _lo" + idx + ";");
+    }
+    emit("for (std::size_t _i" + idx + " = 0; _i" + idx + " < _count" + idx + "; ++_i" + idx + ") {");
+    ++indent_;
+    if (has_stride) {
+      emit("while (!(_src" + idx + " >= _lo" + idx + " && _src" + idx + " < _hi" + idx +
+           " && ((_bwd" + idx + " ? (_hi" + idx + " - 1 - _src" + idx +
+           ") : (_src" + idx + " - _lo" + idx + ")) % _block" + idx + ") < _st_take" + idx +
+           ")) { if (_bwd" + idx + ") --_src" + idx + "; else ++_src" + idx + "; }");
+      emit("const auto& _item" + idx + " = " + access + "[_src" + idx + "];");
+    } else {
+      emit("const auto _idx" + idx + " = _bwd" + idx + " ? (_hi" + idx + " - 1 - _i" + idx +
+           ") : (_lo" + idx + " + _i" + idx + ");");
+      emit("const auto& _item" + idx + " = " + access + "[_idx" + idx + "];");
+    }
+    emit("const codegen_loop_context _loop" + idx + "{true, _i" + idx + ", _count" + idx + "};");
+    emit(local_slot + " = {};");
+    emit(body + "(_item" + idx + ", _loop" + idx + ", " + local_slot + root_args + ");");
+    emit("if (" + local_slot + ".break_requested) break;");
+    if (!join_separator.empty()) {
+      emit("if (!" + local_slot + ".continue_requested && _i" + idx + " + 1 < _count" + idx +
+           ") out.append(" + cpp_string(join_separator) + ");");
+    }
+    if (has_stride) {
+      emit("if (_bwd" + idx + ") --_src" + idx + "; else ++_src" + idx + ";");
+    }
+    emit("if (" + local_slot + ".continue_requested) continue;");
+    --indent_;
+    emit("}");
+    if (block.else_seq) {
+      --indent_;
+      emit("}");
+    }
+    --indent_;
+    emit("}");
+  }
+
   /**
    * @brief 個々のバイトコード命令を C++ コードに変換
    * @param inst 変換する命令
@@ -1550,112 +1981,46 @@ class code_generator {
       auto const& ref = bc.var_refs[inst.operand2];
       auto access = resolve_access(ref);
       auto container_access = resolve_value_access(ref);
-      /** {{else}} 付きセクション: コンパイラ (bytecode_compile.hpp) が else 本体の
-       *  先頭アドレスを operand3 にパッチする（else なしは 0）。 */
-      bool has_else = inst.operand3 > 0;
-      /** 二段解決: 値スコープ相対参照（_itemN.key / value.key）で値側にキーが無い場合は
-       *  ルートへフォールバックする（VM の value → root 走査と同一）。判定はループ深度を
-       *  進める前に行う（access の解決と同じ深さ）。 */
       std::string two_stage_key;
       if (is_value_relative(ref)) two_stage_key = ref.key;
       auto const call_loop = loop_context_expr();
+      auto const ownership = control_ownership_.at(&inst);
       ++scope_depth_;
       auto idx = std::to_string(scope_depth_);
-      if (ref.section_op_count > 0) {
-        emit("{");
-        ++indent_;
-        if (has_else) {
-          // VM (bytecode_exec.hpp do_section) はコンテナが空のとき else 節へ分岐する。
-          // for ヘッダを先に書き出すため、空判定はループの前に出力する。
-          emit("if (!value_empty(" + container_access + ")) {");
-        }
-        emit("auto _size" + idx + " = " + container_access + ".size();");
-        emit("std::size_t _lo" + idx + " = 0, _hi" + idx + " = _size" + idx + ";");
-        emit("bool _bwd" + idx + " = false;");
-        bool has_stride = false;
-        std::string join_sep;       /**< join 区切り文字（空なら join なし） */
-        for (std::uint8_t si = 0; si < ref.section_op_count; ++si) {
-          auto const& sop = ref.section_ops[si];
-          auto n_str = std::to_string(sop.arg);
-          switch (sop.kind) {
-            case injamm::detail::section_filter_op_kind::reverse:
-              emit("_bwd" + idx + " = !_bwd" + idx + ";");
-              break;
-            case injamm::detail::section_filter_op_kind::take:
-              // VM の fold_section_ops と同様に _hi > n ガードで unsigned アンダーフローを防ぐ
-              emit("if (_bwd" + idx + ") _lo" + idx + " = (_hi" + idx + " > " + n_str + "u ? std::max(_lo" + idx + ", _hi" + idx + " - " + n_str + "u) : _lo" + idx + ");");
-              emit("else _hi" + idx + " = std::min(_hi" + idx + ", _lo" + idx + " + " + n_str + "u);");
-              break;
-            case injamm::detail::section_filter_op_kind::skip:
-              emit("if (_bwd" + idx + ") _hi" + idx + " = (_hi" + idx + " > " + n_str + "u ? _hi" + idx + " - " + n_str + "u : _lo" + idx + ");");
-              emit("else _lo" + idx + " = std::min(_hi" + idx + ", _lo" + idx + " + " + n_str + "u);");
-              break;
-            case injamm::detail::section_filter_op_kind::take_last:
-              emit("if (_bwd" + idx + ") _hi" + idx + " = std::min(_hi" + idx + ", _lo" + idx + " + " + n_str + "u);");
-              emit("else _lo" + idx + " = (_hi" + idx + " > " + n_str + "u ? std::max(_lo" + idx + ", _hi" + idx + " - " + n_str + "u) : _lo" + idx + ");");
-              break;
-            case injamm::detail::section_filter_op_kind::skip_last:
-              emit("if (_bwd" + idx + ") _lo" + idx + " = std::min(_hi" + idx + ", _lo" + idx + " + " + n_str + "u);");
-              emit("else _hi" + idx + " = (_hi" + idx + " > " + n_str + "u ? _hi" + idx + " - " + n_str + "u : _lo" + idx + ");");
-              break;
-            case injamm::detail::section_filter_op_kind::stride:
-              emit("std::size_t _st_take" + idx + " = " + std::to_string(std::max(sop.arg, 0)) + "u;");
-              emit("std::size_t _st_skip" + idx + " = " + std::to_string(std::max(sop.arg2, 0)) + "u;");
-              has_stride = true;
-              break;
-            case injamm::detail::section_filter_op_kind::join:
-              join_sep.assign(sop.str_arg1.data(), sop.str_arg1.size());
-              break;
-          }
-        }
-        if (has_stride) {
-          stride_loops_.insert(scope_depth_);
-          emit("auto _block" + idx + " = _st_take" + idx + " + _st_skip" + idx + ";");
-          emit("auto _count" + idx + " = _st_take" + idx + " == 0 ? std::size_t(0) : ((_hi" + idx + " - _lo" + idx + ") / _block" + idx + " * _st_take" + idx + " + std::min(_st_take" + idx + ", (_hi" + idx + " - _lo" + idx + ") % _block" + idx + "));");
-          emit("std::size_t _src" + idx + " = _bwd" + idx + " ? (_hi" + idx + " - 1) : _lo" + idx + ";");
-          emit("for (std::size_t _i" + idx + " = 0; _i" + idx + " < _count" + idx + "; ++_i" + idx + ") {");
-          ++indent_;
-          emit("while (!(_src" + idx + " >= _lo" + idx + " && _src" + idx + " < _hi" + idx + " && ((_bwd" + idx + " ? (_hi" + idx + " - 1 - _src" + idx + ") : (_src" + idx + " - _lo" + idx + ")) % _block" + idx + ") < _st_take" + idx + ")) { if (_bwd" + idx + ") --_src" + idx + "; else ++_src" + idx + "; }");
-          emit("const auto& _item" + idx + " = " + container_access + "[_src" + idx + "];");
-        } else {
-          emit("auto _count" + idx + " = _hi" + idx + " - _lo" + idx + ";");
-          emit("for (std::size_t _i" + idx + " = 0; _i" + idx + " < _count" + idx + "; ++_i" + idx + ") {");
-          ++indent_;
-          emit("auto _idx" + idx + " = _bwd" + idx + " ? (_hi" + idx + " - 1 - _i" + idx + ") : (_lo" + idx + " + _i" + idx + ");");
-          emit("const auto& _item" + idx + " = " + container_access + "[_idx" + idx + "];");
-        }
-        emit("const codegen_loop_context _loop" + idx + "{true, _i" + idx + ", _count" + idx + "};");
-        // join: イテレーション間（区切り文字が空でない、かつ最初のイテレーション以外）に出力
-        if (!join_sep.empty()) {
-          auto sep_lit = cpp_string(join_sep);
-          emit("if (_i" + idx + " > 0) {");
-          ++indent_;
-          emit("out.append(" + sep_lit + ");");
-          --indent_;
-          emit("}");
-        }
-        open_blocks_.push_back({.kind = end_kind::loop, .has_else = has_else, .scoped = true});
-      } else {
-        /* コンテナは range-for、スカラー（bool/数値/enum）は VM (bytecode_exec.hpp do_section)
-           と同じ「真なら本体を 1 回だけ実行」。本体はどちらも _itemN 経由で現在スコープを
-           参照するので、本体をラムダに 1 回だけ書いて両分岐から呼ぶ（emit_end 側で分岐を出す）。
-           旧実装は range-for のみで bool/数値がコンパイル不能、逆にスカラー分岐だけにした版は
-           コンテナの for が消えて何も出力しなかった。 */
-        auto seq = ++lambda_seq_;
-        bool rpm = root_param_main_.count(&inst) != 0;
-        std::string params = "(const auto& _item" + idx + ", const codegen_loop_context& _loop" + idx;
-        std::string call_root = root_for_emit();
-        if (rpm) {
-          params += ", const auto& _rt" + std::to_string(seq);
-          cur_root_ = "_rt" + std::to_string(seq);
-        }
-        emit("auto _body" + std::to_string(seq) + " = [&]" + params + ") {");
-        ++indent_;
-        open_block blk{.kind = end_kind::scalar_section, .access = access, .idx = scope_depth_, .seq = seq,
-                       .two_stage_key = two_stage_key, .root_param = rpm, .call_root = call_root,
-                       .call_loop = call_loop, .indexed = index_loops_.count(&inst) != 0, .inst = &inst};
-        open_blocks_.push_back(std::move(blk));
+      auto seq = ++lambda_seq_;
+      bool rpm = root_param_main_.count(&inst) != 0;
+      std::string params = "(const auto& _item" + idx + ", const codegen_loop_context& _loop" + idx +
+                           ", " + cgns_name() + "::control_slot& " + ownership.local_channel;
+      std::string call_root = root_for_emit();
+      if (rpm) {
+        params += ", const auto& _rt" + std::to_string(seq);
+        cur_root_ = "_rt" + std::to_string(seq);
       }
+      emit("auto _body" + std::to_string(seq) + " = [&]" + params + ") {");
+      ++indent_;
+      open_block blk{
+        .syntax = ownership.syntax,
+        .phase = block_phase::main,
+        .runtime = ownership.runtime,
+        .control_id = ownership.id,
+        .local_control = ownership.local_channel,
+        .parent_control = ownership.parent_channel,
+        .root_expression = call_root,
+        .loop_context = ownership.loop_context,
+        .loop_depth = scope_depth_,
+        .access = access,
+        .container_access = container_access,
+        .idx = scope_depth_,
+        .seq = seq,
+        .two_stage_key = two_stage_key,
+        .root_param = rpm,
+        .call_root = call_root,
+        .call_loop = call_loop,
+        .indexed = index_loops_.count(&inst) != 0,
+        .inst = &inst,
+        .filtered = ref.section_op_count > 0,
+      };
+      open_blocks_.push_back(std::move(blk));
     }
     else if (op == bc::opcode::emit_at_section) {
       auto kind = inst.operand2;
@@ -1670,7 +2035,17 @@ class code_generator {
         emit("if (false) {");
       }
       ++indent_;
-      open_blocks_.push_back({end_kind::cond});
+      auto const& ownership = control_ownership_.at(&inst);
+      open_blocks_.push_back({
+        .syntax = block_syntax_kind::at_condition,
+        .runtime = runtime_category::if_branch,
+        .control_id = ownership.id,
+        .local_control = ownership.local_channel,
+        .parent_control = ownership.parent_channel,
+        .root_expression = ownership.root_expression,
+        .loop_context = ownership.loop_context,
+        .loop_depth = ownership.loop_depth,
+      });
     }
     else if (op == bc::opcode::emit_at_inverted) {
       auto kind = inst.operand2;
@@ -1685,131 +2060,62 @@ class code_generator {
         emit("if (false) {");
       }
       ++indent_;
-      open_blocks_.push_back({end_kind::cond});
+      auto const& ownership = control_ownership_.at(&inst);
+      open_blocks_.push_back({
+        .syntax = block_syntax_kind::at_condition,
+        .runtime = runtime_category::if_branch,
+        .control_id = ownership.id,
+        .local_control = ownership.local_channel,
+        .parent_control = ownership.parent_channel,
+        .root_expression = ownership.root_expression,
+        .loop_context = ownership.loop_context,
+        .loop_depth = ownership.loop_depth,
+      });
     }
     else if (op == bc::opcode::emit_end) {
       if (open_blocks_.empty()) return;
       auto block = std::move(open_blocks_.back());
       open_blocks_.pop_back();
-      switch (block.kind) {
-      case end_kind::loop:
-        if (block.has_else) {
-          /* else 本体の終端: ガード if を閉じる（scope_depth_ は emit_else で減済） */
-          --indent_;
-          emit("}");
-        } else {
-          if (stride_loops_.count(scope_depth_) != 0) {
-            auto sidx = std::to_string(scope_depth_);
-            emit("if (_bwd" + sidx + ") --_src" + sidx + "; else ++_src" + sidx + ";");
-            stride_loops_.erase(scope_depth_);
-          }
-          --indent_;
-          emit("}");
-          --scope_depth_;
-        }
-        if (block.scoped) {
-          --indent_;
-          emit("}");
-        }
-        break;
-      case end_kind::scalar_section: {
-        /* 本体（または else）ラムダを閉じ、optional / スカラー / コンテナに振り分ける
-           （VM bytecode_exec.hpp do_section と同一の判定）。二段解決キーがある場合は
-           requires ガードで要素/ルートのアクセスに振り分ける。else 側のルート式は
-           クロージャ構築時に検証される（Clang / MSVC）ため、ラムダ内ではルート引数
-           （_rtN：依存式）経由にする（mark_enclosing_lambda で事前マーキング）。 */
-        cur_root_ = block.call_root;  // ディスパッチはラムダの外側スコープに出力される
-        --indent_;
-        emit("};");
-        auto scope = (block.idx > 1) ? "_item" + std::to_string(block.idx - 1)
-                                     : (in_partial_ ? "value" : "data");
-        auto body = "_body" + std::to_string(block.seq);
-        auto velem = "_v" + std::to_string(block.seq);
-        auto root_args = block.root_param ? (", " + block.call_root) : std::string{};
-        auto body_call_scope = body + "(" + scope + ", " + block.call_loop + root_args + ")"; // スカラー
-        auto body_call_elem = body + "(" + velem + ", " + block.call_loop + root_args + ")";  // range-for
-        auto els = block.else_seq ? "_else" + std::to_string(block.else_seq) : std::string{};
-        auto els_stmt = block.else_seq
-                            ? ((block.else_root_param ? (els + "(" + block.call_root + ")") : (els + "()")) + ";")
-                            : std::string{};
-        auto then_else = block.else_seq ? (" else " + els_stmt) : std::string{};
-        auto dispatch_of = [&](std::string const& acc) {
-          emit("if constexpr (codegen_optional_section_v<decltype(" + acc + ")>) {");
-          ++indent_;
-          emit("if (" + acc + ".has_value()) " + body + "(*" + acc + ", " + block.call_loop + root_args + ");" + then_else);
-          --indent_;
-          emit("} else if constexpr (codegen_scalar_section_v<decltype(" + acc + ")>) {");
-          ++indent_;
-          emit("if (static_cast<bool>(" + acc + ")) " + body_call_scope + ";" + then_else);
-          --indent_;
-          emit("} else {");
-          ++indent_;
-          auto emit_container_loop = [&]() {
-            if (block.indexed) {
-              auto idx = std::to_string(block.idx);
-              emit("auto _size" + idx + " = " + acc + ".size();");
-              emit("for (std::size_t _i" + idx + " = 0; _i" + idx + " < _size" + idx + "; ++_i" + idx + ") {");
-              ++indent_;
-              emit(body + "(" + acc + "[_i" + idx + "], codegen_loop_context{true, _i" + idx + ", _size" + idx + "}" +
-                   root_args + ");");
-              --indent_;
-              emit("}");
-            } else {
-              emit("for (const auto& " + velem + " : " + acc + ") " + body_call_elem + ";");
-            }
-          };
-          if (block.else_seq) {
-            // VM はコンテナが空のとき else 節を描画する
-            emit("if (value_empty(" + acc + ")) " + els_stmt + " else {");
-            ++indent_;
-            emit_container_loop();
-            --indent_;
-            emit("}");
-          } else {
-            emit_container_loop();
-          }
-          --indent_;
-          emit("}");
-        };
-        if (block.two_stage_key.empty()) {
-          dispatch_of(block.access);
-        } else {
-          emit("if constexpr (requires { " + block.access + "; }) {");
-          ++indent_;
-          dispatch_of(block.access);
-          --indent_;
-          emit("} else {");
-          ++indent_;
-          /** else 側のルート式は「セクション突入時のルート式」— ディスパッチが
-           *  出力されるスコープ（ラムダ内ならそのラムダのルート引数 _rtN）と同じ。 */
-          dispatch_of(block.call_root + "." + block.two_stage_key);
-          --indent_;
-          emit("}");
-        }
-        if (!block.else_seq) --scope_depth_;
-        break;
-      }
-      case end_kind::cond:
+      if (block.syntax == block_syntax_kind::condition ||
+          block.syntax == block_syntax_kind::at_condition) {
         --indent_;
         emit("}");
-        break;
-      case end_kind::inverted: {
-        /* 逆セクション: 本体（または else）ラムダを閉じ、value_empty で分岐する
-           （VM bytecode_exec.hpp do_inverted と同一の判定）。 */
+        return;
+      }
+      if (block.syntax == block_syntax_kind::section) {
         cur_root_ = block.call_root;  // ディスパッチはラムダの外側スコープに出力される
         --indent_;
         emit("};");
-        auto body = "_body" + std::to_string(block.seq);
-        auto body_call = block.root_param ? (body + "(" + block.call_root + ")") : (body + "()");
-        auto els = block.else_seq ? "_else" + std::to_string(block.else_seq) : std::string{};
-        auto els_call = block.else_seq
-                            ? ((block.root_param ? (els + "(" + block.call_root + ")") : (els + "()")) + ";")
-                            : std::string{};
-        auto s = "if (value_empty(" + block.access + ")) " + body_call + ";";
-        if (block.else_seq) s += " else " + els_call;
-        emit(s);
-        break;
+        if (block.filtered) {
+          emit_filtered_section(block, bc);
+        } else {
+          emit_section_dispatch(block, bc);
+        }
+        if (block.phase == block_phase::main) --scope_depth_;
+        return;
       }
+      if (block.syntax == block_syntax_kind::inverted) {
+        cur_root_ = block.call_root;
+        --indent_;
+        emit("};");
+        auto body = "_body" + std::to_string(block.seq);
+        auto body_call = body + "(" + block.parent_control;
+        if (block.root_param) body_call += ", " + block.call_root;
+        body_call += ")";
+        auto els = block.else_seq ? "_else" + std::to_string(block.else_seq) : std::string{};
+        auto els_call = block.else_seq ? (els + "(" + block.parent_control +
+                         (block.else_root_param ? (", " + block.call_root) : "") + ")") : std::string{};
+        auto s = "if (value_empty(" + block.access + ")) " + body_call + ";";
+        if (!block.else_seq) {
+          emit(s);
+        } else {
+          emit(s);
+          emit("else {");
+          ++indent_;
+          emit(els_call + ";");
+          --indent_;
+          emit("}");
+        }
       }
     }
     else if (op == bc::opcode::emit_inverted) {
@@ -1822,16 +2128,30 @@ class code_generator {
       auto seq = ++lambda_seq_;
       bool rpm = root_param_inv_.count(&inst) != 0;
       std::string call_root = root_for_emit();
+      auto const& ownership = control_ownership_.at(&inst);
+      std::string params = "(" + cgns_name() + "::control_slot& " + ownership.local_channel;
       if (rpm) {
-        emit("auto _body" + std::to_string(seq) + " = [&](const auto& _rt" + std::to_string(seq) + ") {");
-        ++indent_;
+        params += ", const auto& _rt" + std::to_string(seq);
         cur_root_ = "_rt" + std::to_string(seq);
-      } else {
-        emit("auto _body" + std::to_string(seq) + " = [&]() {");
-        ++indent_;
       }
-      open_block blk{.kind = end_kind::inverted, .access = access, .idx = scope_depth_, .seq = seq,
-                     .root_param = rpm, .call_root = call_root, .inst = &inst};
+      emit("auto _body" + std::to_string(seq) + " = [&]" + params + ") {");
+      ++indent_;
+      open_block blk{
+        .syntax = block_syntax_kind::inverted,
+        .runtime = runtime_category::inverted,
+        .control_id = ownership.id,
+        .local_control = ownership.local_channel,
+        .parent_control = ownership.parent_channel,
+        .root_expression = call_root,
+        .loop_context = ownership.loop_context,
+        .loop_depth = ownership.loop_depth,
+        .access = access,
+        .idx = scope_depth_,
+        .seq = seq,
+        .root_param = rpm,
+        .call_root = call_root,
+        .inst = &inst,
+      };
       open_blocks_.push_back(std::move(blk));
     }
     else if (op == bc::opcode::emit_at_index) {
@@ -1858,7 +2178,17 @@ class code_generator {
       auto access = resolve_if_access(bc.var_refs[inst.operand2]);
       emit("if (static_cast<bool>(" + access + ")) {");
       ++indent_;
-      open_blocks_.push_back({.kind = end_kind::cond});
+      auto const& ownership = control_ownership_.at(&inst);
+      open_blocks_.push_back({
+        .syntax = block_syntax_kind::condition,
+        .runtime = runtime_category::if_branch,
+        .control_id = ownership.id,
+        .local_control = ownership.local_channel,
+        .parent_control = ownership.parent_channel,
+        .root_expression = ownership.root_expression,
+        .loop_context = ownership.loop_context,
+        .loop_depth = ownership.loop_depth,
+      });
     }
     else if (op == bc::opcode::emit_if_eq || op == bc::opcode::emit_if_ne ||
              op == bc::opcode::emit_if_gt || op == bc::opcode::emit_if_gte ||
@@ -1870,66 +2200,63 @@ class code_generator {
       emit("if (" + guard + "codegen_compare(" + compare_opcode_expression(op) + ", " +
            compare_rhs_kind_expression(ref) + ", " + lhs + ", " + rhs + ")) {");
       ++indent_;
-      open_blocks_.push_back({.kind = end_kind::cond});
+      auto const& ownership = control_ownership_.at(&inst);
+      open_blocks_.push_back({
+        .syntax = block_syntax_kind::condition,
+        .runtime = runtime_category::if_branch,
+        .control_id = ownership.id,
+        .local_control = ownership.local_channel,
+        .parent_control = ownership.parent_channel,
+        .root_expression = ownership.root_expression,
+        .loop_context = ownership.loop_context,
+        .loop_depth = ownership.loop_depth,
+      });
     }
     else if (op == bc::opcode::emit_else) {
-      if (!open_blocks_.empty() && open_blocks_.back().kind == end_kind::scalar_section) {
-        /* セクションの {{else}} トランポリン: 本体ラムダを閉じて else 本体ラムダへ。
-           else 本体は親コンテキストでコンパイルされている（bytecode_compile.hpp）ため
-           scope_depth_ を親に戻す。 */
+      if (!open_blocks_.empty() && open_blocks_.back().syntax == block_syntax_kind::section) {
         auto& blk = open_blocks_.back();
-        if (blk.root_param) cur_root_ = blk.call_root;  // 本体ラムダのルート式を復元
+        if (blk.root_param) cur_root_ = blk.call_root;
         --indent_;
         emit("};");
         --scope_depth_;
         blk.else_seq = ++lambda_seq_;
+        blk.phase = block_phase::else_body;
         blk.else_root_param = blk.inst && root_param_else_.count(blk.inst) != 0;
+        blk.local_control = "_control_else" + std::to_string(blk.control_id);
+        std::string params = "(" + cgns_name() + "::control_slot& " + blk.local_control;
         if (blk.else_root_param) {
           cur_root_ = "_rt" + std::to_string(blk.else_seq);
-          emit("auto _else" + std::to_string(blk.else_seq) + " = [&](const auto& _rt" + std::to_string(blk.else_seq) + ") {");
-        } else {
-          emit("auto _else" + std::to_string(blk.else_seq) + " = [&]() {");
+          params += ", const auto& _rt" + std::to_string(blk.else_seq);
         }
+        emit("auto _else" + std::to_string(blk.else_seq) + " = [&]" + params + ") {");
         ++indent_;
-      } else if (!open_blocks_.empty() && open_blocks_.back().kind == end_kind::inverted) {
-        /* 逆セクションの {{else}}: 本体ラムダを閉じて else 本体ラムダへ
-           （逆セクション本体と同一スコープ） */
+      } else if (!open_blocks_.empty() && open_blocks_.back().syntax == block_syntax_kind::inverted) {
         auto& blk = open_blocks_.back();
-        if (blk.root_param) cur_root_ = blk.call_root;  // 本体ラムダのルート式を復元
+        if (blk.root_param) cur_root_ = blk.call_root;
         --indent_;
         emit("};");
         blk.else_seq = ++lambda_seq_;
-        if (blk.root_param) {  // 逆セクションは本体/else で共通のマーキングを使う
+        blk.phase = block_phase::else_body;
+        blk.else_root_param = blk.root_param;
+        blk.local_control = "_control_else" + std::to_string(blk.control_id);
+        std::string params = "(" + cgns_name() + "::control_slot& " + blk.local_control;
+        if (blk.root_param) {
           cur_root_ = "_rt" + std::to_string(blk.else_seq);
-          emit("auto _else" + std::to_string(blk.else_seq) + " = [&](const auto& _rt" + std::to_string(blk.else_seq) + ") {");
-        } else {
-          emit("auto _else" + std::to_string(blk.else_seq) + " = [&]() {");
+          params += ", const auto& _rt" + std::to_string(blk.else_seq);
         }
-        ++indent_;
-      } else if (!open_blocks_.empty() && open_blocks_.back().kind == end_kind::loop &&
-                 open_blocks_.back().has_else) {
-        /* ループ種別セクションの {{else}}: for を閉じ、事前ガードを else へ切り替える
-           （else 本体は親コンテキストなので scope_depth_ を戻す） */
-        if (stride_loops_.count(scope_depth_) != 0) {
-          auto sidx = std::to_string(scope_depth_);
-          emit("if (_bwd" + sidx + ") --_src" + sidx + "; else ++_src" + sidx + ";");
-          stride_loops_.erase(scope_depth_);
-        }
-        --indent_;
-        emit("}");
-        --scope_depth_;
-        --indent_;
-        emit("} else {");
+        emit("auto _else" + std::to_string(blk.else_seq) + " = [&]" + params + ") {");
         ++indent_;
       } else {
-        /* {{#if}} 系の else（従来どおり if 文の else 節） */
         --indent_;
         emit("} else {");
         ++indent_;
+        if (!open_blocks_.empty()) open_blocks_.back().phase = block_phase::else_body;
       }
     }
     else if (op == bc::opcode::emit_endif) {
-      if (!open_blocks_.empty() && open_blocks_.back().kind == end_kind::cond) {
+      if (!open_blocks_.empty() &&
+          (open_blocks_.back().syntax == block_syntax_kind::condition ||
+           open_blocks_.back().syntax == block_syntax_kind::at_condition)) {
         open_blocks_.pop_back();
       }
       --indent_;
@@ -2112,20 +2439,32 @@ class code_generator {
       // VM (bytecode_exec.hpp handle_emit_if_filtered) と同じ真偽判定
       emit("if (!_filtered.empty() && _filtered != \"false\" && _filtered != \"0\") {");
       ++indent_;
-      open_blocks_.push_back({.kind = end_kind::cond});
+      auto const& ownership = control_ownership_.at(&inst);
+      open_blocks_.push_back({.syntax = block_syntax_kind::condition, .runtime = runtime_category::if_branch,
+        .control_id = ownership.id, .local_control = ownership.local_channel,
+        .parent_control = ownership.parent_channel, .root_expression = ownership.root_expression,
+        .loop_context = ownership.loop_context, .loop_depth = ownership.loop_depth});
     }
     else if (op == bc::opcode::emit_if_or || op == bc::opcode::emit_if_and) {
       auto lhs = resolve_if_access(bc.var_refs[inst.operand2]);
       auto rhs = resolve_if_access(bc.var_refs[inst.operand3]);
       emit("if ((static_cast<bool>(" + lhs + ")) " + (op == bc::opcode::emit_if_or ? "||" : "&&") + " (static_cast<bool>(" + rhs + "))) {");
       ++indent_;
-      open_blocks_.push_back({.kind = end_kind::cond});
+      auto const& ownership = control_ownership_.at(&inst);
+      open_blocks_.push_back({.syntax = block_syntax_kind::condition, .runtime = runtime_category::if_branch,
+        .control_id = ownership.id, .local_control = ownership.local_channel,
+        .parent_control = ownership.parent_channel, .root_expression = ownership.root_expression,
+        .loop_context = ownership.loop_context, .loop_depth = ownership.loop_depth});
     }
     else if (op == bc::opcode::emit_if_not) {
       auto access = resolve_if_access(bc.var_refs[inst.operand2]);
       emit("if (!static_cast<bool>(" + access + ")) {");
       ++indent_;
-      open_blocks_.push_back({.kind = end_kind::cond});
+      auto const& ownership = control_ownership_.at(&inst);
+      open_blocks_.push_back({.syntax = block_syntax_kind::condition, .runtime = runtime_category::if_branch,
+        .control_id = ownership.id, .local_control = ownership.local_channel,
+        .parent_control = ownership.parent_channel, .root_expression = ownership.root_expression,
+        .loop_context = ownership.loop_context, .loop_depth = ownership.loop_depth});
     }
     else if (op == bc::opcode::call_partial) {
       /* partial 呼び出し: emit_partial_dispatch で生成された render_partial_impl に
@@ -2135,18 +2474,25 @@ class code_generator {
          VM と結果が不一致だった）。local partial も同じ経路で描画される。 */
       auto& pe = bc.partial_entries[inst.operand];
       if (pe.bc && !pe.bc->instructions.empty()) {
-        emit("(void)" + partial_impl_name() + "<\"" + pe.name + "\">(" + value_expr() + ", " + root_expr() +
-             ", " + loop_context_expr() + ", out);");
+        auto const result = "_partial_result" + std::to_string(++lambda_seq_);
+        emit("auto " + result + " = " + partial_impl_name() + "<\"" + pe.name + "\">(" +
+             value_expr() + ", " + root_expr() + ", " + loop_context_expr() + ", " +
+             active_control_channel() + ", out);");
+        emit("if (!" + result + ") " +
+             (in_control_lambda() ? "return;" :
+                                  ("return std::unexpected(" + result + ".error());")));
       }
     }
     else if (op == bc::opcode::emit_var_size) {
       emit_value_ref("append_number(out, value_size(", "));", bc.var_refs[inst.operand2]);
     }
     else if (op == bc::opcode::emit_break) {
-      emit("break;");
+      emit(active_control_channel() + ".break_requested = true;");
+      emit(in_control_lambda() ? "return;" : "return {};");
     }
     else if (op == bc::opcode::emit_continue) {
-      emit("continue;");
+      emit(active_control_channel() + ".continue_requested = true;");
+      emit(in_control_lambda() ? "return;" : "return {};");
     }
     else if (op == bc::opcode::halt) {
       // 何もしない
@@ -2237,6 +2583,7 @@ public:
     emit_render_into_start(reserve_size, uses_filtered(bc));
 
     /* range-for 化の判定をループ命令の生成前に済ませる */
+    precompute_control_ownership(bc);
     precompute_index_loops(bc);
 
     // 隣接リテラルを結合して出力

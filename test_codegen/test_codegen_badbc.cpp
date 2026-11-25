@@ -210,6 +210,7 @@ int run_forbidden_case(std::string const& cli, std::string const& expr,
     std::remove(out_path.c_str());
     return 1;
   }
+
   std::ifstream f(out_path);
   std::string   content((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
   std::remove(out_path.c_str());
@@ -218,6 +219,33 @@ int run_forbidden_case(std::string const& cli, std::string const& expr,
     return 1;
   }
   return 0;
+}
+
+int run_control_rejection_checks(std::string const& cli) {
+  int failures = 0;
+  for (auto const& expr : {
+         std::string_view{"{{#items}}{{#break}}{{/items}}"},
+         std::string_view{"{{#items}}{{#continue}}{{/items}}"}}) {
+    auto const out_path = std::string{"codegen_control_fixture.hpp"};
+    auto const cmd = "\"" + cli + "\" -e \"" + std::string(expr) + "\" -t Ok -o " + out_path;
+    if (std::system(cmd.c_str()) != 0) {
+      std::cerr << "FAIL: codegen failed for control statement check\n";
+      ++failures;
+      continue;
+    }
+    std::ifstream file(out_path);
+    std::string line;
+    while (std::getline(file, line)) {
+      auto const first = line.find_first_not_of(" \t");
+      auto const trimmed = first == std::string::npos ? std::string_view{} : std::string_view{line}.substr(first);
+      if (trimmed == "break;" || trimmed == "continue;") {
+        std::cerr << "FAIL: bare control statement generated inside lambda/control body\n";
+        ++failures;
+      }
+    }
+    std::remove(out_path.c_str());
+  }
+  return failures;
 }
 
 /** @brief README 記載の長い CLI オプションが短縮形と同様に受理されることを確認する */
@@ -257,6 +285,18 @@ int main(int argc, char** argv) {
     put_u64(data, 0xFFFFFFFFFFFFFFFFull);  // instruction count
     failures += run_case(cli, "huge instruction count", data);
   }
+  {
+    std::string data = make_header(0);
+    put_u64(data, 1);
+    data.push_back(4); // emit_end without an opening block
+    put_u32(data, 0);
+    put_u32(data, 0);
+    put_u32(data, 0);
+    put_u64(data, 0);
+    put_u64(data, 0);
+    put_u64(data, 0);
+    failures += run_case(cli, "unmatched control block", data);
+  }
 
   // 2. literal_total_size が実データと不一致（過大 reserve の誘発）
   {
@@ -290,6 +330,7 @@ int main(int argc, char** argv) {
 
   // 8. README 記載の長いオプション名
   failures += run_long_options_case(cli);
+  failures += run_control_rejection_checks(cli);
 
   // 9. 比較 RHS・this の旧 0/メンバ化が生成されないこと
   failures += run_forbidden_case(cli, "{{#if qty == limit}}Y{{else}}N{{/if}}",
