@@ -1782,10 +1782,18 @@ class code_generator {
           emit("if constexpr (codegen_optional_section_v<decltype(" + acc + ")>) {");
           ++indent_;
           emit("if (" + acc + ".has_value()) " + body + "(*" + acc + ", " + block.call_loop + root_args + ");" + then_else);
+          if (control_top_level) {
+            emit("_cg_break_" + std::to_string(control_owner) + " = false;");
+            emit("_cg_continue_" + std::to_string(control_owner) + " = false;");
+          }
           --indent_;
           emit("} else if constexpr (codegen_scalar_section_v<decltype(" + acc + ")>) {");
           ++indent_;
           emit("if (static_cast<bool>(" + acc + ")) " + body_call_scope + ";" + then_else);
+          if (control_top_level) {
+            emit("_cg_break_" + std::to_string(control_owner) + " = false;");
+            emit("_cg_continue_" + std::to_string(control_owner) + " = false;");
+          }
           --indent_;
           emit("} else {");
           ++indent_;
@@ -1855,8 +1863,6 @@ class code_generator {
           } else {
             if (block.else_seq != 0) {
               emit("if (_cg_break_" + std::to_string(owner) + " || _cg_continue_" + std::to_string(owner) + ") return;");
-            } else {
-              emit("if (_cg_continue_" + std::to_string(owner) + ") _cg_continue_" + std::to_string(owner) + " = false;");
             }
           }
         }
@@ -1888,7 +1894,9 @@ class code_generator {
             emit("if (_cg_break_" + std::to_string(owner) + ") break;");
             emit("if (_cg_continue_" + std::to_string(owner) + ") continue;");
           } else {
-            emit("if (_cg_continue_" + std::to_string(owner) + ") _cg_continue_" + std::to_string(owner) + " = false;");
+            if (block.else_seq != 0) {
+              emit("if (_cg_break_" + std::to_string(owner) + " || _cg_continue_" + std::to_string(owner) + ") return;");
+            }
           }
         }
         break;
@@ -1903,7 +1911,6 @@ class code_generator {
       auto access = resolve_access(ref);
       if (is_value_relative(ref)) access = two_stage_access(ref.key);
       int control_owner = control_owner_depth();
-      if (control_owner == 0) control_owner = scope_depth_ + 1;
       auto seq = ++lambda_seq_;
       bool rpm = root_param_inv_.count(&inst) != 0;
       std::string call_root = root_for_emit();

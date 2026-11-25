@@ -87,6 +87,18 @@
 #include "case_ctrl_continue_else.hpp"
 #include "case_ctrl_break_inverted_else.hpp"
 #include "case_ctrl_break_is_last_else.hpp"
+#include "case_ctrl_top_number_break.hpp"
+#include "case_ctrl_top_number_continue.hpp"
+#include "case_ctrl_top_enum_break.hpp"
+#include "case_ctrl_top_enum_continue.hpp"
+#include "case_ctrl_nested_number_break.hpp"
+#include "case_ctrl_nested_number_continue.hpp"
+#include "case_ctrl_nested_enum_break.hpp"
+#include "case_ctrl_nested_enum_continue.hpp"
+#include "case_ctrl_nested_optional_break.hpp"
+#include "case_ctrl_nested_optional_continue.hpp"
+#include "case_ctrl_nested_inverted_break.hpp"
+#include "case_ctrl_nested_inverted_continue.hpp"
 #include "case_partial_compare_loop.hpp"
 
 /** test_codegen_live_partials.cpp（別 TU）で検証する partial ケースの数 */
@@ -140,6 +152,12 @@ int main() {
   d_root_false.age = 0;
   CaseData d_control_falsy = d;
   d_control_falsy.items = {{"a", false}, {"b", false}};
+  CaseData d_nested_number_falsy = d_control_falsy;
+  d_nested_number_falsy.age = 0;
+  CaseData d_nested_enum_falsy = d_control_falsy;
+  d_nested_enum_falsy.level = none;
+  CaseData d_nested_optional_falsy = d_control_falsy;
+  d_nested_optional_falsy.opt.reset();
 
   std::cout << "=== injamm_codegen ライブテスト（生成→コンパイル→実行→VM 比較） ===\n\n";
 
@@ -313,6 +331,42 @@ int main() {
   live_check("control break is_last else",
              "{{#tags}}{{this}}{{#if loop.is_last}}.{{else}}{{#break}}{{/if}}{{/tags}}", d, d_control_falsy,
     [](auto const& data) { return generated::case_ctrl_break_is_last_else(data); });
+  live_check("control top number break",
+             "{{#age}}{{#break}}{{/age}}X{{#items}}Y{{/items}}", d, d2,
+    [](auto const& data) { return generated::case_ctrl_top_number_break(data); });
+  live_check("control top number continue",
+             "{{#age}}{{#continue}}{{/age}}X{{#items}}Y{{/items}}", d, d2,
+    [](auto const& data) { return generated::case_ctrl_top_number_continue(data); });
+  live_check("control top enum break",
+             "{{#level}}{{#break}}{{/level}}X{{#items}}Y{{/items}}", d, d2,
+    [](auto const& data) { return generated::case_ctrl_top_enum_break(data); });
+  live_check("control top enum continue",
+             "{{#level}}{{#continue}}{{/level}}X{{#items}}Y{{/items}}", d, d2,
+    [](auto const& data) { return generated::case_ctrl_top_enum_continue(data); });
+  live_check("control nested number break",
+             "{{#items}}{{#age}}{{#break}}{{/age}}A{{/items}}B", d, d_nested_number_falsy,
+    [](auto const& data) { return generated::case_ctrl_nested_number_break(data); });
+  live_check("control nested number continue",
+             "{{#items}}{{#age}}{{#continue}}{{/age}}A{{/items}}B", d, d_nested_number_falsy,
+    [](auto const& data) { return generated::case_ctrl_nested_number_continue(data); });
+  live_check("control nested enum break",
+             "{{#items}}{{#level}}{{#break}}{{/level}}A{{/items}}B", d, d_nested_enum_falsy,
+    [](auto const& data) { return generated::case_ctrl_nested_enum_break(data); });
+  live_check("control nested enum continue",
+             "{{#items}}{{#level}}{{#continue}}{{/level}}A{{/items}}B", d, d_nested_enum_falsy,
+    [](auto const& data) { return generated::case_ctrl_nested_enum_continue(data); });
+  live_check("control nested optional break leak",
+             "{{#items}}{{#opt}}{{#break}}{{/opt}}A{{/items}}B", d, d_nested_optional_falsy,
+    [](auto const& data) { return generated::case_ctrl_nested_optional_break(data); });
+  live_check("control nested optional continue leak",
+             "{{#items}}{{#opt}}{{#continue}}{{/opt}}A{{/items}}B", d, d_nested_optional_falsy,
+    [](auto const& data) { return generated::case_ctrl_nested_optional_continue(data); });
+  live_check("control nested inverted break leak",
+             "{{#items}}{{^age}}{{#break}}{{/age}}A{{/items}}B", d_nested_number_falsy, d_control_falsy,
+    [](auto const& data) { return generated::case_ctrl_nested_inverted_break(data); });
+  live_check("control nested inverted continue leak",
+             "{{#items}}{{^age}}{{#continue}}{{/age}}A{{/items}}B", d_nested_number_falsy, d_control_falsy,
+    [](auto const& data) { return generated::case_ctrl_nested_inverted_continue(data); });
 
   // --- partial スコープ: ループ内のグローバル partial は value→root の二段解決 ---
   live_test_count += run_partial_loop_checks(d, d2);
