@@ -428,6 +428,10 @@ if(BUILD_UTIL)
     add_codegen_case(ctrl_nested_optional_continue "{{#items}}{{#opt}}{{#continue}}{{/opt}}A{{/items}}B")
     add_codegen_case(ctrl_nested_inverted_break "{{#items}}{{^age}}{{#break}}{{/age}}A{{/items}}B")
     add_codegen_case(ctrl_nested_inverted_continue "{{#items}}{{^age}}{{#continue}}{{/age}}A{{/items}}B")
+    add_codegen_case(ctrl_nested_container_break "{{#items}}{{#tags}}{{this}}{{#break}}{{/tags}}A{{/items}}B")
+    add_codegen_case(ctrl_nested_container_continue "{{#items}}{{#tags}}{{#continue}}{{/tags}}A{{/items}}B")
+    add_codegen_case(ctrl_top_isolate_break "{{#age}}{{#break}}{{/age}}X{{#tags}}{{this}}{{/tags}}")
+    add_codegen_case(ctrl_top_isolate_continue "{{#age}}{{#continue}}{{/age}}X{{#tags}}{{this}}{{/tags}}")
     # partial の通常ケースはスコープごとに個別名前空間へ生成し、
     # test_codegen_live_partials.cpp で VM と比較する。
     function(add_codegen_case_partial name tmpl)

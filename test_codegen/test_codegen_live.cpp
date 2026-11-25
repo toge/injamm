@@ -99,6 +99,10 @@
 #include "case_ctrl_nested_optional_continue.hpp"
 #include "case_ctrl_nested_inverted_break.hpp"
 #include "case_ctrl_nested_inverted_continue.hpp"
+#include "case_ctrl_nested_container_break.hpp"
+#include "case_ctrl_nested_container_continue.hpp"
+#include "case_ctrl_top_isolate_break.hpp"
+#include "case_ctrl_top_isolate_continue.hpp"
 #include "case_partial_compare_loop.hpp"
 
 /** test_codegen_live_partials.cpp（別 TU）で検証する partial ケースの数 */
@@ -367,6 +371,18 @@ int main() {
   live_check("control nested inverted continue leak",
              "{{#items}}{{^age}}{{#continue}}{{/age}}A{{/items}}B", d_nested_number_falsy, d_control_falsy,
     [](auto const& data) { return generated::case_ctrl_nested_inverted_continue(data); });
+  live_check("control nested container break",
+             "{{#items}}{{#tags}}{{this}}{{#break}}{{/tags}}A{{/items}}B", d, d_control_falsy,
+    [](auto const& data) { return generated::case_ctrl_nested_container_break(data); });
+  live_check("control nested container continue",
+             "{{#items}}{{#tags}}{{#continue}}{{/tags}}A{{/items}}B", d, d_control_falsy,
+    [](auto const& data) { return generated::case_ctrl_nested_container_continue(data); });
+  live_check("control top isolation break",
+             "{{#age}}{{#break}}{{/age}}X{{#tags}}{{this}}{{/tags}}", d, d2,
+    [](auto const& data) { return generated::case_ctrl_top_isolate_break(data); });
+  live_check("control top isolation continue",
+             "{{#age}}{{#continue}}{{/age}}X{{#tags}}{{this}}{{/tags}}", d, d2,
+    [](auto const& data) { return generated::case_ctrl_top_isolate_continue(data); });
 
   // --- partial スコープ: ループ内のグローバル partial は value→root の二段解決 ---
   live_test_count += run_partial_loop_checks(d, d2);
