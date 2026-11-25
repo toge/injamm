@@ -767,6 +767,13 @@ inline constexpr bool codegen_scalar_section_v =
 template <class V>
 inline constexpr bool codegen_optional_section_v = injamm::detail::is_std_optional_v<V>;
 
+/** @brief std::string/string_view/C-string セクションを文字範囲ではなく値として 1 回実行する。 */
+template <class V>
+inline constexpr bool codegen_string_section_v =
+    std::same_as<std::remove_cvref_t<V>, std::string> ||
+    std::same_as<std::remove_cvref_t<V>, std::string_view> ||
+    injamm::detail::char_pointer_v<std::remove_cvref_t<V>>;
+
 template <typename V>
 constexpr bool value_empty(V const& v) {
   if constexpr (std::is_same_v<V, const char*>) {

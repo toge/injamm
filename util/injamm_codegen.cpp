@@ -1782,7 +1782,25 @@ class code_generator {
       }
     };
     auto dispatch_of = [&](std::string const& access) {
-      emit("if constexpr (codegen_optional_section_v<decltype(" + access + ")>) {");
+      emit("if constexpr (codegen_string_section_v<decltype(" + access + ")>) {");
+      ++indent_;
+      emit("if (!value_empty(" + access + ")) {");
+      ++indent_;
+      emit(control_type + " " + local_slot + " = {};");
+      auto const string_item = block.idx > 1 ? "_item" + std::to_string(block.idx - 1) : access;
+      emit(body + "(" + string_item + ", codegen_loop_context{true, 0, 0}, " + local_slot +
+           root_args + ");");
+      --indent_;
+      emit(std::string{"}"} + (block.else_seq ? " else {" : ""));
+      if (block.else_seq) {
+        ++indent_;
+        emit(else_call() + ";");
+        emit_control_stop(block.parent_control);
+        --indent_;
+        emit("}");
+      }
+      --indent_;
+      emit("} else if constexpr (codegen_optional_section_v<decltype(" + access + ")>) {");
       ++indent_;
       emit("if (" + access + ".has_value()) {");
       ++indent_;
@@ -1817,7 +1835,9 @@ class code_generator {
       --indent_;
       emit("} else {");
       ++indent_;
-      if (block.else_seq) {
+      if (block.filtered) {
+        emit_filtered_section(block, bc);
+      } else if (block.else_seq) {
         emit("if (value_empty(" + access + ")) {");
         ++indent_;
         emit(else_call() + ";");
@@ -2088,11 +2108,7 @@ class code_generator {
         cur_root_ = block.call_root;  // ディスパッチはラムダの外側スコープに出力される
         --indent_;
         emit("};");
-        if (block.filtered) {
-          emit_filtered_section(block, bc);
-        } else {
-          emit_section_dispatch(block, bc);
-        }
+        emit_section_dispatch(block, bc);
         if (block.phase == block_phase::main) --scope_depth_;
         return;
       }

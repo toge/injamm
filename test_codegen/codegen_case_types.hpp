@@ -8,6 +8,7 @@
  */
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 struct CaseProfile {
@@ -26,6 +27,8 @@ struct CaseItem {
 
 struct CaseData {
   std::string                name  = "R";
+  std::string_view           short_text = "SV";
+  const char*                text_ptr = "PTR";
   bool                       active = true;
   int                        age    = 30;
   std::optional<std::string> opt    = std::string{"x"};

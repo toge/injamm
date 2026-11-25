@@ -106,6 +106,20 @@
 #include "case_control_inverted_else_continue_trailing.hpp"
 #include "case_control_partial_break_trailing.hpp"
 #include "case_control_partial_continue_trailing.hpp"
+#include "case_string_section.hpp"
+#include "case_string_this_section.hpp"
+#include "case_string_filtered_section.hpp"
+#include "case_string_reverse_section.hpp"
+#include "case_string_stride_section.hpp"
+#include "case_string_index_section.hpp"
+#include "case_string_at_section.hpp"
+#include "case_string_view_section.hpp"
+#include "case_string_ptr_section.hpp"
+#include "case_string_control_guard.hpp"
+#include "case_string_continue_guard.hpp"
+#include "case_string_take_control_guard.hpp"
+#include "case_string_reverse_control_guard.hpp"
+#include "case_string_stride_control_guard.hpp"
 
 /** test_codegen_live_partials.cpp（別 TU）で検証する partial ケースの数 */
 int run_partial_loop_checks(CaseData const& d, CaseData const& d2);
@@ -139,6 +153,10 @@ int main() {
   d_partial_falsy.active   = false;
   CaseData d_empty = d;
   d_empty.name.clear();
+  d_empty.items[0].name.clear();
+  d_empty.items[1].name.clear();
+  d_empty.short_text = {};
+  d_empty.text_ptr = "";
   CaseData d_low = d;
   d_low.qty = 2;
   CaseData d_high = d;
@@ -267,6 +285,35 @@ int main() {
     [](auto const& data) { return generated::case_opt_section(data); });
   live_check("optional section with else", "{{#opt}}[{{this}}]{{else}}none{{/opt}}", d, d2,
     [](auto const& data) { return generated::case_opt_else(data); });
+
+  live_check("string section", "{{#items}}{{#name}}[{{name}}]{{/name}}{{/items}}", d, d_empty,
+    [](auto const& data) { return generated::case_string_section(data); });
+  live_check("string this section", "{{#items}}{{#name}}[{{this}}]{{/name}}{{/items}}", d, d_empty,
+    [](auto const& data) { return generated::case_string_this_section(data); });
+  live_check("string filtered section", "{{#items}}{{#name | take(1)}}[{{this}}]{{/name}}{{/items}}", d, d_empty,
+    [](auto const& data) { return generated::case_string_filtered_section(data); });
+  live_check("string reverse section", "{{#items}}{{#name | reverse}}[{{name}}]{{/name}}{{/items}}", d, d_empty,
+    [](auto const& data) { return generated::case_string_reverse_section(data); });
+  live_check("string stride section", "{{#items}}{{#name | stride(1,1)}}[{{name}}]{{/name}}{{/items}}", d, d_empty,
+    [](auto const& data) { return generated::case_string_stride_section(data); });
+  live_check("string index section", "{{#items}}{{#name}}{{loop.index}}:{{loop.index1}}:{{loop.is_first}}:{{loop.is_last}}:{{loop.size}}:{{this}}{{/name}}{{/items}}", d, d_empty,
+    [](auto const& data) { return generated::case_string_index_section(data); });
+  live_check("string at section", "{{#items}}{{#name}}{{#loop.is_first}}F{{/loop.is_first}}{{^loop.is_last}}N{{/loop.is_last}}{{/name}}{{/items}}", d, d_empty,
+    [](auto const& data) { return generated::case_string_at_section(data); });
+  live_check("string_view section", "{{#short_text}}[{{this}}]{{/short_text}}", d, d_empty,
+    [](auto const& data) { return generated::case_string_view_section(data); });
+  live_check("string_ptr section", "{{#text_ptr}}[{{this}}]{{/text_ptr}}", d, d_empty,
+    [](auto const& data) { return generated::case_string_ptr_section(data); });
+  live_check("string control guard", "{{#items}}{{#name}}{{#break}}{{name}}{{/name}}X{{/items}}", d, d_empty,
+    [](auto const& data) { return generated::case_string_control_guard(data); });
+  live_check("string continue guard", "{{#items}}{{#name}}{{#continue}}{{name}}{{/name}}Y{{/items}}", d, d_empty,
+    [](auto const& data) { return generated::case_string_continue_guard(data); });
+  live_check("string take control guard", "{{#items}}{{#name | take(1)}}{{#break}}{{name}}{{/name}}T{{/items}}", d, d_empty,
+    [](auto const& data) { return generated::case_string_take_control_guard(data); });
+  live_check("string reverse control guard", "{{#items}}{{#name | reverse}}{{#continue}}{{name}}{{/name}}R{{/items}}", d, d_empty,
+    [](auto const& data) { return generated::case_string_reverse_control_guard(data); });
+  live_check("string stride control guard", "{{#items}}{{#name | stride(1,1)}}{{#break}}{{name}}{{/name}}S{{/items}}", d, d_empty,
+    [](auto const& data) { return generated::case_string_stride_control_guard(data); });
 
   // --- 比較演算: VM の型付き比較、特殊変数、値→ルート二段解決 ---
   live_check("compare eq variable", "{{#if qty == limit}}Y{{else}}N{{/if}}", d, d_high,
