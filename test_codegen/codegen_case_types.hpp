@@ -9,6 +9,7 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 struct CaseProfile {
@@ -27,8 +28,6 @@ struct CaseItem {
 
 struct CaseData {
   std::string                name  = "R";
-  std::string_view           short_text = "SV";
-  const char*                text_ptr = "PTR";
   bool                       active = true;
   int                        age    = 30;
   std::optional<std::string> opt    = std::string{"x"};
@@ -48,4 +47,17 @@ struct CaseData {
   CaseLevel                  level = ready;
   CaseLevel                  other_level = ready;
   std::vector<std::string>   tags = {"t1", "t2", "t3"};
+};
+
+struct CaseStringViewData {
+  std::string storage;
+  std::string_view short_text;
+
+  explicit CaseStringViewData(std::string value = "SV") : storage(std::move(value)), short_text(storage) {}
+  CaseStringViewData(CaseStringViewData const&) = delete;
+  CaseStringViewData& operator=(CaseStringViewData const&) = delete;
+};
+
+struct CaseStringPointerData {
+  const char* text_ptr = "PTR";
 };

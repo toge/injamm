@@ -37,7 +37,8 @@ inline void live_check(std::string_view name, std::string_view tmpl_str, CaseDat
   }
 }
 
-inline void live_generated_check(std::string_view name, std::string_view expected, CaseData const& data, auto gen_func) {
+template <class Data>
+inline void live_generated_check(std::string_view name, std::string_view expected, Data const& data, auto gen_func) {
   ++live_test_count;
   auto result = gen_func(data);
   if (!result) {

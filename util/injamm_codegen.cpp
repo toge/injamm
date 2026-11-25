@@ -2073,11 +2073,11 @@ class code_generator {
       auto kind = inst.operand2;
       auto const loop = loop_context_expr();
       if (kind == 0) {
-        emit("if (" + loop + ".active && " + loop + ".index == 0) {");
+        emit("if (!" + loop + ".active || " + loop + ".index == 0) {");
       } else if (kind == 1) {
-        emit("if (" + loop + ".active && " + loop + ".index > 0) {");
+        emit("if (!" + loop + ".active || " + loop + ".index > 0) {");
       } else if (kind == 2) {
-        emit("if (" + loop + ".active && " + loop + ".index + 1 < " + loop + ".size) {");
+        emit("if (!" + loop + ".active || " + loop + ".index + 1 != " + loop + ".size) {");
       } else {
         emit("if (false) {");
       }

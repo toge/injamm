@@ -155,8 +155,10 @@ int main() {
   d_empty.name.clear();
   d_empty.items[0].name.clear();
   d_empty.items[1].name.clear();
-  d_empty.short_text = {};
-  d_empty.text_ptr = "";
+  CaseStringViewData view_data;
+  CaseStringViewData empty_view_data{""};
+  CaseStringPointerData ptr_data;
+  CaseStringPointerData empty_ptr_data{.text_ptr = ""};
   CaseData d_low = d;
   d_low.qty = 2;
   CaseData d_high = d;
@@ -300,9 +302,13 @@ int main() {
     [](auto const& data) { return generated::case_string_index_section(data); });
   live_check("string at section", "{{#items}}{{#name}}{{#loop.is_first}}F{{/loop.is_first}}{{^loop.is_last}}N{{/loop.is_last}}{{/name}}{{/items}}", d, d_empty,
     [](auto const& data) { return generated::case_string_at_section(data); });
-  live_check("string_view section", "{{#short_text}}[{{this}}]{{/short_text}}", d, d_empty,
+  live_generated_check("string_view section", "[SV]", view_data,
     [](auto const& data) { return generated::case_string_view_section(data); });
-  live_check("string_ptr section", "{{#text_ptr}}[{{this}}]{{/text_ptr}}", d, d_empty,
+  live_generated_check("string_view empty section", "", empty_view_data,
+    [](auto const& data) { return generated::case_string_view_section(data); });
+  live_generated_check("string_ptr section", "[PTR]", ptr_data,
+    [](auto const& data) { return generated::case_string_ptr_section(data); });
+  live_generated_check("string_ptr empty section", "", empty_ptr_data,
     [](auto const& data) { return generated::case_string_ptr_section(data); });
   live_check("string control guard", "{{#items}}{{#name}}{{#break}}{{name}}{{/name}}X{{/items}}", d, d_empty,
     [](auto const& data) { return generated::case_string_control_guard(data); });
