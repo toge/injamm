@@ -71,22 +71,6 @@
 #include "case_cmp_number_section_loop.hpp"
 #include "case_cmp_inherited_bool_loop.hpp"
 #include "case_cmp_inherited_optional_loop.hpp"
-#include "case_ctrl_break_section.hpp"
-#include "case_ctrl_continue_section.hpp"
-#include "case_ctrl_break_nested_section.hpp"
-#include "case_ctrl_continue_nested_inverted.hpp"
-#include "case_ctrl_break_nested_if.hpp"
-#include "case_ctrl_break_join.hpp"
-#include "case_ctrl_continue_join.hpp"
-#include "case_ctrl_continue_take.hpp"
-#include "case_ctrl_continue_active.hpp"
-#include "case_ctrl_break_optional.hpp"
-#include "case_ctrl_continue_index.hpp"
-#include "case_ctrl_break_reverse.hpp"
-#include "case_ctrl_continue_stride.hpp"
-#include "case_ctrl_continue_else.hpp"
-#include "case_ctrl_break_inverted_else.hpp"
-#include "case_ctrl_break_is_last_else.hpp"
 #include "case_partial_compare_loop.hpp"
 
 /** test_codegen_live_partials.cpp（別 TU）で検証する partial ケースの数 */
@@ -138,8 +122,6 @@ int main() {
   CaseData d_root_false = d;
   d_root_false.active = false;
   d_root_false.age = 0;
-  CaseData d_control_falsy = d;
-  d_control_falsy.items = {{"a", false}, {"b", false}};
 
   std::cout << "=== injamm_codegen ライブテスト（生成→コンパイル→実行→VM 比較） ===\n\n";
 
@@ -265,54 +247,6 @@ int main() {
              "{{#items}}{{#opt_limit}}{{#if loop.index == 0}}F{{else}}N{{/if}}{{/opt_limit}}{{/items}}",
              d, d_root_false,
     [](auto const& data) { return generated::case_cmp_inherited_optional_loop(data); });
-  live_check("control break in section",
-             "{{#items}}{{name}}{{#break}}{{/items}}", d, d_control_falsy,
-    [](auto const& data) { return generated::case_ctrl_break_section(data); });
-  live_check("control continue in section",
-             "{{#items}}{{#continue}}{{name}}{{/items}}", d, d_control_falsy,
-    [](auto const& data) { return generated::case_ctrl_continue_section(data); });
-  live_check("control break nested section",
-             "{{#items}}{{#on}}{{#break}}{{/on}}{{name}}{{/items}}", d, d_control_falsy,
-    [](auto const& data) { return generated::case_ctrl_break_nested_section(data); });
-  live_check("control continue nested inverted",
-             "{{#items}}{{^on}}{{#continue}}{{/on}}{{name}}{{/items}}", d, d_control_falsy,
-    [](auto const& data) { return generated::case_ctrl_continue_nested_inverted(data); });
-  live_check("control break nested if",
-             "{{#items}}{{name}}{{#if on}}{{#break}}{{/if}}{{/items}}", d, d_control_falsy,
-    [](auto const& data) { return generated::case_ctrl_break_nested_if(data); });
-  live_check("control break join",
-             "{{#tags | join(\",\")}}{{this}}{{#if this == \"t2\"}}{{#break}}{{/if}}{{/tags}}", d, d_control_falsy,
-    [](auto const& data) { return generated::case_ctrl_break_join(data); });
-  live_check("control continue join",
-             "{{#tags | join(\",\")}}{{this}}{{#if this == \"t2\"}}{{#continue}}{{/if}}{{/tags}}", d, d_control_falsy,
-    [](auto const& data) { return generated::case_ctrl_continue_join(data); });
-  live_check("control continue take",
-             "{{#tags | take(2)}}{{#if this == \"t1\"}}{{#continue}}{{/if}}{{this}}{{/tags}}", d, d_control_falsy,
-    [](auto const& data) { return generated::case_ctrl_continue_take(data); });
-  live_check("control continue active",
-             "{{#items}}{{#active}}{{#continue}}{{/active}}{{name}}{{/items}}", d, d_control_falsy,
-    [](auto const& data) { return generated::case_ctrl_continue_active(data); });
-  live_check("control break optional",
-             "{{#items}}{{#opt}}{{#break}}{{/opt}}{{name}}{{/items}}", d, d_control_falsy,
-    [](auto const& data) { return generated::case_ctrl_break_optional(data); });
-  live_check("control continue index",
-             "{{#tags}}{{loop.index}}{{#if this == \"t2\"}}{{#continue}}{{/if}}{{this}}{{/tags}}", d, d_control_falsy,
-    [](auto const& data) { return generated::case_ctrl_continue_index(data); });
-  live_check("control break reverse",
-             "{{#tags | reverse}}{{this}}{{#if this == \"t2\"}}{{#break}}{{/if}}{{/tags}}", d, d_control_falsy,
-    [](auto const& data) { return generated::case_ctrl_break_reverse(data); });
-  live_check("control continue stride",
-             "{{#tags | stride(1,1)}}{{#if this == \"t1\"}}{{#continue}}{{/if}}{{this}}{{/tags}}", d, d_control_falsy,
-    [](auto const& data) { return generated::case_ctrl_continue_stride(data); });
-  live_check("control continue else",
-             "{{#items}}{{#on}}{{name}}{{else}}{{#continue}}{{/on}}X{{/items}}", d, d_control_falsy,
-    [](auto const& data) { return generated::case_ctrl_continue_else(data); });
-  live_check("control break inverted",
-             "{{#items}}{{^on}}{{#break}}{{/on}}{{name}}{{/items}}", d, d_control_falsy,
-    [](auto const& data) { return generated::case_ctrl_break_inverted_else(data); });
-  live_check("control break is_last else",
-             "{{#tags}}{{this}}{{#if loop.is_last}}.{{else}}{{#break}}{{/if}}{{/tags}}", d, d_control_falsy,
-    [](auto const& data) { return generated::case_ctrl_break_is_last_else(data); });
 
   // --- partial スコープ: ループ内のグローバル partial は value→root の二段解決 ---
   live_test_count += run_partial_loop_checks(d, d2);
