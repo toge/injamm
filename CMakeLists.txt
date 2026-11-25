@@ -405,29 +405,29 @@ if(BUILD_UTIL)
     add_codegen_case(control_continue
       "{{#items}}{{#if loop.is_first}}{{else}}{{#continue}}{{/if}}{{name}}{{/items}}Z")
     add_codegen_case(control_section_else_break
-      "{{#items}}{{#active}}{{name}}{{else}}{{#break}}{{/active}}X{{/items}}Z")
+      "{{#items}}{{#active}}{{name}}{{else}}{{#break}}{{/active}}{{/items}}Z")
     add_codegen_case(control_section_else_continue
-      "{{#items}}{{#active}}{{name}}{{else}}{{#continue}}{{/active}}X{{/items}}Z")
+      "{{#items}}{{#active}}{{name}}{{else}}{{#continue}}{{/active}}{{/items}}Z")
     add_codegen_case(control_inverted_else_break
-      "{{#items}}{{^active}}{{name}}{{else}}{{#break}}{{/active}}X{{/items}}Z")
+      "{{#items}}{{^active}}{{name}}{{else}}{{#break}}{{/active}}{{/items}}Z")
     add_codegen_case(control_inverted_else_continue
-      "{{#items}}{{^active}}{{name}}{{else}}{{#continue}}{{/active}}X{{/items}}Z")
+      "{{#items}}{{^active}}{{name}}{{else}}{{#continue}}{{/active}}{{/items}}Z")
     add_codegen_case(control_nested_container_break
       "{{#items}}[{{#tags}}{{this}}{{#if loop.is_last}}{{else}}{{#break}}{{/if}}{{/tags}}]{{/items}}Z")
     add_codegen_case(control_nested_container_continue
       "{{#items}}[{{#tags}}{{#if loop.index}}{{#continue}}{{/if}}{{this}}{{/tags}}]{{/items}}Z")
     add_codegen_case(control_scalar_break
-      "{{#items}}{{#active}}A{{#break}}{{/active}}X{{/items}}Z")
+      "{{#items}}{{#active}}A{{#break}}{{/active}}{{/items}}Z")
     add_codegen_case(control_scalar_continue
-      "{{#items}}{{#active}}A{{#continue}}{{/active}}X{{/items}}Z")
+      "{{#items}}{{#active}}A{{#continue}}{{/active}}{{/items}}Z")
     add_codegen_case(control_optional_break
-      "{{#items}}{{#opt_limit}}A{{#break}}{{/opt_limit}}X{{/items}}Z")
+      "{{#items}}{{#opt_limit}}A{{#break}}{{/opt_limit}}{{/items}}Z")
     add_codegen_case(control_optional_continue
-      "{{#items}}{{#opt_limit}}A{{#continue}}{{/opt_limit}}X{{/items}}Z")
+      "{{#items}}{{#opt_limit}}A{{#continue}}{{/opt_limit}}{{/items}}Z")
     add_codegen_case(control_inverted_break
-      "{{#items}}{{^active}}A{{#break}}{{/active}}X{{/items}}Z")
+      "{{#items}}{{^active}}A{{#break}}{{/active}}{{/items}}Z")
     add_codegen_case(control_inverted_continue
-      "{{#items}}{{^active}}A{{#continue}}{{/active}}X{{/items}}Z")
+      "{{#items}}{{^active}}A{{#continue}}{{/active}}{{/items}}Z")
     add_codegen_case(control_top_break
       "A{{#break}}B")
     add_codegen_case(control_top_continue
@@ -443,11 +443,31 @@ if(BUILD_UTIL)
     add_codegen_case(control_take_break
       "{{#items | take(2)}}{{name}}{{#break}}{{/items}}Z")
     add_codegen_case(control_number_section
-      "{{#items}}{{#age}}A{{#continue}}{{/age}}X{{/items}}Z")
+      "{{#items}}{{#age}}A{{#continue}}{{/age}}{{/items}}Z")
     add_codegen_case(control_enum_section
-      "{{#items}}{{#level}}A{{#break}}{{/level}}X{{/items}}Z")
+      "{{#items}}{{#level}}A{{#break}}{{/level}}{{/items}}Z")
     add_codegen_case(control_syntax_break
       "{{#users}}{{name}}{{#if loop.is_last}}.{{else}}{{#break}}{{/if}}{{/users}}")
+    add_codegen_case(control_scalar_break_trailing
+      "{{#active}}{{#break}}{{/active}}TAIL")
+    add_codegen_case(control_scalar_continue_trailing
+      "{{#active}}{{#continue}}{{/active}}TAIL")
+    add_codegen_case(control_optional_break_trailing
+      "{{#opt_limit}}{{#break}}{{/opt_limit}}TAIL")
+    add_codegen_case(control_optional_continue_trailing
+      "{{#opt_limit}}{{#continue}}{{/opt_limit}}TAIL")
+    add_codegen_case(control_inverted_body_break_trailing
+      "{{^empty}}{{#break}}{{/empty}}TAIL")
+    add_codegen_case(control_inverted_body_continue_trailing
+      "{{^empty}}{{#continue}}{{/empty}}TAIL")
+    add_codegen_case(control_inverted_else_break_trailing
+      "{{^active}}{{else}}{{#break}}{{/active}}TAIL")
+    add_codegen_case(control_inverted_else_continue_trailing
+      "{{^active}}{{else}}{{#continue}}{{/active}}TAIL")
+    add_codegen_case(control_partial_break_trailing
+      "{{#partialdef stop}}P{{#break}}{{/partialdef}}{{#items}}{{>stop}}TAIL{{/items}}Z")
+    add_codegen_case(control_partial_continue_trailing
+      "{{#partialdef skip}}P{{#continue}}{{/partialdef}}{{#items}}{{>skip}}TAIL{{/items}}Z")
     # partial の通常ケースはスコープごとに個別名前空間へ生成し、
     # test_codegen_live_partials.cpp で VM と比較する。
     function(add_codegen_case_partial name tmpl)

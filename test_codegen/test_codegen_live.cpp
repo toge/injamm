@@ -96,6 +96,16 @@
 #include "case_control_number_section.hpp"
 #include "case_control_enum_section.hpp"
 #include "case_control_syntax_break.hpp"
+#include "case_control_scalar_break_trailing.hpp"
+#include "case_control_scalar_continue_trailing.hpp"
+#include "case_control_optional_break_trailing.hpp"
+#include "case_control_optional_continue_trailing.hpp"
+#include "case_control_inverted_body_break_trailing.hpp"
+#include "case_control_inverted_body_continue_trailing.hpp"
+#include "case_control_inverted_else_break_trailing.hpp"
+#include "case_control_inverted_else_continue_trailing.hpp"
+#include "case_control_partial_break_trailing.hpp"
+#include "case_control_partial_continue_trailing.hpp"
 
 /** test_codegen_live_partials.cpp（別 TU）で検証する partial ケースの数 */
 int run_partial_loop_checks(CaseData const& d, CaseData const& d2);
@@ -155,29 +165,29 @@ int main() {
     [](auto const& data) { return generated::case_control_break(data); });
   live_check("control continue", "{{#items}}{{#if loop.is_first}}{{else}}{{#continue}}{{/if}}{{name}}{{/items}}Z", d, d2,
     [](auto const& data) { return generated::case_control_continue(data); });
-  live_check("control section else break", "{{#items}}{{#active}}{{name}}{{else}}{{#break}}{{/active}}X{{/items}}Z", d, d_items_inactive,
+  live_check("control section else break", "{{#items}}{{#active}}{{name}}{{else}}{{#break}}{{/active}}{{/items}}Z", d, d_items_inactive,
     [](auto const& data) { return generated::case_control_section_else_break(data); });
-  live_check("control section else continue", "{{#items}}{{#active}}{{name}}{{else}}{{#continue}}{{/active}}X{{/items}}Z", d, d_items_inactive,
+  live_check("control section else continue", "{{#items}}{{#active}}{{name}}{{else}}{{#continue}}{{/active}}{{/items}}Z", d, d_items_inactive,
     [](auto const& data) { return generated::case_control_section_else_continue(data); });
-  live_check("control inverted else break", "{{#items}}{{^active}}{{name}}{{else}}{{#break}}{{/active}}X{{/items}}Z", d, d_items_inactive,
+  live_check("control inverted else break", "{{#items}}{{^active}}{{name}}{{else}}{{#break}}{{/active}}{{/items}}Z", d, d_items_inactive,
     [](auto const& data) { return generated::case_control_inverted_else_break(data); });
-  live_check("control inverted else continue", "{{#items}}{{^active}}{{name}}{{else}}{{#continue}}{{/active}}X{{/items}}Z", d, d_items_inactive,
+  live_check("control inverted else continue", "{{#items}}{{^active}}{{name}}{{else}}{{#continue}}{{/active}}{{/items}}Z", d, d_items_inactive,
     [](auto const& data) { return generated::case_control_inverted_else_continue(data); });
   live_check("control nested container break", "{{#items}}[{{#tags}}{{this}}{{#if loop.is_last}}{{else}}{{#break}}{{/if}}{{/tags}}]{{/items}}Z", d, d2,
     [](auto const& data) { return generated::case_control_nested_container_break(data); });
   live_check("control nested container continue", "{{#items}}[{{#tags}}{{#if loop.index}}{{#continue}}{{/if}}{{this}}{{/tags}}]{{/items}}Z", d, d2,
     [](auto const& data) { return generated::case_control_nested_container_continue(data); });
-  live_check("control scalar break", "{{#items}}{{#active}}A{{#break}}{{/active}}X{{/items}}Z", d, d_items_inactive,
+  live_check("control scalar break", "{{#items}}{{#active}}A{{#break}}{{/active}}{{/items}}Z", d, d_items_inactive,
     [](auto const& data) { return generated::case_control_scalar_break(data); });
-  live_check("control scalar continue", "{{#items}}{{#active}}A{{#continue}}{{/active}}X{{/items}}Z", d, d_items_inactive,
+  live_check("control scalar continue", "{{#items}}{{#active}}A{{#continue}}{{/active}}{{/items}}Z", d, d_items_inactive,
     [](auto const& data) { return generated::case_control_scalar_continue(data); });
-  live_check("control optional break", "{{#items}}{{#opt_limit}}A{{#break}}{{/opt_limit}}X{{/items}}Z", d, d_items_inactive,
+  live_check("control optional break", "{{#items}}{{#opt_limit}}A{{#break}}{{/opt_limit}}{{/items}}Z", d, d_items_inactive,
     [](auto const& data) { return generated::case_control_optional_break(data); });
-  live_check("control optional continue", "{{#items}}{{#opt_limit}}A{{#continue}}{{/opt_limit}}X{{/items}}Z", d, d_items_inactive,
+  live_check("control optional continue", "{{#items}}{{#opt_limit}}A{{#continue}}{{/opt_limit}}{{/items}}Z", d, d_items_inactive,
     [](auto const& data) { return generated::case_control_optional_continue(data); });
-  live_check("control inverted break", "{{#items}}{{^active}}A{{#break}}{{/active}}X{{/items}}Z", d, d_items_inactive,
+  live_check("control inverted break", "{{#items}}{{^active}}A{{#break}}{{/active}}{{/items}}Z", d, d_items_inactive,
     [](auto const& data) { return generated::case_control_inverted_break(data); });
-  live_check("control inverted continue", "{{#items}}{{^active}}A{{#continue}}{{/active}}X{{/items}}Z", d, d_items_inactive,
+  live_check("control inverted continue", "{{#items}}{{^active}}A{{#continue}}{{/active}}{{/items}}Z", d, d_items_inactive,
     [](auto const& data) { return generated::case_control_inverted_continue(data); });
   live_check("control top break", "A{{#break}}B", d, d2,
     [](auto const& data) { return generated::case_control_top_break(data); });
@@ -193,12 +203,32 @@ int main() {
     [](auto const& data) { return generated::case_control_stride_continue(data); });
   live_check("control take break", "{{#items | take(2)}}{{name}}{{#break}}{{/items}}Z", d, d2,
     [](auto const& data) { return generated::case_control_take_break(data); });
-  live_check("control number section", "{{#items}}{{#age}}A{{#continue}}{{/age}}X{{/items}}Z", d, d_items_inactive,
+  live_check("control number section", "{{#items}}{{#age}}A{{#continue}}{{/age}}{{/items}}Z", d, d_items_inactive,
     [](auto const& data) { return generated::case_control_number_section(data); });
-  live_check("control enum section", "{{#items}}{{#level}}A{{#break}}{{/level}}X{{/items}}Z", d, d_items_inactive,
+  live_check("control enum section", "{{#items}}{{#level}}A{{#break}}{{/level}}{{/items}}Z", d, d_items_inactive,
     [](auto const& data) { return generated::case_control_enum_section(data); });
   live_check("SYNTAX break example", "{{#users}}{{name}}{{#if loop.is_last}}.{{else}}{{#break}}{{/if}}{{/users}}", d, d2,
     [](auto const& data) { return generated::case_control_syntax_break(data); });
+  live_generated_check("scalar break stops trailing output", "", d,
+    [](auto const& data) { return generated::case_control_scalar_break_trailing(data); });
+  live_generated_check("scalar continue stops trailing output", "", d,
+    [](auto const& data) { return generated::case_control_scalar_continue_trailing(data); });
+  live_generated_check("optional break stops trailing output", "", d,
+    [](auto const& data) { return generated::case_control_optional_break_trailing(data); });
+  live_generated_check("optional continue stops trailing output", "", d,
+    [](auto const& data) { return generated::case_control_optional_continue_trailing(data); });
+  live_generated_check("inverted body break stops trailing output", "", d,
+    [](auto const& data) { return generated::case_control_inverted_body_break_trailing(data); });
+  live_generated_check("inverted body continue stops trailing output", "", d,
+    [](auto const& data) { return generated::case_control_inverted_body_continue_trailing(data); });
+  live_generated_check("inverted else break stops trailing output", "", d,
+    [](auto const& data) { return generated::case_control_inverted_else_break_trailing(data); });
+  live_generated_check("inverted else continue stops trailing output", "", d,
+    [](auto const& data) { return generated::case_control_inverted_else_continue_trailing(data); });
+  live_generated_check("partial break stops trailing output", "PZ", d,
+    [](auto const& data) { return generated::case_control_partial_break_trailing(data); });
+  live_generated_check("partial continue stops trailing output", "PPZ", d,
+    [](auto const& data) { return generated::case_control_partial_continue_trailing(data); });
 
   // --- 逆セクション（{{^...}}）: スカラー / optional / コンテナ / ループ内 ---
   live_check("inverted bool", "{{^active}}x{{/active}}", d, d2,

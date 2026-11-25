@@ -671,7 +671,7 @@ class code_generator {
     return false;
   }
 
-  void emit_else_control_stop(std::string const& channel) {
+  void emit_control_stop(std::string const& channel) {
     emit("if (" + channel + ".break_requested || " + channel + ".continue_requested) {");
     ++indent_;
     emit(in_control_lambda() ? "return;" : "return {};");
@@ -1787,12 +1787,13 @@ class code_generator {
       emit("if (" + access + ".has_value()) {");
       ++indent_;
       emit(scalar_call("*" + access) + ";");
+      emit_control_stop(block.parent_control);
       --indent_;
       emit(std::string{"}"} + (block.else_seq ? " else {" : ""));
       if (block.else_seq) {
         ++indent_;
         emit(else_call() + ";");
-        emit_else_control_stop(block.parent_control);
+        emit_control_stop(block.parent_control);
         --indent_;
         emit("}");
       }
@@ -1803,12 +1804,13 @@ class code_generator {
       ++indent_;
       emit(scalar_call(
         (block.idx > 1 ? "_item" + std::to_string(block.idx - 1) : (in_partial_ ? "value" : "data"))) + ";");
+      emit_control_stop(block.parent_control);
       --indent_;
       emit(std::string{"}"} + (block.else_seq ? " else {" : ""));
       if (block.else_seq) {
         ++indent_;
         emit(else_call() + ";");
-        emit_else_control_stop(block.parent_control);
+        emit_control_stop(block.parent_control);
         --indent_;
         emit("}");
       }
@@ -1819,7 +1821,7 @@ class code_generator {
         emit("if (value_empty(" + access + ")) {");
         ++indent_;
         emit(else_call() + ";");
-        emit_else_control_stop(block.parent_control);
+        emit_control_stop(block.parent_control);
         --indent_;
         emit("} else {");
         ++indent_;
@@ -1911,7 +1913,7 @@ class code_generator {
       emit("if (value_empty(" + access + ")) {");
       ++indent_;
       emit(else_call() + ";");
-      emit_else_control_stop(block.parent_control);
+      emit_control_stop(block.parent_control);
       --indent_;
       emit("} else {");
       ++indent_;
@@ -2105,14 +2107,23 @@ class code_generator {
         auto els = block.else_seq ? "_else" + std::to_string(block.else_seq) : std::string{};
         auto els_call = block.else_seq ? (els + "(" + block.parent_control +
                          (block.else_root_param ? (", " + block.call_root) : "") + ")") : std::string{};
-        auto s = "if (value_empty(" + block.access + ")) " + body_call + ";";
         if (!block.else_seq) {
-          emit(s);
+          emit("if (value_empty(" + block.access + ")) {");
+          ++indent_;
+          emit(body_call + ";");
+          emit_control_stop(block.parent_control);
+          --indent_;
+          emit("}");
         } else {
-          emit(s);
-          emit("else {");
+          emit("if (value_empty(" + block.access + ")) {");
+          ++indent_;
+          emit(body_call + ";");
+          emit_control_stop(block.parent_control);
+          --indent_;
+          emit("} else {");
           ++indent_;
           emit(els_call + ";");
+          emit_control_stop(block.parent_control);
           --indent_;
           emit("}");
         }
@@ -2481,6 +2492,7 @@ class code_generator {
         emit("if (!" + result + ") " +
              (in_control_lambda() ? "return;" :
                                   ("return std::unexpected(" + result + ".error());")));
+        emit_control_stop(active_control_channel());
       }
     }
     else if (op == bc::opcode::emit_var_size) {

@@ -36,3 +36,18 @@ inline void live_check(std::string_view name, std::string_view tmpl_str, CaseDat
     }
   }
 }
+
+inline void live_generated_check(std::string_view name, std::string_view expected, CaseData const& data, auto gen_func) {
+  ++live_test_count;
+  auto result = gen_func(data);
+  if (!result) {
+    std::cerr << "FAIL [" << name << "] generated render failed: "
+              << result.error().custom_error_message << "\n";
+  } else if (*result == expected) {
+    std::cout << "PASS [" << name << "]\n";
+    ++live_pass_count;
+  } else {
+    std::cerr << "FAIL [" << name << "]\n  expected: [" << expected
+              << "]\n  got:      [" << *result << "]\n";
+  }
+}
