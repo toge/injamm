@@ -16,6 +16,13 @@
 
 namespace generated {
 
+namespace cgns_render_f {
+struct control_slot {
+  bool break_requested = false;
+  bool continue_requested = false;
+};
+} // namespace cgns_render_f
+
 
 /**
  * @brief テンプレート文字列から生成されたレンダリング関数（バッファ再利用版）
@@ -39,18 +46,42 @@ render_f(const T& data, Sink& out) {
     out.clear();
     out.reserve(34);
   }
+  cgns_render_f::control_slot _root_control;
 
-  auto _body1 = [&](const auto& _item1) {
+  auto _body1 = [&](const auto& _item1, const codegen_loop_context& _loop1, cgns_render_f::control_slot& _control1) {
     out.append("[");
     html_escape_append_value(out, _item1);
     out.append("]");
   };
-  if constexpr (codegen_optional_section_v<decltype(data.opt)>) {
-    if (data.opt.has_value()) _body1(*data.opt);
+  if constexpr (codegen_unsupported_string_v<decltype(data.opt)>) {
+    static_assert(!codegen_unsupported_string_v<decltype(data.opt)>, "raw char arrays and volatile C strings are not supported in codegen sections");
+  } else if constexpr (codegen_string_section_v<decltype(data.opt)>) {
+    if (!value_empty(data.opt)) {
+      cgns_render_f::control_slot _loop_control1 = {};
+      _body1(data, codegen_loop_context{true, 0, 0}, _loop_control1);
+    }
+  } else if constexpr (codegen_optional_section_v<decltype(data.opt)>) {
+    if (data.opt.has_value()) {
+      _body1(*data.opt, codegen_loop_context{}, _root_control);
+      if (_root_control.break_requested || _root_control.continue_requested) {
+        return {};
+      }
+    }
   } else if constexpr (codegen_scalar_section_v<decltype(data.opt)>) {
-    if (static_cast<bool>(data.opt)) _body1(data);
+    if (static_cast<bool>(data.opt)) {
+      _body1(data, codegen_loop_context{}, _root_control);
+      if (_root_control.break_requested || _root_control.continue_requested) {
+        return {};
+      }
+    }
   } else {
-    for (const auto& _v1 : data.opt) _body1(_v1);
+    cgns_render_f::control_slot _loop_control1;
+    for (const auto& _v1 : data.opt) {
+      _loop_control1 = {};
+      _body1(_v1, codegen_loop_context{}, _loop_control1);
+      if (_loop_control1.break_requested) break;
+      if (_loop_control1.continue_requested) continue;
+    }
   }
 
   return {};

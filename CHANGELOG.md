@@ -1,5 +1,9 @@
 # Changelog
 
+## 2026-11-25
+
+- `docs: Issue11 パリティ最終同期` — `injamm_codegen` 再生成結果を反映し、README/SYNTAX の AOT 説明を VM/NTTP と一致（break/continue の安全な生成境界、直接比較の右辺（変数/文字列）明記、文字列セクションは真なら 1 回評価、二段解決の既存規則を維持）させた
+
 ## 2026-11-24
 
 - `fix: NTTP render がセクションの構文エラーを黙って無視していた問題` — TLA+ モデル検査（`tlaplus/`）が検出した VM/CT 不整合を修正。CT パーサの閉じタグ探索を VM (`compile_body_impl` の `expected_close` 検証) と同じスタック走査に揃え、`{{#a}}{{/b}}`（取り違え → `syntax_error`）、未閉鎖セクション（`unexpected_end`）、トップレベルの余分な閉じタグ（`stray closing tag`）が `engine<T>` と `render<>` の両方で同じエラーになる。`{{~/if~}}` 等チルダ付き閉じタグも VM の前処理と同じ意味で一致（旧 CT 実装は未閉鎖+閉じタグ無視の 2 バグが相殺して通っていた）

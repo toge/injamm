@@ -16,6 +16,13 @@
 
 namespace generated {
 
+namespace cgns_render_ext3 {
+struct control_slot {
+  bool break_requested = false;
+  bool continue_requested = false;
+};
+} // namespace cgns_render_ext3
+
 
 /**
  * @brief テンプレート文字列から生成されたレンダリング関数（バッファ再利用版）
@@ -38,6 +45,7 @@ render_ext3(const T& data, Sink& out) {
   if constexpr (std::is_same_v<Sink, std::string>) {
     out.clear();
   }
+  cgns_render_ext3::control_slot _root_control;
 
   if (static_cast<bool>(data.active)) {
     out.append("yes");

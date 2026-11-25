@@ -17,6 +17,13 @@
 namespace generated {
 
 namespace cgns_render_g {
+struct control_slot {
+  bool break_requested = false;
+  bool continue_requested = false;
+};
+} // namespace cgns_render_g
+
+namespace cgns_render_g {
 /**
  * @brief 値側に @p key が無ければルート側へフォールバックする二段解決ヘルパ
  * @details VM (bytecode_exec.hpp) の value → root 二段走査と同一の解決順。
@@ -42,12 +49,12 @@ inline decltype(auto) cg_get_6E616D65(V const& v, R const& r) {
 template <injamm::fixed_string PartialName, typename V, typename R, typename Sink>
   requires injamm::detail::output_sink<Sink>
 [[nodiscard]] std::expected<void, injamm::error_ctx>
-render_g_partial_impl(const V& value, const R& root, Sink& out);
+render_g_partial_impl(const V& value, const R& root, const codegen_loop_context& _loop, cgns_render_g::control_slot& _root_control, Sink& out);
 
 template <injamm::fixed_string PartialName, typename V, typename R, typename Sink>
   requires injamm::detail::output_sink<Sink>
 [[nodiscard]] std::expected<void, injamm::error_ctx>
-render_g_partial_impl(const V& value, const R& root, Sink& out) {
+render_g_partial_impl(const V& value, const R& root, const codegen_loop_context& _loop, cgns_render_g::control_slot& _root_control, Sink& out) {
   if constexpr (std::string_view(PartialName.data) == "g") {
     html_escape_append_value(out, cgns_render_g::cg_get_6E616D65(value, root));
     out.append(";");
@@ -85,14 +92,16 @@ template <injamm::fixed_string PartialName, typename T, typename Sink = std::str
         && std::same_as<render_g_partial_tag, render_g_partial_tag>
 [[nodiscard]] std::expected<void, injamm::error_ctx>
 render_partial(const T& data, Sink& out) {
-  return render_g_partial_impl<PartialName>(data, data, out);
+  cgns_render_g::control_slot _root_control;
+  return render_g_partial_impl<PartialName>(data, data, codegen_loop_context{}, _root_control, out);
 }
 
 template <injamm::fixed_string PartialName, typename T, typename Sink = std::string>
   requires injamm::detail::output_sink<Sink>
 [[nodiscard]] std::expected<void, injamm::error_ctx>
 render_g_partial(const T& data, Sink& out) {
-  return render_g_partial_impl<PartialName>(data, data, out);
+  cgns_render_g::control_slot _root_control;
+  return render_g_partial_impl<PartialName>(data, data, codegen_loop_context{}, _root_control, out);
 }
 
 #ifndef INJAMM_CODEGEN_PARTIAL_FALLBACK_NS_67656E657261746564_HPP
@@ -127,16 +136,45 @@ render_g(const T& data, Sink& out) {
   if constexpr (std::is_same_v<Sink, std::string>) {
     out.clear();
   }
+  cgns_render_g::control_slot _root_control;
 
-  auto _body1 = [&](const auto& _item1) {
-    (void)render_g_partial_impl<"g">(_item1, data, out);
+  auto _body1 = [&](const auto& _item1, const codegen_loop_context& _loop1, cgns_render_g::control_slot& _control1) {
+    auto _partial_result2 = render_g_partial_impl<"g">(_item1, data, _loop1, _control1, out);
+    if (!_partial_result2) return;
+    if (_control1.break_requested || _control1.continue_requested) {
+      return;
+    }
   };
-  if constexpr (codegen_optional_section_v<decltype(data.items)>) {
-    if (data.items.has_value()) _body1(*data.items);
+  if constexpr (codegen_unsupported_string_v<decltype(data.items)>) {
+    static_assert(!codegen_unsupported_string_v<decltype(data.items)>, "raw char arrays and volatile C strings are not supported in codegen sections");
+  } else if constexpr (codegen_string_section_v<decltype(data.items)>) {
+    if (!value_empty(data.items)) {
+      cgns_render_g::control_slot _loop_control1 = {};
+      _body1(data, codegen_loop_context{true, 0, 0}, _loop_control1);
+    }
+  } else if constexpr (codegen_optional_section_v<decltype(data.items)>) {
+    if (data.items.has_value()) {
+      _body1(*data.items, codegen_loop_context{}, _root_control);
+      if (_root_control.break_requested || _root_control.continue_requested) {
+        return {};
+      }
+    }
   } else if constexpr (codegen_scalar_section_v<decltype(data.items)>) {
-    if (static_cast<bool>(data.items)) _body1(data);
+    if (static_cast<bool>(data.items)) {
+      _body1(data, codegen_loop_context{}, _root_control);
+      if (_root_control.break_requested || _root_control.continue_requested) {
+        return {};
+      }
+    }
   } else {
-    for (const auto& _v1 : data.items) _body1(_v1);
+    cgns_render_g::control_slot _loop_control1;
+    auto _size1 = data.items.size();
+    for (std::size_t _i1 = 0; _i1 < _size1; ++_i1) {
+      _loop_control1 = {};
+      _body1(data.items[_i1], codegen_loop_context{true, _i1, _size1}, _loop_control1);
+      if (_loop_control1.break_requested) break;
+      if (_loop_control1.continue_requested) continue;
+    }
   }
 
   return {};

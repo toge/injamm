@@ -16,6 +16,13 @@
 
 namespace generated {
 
+namespace cgns_render_ext2 {
+struct control_slot {
+  bool break_requested = false;
+  bool continue_requested = false;
+};
+} // namespace cgns_render_ext2
+
 
 /**
  * @brief テンプレート文字列から生成されたレンダリング関数（バッファ再利用版）
@@ -38,8 +45,9 @@ render_ext2(const T& data, Sink& out) {
   if constexpr (std::is_same_v<Sink, std::string>) {
     out.clear();
   }
+  cgns_render_ext2::control_slot _root_control;
 
-  if (data.age == 30) {
+  if (codegen_compare(bc_opcode::emit_if_eq, compare_operand_kind::int_literal, data.age, 30)) {
     out.append("match");
   } else {
     out.append("no match");

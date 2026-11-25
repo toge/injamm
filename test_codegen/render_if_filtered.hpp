@@ -16,6 +16,13 @@
 
 namespace generated {
 
+namespace cgns_render_if_filtered {
+struct control_slot {
+  bool break_requested = false;
+  bool continue_requested = false;
+};
+} // namespace cgns_render_if_filtered
+
 
 /**
  * @brief テンプレート文字列から生成されたレンダリング関数（バッファ再利用版）
@@ -40,10 +47,11 @@ render_if_filtered(const T& data, Sink& out) {
   }
   std::string _filtered;
   _filtered.reserve(64);
+  cgns_render_if_filtered::control_slot _root_control;
 
-  if constexpr (::injamm::detail::serializable_v<decltype(data.age)>) {
+  if constexpr (::injamm::detail::serializable_v<std::remove_cvref_t<decltype(data.age)>>) {
     _filtered.clear(); ::injamm::detail::serialize_value(_filtered, data.age);
-  } else if constexpr (::injamm::detail::ct_glz_reflectable<decltype(data.age)>) {
+  } else if constexpr (::injamm::detail::ct_glz_reflectable<std::remove_cvref_t<decltype(data.age)>>) {
     (void)::glz::write_json(data.age, _filtered);
   } else {
     _filtered.assign((data.age).data(), (data.age).size());

@@ -16,6 +16,13 @@
 
 namespace generated {
 
+namespace cgns_render_join {
+struct control_slot {
+  bool break_requested = false;
+  bool continue_requested = false;
+};
+} // namespace cgns_render_join
+
 
 /**
  * @brief テンプレート文字列から生成されたレンダリング関数（バッファ再利用版）
@@ -39,19 +46,49 @@ render_join(const T& data, Sink& out) {
     out.clear();
     out.reserve(34);
   }
+  cgns_render_join::control_slot _root_control;
 
-  {
-    auto _size1 = data.sitems.size();
-    std::size_t _lo1 = 0, _hi1 = _size1;
-    bool _bwd1 = false;
-    auto _count1 = _hi1 - _lo1;
-    for (std::size_t _i1 = 0; _i1 < _count1; ++_i1) {
-      auto _idx1 = _bwd1 ? (_hi1 - 1 - _i1) : (_lo1 + _i1);
-      const auto& _item1 = data.sitems[_idx1];
-      if (_i1 > 0) {
-        out.append(", ");
+  auto _body1 = [&](const auto& _item1, const codegen_loop_context& _loop1, cgns_render_join::control_slot& _control1) {
+    html_escape_append_value(out, _item1);
+  };
+  if constexpr (codegen_unsupported_string_v<decltype(data.sitems)>) {
+    static_assert(!codegen_unsupported_string_v<decltype(data.sitems)>, "raw char arrays and volatile C strings are not supported in codegen sections");
+  } else if constexpr (codegen_string_section_v<decltype(data.sitems)>) {
+    if (!value_empty(data.sitems)) {
+      cgns_render_join::control_slot _loop_control1 = {};
+      _body1(data, codegen_loop_context{true, 0, 0}, _loop_control1);
+    }
+  } else if constexpr (codegen_optional_section_v<decltype(data.sitems)>) {
+    if (data.sitems.has_value()) {
+      _body1(*data.sitems, codegen_loop_context{}, _root_control);
+      if (_root_control.break_requested || _root_control.continue_requested) {
+        return {};
       }
-      html_escape_append_value(out, _item1);
+    }
+  } else if constexpr (codegen_scalar_section_v<decltype(data.sitems)>) {
+    if (static_cast<bool>(data.sitems)) {
+      _body1(data, codegen_loop_context{}, _root_control);
+      if (_root_control.break_requested || _root_control.continue_requested) {
+        return {};
+      }
+    }
+  } else {
+    {
+      auto _size1 = data.sitems.size();
+      std::size_t _lo1 = 0, _hi1 = _size1;
+      bool _bwd1 = false;
+      cgns_render_join::control_slot _loop_control1;
+      const auto _count1 = _hi1 - _lo1;
+      for (std::size_t _i1 = 0; _i1 < _count1; ++_i1) {
+        const auto _idx1 = _bwd1 ? (_hi1 - 1 - _i1) : (_lo1 + _i1);
+        const auto& _item1 = data.sitems[_idx1];
+        const codegen_loop_context _loop1{true, _i1, _count1};
+        _loop_control1 = {};
+        _body1(_item1, _loop1, _loop_control1);
+        if (_loop_control1.break_requested) break;
+        if (!_loop_control1.continue_requested && _i1 + 1 < _count1) out.append(", ");
+        if (_loop_control1.continue_requested) continue;
+      }
     }
   }
 
