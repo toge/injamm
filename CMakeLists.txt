@@ -354,6 +354,8 @@ if(BUILD_UTIL)
     add_codegen_case(sec_else_scalar     "{{#active}}Y{{else}}N{{/active}}")
     add_codegen_case(sec_else_int        "{{#age}}N{{else}}Z{{/age}}")
     add_codegen_case(sec_else_in_loop    "{{#items}}{{#on}}T{{else}}F{{/on}}{{/items}}")
+    add_codegen_case(sec_else_if_break   "{{#active}}A{{else}}{{#if qty}}{{#break}}{{/if}}B{{/active}}TAIL")
+    add_codegen_case(sec_else_nested     "{{#active}}A{{else}}{{#items}}{{name}}{{/items}}B{{/active}}TAIL")
     add_codegen_case(opt_section         "{{#opt}}[{{this}}]{{/opt}}")
     add_codegen_case(opt_else            "{{#opt}}[{{this}}]{{else}}none{{/opt}}")
     add_codegen_case(at_else             "{{#items}}{{#loop.is_first}}F{{/loop.is_first}}{{else}}E{{/items}}")
@@ -408,12 +410,18 @@ if(BUILD_UTIL)
       "{{#items}}{{#tags}}{{loop.parent.index1}}/{{/tags}}{{/items}}")
     add_codegen_case(loop_parent_emit_size
       "{{#items}}{{#tags}}{{loop.parent.size}}/{{/tags}}{{/items}}")
+    add_codegen_case(loop_parent_emit_no_grandparent
+      "{{#items}}{{loop.parent.index}}|{{/items}}")
+    add_codegen_case(loop_parent_emit_nonmeta
+      "{{#items}}{{#tags}}{{loop.parent.name}}|{{/tags}}{{/items}}")
     add_codegen_case(loop_parent_if_index
       "{{#items}}{{#tags}}{{#if loop.parent.index == 0}}P{{else}}N{{/if}}{{/tags}}{{/items}}")
     add_codegen_case(loop_parent_if_size
       "{{#items}}{{#tags}}{{#if loop.parent.size == 2}}P{{else}}N{{/if}}{{/tags}}{{/items}}")
     add_codegen_case(loop_parent_section_first
       "{{#items}}{{#tags}}{{#loop.parent.is_first}}F{{/loop.parent.is_first}}{{/tags}}{{/items}}")
+    add_codegen_case(loop_parent_inverted_first
+      "{{#items}}{{#tags}}{{^loop.parent.is_first}}N{{/loop.parent.is_first}}{{/tags}}{{/items}}")
     add_codegen_case(cmp_string_int      "{{#if numeric == age}}Y{{else}}N{{/if}}")
     add_codegen_case(cmp_invalid_string  "{{#if invalid_numeric == age}}Y{{else}}N{{/if}}")
     add_codegen_case(cmp_string_float    "{{#if numeric == ratio}}Y{{else}}N{{/if}}")

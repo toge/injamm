@@ -30,6 +30,8 @@
 #include "case_sec_else_scalar.hpp"
 #include "case_sec_else_int.hpp"
 #include "case_sec_else_in_loop.hpp"
+#include "case_sec_else_if_break.hpp"
+#include "case_sec_else_nested.hpp"
 #include "case_opt_section.hpp"
 #include "case_opt_else.hpp"
 #include "case_at_else.hpp"
@@ -62,9 +64,12 @@
 #include "case_loop_parent_emit_index.hpp"
 #include "case_loop_parent_emit_index1.hpp"
 #include "case_loop_parent_emit_size.hpp"
+#include "case_loop_parent_emit_no_grandparent.hpp"
+#include "case_loop_parent_emit_nonmeta.hpp"
 #include "case_loop_parent_if_index.hpp"
 #include "case_loop_parent_if_size.hpp"
 #include "case_loop_parent_section_first.hpp"
+#include "case_loop_parent_inverted_first.hpp"
 #include "case_cmp_string_int.hpp"
 #include "case_cmp_invalid_string.hpp"
 #include "case_cmp_string_float.hpp"
@@ -258,25 +263,25 @@ int main() {
     [](auto const& data) { return generated::case_control_enum_section(data); });
   live_check("SYNTAX break example", "{{#users}}{{name}}{{#if loop.is_last}}.{{else}}{{#break}}{{/if}}{{/users}}", d, d2,
     [](auto const& data) { return generated::case_control_syntax_break(data); });
-  live_generated_check("scalar break stops trailing output", "", d,
+  live_check("scalar break trailing output", "{{#active}}{{#break}}{{/active}}TAIL", d, d2,
     [](auto const& data) { return generated::case_control_scalar_break_trailing(data); });
-  live_generated_check("scalar continue stops trailing output", "", d,
+  live_check("scalar continue trailing output", "{{#active}}{{#continue}}{{/active}}TAIL", d, d2,
     [](auto const& data) { return generated::case_control_scalar_continue_trailing(data); });
-  live_generated_check("optional break stops trailing output", "", d,
+  live_check("optional break trailing output", "{{#opt_limit}}{{#break}}{{/opt_limit}}TAIL", d, d2,
     [](auto const& data) { return generated::case_control_optional_break_trailing(data); });
-  live_generated_check("optional continue stops trailing output", "", d,
+  live_check("optional continue trailing output", "{{#opt_limit}}{{#continue}}{{/opt_limit}}TAIL", d, d2,
     [](auto const& data) { return generated::case_control_optional_continue_trailing(data); });
-  live_generated_check("inverted body break stops trailing output", "", d,
+  live_check("inverted body break trailing output", "{{^empty}}{{#break}}{{/empty}}TAIL", d, d2,
     [](auto const& data) { return generated::case_control_inverted_body_break_trailing(data); });
-  live_generated_check("inverted body continue stops trailing output", "", d,
+  live_check("inverted body continue trailing output", "{{^empty}}{{#continue}}{{/empty}}TAIL", d, d2,
     [](auto const& data) { return generated::case_control_inverted_body_continue_trailing(data); });
-  live_generated_check("inverted else break stops trailing output", "", d,
+  live_check("inverted else break trailing output", "{{^active}}{{else}}{{#break}}{{/active}}TAIL", d, d2,
     [](auto const& data) { return generated::case_control_inverted_else_break_trailing(data); });
-  live_generated_check("inverted else continue stops trailing output", "", d,
+  live_check("inverted else continue trailing output", "{{^active}}{{else}}{{#continue}}{{/active}}TAIL", d, d2,
     [](auto const& data) { return generated::case_control_inverted_else_continue_trailing(data); });
-  live_generated_check("partial break stops trailing output", "PZ", d,
+  live_check("partial break trailing output", "{{#partialdef stop}}P{{#break}}{{/partialdef}}{{#items}}{{>stop}}TAIL{{/items}}Z", d, d2,
     [](auto const& data) { return generated::case_control_partial_break_trailing(data); });
-  live_generated_check("partial continue stops trailing output", "PPZ", d,
+  live_check("partial continue trailing output", "{{#partialdef skip}}P{{#continue}}{{/partialdef}}{{#items}}{{>skip}}TAIL{{/items}}Z", d, d2,
     [](auto const& data) { return generated::case_control_partial_continue_trailing(data); });
 
   // --- 逆セクション（{{^...}}）: スカラー / optional / コンテナ / ループ内 ---
@@ -306,6 +311,10 @@ int main() {
     [](auto const& data) { return generated::case_sec_else_int(data); });
   live_check("section else (in loop)", "{{#items}}{{#on}}T{{else}}F{{/on}}{{/items}}", d, d2,
     [](auto const& data) { return generated::case_sec_else_in_loop(data); });
+  live_check("section else break inside if", "{{#active}}A{{else}}{{#if qty}}{{#break}}{{/if}}B{{/active}}TAIL", d, d2,
+    [](auto const& data) { return generated::case_sec_else_if_break(data); });
+  live_check("section else nested section", "{{#active}}A{{else}}{{#items}}{{name}}{{/items}}B{{/active}}TAIL", d, d2,
+    [](auto const& data) { return generated::case_sec_else_nested(data); });
   live_check("section else (index loop)", "{{#items}}{{#loop.is_first}}F{{/loop.is_first}}{{else}}E{{/items}}", d, d2,
     [](auto const& data) { return generated::case_at_else(data); });
   live_check("section else (take)", "{{#items | take(1)}}{{name}}{{else}}E{{/items}}", d, d2,
@@ -409,22 +418,26 @@ int main() {
                        "{{#items}}{{#tags}}{{#if loop.parent.index == loop.index}}Y{{else}}N{{/if}}{{/tags}}{{/items}}",
                        d, d2,
     [](auto const& data) { return generated::case_cmp_lhs_loop_parent_index(data); });
-  live_generated_check("emit loop.parent.index",
-                       "0/0/0/1/1/1/",
-                       d,
+  live_check("emit loop.parent.index",
+                       "{{#items}}{{#tags}}{{loop.parent.index}}/{{/tags}}{{/items}}",
+                       d, d2,
     [](auto const& data) { return generated::case_loop_parent_emit_index(data); });
-  live_generated_check("emit loop.parent.index/falsy",
-                       "",
-                       d2,
-    [](auto const& data) { return generated::case_loop_parent_emit_index(data); });
-  live_generated_check("emit loop.parent.index1",
-                       "1/1/1/2/2/2/",
-                       d,
+  live_check("emit loop.parent.index1",
+                       "{{#items}}{{#tags}}{{loop.parent.index1}}/{{/tags}}{{/items}}",
+                       d, d2,
     [](auto const& data) { return generated::case_loop_parent_emit_index1(data); });
-  live_generated_check("emit loop.parent.size",
-                       "2/2/2/2/2/2/",
-                       d,
+  live_check("emit loop.parent.size",
+                       "{{#items}}{{#tags}}{{loop.parent.size}}/{{/tags}}{{/items}}",
+                       d, d2,
     [](auto const& data) { return generated::case_loop_parent_emit_size(data); });
+  live_check("emit loop.parent.index without grandparent",
+                       "{{#items}}{{loop.parent.index}}|{{/items}}",
+                       d, d2,
+    [](auto const& data) { return generated::case_loop_parent_emit_no_grandparent(data); });
+  live_check("emit non-meta loop.parent field",
+                       "{{#items}}{{#tags}}{{loop.parent.name}}|{{/tags}}{{/items}}",
+                       d, d2,
+    [](auto const& data) { return generated::case_loop_parent_emit_nonmeta(data); });
   live_check("if loop.parent.index",
                        "{{#items}}{{#tags}}{{#if loop.parent.index == 0}}P{{else}}N{{/if}}{{/tags}}{{/items}}",
                        d, d2,
@@ -433,10 +446,14 @@ int main() {
                        "{{#items}}{{#tags}}{{#if loop.parent.size == 2}}P{{else}}N{{/if}}{{/tags}}{{/items}}",
                        d, d2,
     [](auto const& data) { return generated::case_loop_parent_if_size(data); });
-  live_generated_check("section loop.parent.is_first",
-                       "FFF",
-                       d,
+  live_check("section loop.parent.is_first",
+                       "{{#items}}{{#tags}}{{#loop.parent.is_first}}F{{/loop.parent.is_first}}{{/tags}}{{/items}}",
+                       d, d2,
     [](auto const& data) { return generated::case_loop_parent_section_first(data); });
+  live_check("inverted loop.parent.is_first",
+                       "{{#items}}{{#tags}}{{^loop.parent.is_first}}N{{/loop.parent.is_first}}{{/tags}}{{/items}}",
+                       d, d2,
+    [](auto const& data) { return generated::case_loop_parent_inverted_first(data); });
   live_check("compare string and integer variable", "{{#if numeric == age}}Y{{else}}N{{/if}}", d, d2,
     [](auto const& data) { return generated::case_cmp_string_int(data); });
   live_check("compare invalid numeric string", "{{#if invalid_numeric == age}}Y{{else}}N{{/if}}", d, d2,

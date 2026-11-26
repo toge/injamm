@@ -595,18 +595,11 @@ class code_generator {
   std::unordered_set<const bc::instruction*> metadata_index_loops_;
   enum class block_syntax_kind { section, inverted, condition, at_condition, top_level };
   enum class block_phase { main, else_body };
-  enum class runtime_category { container, scalar_optional, inverted, if_branch, top_level };
 
   struct control_ownership {
     block_syntax_kind syntax = block_syntax_kind::top_level;
-    runtime_category runtime = runtime_category::top_level;
     int id = 0;
-    int parent_id = 0;
-    int loop_depth = 0;
     std::string local_channel;
-    std::string parent_channel;
-    std::string root_expression;
-    std::string loop_context;
   };
 
   std::unordered_map<const bc::instruction*, control_ownership> control_ownership_;
@@ -616,13 +609,9 @@ class code_generator {
   struct open_block {
     block_syntax_kind syntax = block_syntax_kind::condition;
     block_phase phase = block_phase::main;
-    runtime_category runtime = runtime_category::if_branch;
     int control_id = 0;
     std::string local_control;
     std::string parent_control;
-    std::string root_expression;
-    std::string loop_context;
-    int loop_depth = 0;
     std::string access;   /**< scalar_section/inverted: セクション対象のアクセス式 */
     std::string container_access; /**< フィルタ済みコンテナの値/ルート二段解決式 */
     int         idx = 0;  /**< scalar_section: 本体の _itemN の N（スコープ解決に使うループ深度） */
@@ -671,12 +660,28 @@ class code_generator {
     return false;
   }
 
-  void emit_control_stop(std::string const& channel) {
-    emit("if (" + channel + ".break_requested || " + channel + ".continue_requested) {");
-    ++indent_;
-    emit(in_control_lambda() ? "return;" : "return {};");
-    --indent_;
-    emit("}");
+  /** @brief 直近のセクション/逆セクションがセクション {{else}} ラムダ内か */
+  bool in_else_body_lambda() const {
+    for (auto it = open_blocks_.rbegin(); it != open_blocks_.rend(); ++it) {
+      if (it->syntax == block_syntax_kind::section ||
+          it->syntax == block_syntax_kind::inverted) {
+        return it->syntax == block_syntax_kind::section && it->phase == block_phase::else_body;
+      }
+    }
+    return false;
+  }
+
+  /** @brief 現在の生成位置から制御移動する return 文 */
+  std::string control_return_statement() const {
+    if (in_else_body_lambda()) return "return true;";
+    return in_control_lambda() ? "return;" : "return {};";
+  }
+
+  /** @brief セクション {{else}} 本体が制御移動したかを呼び出し元へ伝播する
+   *  @details VM のセクション else は外側 executor にインライン展開されるため、
+   *          else 内の break/continue は外側ラムダからの return になる。 */
+  void emit_else_propagate(std::string const& call) {
+    emit("if (" + call + ") " + control_return_statement());
   }
 
   std::string unsupported_feature_;  /**< generate() が対応不能な命令を検出した場合の説明 */
@@ -813,12 +818,53 @@ class code_generator {
       case loop_parent_meta_kind::is_odd:
         return "(" + parent_loop + ".active && " + parent_loop + ".index % 2 == 1)";
       case loop_parent_meta_kind::key:
-        return "std::string_view{}";
       case loop_parent_meta_kind::unknown:
       case loop_parent_meta_kind::none:
-        return "std::optional<int>{}";
+        return "std::string_view{}";
     }
-    return "std::optional<int>{}";
+    return "std::string_view{}";
+  }
+
+  /** @brief loop.parent.* の emit を VM と同じ「親ループ有り時のみ出力」で生成する
+   *  @details VM handle_emit_var は親ループが無ければ loop.parent.* を解決せず、
+   *          値/ルートのフィールド走査へフォールバックして何も出力しない。
+   *  @return 生成した場合は true（呼び出し側は通常の emit をスキップする）
+   */
+  bool emit_loop_parent_value(bc::var_ref const& ref, bool raw) {
+    if (!ref.is_loop_parent) return false;
+    auto const kind = classify_loop_parent_meta(ref);
+    if (kind == loop_parent_meta_kind::none) return false;
+    auto const parent = parent_loop_context_expr();
+    auto const prefix = raw ? std::string{"append_value(out, "} : std::string{"html_escape_append_value(out, "};
+    switch (kind) {
+      case loop_parent_meta_kind::index:
+        emit("if (" + parent + ".active) append_number(out, " + parent + ".index);");
+        return true;
+      case loop_parent_meta_kind::index1:
+        emit("if (" + parent + ".active) append_number(out, " + parent + ".index + 1);");
+        return true;
+      case loop_parent_meta_kind::size:
+        emit("if (" + parent + ".active) append_number(out, " + parent + ".size);");
+        return true;
+      case loop_parent_meta_kind::is_first:
+        emit("if (" + parent + ".active) " + prefix + "(" + parent + ".index == 0));");
+        return true;
+      case loop_parent_meta_kind::is_last:
+        emit("if (" + parent + ".active) " + prefix + "(" + parent + ".index + 1 == " + parent + ".size));");
+        return true;
+      case loop_parent_meta_kind::is_even:
+        emit("if (" + parent + ".active) " + prefix + "(" + parent + ".index % 2 == 0));");
+        return true;
+      case loop_parent_meta_kind::is_odd:
+        emit("if (" + parent + ".active) " + prefix + "(" + parent + ".index % 2 == 1));");
+        return true;
+      case loop_parent_meta_kind::key:
+      case loop_parent_meta_kind::unknown:
+        return true;  // VM: 親キーは空なら無出力、非メタは未解決で無出力
+      case loop_parent_meta_kind::none:
+        return false;
+    }
+    return false;
   }
 
   /**
@@ -1490,19 +1536,12 @@ class code_generator {
     std::vector<control_block> stack;
     auto parent_id = [&]() { return stack.empty() ? 0 : stack.back().id; };
     auto channel_for = [](int id) { return id == 0 ? std::string{"_root_control"} : "_control" + std::to_string(id); };
-    auto push = [&](bc::instruction const& inst, block_syntax_kind syntax,
-                    runtime_category runtime, bool owns_value_scope) {
+    auto push = [&](bc::instruction const& inst, block_syntax_kind syntax, bool owns_value_scope) {
       auto const id = ++next_control_id_;
       control_ownership_.emplace(&inst, control_ownership{
         .syntax = syntax,
-        .runtime = runtime,
         .id = id,
-        .parent_id = parent_id(),
-        .loop_depth = scope_depth_,
         .local_channel = channel_for(id),
-        .parent_channel = channel_for(parent_id()),
-        .root_expression = root_for_emit(),
-        .loop_context = loop_context_expr(),
       });
       stack.push_back({id, owns_value_scope});
       if (owns_value_scope) ++scope_depth_;
@@ -1512,19 +1551,12 @@ class code_generator {
       if (stack.back().owns_value_scope) --scope_depth_;
       stack.pop_back();
     };
-    auto push_condition = [&](bc::instruction const& inst, runtime_category runtime) {
+    auto push_condition = [&](bc::instruction const& inst) {
       auto const pid = parent_id();
       auto const id = ++next_control_id_;
       control_ownership_.emplace(&inst, control_ownership{
         .syntax = block_syntax_kind::condition,
-        .runtime = runtime,
         .id = id,
-        .parent_id = pid,
-        .loop_depth = scope_depth_,
-        .local_channel = channel_for(pid),
-        .parent_channel = channel_for(pid),
-        .root_expression = root_for_emit(),
-        .loop_context = loop_context_expr(),
       });
       stack.push_back({pid, false});
     };
@@ -1532,14 +1564,10 @@ class code_generator {
     for (auto const& inst : bc.instructions) {
       switch (inst.op) {
         case bc::opcode::emit_section:
-          push(inst, block_syntax_kind::section,
-               bc.var_refs[inst.operand2].section_op_count > 0
-                 ? runtime_category::container
-                 : runtime_category::scalar_optional,
-               true);
+          push(inst, block_syntax_kind::section, true);
           break;
         case bc::opcode::emit_inverted:
-          push(inst, block_syntax_kind::inverted, runtime_category::inverted, false);
+          push(inst, block_syntax_kind::inverted, false);
           break;
         case bc::opcode::emit_if:
         case bc::opcode::emit_if_not:
@@ -1552,11 +1580,11 @@ class code_generator {
         case bc::opcode::emit_if_lt:
         case bc::opcode::emit_if_lte:
         case bc::opcode::emit_if_filtered:
-          push_condition(inst, runtime_category::if_branch);
+          push_condition(inst);
           break;
         case bc::opcode::emit_at_section:
         case bc::opcode::emit_at_inverted:
-          push_condition(inst, runtime_category::if_branch);
+          push_condition(inst);
           break;
         case bc::opcode::emit_else:
           break;
@@ -1933,8 +1961,7 @@ class code_generator {
       emit(std::string{"}"} + (block.else_seq ? " else {" : ""));
       if (block.else_seq) {
         ++indent_;
-        emit(else_call() + ";");
-        emit_control_stop(block.parent_control);
+        emit_else_propagate(else_call());
         --indent_;
         emit("}");
       }
@@ -1944,13 +1971,11 @@ class code_generator {
       emit("if (" + access + ".has_value()) {");
       ++indent_;
       emit(scalar_call("*" + access) + ";");
-      emit_control_stop(block.parent_control);
       --indent_;
       emit(std::string{"}"} + (block.else_seq ? " else {" : ""));
       if (block.else_seq) {
         ++indent_;
-        emit(else_call() + ";");
-        emit_control_stop(block.parent_control);
+        emit_else_propagate(else_call());
         --indent_;
         emit("}");
       }
@@ -1961,13 +1986,11 @@ class code_generator {
       ++indent_;
       emit(scalar_call(
         (block.idx > 1 ? "_item" + std::to_string(block.idx - 1) : (in_partial_ ? "value" : "data"))) + ";");
-      emit_control_stop(block.parent_control);
       --indent_;
       emit(std::string{"}"} + (block.else_seq ? " else {" : ""));
       if (block.else_seq) {
         ++indent_;
-        emit(else_call() + ";");
-        emit_control_stop(block.parent_control);
+        emit_else_propagate(else_call());
         --indent_;
         emit("}");
       }
@@ -1979,8 +2002,7 @@ class code_generator {
       } else if (block.else_seq) {
         emit("if (value_empty(" + access + ")) {");
         ++indent_;
-        emit(else_call() + ";");
-        emit_control_stop(block.parent_control);
+        emit_else_propagate(else_call());
         --indent_;
         emit("} else {");
         ++indent_;
@@ -1995,18 +2017,17 @@ class code_generator {
     };
     if (block.inst &&
         classify_loop_parent_meta(bc.var_refs[block.inst->operand2]) != loop_parent_meta_kind::none) {
-      emit(control_type + " " + local_slot + " = {};");
-      emit("if (static_cast<bool>(" + block.access + ")) {");
+      /** VM do_section は loop.parent.* を値として解決できず常に falsy。
+       *  本体は決して実行せず、{{else}} だけをセクション else と同じ規則で生成する。 */
+      emit("if (false) {");
       ++indent_;
       emit(scalar_call(
         (block.idx > 1 ? "_item" + std::to_string(block.idx - 1) : (in_partial_ ? "value" : "data"))) + ";");
-      emit_control_stop(block.parent_control);
       --indent_;
       emit(std::string{"}"} + (block.else_seq ? " else {" : ""));
       if (block.else_seq) {
         ++indent_;
-        emit(else_call() + ";");
-        emit_control_stop(block.parent_control);
+        emit_else_propagate(else_call());
         --indent_;
         emit("}");
       }
@@ -2078,8 +2099,7 @@ class code_generator {
     if (block.else_seq) {
       emit("if (value_empty(" + access + ")) {");
       ++indent_;
-      emit(else_call() + ";");
-      emit_control_stop(block.parent_control);
+      emit_else_propagate(else_call());
       --indent_;
       emit("} else {");
       ++indent_;
@@ -2140,10 +2160,16 @@ class code_generator {
       emit("out.append(" + cpp_string(bc.literals[inst.operand]) + ");");
     }
     else if (op == bc::opcode::emit_var) {
-      emit_value_ref("html_escape_append_value(out, ", ");", bc.var_refs[inst.operand]);
+      auto const& ref = bc.var_refs[inst.operand];
+      if (!emit_loop_parent_value(ref, false)) {
+        emit_value_ref("html_escape_append_value(out, ", ");", ref);
+      }
     }
     else if (op == bc::opcode::emit_var_raw) {
-      emit_value_ref("append_value(out, ", ");", bc.var_refs[inst.operand]);
+      auto const& ref = bc.var_refs[inst.operand];
+      if (!emit_loop_parent_value(ref, true)) {
+        emit_value_ref("append_value(out, ", ");", ref);
+      }
     }
     else if (op == bc::opcode::emit_section) {
       auto const& ref = bc.var_refs[inst.operand2];
@@ -2167,13 +2193,9 @@ class code_generator {
       open_block blk{
         .syntax = ownership.syntax,
         .phase = block_phase::main,
-        .runtime = ownership.runtime,
         .control_id = ownership.id,
         .local_control = ownership.local_channel,
-        .parent_control = ownership.parent_channel,
-        .root_expression = call_root,
-        .loop_context = ownership.loop_context,
-        .loop_depth = scope_depth_,
+        .parent_control = active_control_channel(),
         .access = access,
         .container_access = container_access,
         .idx = scope_depth_,
@@ -2203,13 +2225,7 @@ class code_generator {
       auto const& ownership = control_ownership_.at(&inst);
       open_blocks_.push_back({
         .syntax = block_syntax_kind::at_condition,
-        .runtime = runtime_category::if_branch,
         .control_id = ownership.id,
-        .local_control = ownership.local_channel,
-        .parent_control = ownership.parent_channel,
-        .root_expression = ownership.root_expression,
-        .loop_context = ownership.loop_context,
-        .loop_depth = ownership.loop_depth,
       });
     }
     else if (op == bc::opcode::emit_at_inverted) {
@@ -2228,13 +2244,7 @@ class code_generator {
       auto const& ownership = control_ownership_.at(&inst);
       open_blocks_.push_back({
         .syntax = block_syntax_kind::at_condition,
-        .runtime = runtime_category::if_branch,
         .control_id = ownership.id,
-        .local_control = ownership.local_channel,
-        .parent_control = ownership.parent_channel,
-        .root_expression = ownership.root_expression,
-        .loop_context = ownership.loop_context,
-        .loop_depth = ownership.loop_depth,
       });
     }
     else if (op == bc::opcode::emit_end) {
@@ -2249,6 +2259,8 @@ class code_generator {
       }
       if (block.syntax == block_syntax_kind::section) {
         cur_root_ = block.call_root;  // ディスパッチはラムダの外側スコープに出力される
+        /** セクション {{else}} ラムダは「else 内で制御移動したか」を bool で返す */
+        if (block.phase == block_phase::else_body) emit("return false;");
         --indent_;
         emit("};");
         emit_section_dispatch(block, bc);
@@ -2266,23 +2278,25 @@ class code_generator {
         auto els = block.else_seq ? "_else" + std::to_string(block.else_seq) : std::string{};
         auto els_call = block.else_seq ? (els + "(" + block.parent_control +
                          (block.else_root_param ? (", " + block.call_root) : "") + ")") : std::string{};
-        if (!block.else_seq) {
+        /** VM do_inverted も loop.parent.* を解決できず常に empty=true（本体を実行） */
+        bool lp_always = block.inst &&
+          classify_loop_parent_meta(bc.var_refs[block.inst->operand2]) != loop_parent_meta_kind::none;
+        if (lp_always) {
+          emit(body_call + ";");
+        } else if (!block.else_seq) {
           emit("if (value_empty(" + block.access + ")) {");
           ++indent_;
           emit(body_call + ";");
-          emit_control_stop(block.parent_control);
           --indent_;
           emit("}");
         } else {
           emit("if (value_empty(" + block.access + ")) {");
           ++indent_;
           emit(body_call + ";");
-          emit_control_stop(block.parent_control);
           --indent_;
           emit("} else {");
           ++indent_;
           emit(els_call + ";");
-          emit_control_stop(block.parent_control);
           --indent_;
           emit("}");
         }
@@ -2308,13 +2322,9 @@ class code_generator {
       ++indent_;
       open_block blk{
         .syntax = block_syntax_kind::inverted,
-        .runtime = runtime_category::inverted,
         .control_id = ownership.id,
         .local_control = ownership.local_channel,
-        .parent_control = ownership.parent_channel,
-        .root_expression = call_root,
-        .loop_context = ownership.loop_context,
-        .loop_depth = ownership.loop_depth,
+        .parent_control = active_control_channel(),
         .access = access,
         .idx = scope_depth_,
         .seq = seq,
@@ -2351,13 +2361,7 @@ class code_generator {
       auto const& ownership = control_ownership_.at(&inst);
       open_blocks_.push_back({
         .syntax = block_syntax_kind::condition,
-        .runtime = runtime_category::if_branch,
         .control_id = ownership.id,
-        .local_control = ownership.local_channel,
-        .parent_control = ownership.parent_channel,
-        .root_expression = ownership.root_expression,
-        .loop_context = ownership.loop_context,
-        .loop_depth = ownership.loop_depth,
       });
     }
     else if (op == bc::opcode::emit_if_eq || op == bc::opcode::emit_if_ne ||
@@ -2378,13 +2382,7 @@ class code_generator {
       auto const& ownership = control_ownership_.at(&inst);
       open_blocks_.push_back({
         .syntax = block_syntax_kind::condition,
-        .runtime = runtime_category::if_branch,
         .control_id = ownership.id,
-        .local_control = ownership.local_channel,
-        .parent_control = ownership.parent_channel,
-        .root_expression = ownership.root_expression,
-        .loop_context = ownership.loop_context,
-        .loop_depth = ownership.loop_depth,
       });
     }
     else if (op == bc::opcode::emit_else) {
@@ -2403,7 +2401,7 @@ class code_generator {
           cur_root_ = "_rt" + std::to_string(blk.else_seq);
           params += ", const auto& _rt" + std::to_string(blk.else_seq);
         }
-        emit("auto _else" + std::to_string(blk.else_seq) + " = [&]" + params + ") {");
+        emit("auto _else" + std::to_string(blk.else_seq) + " = [&]" + params + ") -> bool {");
         ++indent_;
       } else if (!open_blocks_.empty() && open_blocks_.back().syntax == block_syntax_kind::inverted) {
         auto& blk = open_blocks_.back();
@@ -2439,11 +2437,17 @@ class code_generator {
     }
     else if (op == bc::opcode::emit_litvar) {
       emit("out.append(" + cpp_string(bc.literals[inst.operand]) + ");");
-      emit_value_ref("html_escape_append_value(out, ", ");", bc.var_refs[inst.operand2]);
+      auto const& ref = bc.var_refs[inst.operand2];
+      if (!emit_loop_parent_value(ref, false)) {
+        emit_value_ref("html_escape_append_value(out, ", ");", ref);
+      }
     }
     else if (op == bc::opcode::emit_litvar_raw) {
       emit("out.append(" + cpp_string(bc.literals[inst.operand]) + ");");
-      emit_value_ref("append_value(out, ", ");", bc.var_refs[inst.operand2]);
+      auto const& ref = bc.var_refs[inst.operand2];
+      if (!emit_loop_parent_value(ref, true)) {
+        emit_value_ref("append_value(out, ", ");", ref);
+      }
     }
     else if (op == bc::opcode::emit_at_root) {
       emit("html_escape_append_value(out, " + root_expr() + ");");
@@ -2633,10 +2637,7 @@ class code_generator {
       emit("if (!_filtered.empty() && _filtered != \"false\" && _filtered != \"0\") {");
       ++indent_;
       auto const& ownership = control_ownership_.at(&inst);
-      open_blocks_.push_back({.syntax = block_syntax_kind::condition, .runtime = runtime_category::if_branch,
-        .control_id = ownership.id, .local_control = ownership.local_channel,
-        .parent_control = ownership.parent_channel, .root_expression = ownership.root_expression,
-        .loop_context = ownership.loop_context, .loop_depth = ownership.loop_depth});
+      open_blocks_.push_back({.syntax = block_syntax_kind::condition, .control_id = ownership.id});
     }
     else if (op == bc::opcode::emit_if_or || op == bc::opcode::emit_if_and) {
       auto lhs = resolve_if_access(bc.var_refs[inst.operand2]);
@@ -2644,20 +2645,14 @@ class code_generator {
       emit("if ((static_cast<bool>(" + lhs + ")) " + (op == bc::opcode::emit_if_or ? "||" : "&&") + " (static_cast<bool>(" + rhs + "))) {");
       ++indent_;
       auto const& ownership = control_ownership_.at(&inst);
-      open_blocks_.push_back({.syntax = block_syntax_kind::condition, .runtime = runtime_category::if_branch,
-        .control_id = ownership.id, .local_control = ownership.local_channel,
-        .parent_control = ownership.parent_channel, .root_expression = ownership.root_expression,
-        .loop_context = ownership.loop_context, .loop_depth = ownership.loop_depth});
+      open_blocks_.push_back({.syntax = block_syntax_kind::condition, .control_id = ownership.id});
     }
     else if (op == bc::opcode::emit_if_not) {
       auto access = resolve_if_access(bc.var_refs[inst.operand2]);
       emit("if (!static_cast<bool>(" + access + ")) {");
       ++indent_;
       auto const& ownership = control_ownership_.at(&inst);
-      open_blocks_.push_back({.syntax = block_syntax_kind::condition, .runtime = runtime_category::if_branch,
-        .control_id = ownership.id, .local_control = ownership.local_channel,
-        .parent_control = ownership.parent_channel, .root_expression = ownership.root_expression,
-        .loop_context = ownership.loop_context, .loop_depth = ownership.loop_depth});
+      open_blocks_.push_back({.syntax = block_syntax_kind::condition, .control_id = ownership.id});
     }
     else if (op == bc::opcode::call_partial) {
       /* partial 呼び出し: emit_partial_dispatch で生成された render_partial_impl に
@@ -2675,25 +2670,22 @@ class code_generator {
         emit("if (!" + result + ") " +
              (in_control_lambda() ? "return;" :
                                   ("return std::unexpected(" + result + ".error());")));
-        emit_control_stop(active_control_channel());
       }
     }
     else if (op == bc::opcode::emit_var_size) {
       auto const& ref = bc.var_refs[inst.operand];
-      if (classify_loop_parent_meta(ref) == loop_parent_meta_kind::size) {
-        auto const parent_loop = parent_loop_context_expr();
-        emit("if (" + parent_loop + ".active) append_number(out, " + parent_loop + ".size);");
-      } else {
+      /** VM handle_emit_var_size は loop.parent.* を解決せず何も出力しない */
+      if (classify_loop_parent_meta(ref) == loop_parent_meta_kind::none) {
         emit_value_ref("append_number(out, value_size(", "));", ref);
       }
     }
     else if (op == bc::opcode::emit_break) {
       emit(active_control_channel() + ".break_requested = true;");
-      emit(in_control_lambda() ? "return;" : "return {};");
+      emit(control_return_statement());
     }
     else if (op == bc::opcode::emit_continue) {
       emit(active_control_channel() + ".continue_requested = true;");
-      emit(in_control_lambda() ? "return;" : "return {};");
+      emit(control_return_statement());
     }
     else if (op == bc::opcode::halt) {
       // 何もしない

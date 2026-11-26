@@ -1,5 +1,10 @@
 # Changelog
 
+## 2026-11-26
+
+- `fix: injamm_codegen の break/continue と loop.parent.* を VM と一致` — セクション本体内・partial 内・逆セクション本体内の break/continue が外側ラムダまで停止させていた挙動を修正。VM と同じくコンテナループ境界だけがフラグを消費し、スカラー/optional/逆セクション本体・partial・文字列セクションの guard は自身の本体のみを打ち切る。セクション `{{else}}`（VM では外側 executor にインライン展開）は bool 戻り値で外側へ伝播する。`{{loop.parent.*}}` の emit は親ループが無いとき何も出力せず、`{{#loop.parent.*}}` は常に偽、`{{^loop.parent.*}}` は常に本体を実行、非メタ `{{loop.parent.field}}` はコンパイル不能な `std::optional<int>{}` ではなく無出力にした。セクション `{{else}}` 内のネストしたセクション/条件が未定義のチャネル名を参照してコンパイル不能になる問題も、生成時の実チャネル解決へ揃えて修正
+- `chore: codegen ヘルパと制御メタデータの整理` — `examples/codegen_bench/codegen_helpers.hpp` の `value_size` を test 側と同期し、`control_ownership` / `open_block` の未使用フィールド（runtime / root_expression / loop_context / loop_depth / parent_id / parent_channel）を削除
+
 ## 2026-11-25
 
 - `fix: injamm_codegen の loop.parent.* 解決を全 emit 経路に拡張` — これまで比較系のみだった `loop.parent.index/index1/size` の親ループ解決を `emit_var` / `emit_var_raw` / `emit_litvar` / `emit_if*` / セクション判定 / nested partial まで統一。誤って `data.loop.parent` / `data.index` / `root.loop.parent` を生成する経路を除去し、badbc/live テストを拡張して回帰を固定

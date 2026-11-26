@@ -442,7 +442,7 @@ bc.render(User{"Alice", -5}); // r == "negative"
 
 ループを中断します。
 
-`engine<T>` / NTTP / AOT で同じ制御フロー境界を使います。AOT でも break 後の同一反復内の後続出力は行われません。
+`engine<T>` / NTTP / AOT で同じ制御フロー境界を使います。AOT でも break 後の同一反復内の後続出力は行われません。セクション本体の内側で break した場合は、そのセクションの残りだけを打ち切り、外側の反復は継続します（3 経路共通）。
 
 ```cpp
 // 最初の要素でのみ break
@@ -456,7 +456,7 @@ auto r = injamm::render<injamm::fixed_string(
 
 現在の反復をスキップし、次の要素へ進みます。
 
-`engine<T>` / NTTP / AOT で同じ制御フロー境界を使います。AOT でも continue 後の同一反復内の後続出力は行われません。
+`engine<T>` / NTTP / AOT で同じ制御フロー境界を使います。AOT でも continue 後の同一反復内の後続出力は行われません。セクション本体の内側で continue した場合は、そのセクションの残りだけを打ち切り、外側のループが次の要素へ進みます（3 経路共通）。
 
 ```cpp
 // {{loop.index}} が真（≠0）の要素をスキップ → 最初の要素のみ描画
