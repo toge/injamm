@@ -16,6 +16,13 @@
 
 namespace generated {
 
+namespace cgns_render_round {
+struct control_slot {
+  bool break_requested = false;
+  bool continue_requested = false;
+};
+} // namespace cgns_render_round
+
 
 /**
  * @brief テンプレート文字列から生成されたレンダリング関数（バッファ再利用版）
@@ -40,10 +47,11 @@ render_round(const T& data, Sink& out) {
   }
   std::string _filtered;
   _filtered.reserve(64);
+  cgns_render_round::control_slot _root_control;
 
-  if constexpr (::injamm::detail::serializable_v<decltype(data.total)>) {
+  if constexpr (::injamm::detail::serializable_v<std::remove_cvref_t<decltype(data.total)>>) {
     _filtered.clear(); ::injamm::detail::serialize_value(_filtered, data.total);
-  } else if constexpr (::injamm::detail::ct_glz_reflectable<decltype(data.total)>) {
+  } else if constexpr (::injamm::detail::ct_glz_reflectable<std::remove_cvref_t<decltype(data.total)>>) {
     (void)::glz::write_json(data.total, _filtered);
   } else {
     _filtered.assign((data.total).data(), (data.total).size());

@@ -16,6 +16,7 @@
 #include "case_partial_root.hpp"
 #include "case_partial_toplevel.hpp"
 #include "case_partial_scope_refs.hpp"
+#include "case_partial_loop_parent.hpp"
 
 int run_partial_loop_checks(CaseData const& d, CaseData const& d2) {
   live_check("global partial in loop",
@@ -48,5 +49,14 @@ int run_partial_scope_ref_checks(CaseData const& d, CaseData const& d2) {
              "{{#items}}[{{>s}}]{{/items}}",
              d, d2,
     [](auto const& data) { return case_partial_scope_refs::case_partial_scope_refs(data); });
+  return 0;
+}
+
+int run_partial_loop_parent_checks(CaseData const& d, CaseData const& d2) {
+  live_check("global partial loop.parent in nested loop",
+             "{{#partialdef inner}}{{#tags}}{{loop.parent.index}}/{{loop.parent.index1}}/{{/tags}}{{/partialdef}}"
+             "{{#items}}[{{>inner}}]{{/items}}",
+             d, d2,
+    [](auto const& data) { return case_partial_loop_parent::case_partial_loop_parent(data); });
   return 0;
 }

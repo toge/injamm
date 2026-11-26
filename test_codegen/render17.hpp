@@ -17,6 +17,13 @@
 namespace generated {
 
 namespace cgns_render17 {
+struct control_slot {
+  bool break_requested = false;
+  bool continue_requested = false;
+};
+} // namespace cgns_render17
+
+namespace cgns_render17 {
 /**
  * @brief 値側に @p key が無ければルート側へフォールバックする二段解決ヘルパ
  * @details VM (bytecode_exec.hpp) の value → root 二段走査と同一の解決順。
@@ -54,19 +61,51 @@ render17(const T& data, Sink& out) {
     out.clear();
     out.reserve(33);
   }
+  cgns_render17::control_slot _root_control;
 
-  {
-    auto _size1 = data.items.size();
-    std::size_t _lo1 = 0, _hi1 = _size1;
-    bool _bwd1 = false;
-    if (_bwd1) _hi1 = std::min(_hi1, _lo1 + 100u);
-    else _lo1 = (_hi1 > 100u ? std::max(_lo1, _hi1 - 100u) : _lo1);
-    auto _count1 = _hi1 - _lo1;
-    for (std::size_t _i1 = 0; _i1 < _count1; ++_i1) {
-      auto _idx1 = _bwd1 ? (_hi1 - 1 - _i1) : (_lo1 + _i1);
-      const auto& _item1 = data.items[_idx1];
-      html_escape_append_value(out, cgns_render17::cg_get_6E616D65(_item1, data));
-      out.append(";");
+  auto _body1 = [&](const auto& _item1, const codegen_loop_context& _loop1, cgns_render17::control_slot& _control1) {
+    html_escape_append_value(out, cgns_render17::cg_get_6E616D65(_item1, data));
+    out.append(";");
+  };
+  if constexpr (codegen_unsupported_string_v<decltype(data.items)>) {
+    static_assert(!codegen_unsupported_string_v<decltype(data.items)>, "raw char arrays and volatile C strings are not supported in codegen sections");
+  } else if constexpr (codegen_string_section_v<decltype(data.items)>) {
+    if (!value_empty(data.items)) {
+      cgns_render17::control_slot _loop_control1 = {};
+      _body1(data, codegen_loop_context{true, 0, 0}, _loop_control1);
+    }
+  } else if constexpr (codegen_optional_section_v<decltype(data.items)>) {
+    if (data.items.has_value()) {
+      _body1(*data.items, codegen_loop_context{}, _root_control);
+      if (_root_control.break_requested || _root_control.continue_requested) {
+        return {};
+      }
+    }
+  } else if constexpr (codegen_scalar_section_v<decltype(data.items)>) {
+    if (static_cast<bool>(data.items)) {
+      _body1(data, codegen_loop_context{}, _root_control);
+      if (_root_control.break_requested || _root_control.continue_requested) {
+        return {};
+      }
+    }
+  } else {
+    {
+      auto _size1 = data.items.size();
+      std::size_t _lo1 = 0, _hi1 = _size1;
+      bool _bwd1 = false;
+      if (_bwd1) _hi1 = std::min(_hi1, _lo1 + 100u);
+      else _lo1 = (_hi1 > 100u ? std::max(_lo1, _hi1 - 100u) : _lo1);
+      cgns_render17::control_slot _loop_control1;
+      const auto _count1 = _hi1 - _lo1;
+      for (std::size_t _i1 = 0; _i1 < _count1; ++_i1) {
+        const auto _idx1 = _bwd1 ? (_hi1 - 1 - _i1) : (_lo1 + _i1);
+        const auto& _item1 = data.items[_idx1];
+        const codegen_loop_context _loop1{true, _i1, _count1};
+        _loop_control1 = {};
+        _body1(_item1, _loop1, _loop_control1);
+        if (_loop_control1.break_requested) break;
+        if (_loop_control1.continue_requested) continue;
+      }
     }
   }
 

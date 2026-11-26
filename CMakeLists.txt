@@ -354,10 +354,183 @@ if(BUILD_UTIL)
     add_codegen_case(sec_else_scalar     "{{#active}}Y{{else}}N{{/active}}")
     add_codegen_case(sec_else_int        "{{#age}}N{{else}}Z{{/age}}")
     add_codegen_case(sec_else_in_loop    "{{#items}}{{#on}}T{{else}}F{{/on}}{{/items}}")
+    add_codegen_case(sec_else_if_break   "{{#active}}A{{else}}{{#if qty}}{{#break}}{{/if}}B{{/active}}TAIL")
+    add_codegen_case(sec_else_nested     "{{#active}}A{{else}}{{#items}}{{name}}{{/items}}B{{/active}}TAIL")
     add_codegen_case(opt_section         "{{#opt}}[{{this}}]{{/opt}}")
     add_codegen_case(opt_else            "{{#opt}}[{{this}}]{{else}}none{{/opt}}")
     add_codegen_case(at_else             "{{#items}}{{#loop.is_first}}F{{/loop.is_first}}{{else}}E{{/items}}")
     add_codegen_case(take_else           "{{#items | take(1)}}{{name}}{{else}}E{{/items}}")
+    add_codegen_case(string_section       "{{#items}}{{#name}}[{{name}}]{{/name}}{{/items}}")
+    add_codegen_case(string_this_section  "{{#items}}{{#name}}[{{this}}]{{/name}}{{/items}}")
+    add_codegen_case(string_view_scope    "{{#short_text}}[{{this}}|{{short_text}}]{{/short_text}}")
+    add_codegen_case(string_filtered_section "{{#items}}{{#name | take(1)}}[{{this}}]{{/name}}{{/items}}")
+    add_codegen_case(string_reverse_section "{{#items}}{{#name | reverse}}[{{name}}]{{/name}}{{/items}}")
+    add_codegen_case(string_stride_section "{{#items}}{{#name | stride(1,1)}}[{{name}}]{{/name}}{{/items}}")
+    add_codegen_case(string_index_section "{{#items}}{{#name}}{{loop.index}}:{{loop.index1}}:{{loop.is_first}}:{{loop.is_last}}:{{loop.size}}:{{this}}{{/name}}{{/items}}")
+    add_codegen_case(string_at_section    "{{#items}}{{#name}}{{#loop.is_first}}F{{/loop.is_first}}{{^loop.is_last}}N{{/loop.is_last}}{{/name}}{{/items}}")
+    add_codegen_case(string_view_section  "{{#short_text}}[{{this}}]{{/short_text}}")
+    add_codegen_case(string_ptr_section   "{{#text_ptr}}[{{this}}|{{text_ptr}}]{{/text_ptr}}")
+    add_codegen_case(string_control_guard "{{#items}}{{#name}}{{#break}}{{name}}{{/name}}X{{/items}}")
+    add_codegen_case(string_continue_guard "{{#items}}{{#name}}{{#continue}}{{name}}{{/name}}Y{{/items}}")
+    add_codegen_case(string_take_control_guard "{{#items}}{{#name | take(1)}}{{#break}}{{name}}{{/name}}T{{/items}}")
+    add_codegen_case(string_reverse_control_guard "{{#items}}{{#name | reverse}}{{#continue}}{{name}}{{/name}}R{{/items}}")
+    add_codegen_case(string_stride_control_guard "{{#items}}{{#name | stride(1,1)}}{{#break}}{{name}}{{/name}}S{{/items}}")
+    add_codegen_case(cmp_eq_var          "{{#if qty == limit}}Y{{else}}N{{/if}}")
+    add_codegen_case(cmp_ne_var          "{{#if qty != limit}}Y{{else}}N{{/if}}")
+    add_codegen_case(cmp_gt_literal      "{{#if qty > 2}}Y{{else}}N{{/if}}")
+    add_codegen_case(cmp_gte_literal     "{{#if qty >= 3}}Y{{else}}N{{/if}}")
+    add_codegen_case(cmp_lt_literal      "{{#if qty < 4}}Y{{else}}N{{/if}}")
+    add_codegen_case(cmp_lte_literal     "{{#if qty <= 3}}Y{{else}}N{{/if}}")
+    add_codegen_case(cmp_string_var      "{{#if name == alias}}Y{{else}}N{{/if}}")
+    add_codegen_case(cmp_string_literal  "{{#if name == \"R\"}}Y{{else}}N{{/if}}")
+    add_codegen_case(cmp_empty_string    "{{#if name == \"\"}}Y{{else}}N{{/if}}")
+    add_codegen_case(cmp_this_string     "{{#tags}}{{#if this == \"t1\"}}Y{{else}}N{{/if}}{{/tags}}")
+    add_codegen_case(cmp_loop_index      "{{#items}}{{#if loop.index == 0}}F{{else}}N{{/if}}{{/items}}")
+    add_codegen_case(cmp_loop_index1     "{{#items}}{{#if loop.index1 == 1}}F{{else}}N{{/if}}{{/items}}")
+    add_codegen_case(cmp_loop_size       "{{#items}}{{#if loop.size == 2}}S{{else}}N{{/if}}{{/items}}")
+    add_codegen_case(cmp_loop_roots      "{{#items}}{{#if qty == limit}}Y{{else}}N{{/if}}{{/items}}")
+    add_codegen_case(cmp_loop_value_rhs  "{{#items}}{{#if qty == count}}Y{{else}}N{{/if}}{{/items}}")
+    add_codegen_case(cmp_loop_bool       "{{#items}}{{#if on == active}}Y{{else}}N{{/if}}{{/items}}")
+    add_codegen_case(cmp_rhs_loop_index  "{{#items}}{{#if qty == loop.index}}Y{{else}}N{{/if}}{{/items}}")
+    add_codegen_case(cmp_rhs_this_numeric "{{#items}}{{#if loop.index == this}}Y{{else}}N{{/if}}{{/items}}")
+    add_codegen_case(cmp_rhs_loop_index1 "{{#items}}{{#if qty == loop.index1}}Y{{else}}N{{/if}}{{/items}}")
+    add_codegen_case(cmp_rhs_loop_size   "{{#items}}{{#if qty == loop.size}}Y{{else}}N{{/if}}{{/items}}")
+    add_codegen_case(cmp_rhs_this_string "{{#items}}{{#if name == this}}Y{{else}}N{{/if}}{{/items}}")
+    add_codegen_case(cmp_rhs_loop_parent_index
+      "{{#items}}{{#tags}}{{#if loop.index == loop.parent.index}}Y{{else}}N{{/if}}{{/tags}}{{/items}}")
+    add_codegen_case(cmp_rhs_loop_parent_index1
+      "{{#items}}{{#tags}}{{#if loop.index1 == loop.parent.index1}}Y{{else}}N{{/if}}{{/tags}}{{/items}}")
+    add_codegen_case(cmp_rhs_loop_parent_size
+      "{{#items}}{{#tags}}{{#if loop.parent.size == 2}}Y{{else}}N{{/if}}{{/tags}}{{/items}}")
+    add_codegen_case(cmp_lhs_loop_parent_index
+      "{{#items}}{{#tags}}{{#if loop.parent.index == loop.index}}Y{{else}}N{{/if}}{{/tags}}{{/items}}")
+    add_codegen_case(loop_parent_emit_index
+      "{{#items}}{{#tags}}{{loop.parent.index}}/{{/tags}}{{/items}}")
+    add_codegen_case(loop_parent_emit_index1
+      "{{#items}}{{#tags}}{{loop.parent.index1}}/{{/tags}}{{/items}}")
+    add_codegen_case(loop_parent_emit_size
+      "{{#items}}{{#tags}}{{loop.parent.size}}/{{/tags}}{{/items}}")
+    add_codegen_case(loop_parent_emit_no_grandparent
+      "{{#items}}{{loop.parent.index}}|{{/items}}")
+    add_codegen_case(loop_parent_emit_nonmeta
+      "{{#items}}{{#tags}}{{loop.parent.name}}|{{/tags}}{{/items}}")
+    add_codegen_case(loop_parent_if_index
+      "{{#items}}{{#tags}}{{#if loop.parent.index == 0}}P{{else}}N{{/if}}{{/tags}}{{/items}}")
+    add_codegen_case(loop_parent_if_size
+      "{{#items}}{{#tags}}{{#if loop.parent.size == 2}}P{{else}}N{{/if}}{{/tags}}{{/items}}")
+    add_codegen_case(loop_parent_section_first
+      "{{#items}}{{#tags}}{{#loop.parent.is_first}}F{{/loop.parent.is_first}}{{/tags}}{{/items}}")
+    add_codegen_case(loop_parent_inverted_first
+      "{{#items}}{{#tags}}{{^loop.parent.is_first}}N{{/loop.parent.is_first}}{{/tags}}{{/items}}")
+    add_codegen_case(cmp_string_int      "{{#if numeric == age}}Y{{else}}N{{/if}}")
+    add_codegen_case(cmp_invalid_string  "{{#if invalid_numeric == age}}Y{{else}}N{{/if}}")
+    add_codegen_case(cmp_string_float    "{{#if numeric == ratio}}Y{{else}}N{{/if}}")
+    add_codegen_case(cmp_int_string      "{{#if qty == alias}}Y{{else}}N{{/if}}")
+    add_codegen_case(cmp_float_vars      "{{#if ratio >= ceiling}}Y{{else}}N{{/if}}")
+    add_codegen_case(cmp_optional_rhs    "{{#if qty == opt_limit}}Y{{else}}N{{/if}}")
+    add_codegen_case(cmp_optional_lhs    "{{#if opt_limit == qty}}Y{{else}}N{{/if}}")
+    add_codegen_case(cmp_enum_literal    "{{#if level == 1}}Y{{else}}N{{/if}}")
+    add_codegen_case(cmp_enum_var        "{{#if level == other_level}}Y{{else}}N{{/if}}")
+    add_codegen_case(two_stage_nested_take "{{#tags}}{{#items | take(1)}}{{name}}{{/items}}{{/tags}}")
+    add_codegen_case(two_stage_nested_index "{{#tags}}{{#items}}{{loop.index}}{{name}}{{/items}}{{/tags}}")
+    add_codegen_case(if_loop_active      "{{#items}}{{#if active}}T{{else}}F{{/if}}{{/items}}")
+    add_codegen_case(if_loop_not_active  "{{#items}}{{#if !active}}F{{else}}T{{/if}}{{/items}}")
+    add_codegen_case(if_loop_and         "{{#items}}{{#if active && age}}A{{else}}B{{/if}}{{/items}}")
+    add_codegen_case(if_loop_or          "{{#items}}{{#if active || age}}A{{else}}B{{/if}}{{/items}}")
+    add_codegen_case(if_loop_filtered    "{{#items}}{{#if age | gt(18)}}A{{else}}B{{/if}}{{/items}}")
+    add_codegen_case(cmp_bool_section_loop
+      "{{#active}}{{#if loop.index == 0}}F{{else}}N{{/if}}{{/active}}")
+    add_codegen_case(cmp_optional_section_loop
+      "{{#opt}}{{#if loop.index == 0}}F{{else}}N{{/if}}{{/opt}}")
+    add_codegen_case(cmp_number_section_loop
+      "{{#age}}{{#if loop.index == 0}}F{{else}}N{{/if}}{{/age}}")
+    add_codegen_case(cmp_inherited_bool_loop
+      "{{#items}}{{#active}}{{#if loop.index == 0}}F{{else}}N{{/if}}{{/active}}{{/items}}")
+    add_codegen_case(cmp_inherited_optional_loop
+      "{{#items}}{{#opt_limit}}{{#if loop.index == 0}}F{{else}}N{{/if}}{{/opt_limit}}{{/items}}")
+    add_codegen_case(size_loop_root_fallback
+      "{{#items}}{{tags.size}}{{/items}}")
+    add_codegen_case(size_loop_current_item
+      "{{#items}}{{name.size}}{{/items}}")
+    add_codegen_case(size_root_items_from_tags
+      "{{#tags}}{{items.size}}{{/tags}}")
+    add_codegen_case(size_loop_vs_root
+      "{{#items}}{{name.size}}|{{root.name.size}}{{/items}}")
+    add_codegen_case(size_scalar_age "{{age.size}}")
+    add_codegen_case(size_enum_level "{{level.size}}")
+    add_codegen_case(size_optional_opt "{{opt.size}}")
+    add_codegen_case(size_reflectable_profile "{{profile.size}}")
+    add_codegen_case(size_scalar_name "{{name.size}}")
+    add_codegen_case(size_container_items "{{items.size}}")
+    add_codegen_case(size_cstring_text_ptr "{{text_ptr.size}}")
+    add_codegen_case(control_break
+      "{{#items}}{{name}}{{#if loop.is_first}}{{else}}{{#break}}{{/if}}{{/items}}Z")
+    add_codegen_case(control_continue
+      "{{#items}}{{#if loop.is_first}}{{else}}{{#continue}}{{/if}}{{name}}{{/items}}Z")
+    add_codegen_case(control_section_else_break
+      "{{#items}}{{#active}}{{name}}{{else}}{{#break}}{{/active}}{{/items}}Z")
+    add_codegen_case(control_section_else_continue
+      "{{#items}}{{#active}}{{name}}{{else}}{{#continue}}{{/active}}{{/items}}Z")
+    add_codegen_case(control_inverted_else_break
+      "{{#items}}{{^active}}{{name}}{{else}}{{#break}}{{/active}}{{/items}}Z")
+    add_codegen_case(control_inverted_else_continue
+      "{{#items}}{{^active}}{{name}}{{else}}{{#continue}}{{/active}}{{/items}}Z")
+    add_codegen_case(control_nested_container_break
+      "{{#items}}[{{#tags}}{{this}}{{#if loop.is_last}}{{else}}{{#break}}{{/if}}{{/tags}}]{{/items}}Z")
+    add_codegen_case(control_nested_container_continue
+      "{{#items}}[{{#tags}}{{#if loop.index}}{{#continue}}{{/if}}{{this}}{{/tags}}]{{/items}}Z")
+    add_codegen_case(control_scalar_break
+      "{{#items}}{{#active}}A{{#break}}{{/active}}{{/items}}Z")
+    add_codegen_case(control_scalar_continue
+      "{{#items}}{{#active}}A{{#continue}}{{/active}}{{/items}}Z")
+    add_codegen_case(control_optional_break
+      "{{#items}}{{#opt_limit}}A{{#break}}{{/opt_limit}}{{/items}}Z")
+    add_codegen_case(control_optional_continue
+      "{{#items}}{{#opt_limit}}A{{#continue}}{{/opt_limit}}{{/items}}Z")
+    add_codegen_case(control_inverted_break
+      "{{#items}}{{^active}}A{{#break}}{{/active}}{{/items}}Z")
+    add_codegen_case(control_inverted_continue
+      "{{#items}}{{^active}}A{{#continue}}{{/active}}{{/items}}Z")
+    add_codegen_case(control_top_break
+      "A{{#break}}B")
+    add_codegen_case(control_top_continue
+      "A{{#continue}}B")
+    add_codegen_case(control_join_break
+      "{{#items | join(\",\")}}{{name}}{{#if loop.is_first}}{{else}}{{#break}}{{/if}}{{/items}}Z")
+    add_codegen_case(control_join_continue
+      "{{#items | join(\",\")}}{{#if loop.is_first}}{{#continue}}{{/if}}{{name}}{{/items}}Z")
+    add_codegen_case(control_reverse_break
+      "{{#items | reverse}}{{name}}{{#if loop.is_first}}{{else}}{{#break}}{{/if}}{{/items}}Z")
+    add_codegen_case(control_stride_continue
+      "{{#tags | stride(1,1)}}{{#if loop.index}}{{#continue}}{{/if}}{{this}}{{/tags}}Z")
+    add_codegen_case(control_take_break
+      "{{#items | take(2)}}{{name}}{{#break}}{{/items}}Z")
+    add_codegen_case(control_number_section
+      "{{#items}}{{#age}}A{{#continue}}{{/age}}{{/items}}Z")
+    add_codegen_case(control_enum_section
+      "{{#items}}{{#level}}A{{#break}}{{/level}}{{/items}}Z")
+    add_codegen_case(control_syntax_break
+      "{{#users}}{{name}}{{#if loop.is_last}}.{{else}}{{#break}}{{/if}}{{/users}}")
+    add_codegen_case(control_scalar_break_trailing
+      "{{#active}}{{#break}}{{/active}}TAIL")
+    add_codegen_case(control_scalar_continue_trailing
+      "{{#active}}{{#continue}}{{/active}}TAIL")
+    add_codegen_case(control_optional_break_trailing
+      "{{#opt_limit}}{{#break}}{{/opt_limit}}TAIL")
+    add_codegen_case(control_optional_continue_trailing
+      "{{#opt_limit}}{{#continue}}{{/opt_limit}}TAIL")
+    add_codegen_case(control_inverted_body_break_trailing
+      "{{^empty}}{{#break}}{{/empty}}TAIL")
+    add_codegen_case(control_inverted_body_continue_trailing
+      "{{^empty}}{{#continue}}{{/empty}}TAIL")
+    add_codegen_case(control_inverted_else_break_trailing
+      "{{^active}}{{else}}{{#break}}{{/active}}TAIL")
+    add_codegen_case(control_inverted_else_continue_trailing
+      "{{^active}}{{else}}{{#continue}}{{/active}}TAIL")
+    add_codegen_case(control_partial_break_trailing
+      "{{#partialdef stop}}P{{#break}}{{/partialdef}}{{#items}}{{>stop}}TAIL{{/items}}Z")
+    add_codegen_case(control_partial_continue_trailing
+      "{{#partialdef skip}}P{{#continue}}{{/partialdef}}{{#items}}{{>skip}}TAIL{{/items}}Z")
     # partial の通常ケースはスコープごとに個別名前空間へ生成し、
     # test_codegen_live_partials.cpp で VM と比較する。
     function(add_codegen_case_partial name tmpl)
@@ -373,6 +546,10 @@ if(BUILD_UTIL)
     add_codegen_case_partial(partial_toplevel  "{{#partialdef t}}{{name}}{{/partialdef}}{{>t}}")
     add_codegen_case_partial(partial_scope_refs
       "{{#partialdef s}}{{root_only}}|{{profile.name}}|{{profile_2E_name}}|{{root_only | upper}}|{{#if active}}T{{else}}F{{/if}}|{{#if age > 18}}G{{else}}S{{/if}}|{{#if active && age}}A{{else}}B{{/if}}|{{#items | take(1)}}S:{{name}}{{/items}}|{{#items}}I:{{loop.index}}{{/items}}{{/partialdef}}{{#items}}[{{>s}}]{{/items}}")
+    add_codegen_case_partial(partial_compare_loop
+      "{{#partialdef inner}}{{#if this == \"t1\"}}T{{else}}N{{/if}}:{{#if loop.index == 0}}F{{else}}L{{/if}}:{{#if loop.index1 == 1}}O{{else}}I{{/if}}:{{#if loop.size == 3}}S{{else}}X{{/if}}{{/partialdef}}{{#partialdef outer}}{{>inner}}{{/partialdef}}{{#tags}}[{{>outer}}]{{/tags}}|{{#items}}[{{>outer}}]{{/items}}")
+    add_codegen_case_partial(partial_loop_parent
+      "{{#partialdef inner}}{{#tags}}{{loop.parent.index}}/{{loop.parent.index1}}/{{/tags}}{{/partialdef}}{{#items}}[{{>inner}}]{{/items}}")
 
     function(add_codegen_namespaced_case name tmpl ns prefix)
       set(out ${CG_LIVE_DIR}/case_${name}.hpp)

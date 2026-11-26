@@ -16,6 +16,13 @@
 
 namespace generated {
 
+namespace cgns_render2 {
+struct control_slot {
+  bool break_requested = false;
+  bool continue_requested = false;
+};
+} // namespace cgns_render2
+
 
 /**
  * @brief テンプレート文字列から生成されたレンダリング関数（バッファ再利用版）
@@ -41,11 +48,12 @@ render2(const T& data, Sink& out) {
   }
   std::string _filtered;
   _filtered.reserve(64);
+  cgns_render2::control_slot _root_control;
 
   out.append("Name: ");
-  if constexpr (::injamm::detail::serializable_v<decltype(data.name)>) {
+  if constexpr (::injamm::detail::serializable_v<std::remove_cvref_t<decltype(data.name)>>) {
     _filtered.clear(); ::injamm::detail::serialize_value(_filtered, data.name);
-  } else if constexpr (::injamm::detail::ct_glz_reflectable<decltype(data.name)>) {
+  } else if constexpr (::injamm::detail::ct_glz_reflectable<std::remove_cvref_t<decltype(data.name)>>) {
     (void)::glz::write_json(data.name, _filtered);
   } else {
     _filtered.assign((data.name).data(), (data.name).size());
@@ -53,9 +61,9 @@ render2(const T& data, Sink& out) {
   filter_to_upper(_filtered);
   html_escape_append(out, _filtered);
   out.append(", Lower: ");
-  if constexpr (::injamm::detail::serializable_v<decltype(data.name)>) {
+  if constexpr (::injamm::detail::serializable_v<std::remove_cvref_t<decltype(data.name)>>) {
     _filtered.clear(); ::injamm::detail::serialize_value(_filtered, data.name);
-  } else if constexpr (::injamm::detail::ct_glz_reflectable<decltype(data.name)>) {
+  } else if constexpr (::injamm::detail::ct_glz_reflectable<std::remove_cvref_t<decltype(data.name)>>) {
     (void)::glz::write_json(data.name, _filtered);
   } else {
     _filtered.assign((data.name).data(), (data.name).size());

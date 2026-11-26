@@ -17,6 +17,13 @@
 namespace generated {
 
 namespace cgns_render_e {
+struct control_slot {
+  bool break_requested = false;
+  bool continue_requested = false;
+};
+} // namespace cgns_render_e
+
+namespace cgns_render_e {
 /**
  * @brief 値側に @p key が無ければルート側へフォールバックする二段解決ヘルパ
  * @details VM (bytecode_exec.hpp) の value → root 二段走査と同一の解決順。
@@ -53,38 +60,97 @@ render_e(const T& data, Sink& out) {
   if constexpr (std::is_same_v<Sink, std::string>) {
     out.clear();
   }
+  cgns_render_e::control_slot _root_control;
 
-  auto _body1 = [&](const auto& _item1, const auto& _rt1) {
-    auto _body2 = [&](const auto& _item2) {
+  auto _body1 = [&](const auto& _item1, const codegen_loop_context& _loop1, cgns_render_e::control_slot& _control1, const auto& _rt1) {
+    auto _body2 = [&](const auto& _item2, const codegen_loop_context& _loop2, cgns_render_e::control_slot& _control2) {
       out.append("Y");
     };
-    auto _else3 = [&]() {
+    auto _else3 = [&](cgns_render_e::control_slot& _control_else2) {
       out.append("N");
     };
-    if constexpr (requires { _item1.active; }) {
-      if constexpr (codegen_optional_section_v<decltype(_item1.active)>) {
-        if (_item1.active.has_value()) _body2(*_item1.active); else _else3();
-      } else if constexpr (codegen_scalar_section_v<decltype(_item1.active)>) {
-        if (static_cast<bool>(_item1.active)) _body2(_item1); else _else3();
+    if constexpr (codegen_unsupported_string_v<decltype(cgns_render_e::cg_get_616374697665(_item1, data))>) {
+      static_assert(!codegen_unsupported_string_v<decltype(cgns_render_e::cg_get_616374697665(_item1, data))>, "raw char arrays and volatile C strings are not supported in codegen sections");
+    } else if constexpr (codegen_string_section_v<decltype(cgns_render_e::cg_get_616374697665(_item1, data))>) {
+      if (!value_empty(cgns_render_e::cg_get_616374697665(_item1, data))) {
+        cgns_render_e::control_slot _loop_control2 = {};
+        _body2(_item1, codegen_loop_context{true, 0, 0}, _loop_control2);
       } else {
-        if (value_empty(_item1.active)) _else3(); else for (const auto& _v2 : _item1.active) _body2(_v2);
+        _else3(_control1);
+        if (_control1.break_requested || _control1.continue_requested) {
+          return;
+        }
+      }
+    } else if constexpr (codegen_optional_section_v<decltype(cgns_render_e::cg_get_616374697665(_item1, data))>) {
+      if (cgns_render_e::cg_get_616374697665(_item1, data).has_value()) {
+        _body2(*cgns_render_e::cg_get_616374697665(_item1, data), _loop1, _control1);
+        if (_control1.break_requested || _control1.continue_requested) {
+          return;
+        }
+      } else {
+        _else3(_control1);
+        if (_control1.break_requested || _control1.continue_requested) {
+          return;
+        }
+      }
+    } else if constexpr (codegen_scalar_section_v<decltype(cgns_render_e::cg_get_616374697665(_item1, data))>) {
+      if (static_cast<bool>(cgns_render_e::cg_get_616374697665(_item1, data))) {
+        _body2(_item1, _loop1, _control1);
+        if (_control1.break_requested || _control1.continue_requested) {
+          return;
+        }
+      } else {
+        _else3(_control1);
+        if (_control1.break_requested || _control1.continue_requested) {
+          return;
+        }
       }
     } else {
-      if constexpr (codegen_optional_section_v<decltype(_rt1.active)>) {
-        if (_rt1.active.has_value()) _body2(*_rt1.active); else _else3();
-      } else if constexpr (codegen_scalar_section_v<decltype(_rt1.active)>) {
-        if (static_cast<bool>(_rt1.active)) _body2(_item1); else _else3();
+      if (value_empty(cgns_render_e::cg_get_616374697665(_item1, data))) {
+        _else3(_control1);
+        if (_control1.break_requested || _control1.continue_requested) {
+          return;
+        }
       } else {
-        if (value_empty(_rt1.active)) _else3(); else for (const auto& _v2 : _rt1.active) _body2(_v2);
+        cgns_render_e::control_slot _loop_control2;
+        for (const auto& _v2 : cgns_render_e::cg_get_616374697665(_item1, data)) {
+          _loop_control2 = {};
+          _body2(_v2, _loop1, _loop_control2);
+          if (_loop_control2.break_requested) break;
+          if (_loop_control2.continue_requested) continue;
+        }
       }
     }
   };
-  if constexpr (codegen_optional_section_v<decltype(data.items)>) {
-    if (data.items.has_value()) _body1(*data.items, data);
+  if constexpr (codegen_unsupported_string_v<decltype(data.items)>) {
+    static_assert(!codegen_unsupported_string_v<decltype(data.items)>, "raw char arrays and volatile C strings are not supported in codegen sections");
+  } else if constexpr (codegen_string_section_v<decltype(data.items)>) {
+    if (!value_empty(data.items)) {
+      cgns_render_e::control_slot _loop_control1 = {};
+      _body1(data, codegen_loop_context{true, 0, 0}, _loop_control1, data);
+    }
+  } else if constexpr (codegen_optional_section_v<decltype(data.items)>) {
+    if (data.items.has_value()) {
+      _body1(*data.items, codegen_loop_context{}, _root_control, data);
+      if (_root_control.break_requested || _root_control.continue_requested) {
+        return {};
+      }
+    }
   } else if constexpr (codegen_scalar_section_v<decltype(data.items)>) {
-    if (static_cast<bool>(data.items)) _body1(data, data);
+    if (static_cast<bool>(data.items)) {
+      _body1(data, codegen_loop_context{}, _root_control, data);
+      if (_root_control.break_requested || _root_control.continue_requested) {
+        return {};
+      }
+    }
   } else {
-    for (const auto& _v1 : data.items) _body1(_v1, data);
+    cgns_render_e::control_slot _loop_control1;
+    for (const auto& _v1 : data.items) {
+      _loop_control1 = {};
+      _body1(_v1, codegen_loop_context{}, _loop_control1, data);
+      if (_loop_control1.break_requested) break;
+      if (_loop_control1.continue_requested) continue;
+    }
   }
 
   return {};

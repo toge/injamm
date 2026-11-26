@@ -17,6 +17,13 @@
 namespace generated {
 
 namespace cgns_render_d {
+struct control_slot {
+  bool break_requested = false;
+  bool continue_requested = false;
+};
+} // namespace cgns_render_d
+
+namespace cgns_render_d {
 /**
  * @brief 値側に @p key が無ければルート側へフォールバックする二段解決ヘルパ
  * @details VM (bytecode_exec.hpp) の value → root 二段走査と同一の解決順。
@@ -53,19 +60,48 @@ render_d(const T& data, Sink& out) {
   if constexpr (std::is_same_v<Sink, std::string>) {
     out.clear();
   }
+  cgns_render_d::control_slot _root_control;
 
-  auto _body1 = [&](const auto& _item1) {
-    auto _body2 = [&]() {
+  auto _body1 = [&](const auto& _item1, const codegen_loop_context& _loop1, cgns_render_d::control_slot& _control1) {
+    auto _body2 = [&](cgns_render_d::control_slot& _control2) {
       out.append("x");
     };
-    if (value_empty(cgns_render_d::cg_get_6E6F7465(_item1, data))) _body2();
+    if (value_empty(cgns_render_d::cg_get_6E6F7465(_item1, data))) {
+      _body2(_control1);
+      if (_control1.break_requested || _control1.continue_requested) {
+        return;
+      }
+    }
   };
-  if constexpr (codegen_optional_section_v<decltype(data.items)>) {
-    if (data.items.has_value()) _body1(*data.items);
+  if constexpr (codegen_unsupported_string_v<decltype(data.items)>) {
+    static_assert(!codegen_unsupported_string_v<decltype(data.items)>, "raw char arrays and volatile C strings are not supported in codegen sections");
+  } else if constexpr (codegen_string_section_v<decltype(data.items)>) {
+    if (!value_empty(data.items)) {
+      cgns_render_d::control_slot _loop_control1 = {};
+      _body1(data, codegen_loop_context{true, 0, 0}, _loop_control1);
+    }
+  } else if constexpr (codegen_optional_section_v<decltype(data.items)>) {
+    if (data.items.has_value()) {
+      _body1(*data.items, codegen_loop_context{}, _root_control);
+      if (_root_control.break_requested || _root_control.continue_requested) {
+        return {};
+      }
+    }
   } else if constexpr (codegen_scalar_section_v<decltype(data.items)>) {
-    if (static_cast<bool>(data.items)) _body1(data);
+    if (static_cast<bool>(data.items)) {
+      _body1(data, codegen_loop_context{}, _root_control);
+      if (_root_control.break_requested || _root_control.continue_requested) {
+        return {};
+      }
+    }
   } else {
-    for (const auto& _v1 : data.items) _body1(_v1);
+    cgns_render_d::control_slot _loop_control1;
+    for (const auto& _v1 : data.items) {
+      _loop_control1 = {};
+      _body1(_v1, codegen_loop_context{}, _loop_control1);
+      if (_loop_control1.break_requested) break;
+      if (_loop_control1.continue_requested) continue;
+    }
   }
 
   return {};

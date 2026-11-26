@@ -8,17 +8,21 @@
  */
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 struct CaseProfile {
   std::string name = "ITEM";
 };
 
+enum CaseLevel : int { none, ready };
+
 struct CaseItem {
   std::string name;
   bool        on = false;
   CaseProfile profile;
   std::string profile_2E_name = "FLAT";
+  int         count = 3;
 };
 
 struct CaseData {
@@ -29,4 +33,25 @@ struct CaseData {
   std::string                root_only = "root";
   CaseProfile                profile{"ROOT"};
   std::vector<CaseItem>      items  = {{"a", true}, {"b", false}};
+  std::vector<CaseItem>      users  = {{"Alice", true}, {"Bob", true}, {"Charlie", true}};
+  int                        qty = 3;
+  int                        limit = 3;
+  double                     ratio = 1.5;
+  double                     ceiling = 2.5;
+  std::string                alias = "R";
+  std::string                numeric = "30";
+  std::string                invalid_numeric = "not-a-number";
+  std::string                empty;
+  std::optional<int>         opt_limit = 3;
+  CaseLevel                  level = ready;
+  CaseLevel                  other_level = ready;
+  std::vector<std::string>   tags = {"t1", "t2", "t3"};
+};
+
+struct CaseStringViewData {
+  std::string_view short_text = "SV";
+};
+
+struct CaseStringPointerData {
+  const char* text_ptr = "PTR";
 };

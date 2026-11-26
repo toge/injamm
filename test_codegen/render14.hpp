@@ -16,6 +16,13 @@
 
 namespace generated {
 
+namespace cgns_render14 {
+struct control_slot {
+  bool break_requested = false;
+  bool continue_requested = false;
+};
+} // namespace cgns_render14
+
 
 /**
  * @brief テンプレート文字列から生成されたレンダリング関数（バッファ再利用版）
@@ -39,6 +46,7 @@ render14(const T& data, Sink& out) {
     out.clear();
     out.reserve(98);
   }
+  cgns_render14::control_slot _root_control;
 
   html_escape_append_value(out, data.name);
   out.append("|");

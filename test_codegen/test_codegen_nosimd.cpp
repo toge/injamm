@@ -49,6 +49,26 @@ int main() {
     check(s == "-1000000000000000000000000000000000000000000000000000000000000000", "bin LLONG_MIN");
   }
 
+  {
+    char text[] = "ok";
+    char const* const_text = text;
+    char const raw[] = "raw";
+    static_assert(codegen_c_string_pointer_v<decltype(const_text)>);
+    static_assert(codegen_c_string_pointer_v<char*>);
+    static_assert(!codegen_c_string_pointer_v<decltype(raw)>);
+    static_assert(codegen_unsupported_string_v<decltype(raw)>);
+    static_assert(!codegen_c_string_pointer_v<volatile char*>);
+    static_assert(codegen_unsupported_string_v<volatile char*>);
+    std::string out;
+    append_value(out, const_text);
+    check(out == "ok", "const char* append");
+    out.clear();
+    html_escape_append_value(out, const_text);
+    check(out == "ok", "const char* escape");
+    check(!value_empty(const_text), "const char* nonempty");
+    check(value_size(const_text) == 2, "const char* size");
+  }
+
   if (failures == 0) {
     std::cout << "codegen no-simd helper: all checks passed\n";
     return 0;
